@@ -64,6 +64,20 @@ type DeviceType =
   | 'sen.temp' | 'sen.smoke' | 'sen.water' | 'sen.occupancy' | 'sen.gas' | 'sen.gunshot';
 
 interface Product { id: string; type: DeviceType; mfr: string; model: string; sub: string; }
+/** Per-lens config for multisensor cameras. Stored as four named slots
+ *  (a/b/c/d) so each can be selected, manipulated, and persisted independently
+ *  on both the canvas and the inspector drawer. */
+export interface LensCfg {
+  rotation: number; // ° (0 = east, CCW positive — same convention as device rot)
+  fov: number;      // horizontal ° aperture
+  range: number;    // ft — DORI Detect bound
+  focal: number;    // mm
+  enabled: boolean; // false = lens disabled in design, dimmed on canvas
+}
+export type LensId = 'a' | 'b' | 'c' | 'd';
+export type ActiveLens = LensId | 'all';
+export type LensMode = 'linked' | 'independent';
+
 interface Device {
   id: string;
   type: DeviceType;
@@ -71,7 +85,7 @@ interface Device {
   product: string;
   x: number; y: number;
   rot: number;
-  /** Camera/lens engineering — persisted so the inspector doesn't lose state. */
+  /** Single-lens camera engineering — persisted so the inspector doesn't lose state. */
   focal?: number;     // mm
   fov?: number;       // horizontal °
   range?: number;     // ft (DORI Detect bound)
@@ -82,6 +96,39 @@ interface Device {
   notes?: string;
   /** Other device ids this one is linked to (pathway / failover / linked door). */
   linkedIds?: string[];
+  /** Multisensor only — four independent lens configs. Present iff
+   *  type === 'cam.multisensor'. Without this, the device falls back to the
+   *  shared fov/range fields above. */
+  lenses?: { a: LensCfg; b: LensCfg; c: LensCfg; d: LensCfg };
+  /** Multisensor lens-mode persisted on the device so each multisensor can
+   *  have its own linked/independent setting. */
+  lensMode?: LensMode;
+}
+
+/** Cardinal default lens layout — A=E, B=S, C=W, D=N (clockwise). 90° FOV per
+ *  lens covers full 360°. Used to seed new multisensors and to backfill any
+ *  existing multisensor that doesn't yet carry per-lens state. */
+export const DEFAULT_MULTISENSOR_LENSES: { a: LensCfg; b: LensCfg; c: LensCfg; d: LensCfg } = {
+  a: { rotation: 0,   fov: 90, range: 60, focal: 2.8, enabled: true },
+  b: { rotation: 90,  fov: 90, range: 60, focal: 2.8, enabled: true },
+  c: { rotation: 180, fov: 90, range: 60, focal: 2.8, enabled: true },
+  d: { rotation: 270, fov: 90, range: 60, focal: 2.8, enabled: true },
+};
+
+/** Lens visual tones — subtle, distinguishable, NOT loud neon. Used both on
+ *  the canvas cones and in the drawer A/B/C/D selector chips. */
+export const LENS_TONE: Record<LensId, string> = {
+  a: '#22D3EE', // cyan-400
+  b: '#A78BFA', // violet-400
+  c: '#FACC15', // amber-400
+  d: '#34D399', // emerald-400
+};
+export const LENS_LABEL: Record<LensId, string> = { a: 'A', b: 'B', c: 'C', d: 'D' };
+
+/** Read the per-lens config, lazily backfilling with defaults so any
+ *  multisensor renders correctly even if it wasn't seeded with lenses. */
+export function getLenses(d: Device): { a: LensCfg; b: LensCfg; c: LensCfg; d: LensCfg } {
+  return d.lenses ?? DEFAULT_MULTISENSOR_LENSES;
 }
 
 const CATEGORIES: Array<{
@@ -234,7 +281,9 @@ const KIND_TONE: Record<DeviceKind, string> = {
 const SEED_DEVICES: Device[] = [
   { id: 'CAM-101', type: 'cam.bullet',      label: 'Lobby NE',   product: 'p-axis-p1468',   x: 260, y: 220, rot:  35 },
   { id: 'CAM-102', type: 'cam.bullet',      label: 'Lobby SW',   product: 'p-axis-p1468',   x: 260, y: 460, rot: -35 },
-  { id: 'CAM-103', type: 'cam.multisensor', label: 'Atrium',     product: 'p-axis-p3827',   x: 480, y: 340, rot:   0 },
+  { id: 'CAM-103', type: 'cam.multisensor', label: 'Atrium',     product: 'p-axis-p3827',   x: 480, y: 340, rot:   0,
+    lensMode: 'linked',
+    lenses: { ...DEFAULT_MULTISENSOR_LENSES } },
   { id: 'CAM-104', type: 'cam.ptz',         label: 'Exterior N', product: 'p-axis-q6315',   x: 620, y: 200, rot: 200 },
   { id: 'CAM-105', type: 'cam.fisheye',     label: 'Conference', product: 'p-axis-m4327',   x: 700, y: 460, rot:   0 },
   { id: 'RD-1',    type: 'acc.reader',      label: 'Lobby in',   product: 'p-hid-signo20',  x: 400, y: 130, rot:   0 },
@@ -293,8 +342,14 @@ export function EngineeringCanvas() {
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
   const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
-  const [activeLens, setActiveLens] = useState<'A' | 'B' | 'C' | 'D'>('A');
-  const [lensMode, setLensMode] = useState<'linked' | 'independent'>('linked');
+  /** Which lens (or 'all') the user is currently editing on the selected
+   *  multisensor. Persisted as UI state per session — not on the device, so
+   *  switching cameras keeps the user's last-used lens focus. */
+  const [activeLens, setActiveLens] = useState<ActiveLens>('all');
+  /** Per-multisensor linked/independent rotation mode. Read from the selected
+   *  device (defaults to 'linked'); writes through to the device so each
+   *  multisensor can have its own setting. */
+  const setLensModeForSel = (m: LensMode) => sel && setDevices((ds) => ds.map((d) => d.id === sel.id ? { ...d, lensMode: m } : d));
 
   // Left navigation rail
   const [navSection, setNavSection] = useState<'overview' | 'devices' | 'recording' | 'accessories' | 'other' | 'maps' | 'reports' | 'docs'>('devices');
@@ -407,11 +462,26 @@ export function EngineeringCanvas() {
   const updateSel = (patch: Partial<Device>) => sel && setDevices((ds) => ds.map((d) => d.id === sel.id ? { ...d, ...patch } : d));
   const deleteSel = () => { if (sel) { setDevices((ds) => ds.filter((d) => d.id !== sel.id)); setSelId(null); } };
   /** Clone the selected device with a new id and a small offset so the user
-   *  can visually see the new copy. Selection follows the clone. */
+   *  can visually see the new copy. Selection follows the clone. Deep-clones
+   *  the lenses object on multisensors so adjusting one camera doesn't bleed
+   *  into its copy. */
   const duplicateSel = () => {
     if (!sel) return;
     const newId = `${sel.id}-c${Date.now().toString(36).slice(-4)}`;
-    const clone: Device = { ...sel, id: newId, x: sel.x + 24 / zoom, y: sel.y + 24 / zoom, label: `${sel.label} copy` };
+    const clone: Device = {
+      ...sel,
+      id: newId,
+      x: sel.x + 24 / zoom,
+      y: sel.y + 24 / zoom,
+      label: `${sel.label} copy`,
+      lenses: sel.lenses ? {
+        a: { ...sel.lenses.a },
+        b: { ...sel.lenses.b },
+        c: { ...sel.lenses.c },
+        d: { ...sel.lenses.d },
+      } : undefined,
+      linkedIds: sel.linkedIds ? [...sel.linkedIds] : undefined,
+    };
     setDevices((ds) => [...ds, clone]);
     setSelId(newId);
   };
@@ -489,6 +559,9 @@ export function EngineeringCanvas() {
               onPick={(id) => { setSelId(id); }}
               onMoveDevice={(id, x, y) => setDevices((ds) => ds.map((d) => d.id === id ? { ...d, x, y } : d))}
               onRotateDevice={(id, rot) => setDevices((ds) => ds.map((d) => d.id === id ? { ...d, rot } : d))}
+              onUpdateDevice={(id, patch) => setDevices((ds) => ds.map((d) => d.id === id ? { ...d, ...patch } : d))}
+              activeLens={activeLens}
+              setActiveLens={setActiveLens}
               coverageMode={coverageMode}
               densityMode={densityMode}
               onBlank={() => setSelId(null)}
@@ -537,8 +610,8 @@ export function EngineeringCanvas() {
                 onOpenTab={openTab}
                 activeLens={activeLens}
                 setActiveLens={setActiveLens}
-                lensMode={lensMode}
-                setLensMode={setLensMode}
+                lensMode={(sel.lensMode ?? 'linked') as LensMode}
+                setLensMode={setLensModeForSel}
               />
             )}
 
@@ -553,8 +626,8 @@ export function EngineeringCanvas() {
                 onUpdate={updateSel}
                 activeLens={activeLens}
                 setActiveLens={setActiveLens}
-                lensMode={lensMode}
-                setLensMode={setLensMode}
+                lensMode={(sel.lensMode ?? 'linked') as LensMode}
+                setLensMode={setLensModeForSel}
               />
             )}
 
@@ -1517,13 +1590,16 @@ interface SurfaceProps {
   onSurfaceDblClick: () => void;
   onMoveDevice: (id: string, x: number, y: number) => void;
   onRotateDevice: (id: string, rot: number) => void;
+  onUpdateDevice: (id: string, patch: Partial<Device>) => void;
+  activeLens: ActiveLens;
+  setActiveLens: (l: ActiveLens) => void;
   coverageMode: CoverageMode;
   densityMode: boolean;
 }
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, coverageMode, densityMode }, ref
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, densityMode }, ref
 ) {
   const moveRef = useRef<{ id: string; offX: number; offY: number } | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
@@ -1649,7 +1725,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           {devices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
             const isSel = d.id === selId;
             const dim = selId ? (isSel ? 1 : 0.28) : 1;
-            return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} />;
+            return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} />;
           })}
         </g>
 
@@ -1702,11 +1778,77 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           );
         })}
 
-        {/* Rotation ring + DORI handle on the selected camera (direct manipulation) */}
+        {/* Rotation ring + DORI handle on the selected camera (direct manipulation).
+            For multisensors: when a specific lens is active AND the device is
+            in independent mode, rotating the ring rotates ONLY that lens (lens
+            local rotation, relative to device). In linked mode — or with 'all'
+            active — it rotates the device body (which carries all lenses). */}
         {(() => {
           const s = devices.find((d) => d.id === selId);
           if (!s || TYPE_KIND[s.type] !== 'camera') return null;
-          return <RotationRing d={s} onRotate={(r) => onRotateDevice(s.id, r)} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} />;
+          const isMs = s.type === 'cam.multisensor';
+          const lensMode = s.lensMode ?? 'linked';
+          const rotateLens = isMs && activeLens !== 'all' && lensMode === 'independent';
+          const ringColor = rotateLens ? LENS_TONE[activeLens as LensId] : undefined;
+          const handleRotate = (r: number) => {
+            if (rotateLens) {
+              const ls = getLenses(s);
+              const k = activeLens as LensId;
+              // Lens rotation is stored RELATIVE to the device body, so we
+              // subtract d.rot to keep behavior intuitive when the user later
+              // rotates the body.
+              const relative = ((r - s.rot) % 360 + 360) % 360;
+              onUpdateDevice(s.id, { lenses: { ...ls, [k]: { ...ls[k], rotation: relative } } });
+            } else {
+              onRotateDevice(s.id, r);
+            }
+          };
+          return (
+            <>
+              <RotationRing d={s} onRotate={handleRotate} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} overrideColor={ringColor} />
+              {/* Direct manipulation cone handles (FOV edges + range tip). For
+                  multisensors the handles attach to the active lens's cone; in
+                  'all' mode handles are hidden because there's no single cone
+                  to drag — the user edits per-lens via the chips. */}
+              {(() => {
+                if (s.type === 'cam.fisheye') return null;
+                if (isMs) {
+                  if (activeLens === 'all') return null;
+                  const ls = getLenses(s);
+                  const k = activeLens as LensId;
+                  const L = ls[k];
+                  return (
+                    <ConeHandles
+                      cx={s.x} cy={s.y}
+                      rotDeg={((L.rotation + s.rot) % 360 + 360) % 360}
+                      fovDeg={L.fov}
+                      rangeFt={L.range}
+                      svgRef={ref as React.RefObject<SVGSVGElement>}
+                      zoom={zoom}
+                      color={LENS_TONE[k]}
+                      onUpdate={(p) => onUpdateDevice(s.id, { lenses: { ...ls, [k]: { ...L, ...p } } })}
+                    />
+                  );
+                }
+                // Single-lens camera
+                const PX_PER_FT = 3.83;
+                const defaultRangeFt = s.type === 'cam.ptz' ? 44 : s.type === 'cam.bullet' ? 50 : 30;
+                const defaultFovDeg  = s.type === 'cam.ptz' ? 36 : 70;
+                return (
+                  <ConeHandles
+                    cx={s.x} cy={s.y}
+                    rotDeg={s.rot}
+                    fovDeg={s.fov ?? defaultFovDeg}
+                    rangeFt={s.range ?? defaultRangeFt}
+                    svgRef={ref as React.RefObject<SVGSVGElement>}
+                    zoom={zoom}
+                    color={KIND_TONE.camera}
+                    onUpdate={(p) => onUpdateDevice(s.id, p)}
+                  />
+                );
+              })()}
+            </>
+          );
         })()}
 
         {/* Live snap guides while dragging — vertical & horizontal alignment lines */}
@@ -1887,18 +2029,95 @@ function FloorPlan({ source, siteAddress }: { source: 'blueprint' | 'satellite' 
   );
 }
 
-function FOV({ d, mode = 'soft', dim = 1, selected = false }: { d: Device; mode?: CoverageMode; dim?: number; selected?: boolean }) {
+/** Render one wedge-shaped FOV cone given absolute world rotation + fov + range
+ *  in feet. Used by both the single-lens FOV branch and the multisensor 4-lens
+ *  branch so the visuals stay identical. */
+function FovCone({
+  cx, cy, rotDeg, fovDeg, rangeFt, color, opacity, wireframe, label, telemetry,
+}: { cx: number; cy: number; rotDeg: number; fovDeg: number; rangeFt: number; color: string; opacity: number; wireframe: boolean; label?: string; telemetry?: string }) {
+  const PX_PER_FT = 3.83;
+  const r = rangeFt * PX_PER_FT;
+  const half = fovDeg / 2;
+  const a1 = ((rotDeg - half) * Math.PI) / 180;
+  const a2 = ((rotDeg + half) * Math.PI) / 180;
+  const x1 = cx + Math.cos(a1) * r;
+  const y1 = cy + Math.sin(a1) * r;
+  const x2 = cx + Math.cos(a2) * r;
+  const y2 = cy + Math.sin(a2) * r;
+  const large = half > 90 ? 1 : 0;
+  const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+  // tip of the cone (used to anchor the small telemetry chip)
+  const tipX = cx + Math.cos((rotDeg * Math.PI) / 180) * r;
+  const tipY = cy + Math.sin((rotDeg * Math.PI) / 180) * r;
+  return (
+    <g opacity={opacity}>
+      {!wireframe && <path d={path} fill={color} opacity="0.18" />}
+      {!wireframe && <path d={path} fill={color} opacity="0.08" filter="url(#fov-bloom)" />}
+      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 1 : 0.9} opacity={wireframe ? 0.95 : 0.7} />
+      {label && (
+        <g transform={`translate(${tipX}, ${tipY})`} pointerEvents="none">
+          <circle r={9} fill="rgba(8,12,20,0.88)" stroke={color} strokeWidth="0.8" />
+          <text textAnchor="middle" y={3} fontSize="9" fontWeight="700" fill={color} fontFamily="ui-monospace, monospace">{label}</text>
+          {telemetry && (
+            <g transform="translate(0, 16)">
+              <rect x={-26} y={-6} width={52} height={12} rx={2} fill="rgba(8,12,20,0.85)" stroke={color} strokeWidth="0.5" opacity="0.85" />
+              <text textAnchor="middle" y={2.5} fontSize="8" fill="#E2E8F0" fontFamily="ui-monospace, monospace">{telemetry}</text>
+            </g>
+          )}
+        </g>
+      )}
+    </g>
+  );
+}
+
+function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all' }: { d: Device; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens }) {
   // Mode-driven render parameters
   const opacity = (mode === 'minimal' ? 0.35 : mode === 'presentation' ? 0.7 : mode === 'tactical' ? 0.9 : mode === 'heatmap' ? 0.85 : mode === 'night' ? 0.55 : 0.75) * dim * (selected ? 1.15 : 1);
   const wireframe = mode === 'wireframe';
   const showArcs = mode !== 'minimal' && mode !== 'presentation';
   const showAim = mode === 'tactical' || mode === 'wireframe' || selected;
-  // 1 ft ≈ 3.83 px on canvas (calibrated against the previous hardcoded
-  // default r=115 for a 30 ft dome). Read live from the Device so adjusting
-  // the Lens sliders or rotating the device updates the cone immediately.
+
+  // ── Multisensor branch — render four independent cones, one per lens. ──
+  // Each cone carries its own rotation/fov/range and its own color. When the
+  // device is selected and a specific lens is active, that lens cone gets
+  // brighter stroke + a telemetry chip; the other three dim slightly so the
+  // active one reads clearly.
+  if (d.type === 'cam.multisensor') {
+    const lenses = getLenses(d);
+    return (
+      <g>
+        {(['a', 'b', 'c', 'd'] as const).map((k) => {
+          const L = lenses[k];
+          if (!L.enabled) return null;
+          const isActive = selected && (activeLens === k || activeLens === 'all');
+          // Lens rotation is relative to the multisensor body — adding d.rot
+          // lets the user rotate the whole device while preserving the
+          // cardinal spread between lenses.
+          const absRot = ((L.rotation + d.rot) % 360 + 360) % 360;
+          const coneOpacity = opacity * (selected && activeLens !== 'all' && activeLens !== k ? 0.32 : 1);
+          return (
+            <FovCone
+              key={`lens-${d.id}-${k}`}
+              cx={d.x} cy={d.y}
+              rotDeg={absRot}
+              fovDeg={L.fov}
+              rangeFt={L.range}
+              color={LENS_TONE[k]}
+              opacity={coneOpacity}
+              wireframe={wireframe}
+              label={isActive && selected ? LENS_LABEL[k] : undefined}
+              telemetry={isActive && selected && activeLens === k ? `${Math.round(L.fov)}° · ${Math.round(L.range)}ft` : undefined}
+            />
+          );
+        })}
+      </g>
+    );
+  }
+
+  // ── Single-lens cameras (dome / bullet / ptz / fisheye / thermal / lpr) ──
   const PX_PER_FT = 3.83;
-  const defaultRangeFt = d.type === 'cam.ptz' ? 44 : d.type === 'cam.multisensor' ? 34 : d.type === 'cam.bullet' ? 50 : 30;
-  const defaultFovDeg  = d.type === 'cam.ptz' ? 36 : d.type === 'cam.multisensor' ? 120 : d.type === 'cam.fisheye' ? 360 : 70;
+  const defaultRangeFt = d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30;
+  const defaultFovDeg  = d.type === 'cam.ptz' ? 36 : d.type === 'cam.fisheye' ? 360 : 70;
   const rangeFt = d.range ?? defaultRangeFt;
   const fovDeg  = d.fov ?? defaultFovDeg;
   if (d.type === 'cam.fisheye' || fovDeg >= 350) {
@@ -1954,8 +2173,88 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false }: { d: Device; mode?
   );
 }
 
-function RotationRing({ d, onRotate, svgRef, zoom }: { d: Device; onRotate: (r: number) => void; svgRef: React.RefObject<SVGSVGElement>; zoom: number }) {
-  const tone = KIND_TONE[TYPE_KIND[d.type]];
+/** Direct-manipulation handles attached to the tip + edges of a cone. Tip
+ *  handle mutates RANGE (in ft). Two edge handles mutate FOV (the half-angle).
+ *  Used by both single-lens cameras and the active lens of a multisensor —
+ *  the caller wires `onUpdate` to write to either d.fov/d.range OR
+ *  d.lenses[activeLens].fov/.range. */
+function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, color, onUpdate }: {
+  cx: number; cy: number;
+  rotDeg: number; fovDeg: number; rangeFt: number;
+  svgRef: React.RefObject<SVGSVGElement>;
+  zoom: number;
+  color: string;
+  onUpdate: (patch: { fov?: number; range?: number }) => void;
+}) {
+  const PX_PER_FT = 3.83;
+  const r = rangeFt * PX_PER_FT;
+  const half = fovDeg / 2;
+  const aMid = (rotDeg * Math.PI) / 180;
+  const a1 = ((rotDeg - half) * Math.PI) / 180;
+  const a2 = ((rotDeg + half) * Math.PI) / 180;
+  const tipX = cx + Math.cos(aMid) * r;
+  const tipY = cy + Math.sin(aMid) * r;
+  const e1X = cx + Math.cos(a1) * r * 0.92;
+  const e1Y = cy + Math.sin(a1) * r * 0.92;
+  const e2X = cx + Math.cos(a2) * r * 0.92;
+  const e2Y = cy + Math.sin(a2) * r * 0.92;
+
+  const startDrag = (apply: (cx: number, cy: number) => void) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    const onMove = (ev: PointerEvent) => {
+      if (!svgRef.current) return;
+      const rect = svgRef.current.getBoundingClientRect();
+      apply((ev.clientX - rect.left) / zoom, (ev.clientY - rect.top) / zoom);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const onTipDown = startDrag((mx, my) => {
+    const dist = Math.hypot(mx - cx, my - cy);
+    onUpdate({ range: Math.max(5, Math.min(150, Math.round(dist / PX_PER_FT))) });
+  });
+  const onEdgeDown = startDrag((mx, my) => {
+    // FOV = 2 × shortest absolute angle between cursor heading and cone center
+    const ang = (Math.atan2(my - cy, mx - cx) * 180) / Math.PI;
+    let delta = Math.abs(((ang - rotDeg + 180) % 360) - 180);
+    if (delta < 0) delta = -delta;
+    onUpdate({ fov: Math.max(10, Math.min(360, Math.round(delta * 2))) });
+  });
+
+  return (
+    <g pointerEvents="auto">
+      {/* Range (tip) handle — drag along cone axis to extend/shorten reach. */}
+      <g onPointerDown={onTipDown} style={{ cursor: 'ew-resize' }}>
+        <circle cx={tipX} cy={tipY} r={7} fill={color} opacity="0.2" />
+        <circle cx={tipX} cy={tipY} r={3.5} fill={color} stroke="#0B131F" strokeWidth="1" />
+        <g transform={`translate(${tipX}, ${tipY - 14})`} pointerEvents="none">
+          <rect x={-20} y={-7} width={40} height={13} rx={2} fill="rgba(8,12,20,0.92)" stroke={color} strokeWidth="0.6" />
+          <text textAnchor="middle" y={2.5} fontSize="9" fontWeight="600" fill={color} fontFamily="ui-monospace, monospace">{Math.round(rangeFt)} ft</text>
+        </g>
+      </g>
+      {/* Edge (FOV) handles — drag to widen/narrow the lens aperture. */}
+      <g onPointerDown={onEdgeDown} style={{ cursor: 'crosshair' }}>
+        <circle cx={e1X} cy={e1Y} r={6} fill={color} opacity="0.2" />
+        <circle cx={e1X} cy={e1Y} r={3} fill={color} stroke="#0B131F" strokeWidth="0.7" />
+      </g>
+      <g onPointerDown={onEdgeDown} style={{ cursor: 'crosshair' }}>
+        <circle cx={e2X} cy={e2Y} r={6} fill={color} opacity="0.2" />
+        <circle cx={e2X} cy={e2Y} r={3} fill={color} stroke="#0B131F" strokeWidth="0.7" />
+      </g>
+    </g>
+  );
+}
+
+function RotationRing({ d, onRotate, svgRef, zoom, overrideColor }: { d: Device; onRotate: (r: number) => void; svgRef: React.RefObject<SVGSVGElement>; zoom: number; overrideColor?: string }) {
+  // overrideColor lets a multisensor's active-lens color drive the ring's
+  // visuals when the ring is editing a single lens (e.g. cyan for Lens A).
+  const tone = overrideColor ?? KIND_TONE[TYPE_KIND[d.type]];
   const R = 34;
   const rad = (d.rot * Math.PI) / 180;
   const handleX = d.x + Math.cos(rad) * R;
@@ -2379,7 +2678,10 @@ interface ToolbarAction {
 
 function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
   const Icon = a.icon;
-  const accent = a.primary ? tone : 'rgba(226,232,240,0.85)';
+  // a.tone overrides the device-level tone (lets per-lens buttons glow with
+  // their own color: cyan / violet / amber / emerald).
+  const buttonTone = a.tone ?? tone;
+  const accent = a.primary ? buttonTone : 'rgba(226,232,240,0.85)';
   return (
     <button
       onClick={a.onClick}
@@ -2392,7 +2694,7 @@ function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
       {a.primary && (
         <span
           className="absolute inset-x-1 bottom-0 h-px"
-          style={{ background: tone, boxShadow: `0 0 6px ${tone}` }}
+          style={{ background: buttonTone, boxShadow: `0 0 6px ${buttonTone}` }}
         />
       )}
     </button>
@@ -2401,7 +2703,7 @@ function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
 
 function MultisensorLensChips({
   activeLens, setActiveLens, lensMode, setLensMode, tone,
-}: { activeLens: 'A' | 'B' | 'C' | 'D'; setActiveLens: (l: 'A' | 'B' | 'C' | 'D') => void; lensMode: 'linked' | 'independent'; setLensMode: (m: 'linked' | 'independent') => void; tone: string }) {
+}: { activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void; lensMode: LensMode; setLensMode: (m: LensMode) => void; tone: string }) {
   return (
     <div
       className="mb-1.5 flex items-stretch text-[10px] rounded-lg overflow-hidden"
@@ -2413,21 +2715,35 @@ function MultisensorLensChips({
       }}
     >
       <div className="px-2 py-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500 border-r border-white/8">Lens</div>
-      {(['A', 'B', 'C', 'D'] as const).map((l) => {
+      {/* 'all' = linked control of every lens. Per-lens chips key off the
+          lens's own color so each lens is identifiable at a glance. */}
+      <button
+        onClick={() => setActiveLens('all')}
+        className="px-2.5 py-1.5 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors"
+        style={{
+          background: activeLens === 'all' ? `${tone}22` : 'transparent',
+          color: activeLens === 'all' ? '#F8FAFC' : '#94A3B8',
+          boxShadow: activeLens === 'all' ? `inset 0 0 0 1px ${tone}66` : 'none',
+        }}
+      >
+        <span className="tabular-nums font-medium">All</span>
+      </button>
+      {(['a', 'b', 'c', 'd'] as const).map((l) => {
         const active = activeLens === l;
+        const lensColor = LENS_TONE[l];
         return (
           <button
             key={l}
             onClick={() => setActiveLens(l)}
             className="px-2.5 py-1.5 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors"
             style={{
-              background: active ? `${tone}22` : 'transparent',
+              background: active ? `${lensColor}22` : 'transparent',
               color: active ? '#F8FAFC' : '#94A3B8',
-              boxShadow: active ? `inset 0 0 0 1px ${tone}66` : 'none',
+              boxShadow: active ? `inset 0 0 0 1px ${lensColor}66` : 'none',
             }}
           >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: active ? tone : '#475569' }} />
-            <span className="tabular-nums font-medium">{l}</span>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: active ? lensColor : '#475569' }} />
+            <span className="tabular-nums font-medium">{LENS_LABEL[l]}</span>
           </button>
         );
       })}
@@ -2452,10 +2768,10 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   onTargetSim: () => void;
   onDuplicate: () => void;
   onOpenTab: (t: EditTab) => void;
-  activeLens: 'A' | 'B' | 'C' | 'D';
-  setActiveLens: (l: 'A' | 'B' | 'C' | 'D') => void;
-  lensMode: 'linked' | 'independent';
-  setLensMode: (m: 'linked' | 'independent') => void;
+  activeLens: ActiveLens;
+  setActiveLens: (l: ActiveLens) => void;
+  lensMode: LensMode;
+  setLensMode: (m: LensMode) => void;
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
   const kind = TYPE_KIND[d.type];
@@ -2466,8 +2782,35 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   const isIDF = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'net.switch';
   const isPathway = kind === 'network' && !isIDF;
 
-  // Build toolbar actions per device kind
+  // Build toolbar actions per device kind. Multisensor gets its own branch
+  // BEFORE the generic camera branch — the lens chips + linked toggle replace
+  // the rotate-degrees / FOV / link buttons that don't make sense for a 4-
+  // lens device.
   const actions: ToolbarAction[] = (() => {
+    if (isMultisensor) {
+      const lensBtn = (k: LensId): ToolbarAction => ({
+        id: `lens-${k}`,
+        icon: Aperture,
+        label: `Lens ${LENS_LABEL[k]}`,
+        onClick: () => { setActiveLens(k); onOpenTab('lens'); },
+        primary: activeLens === k,
+        tone: LENS_TONE[k],
+      });
+      return [
+        { id: 'edit',   icon: Settings2,  label: 'Edit',           onClick: () => onOpenTab('overview'), primary: activeLens === 'all' },
+        lensBtn('a'),
+        lensBtn('b'),
+        lensBtn('c'),
+        lensBtn('d'),
+        { id: 'mode',   icon: lensMode === 'linked' ? Lock : Unlock,
+          label: lensMode === 'linked' ? 'Linked' : 'Independent',
+          onClick: () => setLensMode(lensMode === 'linked' ? 'independent' : 'linked') },
+        { id: 'auto',   icon: Sparkles,      label: 'Auto Optimize', onClick: () => onOpenTab('ai') },
+        { id: 'target', icon: ScanFace,      label: 'Target Sim',    onClick: onTargetSim },
+        { id: 'dup',    icon: Copy,          label: 'Duplicate',     onClick: onDuplicate },
+        { id: 'del',    icon: Trash2,        label: 'Delete',        onClick: onDelete },
+      ];
+    }
     if (isCam) {
       return [
         { id: 'edit',     icon: Settings2,     label: 'Edit',        onClick: () => onOpenTab('overview'), primary: true },
@@ -2648,8 +2991,8 @@ function Slider({ label, value, min, max, step = 1, unit, onChange, tone }: { la
 function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode }: {
   d: Device; open: boolean; tab: EditTab; setTab: (t: EditTab) => void; onClose: () => void;
   onUpdate: (p: Partial<Device>) => void;
-  activeLens: 'A' | 'B' | 'C' | 'D'; setActiveLens: (l: 'A' | 'B' | 'C' | 'D') => void;
-  lensMode: 'linked' | 'independent'; setLensMode: (m: 'linked' | 'independent') => void;
+  activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void;
+  lensMode: LensMode; setLensMode: (m: LensMode) => void;
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
   const kind = TYPE_KIND[d.type];
@@ -2663,12 +3006,52 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   const defaultFocal = d.type === 'cam.ptz' ? 12 : d.type === 'cam.fisheye' ? 1.4 : 4.0;
   const defaultFov   = d.type === 'cam.fisheye' ? 360 : d.type === 'cam.ptz' ? 60 : 88;
   const defaultRange = d.type === 'cam.ptz' ? 70 : d.type === 'cam.bullet' ? 50 : 30;
-  const localFocal = d.focal ?? defaultFocal;
-  const hfov       = d.fov   ?? defaultFov;
-  const distance   = d.range ?? defaultRange;
-  const setLocalFocal = (v: number) => onUpdate({ focal: v });
-  const setHfov       = (v: number) => onUpdate({ fov: v });
-  const setDistance   = (v: number) => onUpdate({ range: v });
+
+  // Lens slider bindings. For multisensors the active lens chip drives which
+  // lens (or all four) the sliders are reading and writing. For single
+  // cameras the sliders bind directly to d.focal/fov/range.
+  const lenses = isMultisensor ? getLenses(d) : undefined;
+  /** Apply a partial lens patch. activeLens === 'all' fans the change to every
+   *  enabled lens (preserves their differences proportionally for rotation
+   *  but uniformly sets fov/range/focal). */
+  const patchLens = (patch: Partial<LensCfg>, deltaRot?: number) => {
+    if (!lenses) return;
+    if (activeLens === 'all') {
+      const next: { a: LensCfg; b: LensCfg; c: LensCfg; d: LensCfg } = {
+        a: { ...lenses.a }, b: { ...lenses.b }, c: { ...lenses.c }, d: { ...lenses.d },
+      };
+      (['a', 'b', 'c', 'd'] as const).forEach((k) => {
+        if (deltaRot !== undefined) next[k].rotation = ((lenses[k].rotation + deltaRot) % 360 + 360) % 360;
+        Object.assign(next[k], patch);
+      });
+      onUpdate({ lenses: next });
+    } else {
+      const k = activeLens;
+      onUpdate({ lenses: { ...lenses, [k]: { ...lenses[k], ...patch } } });
+    }
+  };
+
+  const lensReadout: LensCfg | null = (() => {
+    if (!lenses) return null;
+    if (activeLens === 'all') {
+      // Average reading for the "All" tab so the sliders show a sensible
+      // group value. Writes still fan out via patchLens.
+      const avg = (key: keyof LensCfg) => Math.round(((lenses.a as any)[key] + (lenses.b as any)[key] + (lenses.c as any)[key] + (lenses.d as any)[key]) / 4);
+      return { rotation: avg('rotation'), fov: avg('fov'), range: avg('range'), focal: avg('focal'), enabled: true };
+    }
+    return lenses[activeLens];
+  })();
+
+  const localFocal = lensReadout?.focal ?? d.focal ?? defaultFocal;
+  const hfov       = lensReadout?.fov   ?? d.fov   ?? defaultFov;
+  const distance   = lensReadout?.range ?? d.range ?? defaultRange;
+  const lensRot    = lensReadout?.rotation ?? d.rot;
+
+  const setLocalFocal = (v: number) => lenses ? patchLens({ focal: v }) : onUpdate({ focal: v });
+  const setHfov       = (v: number) => lenses ? patchLens({ fov: v })   : onUpdate({ fov: v });
+  const setDistance   = (v: number) => lenses ? patchLens({ range: v }) : onUpdate({ range: v });
+  const setLensRot    = (v: number) => lenses ? patchLens({ rotation: v }) : onUpdate({ rot: v });
+
   const doriRange = distance;
   // Live engineering telemetry derived from current lens state — recomputes
   // on every slider tick so the numbers in the Telemetry section are real,
@@ -2748,27 +3131,49 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           <>
             {isMultisensor && (
               <div className="mb-3 flex items-center gap-1 p-1 rounded-md" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                {(['A', 'B', 'C', 'D'] as const).map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => setActiveLens(l)}
-                    className="flex-1 py-1 rounded text-[11px] tabular-nums transition-colors"
-                    style={{
-                      background: activeLens === l ? `${tone}22` : 'transparent',
-                      color: activeLens === l ? '#F8FAFC' : '#94A3B8',
-                      boxShadow: activeLens === l ? `inset 0 0 0 1px ${tone}66` : 'none',
-                    }}
-                  >Lens {l}</button>
-                ))}
+                {/* All + per-lens chips. Each lens chip uses its own color
+                    (cyan/violet/amber/emerald) so the user sees at-a-glance
+                    which cone they're about to control. */}
+                <button
+                  onClick={() => setActiveLens('all')}
+                  className="flex-1 py-1 rounded text-[11px] tabular-nums transition-colors"
+                  style={{
+                    background: activeLens === 'all' ? `${tone}22` : 'transparent',
+                    color: activeLens === 'all' ? '#F8FAFC' : '#94A3B8',
+                    boxShadow: activeLens === 'all' ? `inset 0 0 0 1px ${tone}66` : 'none',
+                  }}
+                >All</button>
+                {(['a', 'b', 'c', 'd'] as const).map((l) => {
+                  const active = activeLens === l;
+                  const c = LENS_TONE[l];
+                  return (
+                    <button
+                      key={l}
+                      onClick={() => setActiveLens(l)}
+                      className="flex-1 py-1 rounded text-[11px] tabular-nums transition-colors inline-flex items-center justify-center gap-1.5"
+                      style={{
+                        background: active ? `${c}22` : 'transparent',
+                        color: active ? '#F8FAFC' : '#94A3B8',
+                        boxShadow: active ? `inset 0 0 0 1px ${c}66` : 'none',
+                      }}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: active ? c : '#475569' }} />
+                      Lens {LENS_LABEL[l]}
+                    </button>
+                  );
+                })}
                 <button
                   onClick={() => setLensMode(lensMode === 'linked' ? 'independent' : 'linked')}
                   className="px-2 py-1 rounded text-[10px] inline-flex items-center gap-1"
                   style={{ color: lensMode === 'linked' ? tone : '#94A3B8' }}
+                  title={lensMode === 'linked' ? 'Linked rotation — switch to independent' : 'Independent rotation — switch to linked'}
                 >{lensMode === 'linked' ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}{lensMode}</button>
               </div>
             )}
-            <DrawerSection title="Direct manipulation">
-              <Slider label="Rotation" value={d.rot} min={-180} max={180} unit="°" tone={tone} onChange={(v) => onUpdate({ rot: v })} />
+            <DrawerSection title={isMultisensor
+              ? (activeLens === 'all' ? 'Direct manipulation — all lenses' : `Direct manipulation — Lens ${LENS_LABEL[activeLens]}`)
+              : 'Direct manipulation'}>
+              <Slider label="Rotation" value={lensRot} min={0} max={359} unit="°" tone={isMultisensor && activeLens !== 'all' ? LENS_TONE[activeLens as LensId] : tone} onChange={setLensRot} />
               <Slider label="Focal length" value={localFocal} min={1.4} max={30} step={0.1} unit="mm" tone={tone} onChange={setLocalFocal} />
               <Slider label="Horizontal FOV" value={hfov} min={20} max={360} unit="°" tone={tone} onChange={setHfov} />
               <Slider label="Distance" value={distance} min={5} max={150} unit="ft" tone={tone} onChange={setDistance} />
