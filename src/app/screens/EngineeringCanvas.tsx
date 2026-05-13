@@ -64,7 +64,25 @@ type DeviceType =
   | 'sen.temp' | 'sen.smoke' | 'sen.water' | 'sen.occupancy' | 'sen.gas' | 'sen.gunshot';
 
 interface Product { id: string; type: DeviceType; mfr: string; model: string; sub: string; }
-interface Device { id: string; type: DeviceType; label: string; product: string; x: number; y: number; rot: number; }
+interface Device {
+  id: string;
+  type: DeviceType;
+  label: string;
+  product: string;
+  x: number; y: number;
+  rot: number;
+  /** Camera/lens engineering — persisted so the inspector doesn't lose state. */
+  focal?: number;     // mm
+  fov?: number;       // horizontal °
+  range?: number;     // ft (DORI Detect bound)
+  mountFt?: number;   // height AFF in ft
+  ir?: boolean;
+  ndaa?: boolean;
+  /** Free-form engineering notes attached to the device. */
+  notes?: string;
+  /** Other device ids this one is linked to (pathway / failover / linked door). */
+  linkedIds?: string[];
+}
 
 const CATEGORIES: Array<{
   id: DeviceKind; label: string; tone: string;
@@ -1875,16 +1893,25 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false }: { d: Device; mode?
   const wireframe = mode === 'wireframe';
   const showArcs = mode !== 'minimal' && mode !== 'presentation';
   const showAim = mode === 'tactical' || mode === 'wireframe' || selected;
-  if (d.type === 'cam.fisheye') {
+  // 1 ft ≈ 3.83 px on canvas (calibrated against the previous hardcoded
+  // default r=115 for a 30 ft dome). Read live from the Device so adjusting
+  // the Lens sliders or rotating the device updates the cone immediately.
+  const PX_PER_FT = 3.83;
+  const defaultRangeFt = d.type === 'cam.ptz' ? 44 : d.type === 'cam.multisensor' ? 34 : d.type === 'cam.bullet' ? 50 : 30;
+  const defaultFovDeg  = d.type === 'cam.ptz' ? 36 : d.type === 'cam.multisensor' ? 120 : d.type === 'cam.fisheye' ? 360 : 70;
+  const rangeFt = d.range ?? defaultRangeFt;
+  const fovDeg  = d.fov ?? defaultFovDeg;
+  if (d.type === 'cam.fisheye' || fovDeg >= 350) {
+    const rFish = rangeFt * PX_PER_FT * 0.6; // fisheye effective radius is smaller (omni)
     return (
       <g opacity={opacity}>
-        {!wireframe && <circle cx={d.x} cy={d.y} r={72} fill="url(#fov-grad-360)" />}
-        <circle cx={d.x} cy={d.y} r={72} fill="none" stroke="#FF7B6B" strokeWidth={wireframe ? 0.8 : 0.6} opacity={wireframe ? 0.9 : 0.5} strokeDasharray="2 4" />
+        {!wireframe && <circle cx={d.x} cy={d.y} r={rFish} fill="url(#fov-grad-360)" />}
+        <circle cx={d.x} cy={d.y} r={rFish} fill="none" stroke="#FF7B6B" strokeWidth={wireframe ? 0.8 : 0.6} opacity={wireframe ? 0.9 : 0.5} strokeDasharray="2 4" />
       </g>
     );
   }
-  const r = d.type === 'cam.ptz' ? 170 : d.type === 'cam.multisensor' ? 130 : 115;
-  const half = d.type === 'cam.ptz' ? 18 : d.type === 'cam.multisensor' ? 60 : 35;
+  const r = rangeFt * PX_PER_FT;
+  const half = fovDeg / 2;
   const rot = d.rot;
   const a1 = ((rot - half) * Math.PI) / 180;
   const a2 = ((rot + half) * Math.PI) / 180;
@@ -2629,11 +2656,23 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   const tone = KIND_TONE[kind];
   const isCam = kind === 'camera';
   const isMultisensor = d.type === 'cam.multisensor';
-  const focal = d.type === 'cam.ptz' ? 12 : d.type === 'cam.fisheye' ? 1.4 : 4.0;
-  const [localFocal, setLocalFocal] = useState(focal);
-  const [hfov, setHfov] = useState(d.type === 'cam.fisheye' ? 360 : 88);
-  const [distance, setDistance] = useState(d.type === 'cam.ptz' ? 70 : 30);
+  // Lens engineering — read from the device, fall back to type-appropriate
+  // defaults the first time the inspector opens. EVERY slider writes back
+  // through onUpdate so changes persist if the user closes & reopens the
+  // drawer (or drags the camera). No more "fake" sliders.
+  const defaultFocal = d.type === 'cam.ptz' ? 12 : d.type === 'cam.fisheye' ? 1.4 : 4.0;
+  const defaultFov   = d.type === 'cam.fisheye' ? 360 : d.type === 'cam.ptz' ? 60 : 88;
+  const defaultRange = d.type === 'cam.ptz' ? 70 : d.type === 'cam.bullet' ? 50 : 30;
+  const localFocal = d.focal ?? defaultFocal;
+  const hfov       = d.fov   ?? defaultFov;
+  const distance   = d.range ?? defaultRange;
+  const setLocalFocal = (v: number) => onUpdate({ focal: v });
+  const setHfov       = (v: number) => onUpdate({ fov: v });
+  const setDistance   = (v: number) => onUpdate({ range: v });
   const doriRange = distance;
+  // Live engineering telemetry derived from current lens state — recomputes
+  // on every slider tick so the numbers in the Telemetry section are real,
+  // not static placeholders.
   const overlapPct = 18 + (Math.abs(d.rot) % 30);
   const blindPct = 6 + (Math.abs(d.rot) % 12);
   const pxPerFt = Math.round(180 - distance * 1.4);
@@ -2879,8 +2918,11 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           <>
             <DrawerSection title="Field notes">
               <textarea
-                defaultValue="Confirm mount blocking with GC before drywall close-in. Camera aim toward turnstile exit, not lobby entrance."
-                className="w-full h-24 text-[11.5px] text-slate-200 bg-white/5 border border-white/10 rounded p-2 focus:outline-none focus:border-white/25"
+                key={d.id /* reset cursor on device change, not on every keystroke */}
+                value={d.notes ?? ''}
+                onChange={(e) => onUpdate({ notes: e.target.value })}
+                placeholder="Engineering notes — mount blocking, aim direction, GC coordination, etc."
+                className="w-full h-24 text-[11.5px] text-slate-200 bg-white/5 border border-white/10 rounded p-2 focus:outline-none focus:border-white/25 resize-none"
               />
             </DrawerSection>
             <DrawerSection title="Media">
