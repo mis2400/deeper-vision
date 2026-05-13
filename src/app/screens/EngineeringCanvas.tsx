@@ -1,0 +1,3368 @@
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router';
+import { AppShell } from '../components/AppShell';
+import {
+  MousePointer2, Hand, Ruler, Type, MessageSquare, ChevronRight, ChevronLeft,
+  Search, X, Upload, MapPin, PencilLine, Sparkles, Undo2, Redo2, ZoomIn, ZoomOut,
+  Maximize2, Magnet, ChevronDown, MoreHorizontal, Trash2, RotateCw, Eye, EyeOff,
+  Minus as WallIcon, Check, Crosshair, Layers, Share2, Users, Lock, Unlock, Plus,
+  Settings2, FileText, Slash, CircleDot, GripVertical,
+  Video, Aperture, ScanEye, Disc, Flame, ScanFace, KeyRound, DoorOpen, Wifi, Server, Cable, Grid3x3,
+  Car, UserSquare2, Fingerprint, GitBranch, Phone, Radar, AlertTriangle, BellRing, Vibrate, Hash,
+  ShieldCheck, Antenna, Volume2, Megaphone, Mic, Speaker, HardDrive, Database, Cloud, Monitor,
+  Tv2, AppWindow, MonitorSmartphone, BatteryCharging, Zap, ShieldAlert, Sun, Thermometer, CloudFog,
+  Droplets, Users2, Wind, Crosshair as CrosshairIcon, Calendar, ListChecks, Wrench, FileBarChart,
+  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy,
+} from 'lucide-react';
+import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+
+/*
+  Engineering Canvas v2 — designed around four ideas
+
+  1.  Start with intent.  When you open the canvas without a plan, we ask
+      the one question that matters: blueprint, satellite, or blank?
+      Everything downstream depends on the answer.
+
+  2.  Devices look like devices.  Bullets, domes, PTZs, multi-sensors,
+      fisheyes, readers, locks — each rendered as a glyph that resembles
+      the physical hardware.  Color is reserved for kind (camera / access
+      / network) so the eye locks onto the right thing instantly.
+
+  3.  Insert dock is a drawer, not a panel.  56px rail of categories.
+      Click a category to expand into a 320px drawer with sub-types and
+      manufacturers.  Drag a product card onto the canvas to place — a
+      ghost glyph follows the cursor.  Esc cancels.
+
+  4.  No fixed right panel.  When a device is selected, a small floating
+      pill appears on the canvas next to it (rotate, lock, properties,
+      delete).  Properties expand inline.  Floor plan owns the screen.
+
+  Hover behavior (so reviewers know what's intentional):
+   • Top bar pills          — title tooltip after 600ms (browser default)
+   • Insert-rail categories — 600ms tooltip with shortcut letter
+   • Floor plan walls / rooms — no hover state, they're scenery
+   • Devices on canvas      — soft halo at 0.15 opacity, label brightens
+   • Selected device        — halo + floating pill near top-right of glyph
+   • Drag-from-library      — ghost glyph follows cursor at 70% opacity,
+                              snap indicator appears at the snap target
+*/
+
+type Tool = 'select' | 'pan' | 'measure' | 'text' | 'comment' | 'wall';
+
+interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
+
+type DeviceKind = 'camera' | 'access' | 'network' | 'intrusion' | 'audio' | 'storage' | 'display' | 'power' | 'sensor';
+type DeviceType =
+  | 'cam.bullet' | 'cam.dome' | 'cam.ptz' | 'cam.multisensor' | 'cam.fisheye' | 'cam.thermal' | 'cam.lpr' | 'cam.body'
+  | 'acc.reader' | 'acc.strike' | 'acc.maglock' | 'acc.exit' | 'acc.turnstile' | 'acc.intercom' | 'acc.biometric'
+  | 'net.switch'  | 'net.idf'    | 'net.ap' | 'net.firewall' | 'net.bridge'
+  | 'int.motion' | 'int.glassbreak' | 'int.contact' | 'int.panic' | 'int.vibration' | 'int.keypad'
+  | 'aud.speaker' | 'aud.mic' | 'aud.horn' | 'aud.amp' | 'aud.intercom'
+  | 'sto.nvr' | 'sto.server' | 'sto.archive' | 'sto.cloud'
+  | 'dis.monitor' | 'dis.wall' | 'dis.kiosk' | 'dis.signage'
+  | 'pwr.ups' | 'pwr.poe' | 'pwr.surge' | 'pwr.solar'
+  | 'sen.temp' | 'sen.smoke' | 'sen.water' | 'sen.occupancy' | 'sen.gas' | 'sen.gunshot';
+
+interface Product { id: string; type: DeviceType; mfr: string; model: string; sub: string; }
+interface Device { id: string; type: DeviceType; label: string; product: string; x: number; y: number; rot: number; }
+
+const CATEGORIES: Array<{
+  id: DeviceKind; label: string; tone: string;
+  types: Array<{ id: DeviceType; label: string }>;
+}> = [
+  { id: 'camera',  label: 'Cameras',  tone: '#F08F3C', types: [
+    { id: 'cam.bullet',      label: 'Bullet' },
+    { id: 'cam.dome',        label: 'Dome' },
+    { id: 'cam.ptz',         label: 'PTZ' },
+    { id: 'cam.multisensor', label: 'Multi-sensor' },
+    { id: 'cam.fisheye',     label: 'Fisheye 360°' },
+    { id: 'cam.thermal',     label: 'Thermal' },
+    { id: 'cam.lpr',         label: 'License plate (LPR)' },
+    { id: 'cam.body',        label: 'Body / wearable' },
+  ]},
+  { id: 'access', label: 'Access control', tone: '#3FB950', types: [
+    { id: 'acc.reader',     label: 'Card reader' },
+    { id: 'acc.biometric',  label: 'Biometric reader' },
+    { id: 'acc.strike',     label: 'Electric strike' },
+    { id: 'acc.maglock',    label: 'Maglock' },
+    { id: 'acc.exit',       label: 'Request-to-exit' },
+    { id: 'acc.turnstile',  label: 'Turnstile / gate' },
+    { id: 'acc.intercom',   label: 'Door intercom' },
+  ]},
+  { id: 'intrusion', label: 'Intrusion detection', tone: '#E5484D', types: [
+    { id: 'int.motion',     label: 'Motion (PIR)' },
+    { id: 'int.glassbreak', label: 'Glass-break' },
+    { id: 'int.contact',    label: 'Door / window contact' },
+    { id: 'int.panic',      label: 'Panic / duress' },
+    { id: 'int.vibration',  label: 'Vibration / seismic' },
+    { id: 'int.keypad',     label: 'Alarm keypad' },
+  ]},
+  { id: 'network', label: 'Network infrastructure', tone: '#E5B23A', types: [
+    { id: 'net.switch',   label: 'PoE switch' },
+    { id: 'net.idf',      label: 'IDF / closet' },
+    { id: 'net.ap',       label: 'Access point' },
+    { id: 'net.firewall', label: 'Firewall / gateway' },
+    { id: 'net.bridge',   label: 'Wireless bridge' },
+  ]},
+  { id: 'audio', label: 'Audio', tone: '#A371F7', types: [
+    { id: 'aud.speaker', label: 'IP speaker' },
+    { id: 'aud.horn',    label: 'Horn / strobe' },
+    { id: 'aud.amp',     label: 'Paging amplifier' },
+    { id: 'aud.mic',     label: 'Microphone' },
+    { id: 'aud.intercom',label: 'Intercom station' },
+  ]},
+  { id: 'storage', label: 'Recording & storage', tone: '#1F6FEB', types: [
+    { id: 'sto.nvr',     label: 'Network video recorder' },
+    { id: 'sto.server',  label: 'VMS server' },
+    { id: 'sto.archive', label: 'Long-term archive' },
+    { id: 'sto.cloud',   label: 'Cloud gateway' },
+  ]},
+  { id: 'display', label: 'Displays & viewing', tone: '#00B5D8', types: [
+    { id: 'dis.monitor', label: 'Operator monitor' },
+    { id: 'dis.wall',    label: 'Video wall' },
+    { id: 'dis.kiosk',   label: 'Visitor kiosk' },
+    { id: 'dis.signage', label: 'Digital signage' },
+  ]},
+  { id: 'power', label: 'Power & UPS', tone: '#8B5CF6', types: [
+    { id: 'pwr.ups',   label: 'UPS / battery backup' },
+    { id: 'pwr.poe',   label: 'PoE injector / midspan' },
+    { id: 'pwr.surge', label: 'Surge protection' },
+    { id: 'pwr.solar', label: 'Solar / off-grid kit' },
+  ]},
+  { id: 'sensor', label: 'Environmental sensors', tone: '#14B8A6', types: [
+    { id: 'sen.temp',      label: 'Temperature / humidity' },
+    { id: 'sen.smoke',     label: 'Smoke / fire' },
+    { id: 'sen.water',     label: 'Water leak' },
+    { id: 'sen.occupancy', label: 'Occupancy counter' },
+    { id: 'sen.gas',       label: 'Gas / CO' },
+    { id: 'sen.gunshot',   label: 'Gunshot detection' },
+  ]},
+];
+
+const PRODUCTS: Product[] = [
+  { id: 'p-axis-p1468',    type: 'cam.bullet',      mfr: 'Axis',     model: 'P1468-LE',  sub: '4MP · IR · IK10' },
+  { id: 'p-axis-p3265',    type: 'cam.dome',        mfr: 'Axis',     model: 'P3265-LV',  sub: '4MP indoor dome' },
+  { id: 'p-axis-q6315',    type: 'cam.ptz',         mfr: 'Axis',     model: 'Q6315-LE',  sub: '30× zoom · IR' },
+  { id: 'p-axis-p3827',    type: 'cam.multisensor', mfr: 'Axis',     model: 'P3827-PVE', sub: '4×4MP panoramic' },
+  { id: 'p-avi-h5-multi',  type: 'cam.multisensor', mfr: 'Avigilon', model: 'H5A Multi', sub: '4×8MP analytics' },
+  { id: 'p-han-pnm9320',   type: 'cam.multisensor', mfr: 'Hanwha',   model: 'PNM-9320',  sub: '4×5MP IR' },
+  { id: 'p-axis-m4327',    type: 'cam.fisheye',     mfr: 'Axis',     model: 'M4327-P',   sub: '6MP · 360°' },
+  { id: 'p-flir-fc',       type: 'cam.thermal',     mfr: 'FLIR',     model: 'FC-Series', sub: 'Thermal · 320×240' },
+  { id: 'p-hid-signo20',   type: 'acc.reader',      mfr: 'HID',      model: 'Signo 20',  sub: 'Mullion · OSDPv2' },
+  { id: 'p-hid-signo40',   type: 'acc.reader',      mfr: 'HID',      model: 'Signo 40',  sub: 'Wall · keypad' },
+  { id: 'p-vd-6210',       type: 'acc.strike',      mfr: 'Von Duprin', model: '6210',    sub: 'Fail-safe strike' },
+  { id: 'p-sec-m62',       type: 'acc.maglock',     mfr: 'Securitron', model: 'M62',     sub: '1200 lb maglock' },
+  { id: 'p-bosch-rex',     type: 'acc.exit',        mfr: 'Bosch',    model: 'REX-PIR',   sub: 'Passive infrared' },
+  { id: 'p-cis-9300-48',   type: 'net.switch',      mfr: 'Cisco',    model: 'C9300-48P', sub: '48-port PoE+' },
+  { id: 'p-cis-9300-24',   type: 'net.switch',      mfr: 'Cisco',    model: 'C9300-24P', sub: '24-port PoE+' },
+  { id: 'p-rack',          type: 'net.idf',         mfr: 'APC',      model: 'NetShelter','sub': '42U enclosure' as any } as any,
+  { id: 'p-cisco-ap',      type: 'net.ap',          mfr: 'Cisco',    model: 'C9166',     sub: 'Wi-Fi 6E AP' },
+  { id: 'p-axis-p1468-lpr',type: 'cam.lpr',         mfr: 'Axis',     model: 'P1468-LE-LPR', sub: 'Plate capture · 25m' },
+  { id: 'p-axis-w120',     type: 'cam.body',        mfr: 'Axis',     model: 'W120',      sub: 'Body-worn · 12hr' },
+  { id: 'p-suprema-bs3',   type: 'acc.biometric',   mfr: 'Suprema',  model: 'BioStation 3', sub: 'Face · fingerprint' },
+  { id: 'p-boon-360',      type: 'acc.turnstile',   mfr: 'Boon Edam',model: 'Speedlane 360', sub: 'Optical turnstile' },
+  { id: 'p-2n-ip-verso',   type: 'acc.intercom',    mfr: '2N',       model: 'IP Verso',  sub: 'SIP intercom · video' },
+  { id: 'p-bosch-tritech', type: 'int.motion',      mfr: 'Bosch',    model: 'TriTech ISC-PDL1', sub: 'Dual-tech motion' },
+  { id: 'p-bosch-glass',   type: 'int.glassbreak',  mfr: 'Bosch',    model: 'DS1108i',   sub: 'Acoustic glass-break' },
+  { id: 'p-honey-contact', type: 'int.contact',     mfr: 'Honeywell',model: '5816',      sub: 'Wireless door contact' },
+  { id: 'p-stid-panic',    type: 'int.panic',       mfr: 'STI',      model: 'SS-2400',   sub: 'Hold-up panic button' },
+  { id: 'p-optex-vib',     type: 'int.vibration',   mfr: 'Optex',    model: 'VXI-ST',    sub: 'Wall vibration sensor' },
+  { id: 'p-dmp-kp',        type: 'int.keypad',      mfr: 'DMP',      model: '7800',      sub: 'Touch alarm keypad' },
+  { id: 'p-fortinet-100f', type: 'net.firewall',    mfr: 'Fortinet', model: 'FortiGate 100F', sub: 'NGFW · 20 Gbps' },
+  { id: 'p-ubnt-bridge',   type: 'net.bridge',      mfr: 'Ubiquiti', model: 'airFiber 60', sub: 'PtP 60GHz bridge' },
+  { id: 'p-axis-c1410',    type: 'aud.speaker',     mfr: 'Axis',     model: 'C1410',     sub: 'Ceiling PoE speaker' },
+  { id: 'p-axis-c1310',    type: 'aud.horn',        mfr: 'Axis',     model: 'C1310-E',   sub: 'Horn · 116dB · IP66' },
+  { id: 'p-axis-c8033',    type: 'aud.amp',         mfr: 'Axis',     model: 'C8033',     sub: '2-channel net amp' },
+  { id: 'p-shure-mxa920',  type: 'aud.mic',         mfr: 'Shure',    model: 'MXA920',    sub: 'Ceiling array mic' },
+  { id: 'p-2n-indoor',     type: 'aud.intercom',    mfr: '2N',       model: 'Indoor Talk', sub: 'Answering unit' },
+  { id: 'p-axis-s1216',    type: 'sto.nvr',         mfr: 'Axis',     model: 'S1216',     sub: '16-ch NVR · 36 TB' },
+  { id: 'p-genetec-sv',    type: 'sto.server',      mfr: 'Genetec',  model: 'Streamvault 4000', sub: 'VMS appliance' },
+  { id: 'p-dell-r760',     type: 'sto.archive',     mfr: 'Dell',     model: 'PowerEdge R760', sub: '256 TB archive' },
+  { id: 'p-eagleeye-bridge',type:'sto.cloud',       mfr: 'Eagle Eye',model: 'CMVR 308',  sub: 'Cloud bridge · 8 ch' },
+  { id: 'p-dell-u2723',    type: 'dis.monitor',     mfr: 'Dell',     model: 'U2723QE',   sub: '27" 4K IPS' },
+  { id: 'p-lg-lsab',       type: 'dis.wall',        mfr: 'LG',       model: 'LSAB Series', sub: 'Direct-view LED wall' },
+  { id: 'p-elo-22ck',      type: 'dis.kiosk',       mfr: 'Elo',      model: 'I-Series 22"', sub: 'Visitor mgmt kiosk' },
+  { id: 'p-bright-xt5',    type: 'dis.signage',     mfr: 'BrightSign', model: 'XT5',     sub: '4K signage player' },
+  { id: 'p-apc-smt3000',   type: 'pwr.ups',         mfr: 'APC',      model: 'Smart-UPS 3000', sub: '3kVA · LCD' },
+  { id: 'p-axis-t8154',    type: 'pwr.poe',         mfr: 'Axis',     model: 'T8154',     sub: '60W PoE midspan' },
+  { id: 'p-ditek-mrj45',   type: 'pwr.surge',       mfr: 'Ditek',    model: 'MRJ45C6',   sub: 'Cat6 surge protect' },
+  { id: 'p-go-solar',      type: 'pwr.solar',       mfr: 'Goal Zero',model: 'Yeti 6000X',sub: 'Solar + 6kWh battery' },
+  { id: 'p-monnit-temp',   type: 'sen.temp',        mfr: 'Monnit',   model: 'ALTA Temp', sub: 'Wireless temp/humidity' },
+  { id: 'p-systemsensor',  type: 'sen.smoke',       mfr: 'System Sensor', model: 'i4 Photo', sub: 'Photoelectric smoke' },
+  { id: 'p-aercus-leak',   type: 'sen.water',       mfr: 'Aercus',   model: 'WS-2',      sub: 'Water leak puck' },
+  { id: 'p-densityio',     type: 'sen.occupancy',   mfr: 'Density',  model: 'Open Area', sub: 'Anonymous count' },
+  { id: 'p-msa-altair',    type: 'sen.gas',         mfr: 'MSA',      model: 'Altair 4XR', sub: 'Multi-gas detector' },
+  { id: 'p-shotspot-iq',   type: 'sen.gunshot',     mfr: 'ShotSpotter', model: 'Indoor IQ', sub: 'Acoustic gunshot' },
+];
+
+const TYPE_KIND: Record<DeviceType, DeviceKind> = {
+  'cam.bullet': 'camera', 'cam.dome': 'camera', 'cam.ptz': 'camera', 'cam.multisensor': 'camera', 'cam.fisheye': 'camera', 'cam.thermal': 'camera', 'cam.lpr': 'camera', 'cam.body': 'camera',
+  'acc.reader': 'access', 'acc.strike': 'access', 'acc.maglock': 'access', 'acc.exit': 'access', 'acc.turnstile': 'access', 'acc.intercom': 'access', 'acc.biometric': 'access',
+  'net.switch': 'network', 'net.idf': 'network', 'net.ap': 'network', 'net.firewall': 'network', 'net.bridge': 'network',
+  'int.motion': 'intrusion', 'int.glassbreak': 'intrusion', 'int.contact': 'intrusion', 'int.panic': 'intrusion', 'int.vibration': 'intrusion', 'int.keypad': 'intrusion',
+  'aud.speaker': 'audio', 'aud.mic': 'audio', 'aud.horn': 'audio', 'aud.amp': 'audio', 'aud.intercom': 'audio',
+  'sto.nvr': 'storage', 'sto.server': 'storage', 'sto.archive': 'storage', 'sto.cloud': 'storage',
+  'dis.monitor': 'display', 'dis.wall': 'display', 'dis.kiosk': 'display', 'dis.signage': 'display',
+  'pwr.ups': 'power', 'pwr.poe': 'power', 'pwr.surge': 'power', 'pwr.solar': 'power',
+  'sen.temp': 'sensor', 'sen.smoke': 'sensor', 'sen.water': 'sensor', 'sen.occupancy': 'sensor', 'sen.gas': 'sensor', 'sen.gunshot': 'sensor',
+};
+
+const KIND_TONE: Record<DeviceKind, string> = {
+  camera: '#F08F3C', access: '#3FB950', network: '#E5B23A',
+  intrusion: '#E5484D', audio: '#A371F7', storage: '#1F6FEB',
+  display: '#00B5D8', power: '#8B5CF6', sensor: '#14B8A6',
+};
+
+const SEED_DEVICES: Device[] = [
+  { id: 'CAM-101', type: 'cam.bullet',      label: 'Lobby NE',   product: 'p-axis-p1468',   x: 260, y: 220, rot:  35 },
+  { id: 'CAM-102', type: 'cam.bullet',      label: 'Lobby SW',   product: 'p-axis-p1468',   x: 260, y: 460, rot: -35 },
+  { id: 'CAM-103', type: 'cam.multisensor', label: 'Atrium',     product: 'p-axis-p3827',   x: 480, y: 340, rot:   0 },
+  { id: 'CAM-104', type: 'cam.ptz',         label: 'Exterior N', product: 'p-axis-q6315',   x: 620, y: 200, rot: 200 },
+  { id: 'CAM-105', type: 'cam.fisheye',     label: 'Conference', product: 'p-axis-m4327',   x: 700, y: 460, rot:   0 },
+  { id: 'RD-1',    type: 'acc.reader',      label: 'Lobby in',   product: 'p-hid-signo20',  x: 400, y: 130, rot:   0 },
+  { id: 'DR-1',    type: 'acc.strike',      label: 'Main entry', product: 'p-vd-6210',      x: 420, y: 130, rot:   0 },
+  { id: 'AP-1',    type: 'net.ap',          label: 'Floor 1 AP', product: 'p-cisco-ap',     x: 360, y: 320, rot:   0 },
+];
+
+const FLOORS = ['Ground floor', 'Level 2', 'Level 3', 'Roof'];
+
+interface SiteFloor { id: string; name: string; deviceCount: number; updated: string; source: 'blueprint' | 'satellite' | 'sketch'; }
+interface SiteBuilding { id: string; name: string; address: string; floors: SiteFloor[]; }
+
+const SITE_BUILDINGS: SiteBuilding[] = [
+  { id: 'bld-a', name: 'Building A — Headquarters', address: '500 Terry A. Francois Blvd', floors: [
+    { id: 'a-g', name: 'Ground floor', deviceCount: 14, updated: '2d ago',  source: 'blueprint' },
+    { id: 'a-2', name: 'Level 2',      deviceCount: 18, updated: '5h ago',  source: 'blueprint' },
+    { id: 'a-3', name: 'Level 3',      deviceCount: 11, updated: '1w ago',  source: 'blueprint' },
+    { id: 'a-r', name: 'Rooftop',      deviceCount: 4,  updated: '3d ago',  source: 'satellite' },
+  ]},
+  { id: 'bld-b', name: 'Building B — Warehouse', address: '510 Industrial Way', floors: [
+    { id: 'b-g', name: 'Ground floor', deviceCount: 22, updated: '1d ago',  source: 'blueprint' },
+    { id: 'b-m', name: 'Mezzanine',    deviceCount: 8,  updated: '4d ago',  source: 'sketch' },
+  ]},
+  { id: 'bld-c', name: 'Building C — Operations', address: '525 Riverbend Pkwy', floors: [
+    { id: 'c-1', name: '1st floor',    deviceCount: 9,  updated: '6h ago',  source: 'blueprint' },
+    { id: 'c-2', name: '2nd floor',    deviceCount: 12, updated: '6h ago',  source: 'blueprint' },
+  ]},
+  { id: 'site',  name: 'Site & exteriors', address: 'Parcel + parking + perimeter', floors: [
+    { id: 's-aerial', name: 'Aerial / satellite', deviceCount: 6, updated: '1w ago', source: 'satellite' },
+    { id: 's-perim',  name: 'Perimeter walk',     deviceCount: 3, updated: '2d ago', source: 'sketch' },
+  ]},
+];
+
+export function EngineeringCanvas() {
+  const { projectId = 'p1' } = useParams();
+  const nav = useNavigate();
+
+  const [onboarded, setOnboarded] = useState(true);
+  const [planSource, setPlanSource] = useState<'blueprint' | 'satellite' | 'blank'>('blueprint');
+  const [siteAddress, setSiteAddress] = useState<string>('');
+
+  const [tool, setTool] = useState<Tool>('select');
+  const [devices, setDevices] = useState<Device[]>(SEED_DEVICES);
+  const [walls, setWalls] = useState<Wall[]>([]);
+  const [wallStart, setWallStart] = useState<{ x: number; y: number } | null>(null);
+  const [wallCursor, setWallCursor] = useState<{ x: number; y: number } | null>(null);
+  const [selId, setSelId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [floor, setFloor] = useState(0);
+  const [snap, setSnap] = useState(true);
+  const [units, setUnits] = useState<'ft' | 'm'>('ft');
+  const [coverageMode, setCoverageMode] = useState<CoverageMode>('soft');
+  const [intelOpen, setIntelOpen] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
+  const [densityMode, setDensityMode] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTab, setEditTab] = useState<EditTab>('overview');
+  const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
+  const [activeLens, setActiveLens] = useState<'A' | 'B' | 'C' | 'D'>('A');
+  const [lensMode, setLensMode] = useState<'linked' | 'independent'>('linked');
+
+  // Left navigation rail
+  const [navSection, setNavSection] = useState<'overview' | 'devices' | 'recording' | 'accessories' | 'other' | 'maps' | 'reports' | 'docs'>('devices');
+
+  // Insert dock — start at the category grid so user sees all 9 categories first
+  const [openCat, setOpenCat] = useState<DeviceKind | null>(null);
+  const [openType, setOpenType] = useState<DeviceType | null>(null);
+  const [mfrFilter, setMfrFilter] = useState<string | null>(null);
+  const [productQuery, setProductQuery] = useState('');
+
+  // Drag from library
+  const [drag, setDrag] = useState<{ product: Product; x: number; y: number } | null>(null);
+
+  // Layers panel
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => {
+    try { const raw = localStorage.getItem(`canvas:${projectId}:hidden`); return new Set(raw ? JSON.parse(raw) : []); } catch { return new Set(); }
+  });
+  const [lockedIds, setLockedIds] = useState<Set<string>>(() => {
+    try { const raw = localStorage.getItem(`canvas:${projectId}:locked`); return new Set(raw ? JSON.parse(raw) : []); } catch { return new Set(); }
+  });
+  const [selIds, setSelIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try { localStorage.setItem(`canvas:${projectId}:hidden`, JSON.stringify([...hiddenIds])); } catch {}
+  }, [hiddenIds, projectId]);
+  useEffect(() => {
+    try { localStorage.setItem(`canvas:${projectId}:locked`, JSON.stringify([...lockedIds])); } catch {}
+  }, [lockedIds, projectId]);
+
+  const surfaceRef = useRef<SVGSVGElement>(null);
+  const sel = devices.find((d) => d.id === selId) ?? null;
+
+  // Presence cursors — three teammates drifting around the canvas
+  const [presence, setPresence] = useState<Array<{ id: string; name: string; tone: string; x: number; y: number; tx: number; ty: number; hoverId: string | null }>>([
+    { id: 'JS', name: 'Jordan',  tone: '#2F81F7', x: 320, y: 240, tx: 320, ty: 240, hoverId: null },
+    { id: 'MK', name: 'Mira',    tone: '#A371F7', x: 560, y: 360, tx: 560, ty: 360, hoverId: null },
+    { id: 'RT', name: 'Rafael',  tone: '#3FB950', x: 220, y: 420, tx: 220, ty: 420, hoverId: null },
+  ]);
+  const devicesRef = useRef(devices);
+  useEffect(() => { devicesRef.current = devices; }, [devices]);
+  // Presence cursors are static — no autonomous movement. Real session would
+  // drive these from a CRDT/socket. Mock teammates stay put to avoid distraction.
+
+  const hoverByPresence = useMemo(() => {
+    const m: Record<string, { name: string; tone: string }> = {};
+    presence.forEach((p) => { if (p.hoverId) m[p.hoverId] = { name: p.name, tone: p.tone }; });
+    return m;
+  }, [presence]);
+
+  /* Keyboard ------------------------------------------------------------- */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA') return;
+      if (e.key === 'v' || e.key === 'V') setTool('select');
+      if (e.key === 'h' || e.key === 'H') setTool('pan');
+      if (e.key === 'm' || e.key === 'M') setTool('measure');
+      if (e.key === 't' || e.key === 'T') setTool('text');
+      if (e.key === 'n' || e.key === 'N') setTool('comment');
+      if (e.key === 'w' || e.key === 'W') setTool('wall');
+      if (e.key === 'Escape') { setSelId(null); setDrag(null); setOpenCat(null); setOpenType(null); setWallStart(null); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selId) {
+        setDevices((ds) => ds.filter((d) => d.id !== selId));
+        setSelId(null);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '0') { e.preventDefault(); setZoom(1); }
+      if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); setZoom((z) => Math.min(4, z * 1.2)); }
+      if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); setZoom((z) => Math.max(0.25, z / 1.2)); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selId]);
+
+  /* Drag-to-place from the library --------------------------------------- */
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e: PointerEvent) => {
+      const r = surfaceRef.current?.getBoundingClientRect();
+      if (!r) return;
+      setDrag((d) => d ? { ...d, x: e.clientX - r.left, y: e.clientY - r.top } : null);
+    };
+    const onUp = (e: PointerEvent) => {
+      const r = surfaceRef.current?.getBoundingClientRect();
+      if (!r) { setDrag(null); return; }
+      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      if (inside && drag) {
+        const rawX = (e.clientX - r.left) / zoom;
+        const rawY = (e.clientY - r.top) / zoom;
+        const x = snap ? Math.round(rawX / 20) * 20 : rawX;
+        const y = snap ? Math.round(rawY / 20) * 20 : rawY;
+        const kind = TYPE_KIND[drag.product.type];
+        const prefix = kind === 'camera' ? 'CAM' : kind === 'access' ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR') : 'NW';
+        const id = `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
+        const newDevice: Device = {
+          id, type: drag.product.type,
+          label: drag.product.model, product: drag.product.id,
+          x, y, rot: 0,
+        };
+        setDevices((ds) => [...ds, newDevice]);
+        setSelId(id);
+      }
+      setDrag(null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+  }, [drag, zoom, snap, devices]);
+
+  const updateSel = (patch: Partial<Device>) => sel && setDevices((ds) => ds.map((d) => d.id === sel.id ? { ...d, ...patch } : d));
+  const deleteSel = () => { if (sel) { setDevices((ds) => ds.filter((d) => d.id !== sel.id)); setSelId(null); } };
+  /** Clone the selected device with a new id and a small offset so the user
+   *  can visually see the new copy. Selection follows the clone. */
+  const duplicateSel = () => {
+    if (!sel) return;
+    const newId = `${sel.id}-c${Date.now().toString(36).slice(-4)}`;
+    const clone: Device = { ...sel, id: newId, x: sel.x + 24 / zoom, y: sel.y + 24 / zoom, label: `${sel.label} copy` };
+    setDevices((ds) => [...ds, clone]);
+    setSelId(newId);
+  };
+  /** Open the engineering inspector to a specific tab. Used by toolbar
+   *  buttons (Note, Link, FOV, AI Optimize, etc.) so they all jump straight
+   *  to the relevant panel instead of silently doing nothing. */
+  const openTab = (t: EditTab) => { setEditOpen(true); setEditTab(t); };
+
+  const counts = useMemo(() => {
+    const c: Record<DeviceKind, number> = { camera: 0, access: 0, network: 0, intrusion: 0, audio: 0, storage: 0, display: 0, power: 0, sensor: 0 };
+    devices.forEach((d) => c[TYPE_KIND[d.type]]++);
+    return c;
+  }, [devices]);
+
+  /* ------------------------------------------------------------------- */
+  return (
+    <AppShell
+      crumbs={[{ label: 'Projects', to: '/projects' }, { label: 'Riverbend HQ', to: `/project/${projectId}` }, { label: 'Canvas' }]}
+      fullBleed
+    >
+      <div className="h-full flex flex-col bg-[#070A10] text-slate-100 relative">
+        <TopBar
+          floor={floor} setFloor={setFloor}
+          snap={snap} setSnap={setSnap}
+          units={units} setUnits={setUnits}
+          onScan={() => nav('/visionscan')}
+          onSetup={() => setOnboarded(false)}
+        />
+
+        <div className="flex-1 min-h-0 flex">
+          {!focusMode && <LeftNavRail section={navSection} setSection={setNavSection} />}
+          {!focusMode && navSection === 'devices' && (
+            <InsertDock
+              openCat={openCat} setOpenCat={setOpenCat}
+              openType={openType} setOpenType={setOpenType}
+              mfrFilter={mfrFilter} setMfrFilter={setMfrFilter}
+              query={productQuery} setQuery={setProductQuery}
+              onStartDrag={(p, e) => setDrag({ product: p, x: e.clientX, y: e.clientY })}
+              layersOpen={layersOpen}
+              onToggleLayers={() => setLayersOpen((o) => !o)}
+            />
+          )}
+          {!focusMode && navSection !== 'devices' && (
+            <SectionPanel section={navSection} devices={devices} projectId={projectId} />
+          )}
+
+          {layersOpen && (
+            <LayersPanel
+              devices={devices}
+              selId={selId}
+              setSelId={setSelId}
+              selIds={selIds}
+              setSelIds={setSelIds}
+              hiddenIds={hiddenIds} setHiddenIds={setHiddenIds}
+              lockedIds={lockedIds} setLockedIds={setLockedIds}
+              onClose={() => setLayersOpen(false)}
+            />
+          )}
+
+          <div className="flex-1 min-w-0 relative">
+            <CanvasSurface
+              ref={surfaceRef}
+              tool={tool}
+              zoom={zoom}
+              devices={devices.filter((d) => !hiddenIds.has(d.id))}
+              selId={selId}
+              selIds={selIds}
+              presence={presence}
+              hoverByPresence={hoverByPresence}
+              planSource={planSource}
+              siteAddress={siteAddress}
+              walls={walls}
+              wallStart={wallStart}
+              wallCursor={wallCursor}
+              onPick={(id) => { setSelId(id); }}
+              onMoveDevice={(id, x, y) => setDevices((ds) => ds.map((d) => d.id === id ? { ...d, x, y } : d))}
+              onRotateDevice={(id, rot) => setDevices((ds) => ds.map((d) => d.id === id ? { ...d, rot } : d))}
+              coverageMode={coverageMode}
+              densityMode={densityMode}
+              onBlank={() => setSelId(null)}
+              snap={snap}
+              dragging={!!drag}
+              onSurfaceClick={(x, y) => {
+                if (tool !== 'wall') return;
+                const sx = snap ? Math.round(x / 20) * 20 : x;
+                const sy = snap ? Math.round(y / 20) * 20 : y;
+                if (!wallStart) { setWallStart({ x: sx, y: sy }); }
+                else {
+                  setWalls((ws) => [...ws, { id: `w${ws.length + 1}`, x1: wallStart.x, y1: wallStart.y, x2: sx, y2: sy }]);
+                  setWallStart({ x: sx, y: sy });
+                }
+              }}
+              onSurfaceMove={(x, y) => {
+                if (tool === 'wall') {
+                  const sx = snap ? Math.round(x / 20) * 20 : x;
+                  const sy = snap ? Math.round(y / 20) * 20 : y;
+                  setWallCursor({ x: sx, y: sy });
+                }
+              }}
+              onSurfaceDblClick={() => { if (tool === 'wall') setWallStart(null); }}
+            />
+
+            {/* Coverage-mode switcher (top-left) */}
+            <CoverageModeSwitch mode={coverageMode} setMode={setCoverageMode} />
+
+            {/* Live intelligence chips overlay */}
+            <IntelligenceLayer devices={devices.filter((d) => !hiddenIds.has(d.id))} zoom={zoom} open={intelOpen} setOpen={setIntelOpen} />
+
+            {/* Immersion controls — Focus mode + engineering density */}
+            <ImmersionControls focusMode={focusMode} setFocusMode={setFocusMode} densityMode={densityMode} setDensityMode={setDensityMode} />
+
+            {/* Floating selection toolbar */}
+            {sel && surfaceRef.current && (
+              <SelectionPill
+                d={sel}
+                zoom={zoom}
+                onRotate={(r) => updateSel({ rot: r })}
+                onDelete={deleteSel}
+                onUpdate={updateSel}
+                onEdit={() => openTab('overview')}
+                onTargetSim={() => setTargetSim({ open: true, x: sel.x + 120, y: sel.y })}
+                onDuplicate={duplicateSel}
+                onOpenTab={openTab}
+                activeLens={activeLens}
+                setActiveLens={setActiveLens}
+                lensMode={lensMode}
+                setLensMode={setLensMode}
+              />
+            )}
+
+            {/* Right-side engineering inspector drawer */}
+            {sel && (
+              <EditDrawer
+                d={sel}
+                open={editOpen}
+                tab={editTab}
+                setTab={setEditTab}
+                onClose={() => setEditOpen(false)}
+                onUpdate={updateSel}
+                activeLens={activeLens}
+                setActiveLens={setActiveLens}
+                lensMode={lensMode}
+                setLensMode={setLensMode}
+              />
+            )}
+
+            {/* Target simulation overlay */}
+            {sel && targetSim.open && (
+              <TargetSimOverlay
+                d={sel}
+                zoom={zoom}
+                pos={targetSim}
+                setPos={(p) => setTargetSim({ open: true, ...p })}
+                onClose={() => setTargetSim({ open: false, x: 0, y: 0 })}
+              />
+            )}
+
+            {/* Floating status indicator (top-center) */}
+            <StatusBar tool={tool} zoom={zoom} counts={counts} units={units} />
+
+            {/* Floating quick-tools capsule (bottom-center) */}
+            <QuickTools tool={tool} setTool={setTool} showWall={planSource === 'blank'} />
+
+            {/* Zoom dock (bottom-left) */}
+            <ZoomDock zoom={zoom} setZoom={setZoom} />
+
+            {/* Minimap (bottom-right) */}
+            <MiniMap devices={devices} />
+
+            {/* Drag ghost */}
+            {drag && (
+              <div className="pointer-events-none absolute z-50" style={{ left: drag.x - 16, top: drag.y - 16 }}>
+                <div className="w-8 h-8 rounded-full bg-card border border-primary flex items-center justify-center shadow-lg">
+                  <DeviceGlyph type={drag.product.type} size={20} tone={KIND_TONE[TYPE_KIND[drag.product.type]]} />
+                </div>
+                <div className="mt-1.5 text-[11px] text-center bg-card border border-border rounded px-1.5 py-0.5 text-foreground whitespace-nowrap">
+                  Drop to place
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {!onboarded && (
+          <Onboarding
+            onPick={(s) => { setPlanSource(s); setOnboarded(true); }}
+            onAddress={(addr) => { setSiteAddress(addr); setPlanSource('satellite'); setOnboarded(true); }}
+            onClose={() => setOnboarded(true)}
+          />
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ONBOARDING — "How do you want to start?"
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function Onboarding({ onPick, onAddress, onClose }: { onPick: (s: 'blueprint' | 'blank') => void; onAddress: (addr: string) => void; onClose: () => void }) {
+  const [step, setStep] = useState<'pick' | 'address'>('pick');
+  const [addr, setAddr] = useState('');
+  return (
+    <div className="absolute inset-0 z-40 bg-background/85 backdrop-blur-sm flex items-center justify-center p-8">
+      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+        <div className="px-7 py-5 border-b border-border flex items-start justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">New canvas</div>
+            <h2 className="text-xl mt-1">{step === 'pick' ? 'How would you like to start?' : 'Where is the site?'}</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {step === 'pick' ? "Pick the source. We'll calibrate scale and import the geometry for you." : "Enter a street address. We'll pull satellite imagery and the parcel outline."}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-secondary text-muted-foreground"><X className="w-4 h-4" /></button>
+        </div>
+
+        {step === 'pick' && (
+          <>
+            <div className="p-5 grid grid-cols-3 gap-3">
+              <StartCard
+                icon={Upload} title="Upload a blueprint"
+                sub="PDF, PNG, DWG, or DXF. We'll vectorize and ask for two reference points to set scale."
+                onClick={() => onPick('blueprint')}
+              />
+              <StartCard
+                icon={MapPin} title="Use an address"
+                sub="Drop a pin. We'll pull satellite imagery and parcel outline to design exteriors and rooftops."
+                onClick={() => setStep('address')}
+                accent
+              />
+              <StartCard
+                icon={PencilLine} title="Start blank"
+                sub="Sketch walls and rooms with the wall tool. Best for renovations and tenant fit-outs."
+                onClick={() => onPick('blank')}
+              />
+            </div>
+            <div className="px-5 pb-5 text-xs text-muted-foreground">
+              You can change the source later. Site walks, vision scans, and import all attach to whichever you start with.
+            </div>
+          </>
+        )}
+
+        {step === 'address' && (
+          <div className="p-5">
+            <div className="relative">
+              <Crosshair className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                autoFocus
+                value={addr}
+                onChange={(e) => setAddr(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && addr.trim()) onAddress(addr.trim()); }}
+                placeholder="500 Terry A. Francois Blvd, San Francisco, CA"
+                className="w-full bg-input-background border border-input-border rounded-xl pl-10 pr-3 py-3 text-sm focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              Address geocoding is mocked in this preview — any address will resolve to a sample aerial image.
+            </div>
+            <div className="mt-5 flex items-center justify-between">
+              <button onClick={() => setStep('pick')} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                <ChevronLeft className="w-3.5 h-3.5" />Back
+              </button>
+              <button
+                onClick={() => addr.trim() && onAddress(addr.trim())}
+                disabled={!addr.trim()}
+                className="inline-flex items-center gap-1.5 text-xs px-4 py-2 rounded-full bg-primary text-primary-foreground disabled:opacity-40"
+              >
+                <Check className="w-3.5 h-3.5" />Use this location
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StartCard({ icon: Icon, title, sub, onClick, accent }: { icon: any; title: string; sub: string; onClick: () => void; accent?: boolean }) {
+  return (
+    <button onClick={onClick} className={`text-left p-4 rounded-xl border transition-all ${accent ? 'border-primary bg-primary/5 hover:bg-primary/10' : 'border-border hover:border-border-strong bg-background hover:bg-secondary/30'}`}>
+      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${accent ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground'}`}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <div className="mt-3 text-sm">{title}</div>
+      <div className="mt-1 text-xs text-muted-foreground leading-relaxed">{sub}</div>
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TOP BAR — floor, scale, scan, setup
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function TopBar(props: {
+  floor: number; setFloor: (n: number) => void;
+  snap: boolean; setSnap: (b: boolean) => void;
+  units: 'ft' | 'm'; setUnits: (u: 'ft' | 'm') => void;
+  onScan: () => void; onSetup: () => void;
+}) {
+  return (
+    <div className="h-14 shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-4 pr-3 gap-4 text-sm relative z-30">
+      {/* Left — project identity */}
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
+          <Layers className="w-4 h-4" />
+        </div>
+        <div className="leading-tight min-w-0">
+          <div className="text-[11px] text-muted-foreground">Riverbend HQ</div>
+          <div className="flex items-center gap-1.5">
+            <Dropdown label={FLOORS[props.floor]} options={FLOORS} onPick={(i) => props.setFloor(i)} />
+            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-400/10">
+              <span className="w-1 h-1 rounded-full bg-emerald-400" />Live
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="h-6 w-px bg-border/70" />
+
+      {/* Middle — workspace controls */}
+      <div className="flex items-center gap-0.5">
+        <SegButton active={props.snap} onClick={() => props.setSnap(!props.snap)} icon={Magnet} label="Snap" hint="S" />
+        <SegButton active={false} onClick={() => props.setUnits(props.units === 'ft' ? 'm' : 'ft')} icon={Ruler} label={props.units === 'ft' ? 'ft' : 'm'} hint="U" />
+        <SegButton active={false} onClick={props.onSetup} icon={FileText} label="Plan source" />
+      </div>
+
+      <div className="flex-1" />
+
+      {/* Right — collab + history + AI */}
+      <div className="flex items-center gap-1">
+        <IconBtn title="Undo (⌘Z)"><Undo2 className="w-4 h-4" /></IconBtn>
+        <IconBtn title="Redo (⌘⇧Z)"><Redo2 className="w-4 h-4" /></IconBtn>
+      </div>
+      <div className="h-6 w-px bg-border/70" />
+      <div className="flex items-center -space-x-1.5">
+        <Avatar initials="JS" tone="#2F81F7" />
+        <Avatar initials="MK" tone="#A371F7" />
+        <Avatar initials="RT" tone="#3FB950" />
+      </div>
+      <button className="inline-flex items-center gap-1.5 text-xs px-3 h-8 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground">
+        <Share2 className="w-3.5 h-3.5" />Share
+      </button>
+      <button onClick={props.onScan} className="inline-flex items-center gap-1.5 text-xs px-3.5 h-8 rounded-lg bg-primary text-primary-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_1px_2px_rgba(0,0,0,0.4)] hover:opacity-90">
+        <Sparkles className="w-3.5 h-3.5" />Run vision scan
+      </button>
+    </div>
+  );
+}
+
+function SegButton({ active, onClick, icon: Icon, label, hint }: { active?: boolean; onClick: () => void; icon: any; label: string; hint?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      title={hint ? `${label} · ${hint}` : label}
+      className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs transition-colors ${active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
+    >
+      <Icon className="w-3.5 h-3.5" />{label}
+    </button>
+  );
+}
+
+function Avatar({ initials, tone }: { initials: string; tone: string }) {
+  return (
+    <div
+      title={initials}
+      className="w-7 h-7 rounded-full border-2 border-background text-[10px] font-medium text-white flex items-center justify-center"
+      style={{ background: tone }}
+    >{initials}</div>
+  );
+}
+
+function PillBtn({ children, active, onClick, icon: Icon }: { children: React.ReactNode; active?: boolean; onClick: () => void; icon?: any }) {
+  return (
+    <button onClick={onClick} className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>
+      {Icon && <Icon className="w-3.5 h-3.5" />}{children}
+    </button>
+  );
+}
+function IconBtn({ children, title, onClick }: { children: React.ReactNode; title?: string; onClick?: () => void }) {
+  return <button title={title} onClick={onClick} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground">{children}</button>;
+}
+
+function Dropdown({ label, options, onPick }: { label: string; options: string[]; onPick: (i: number) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-secondary text-sm">
+        {label}<ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 z-20 min-w-[200px] bg-popover border border-border rounded-xl shadow-xl py-1.5">
+            {options.map((o, i) => (
+              <button key={o} onClick={() => { onPick(i); setOpen(false); }} className="w-full text-left text-sm px-3 py-2 hover:bg-secondary">{o}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INSERT DOCK — 56px rail, click a category to drawer it open
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LEFT NAV RAIL — Project / Devices / Recording / Accessories / Maps / Reports / Docs
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const NAV_ITEMS: Array<{ id: 'overview' | 'devices' | 'recording' | 'accessories' | 'other' | 'maps' | 'reports' | 'docs'; label: string; icon: any }> = [
+  { id: 'overview',    label: 'Project overview', icon: Grid3x3 },
+  { id: 'devices',     label: 'Devices',          icon: Video },
+  { id: 'recording',   label: 'Recording',        icon: Server },
+  { id: 'accessories', label: 'Accessories',      icon: Cable },
+  { id: 'other',       label: 'Other',            icon: MoreHorizontal },
+  { id: 'maps',        label: 'Maps',             icon: MapPin },
+  { id: 'reports',     label: 'Reports',          icon: FileText },
+  { id: 'docs',        label: 'Documentation',    icon: FileText },
+];
+
+function LeftNavRail({ section, setSection }: { section: string; setSection: (s: any) => void }) {
+  return (
+    <div className="w-[88px] shrink-0 border-r border-border bg-card flex flex-col py-3">
+      {NAV_ITEMS.map((it) => {
+        const active = section === it.id;
+        const Icon = it.icon;
+        return (
+          <button
+            key={it.id}
+            onClick={() => setSection(it.id)}
+            className={`relative mx-2 mb-1 py-2.5 rounded-lg flex flex-col items-center gap-1 transition-colors ${active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
+          >
+            <Icon className="w-4 h-4" strokeWidth={1.8} />
+            <span className="text-[10px] leading-tight text-center px-1">{it.label}</span>
+            {active && <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-primary" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SECTION PANEL — content for non-Devices nav sections
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function MapsPanel() {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['bld-a', 'bld-c']));
+  const [activeFloor, setActiveFloor] = useState<string>('a-g');
+  const toggle = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const totalFloors = SITE_BUILDINGS.reduce((n, b) => n + b.floors.length, 0);
+  const sourceIcon = (s: SiteFloor['source']) => s === 'blueprint' ? FileText : s === 'satellite' ? MapIcon : PencilLine;
+  const sourceLabel = (s: SiteFloor['source']) => s === 'blueprint' ? 'Blueprint' : s === 'satellite' ? 'Satellite' : 'Sketch';
+  return (
+    <div className="w-[360px] shrink-0 border-r border-border bg-card flex flex-col">
+      <div className="px-4 pt-4 pb-3 border-b border-border">
+        <div className="text-[13px] font-semibold tracking-tight">Maps</div>
+        <div className="text-[11px] text-muted-foreground mt-0.5">{SITE_BUILDINGS.length} buildings · {totalFloors} floor maps</div>
+      </div>
+
+      <div className="px-3 py-2 border-b border-border flex items-center gap-2">
+        <button className="flex-1 inline-flex items-center justify-center gap-1.5 text-[11px] h-7 rounded-lg bg-primary text-primary-foreground">
+          <Plus className="w-3 h-3" /> Add building
+        </button>
+        <button className="inline-flex items-center justify-center gap-1.5 text-[11px] h-7 px-2 rounded-lg border border-border hover:bg-secondary">
+          <Upload className="w-3 h-3" /> Import
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {SITE_BUILDINGS.map((b) => {
+          const open = expanded.has(b.id);
+          const buildingDevices = b.floors.reduce((n, f) => n + f.deviceCount, 0);
+          return (
+            <div key={b.id} className="border-b border-border/50">
+              <button onClick={() => toggle(b.id)} className="w-full px-3 py-2.5 flex items-center gap-2.5 hover:bg-secondary/40 text-left">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] font-medium truncate">{b.name}</div>
+                  <div className="text-[10.5px] text-muted-foreground truncate">{b.address}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10.5px] text-muted-foreground">{b.floors.length} floors</div>
+                  <div className="text-[10px] text-muted-foreground/70">{buildingDevices} devices</div>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground ml-1 transition-transform ${open ? '' : '-rotate-90'}`} />
+              </button>
+
+              {open && (
+                <div className="pb-2">
+                  {b.floors.map((f, i) => {
+                    const active = activeFloor === f.id;
+                    const SrcIcon = sourceIcon(f.source);
+                    const isLast = i === b.floors.length - 1;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setActiveFloor(f.id)}
+                        className={`w-full text-left pl-4 pr-3 py-2 flex items-center gap-2 transition-colors ${active ? 'bg-primary/8' : 'hover:bg-secondary/40'}`}
+                      >
+                        {/* Tree connector */}
+                        <div className="relative w-5 h-5 shrink-0">
+                          <div className={`absolute left-2 top-0 ${isLast ? 'h-1/2' : 'h-full'} w-px bg-border`} />
+                          <div className="absolute left-2 top-1/2 w-3 h-px bg-border" />
+                        </div>
+                        <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${active ? 'bg-primary text-primary-foreground' : 'bg-background border border-border text-muted-foreground'}`}>
+                          <SrcIcon className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[12px] flex items-center gap-1.5">
+                            <span className="truncate">{f.name}</span>
+                            {active && <span className="text-[9px] uppercase tracking-wide text-primary">on canvas</span>}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground truncate">{sourceLabel(f.source)} · {f.deviceCount} devices · {f.updated}</div>
+                        </div>
+                        <MoreHorizontal className="w-3.5 h-3.5 text-muted-foreground opacity-0 hover:opacity-100" />
+                      </button>
+                    );
+                  })}
+                  <div className="pl-9 pr-3 pt-1">
+                    <button className="text-[10.5px] text-primary hover:underline inline-flex items-center gap-1">
+                      <Plus className="w-3 h-3" /> Add floor map to {b.name.split(' — ')[0]}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="px-4 py-2 border-t border-border text-[10px] text-muted-foreground flex items-center gap-1.5 bg-secondary/20">
+        <MapIcon className="w-3 h-3" /> Click a floor to load it onto the canvas
+      </div>
+    </div>
+  );
+}
+
+function SectionPanel({ section, devices, projectId }: { section: string; devices: Device[]; projectId: string }) {
+  const counts = useMemo(() => {
+    const c: Record<DeviceKind, number> = { camera: 0, access: 0, network: 0, intrusion: 0, audio: 0, storage: 0, display: 0, power: 0, sensor: 0 };
+    devices.forEach((d) => { c[TYPE_KIND[d.type]]++; });
+    return c;
+  }, [devices]);
+
+  const Wrapper = ({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) => (
+    <div className="w-[340px] shrink-0 border-r border-border bg-card flex flex-col">
+      <div className="px-4 pt-4 pb-3 border-b border-border">
+        <div className="text-sm font-medium">{title}</div>
+        {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
+      </div>
+      <div className="flex-1 overflow-auto">{children}</div>
+    </div>
+  );
+
+  const RowLink = ({ icon: Icon, label, sub, tone, accent }: { icon: any; label: string; sub?: string; tone?: string; accent?: string }) => (
+    <button className="w-full text-left px-3 py-2.5 hover:bg-secondary/40 border-b border-border/50 flex items-center gap-3">
+      <div className="w-8 h-8 rounded-full bg-background border border-border flex items-center justify-center shrink-0" style={tone ? { boxShadow: `inset 0 0 0 1.5px ${tone}`, color: tone } : {}}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[12.5px] truncate">{label}</div>
+        {sub && <div className="text-[10.5px] text-muted-foreground truncate">{sub}</div>}
+      </div>
+      {accent && <span className="text-[10.5px] font-medium text-muted-foreground">{accent}</span>}
+    </button>
+  );
+
+  if (section === 'overview') {
+    const total = devices.length;
+    return (
+      <Wrapper title="Project overview" sub="Riverbend HQ · 4 floors · 22,400 ft²">
+        <div className="p-3 grid grid-cols-2 gap-2">
+          {([
+            { label: 'Devices placed', value: total, tone: '#2F81F7' },
+            { label: 'Coverage area', value: '88%', tone: '#3FB950' },
+            { label: 'Open issues', value: 3, tone: '#E5484D' },
+            { label: 'Budget used', value: '64%', tone: '#E5B23A' },
+          ] as const).map((s, i) => (
+            <div key={i} className="rounded-xl border border-border bg-background p-3">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
+              <div className="text-xl mt-1" style={{ color: s.tone }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="px-3 pt-1 pb-2 text-[10px] uppercase tracking-[0.06em] text-muted-foreground">By category</div>
+        {CATEGORIES.map((c) => (
+          <RowLink key={c.id} icon={KIND_ICON[c.id]} label={c.label} sub={`${c.types.length} types`} tone={c.tone} accent={String(counts[c.id])} />
+        ))}
+      </Wrapper>
+    );
+  }
+
+  if (section === 'recording') {
+    const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera').length;
+    return (
+      <Wrapper title="Recording & storage" sub={`${cams} cameras · est. 36 TB @ 30 days`}>
+        <div className="p-3 space-y-2">
+          {['Continuous (24/7)', 'Motion-triggered', 'Schedule (business hours)', 'Forensic on-demand'].map((p, i) => (
+            <label key={p} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-background border border-border cursor-pointer hover:border-primary/50">
+              <input type="radio" name="rec" defaultChecked={i === 1} className="accent-primary" />
+              <div className="flex-1">
+                <div className="text-[12.5px]">{p}</div>
+                <div className="text-[10.5px] text-muted-foreground">{['1080p H.265 · 8 fps','1080p H.265 · 15 fps · 30 day buffer','Office hours only · 4K','Pulled on incident triggers'][i]}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-[0.06em] text-muted-foreground">Storage tier</div>
+        <RowLink icon={HardDrive} label="On-site NVR" sub="Axis S1216 · 36 TB · RAID 5" tone="#1F6FEB" accent="active" />
+        <RowLink icon={Cloud} label="Cloud archive" sub="Eagle Eye · 90 day retention" tone="#1F6FEB" accent="standby" />
+        <RowLink icon={Database} label="Long-term archive" sub="Dell R760 · 256 TB · LTO-9 weekly" tone="#1F6FEB" />
+      </Wrapper>
+    );
+  }
+
+  if (section === 'accessories') {
+    return (
+      <Wrapper title="Accessories" sub="Mounts · enclosures · cabling · power kits">
+        {[
+          { icon: Wrench, label: 'Pendant mount', sub: 'Axis T94N01D · indoor', tone: '#7D8590' },
+          { icon: Wrench, label: 'Corner mount', sub: 'Axis T94B01M · IK10', tone: '#7D8590' },
+          { icon: Wrench, label: 'Pole adapter', sub: 'Hanwha SBP-300PMW1', tone: '#7D8590' },
+          { icon: Cable,  label: 'Cat6A · 1000ft spool', sub: 'Belden 10GXS · plenum', tone: '#E5B23A' },
+          { icon: Cable,  label: 'Cat6A · 500ft spool', sub: 'CommScope · riser', tone: '#E5B23A' },
+          { icon: Cable,  label: 'Fiber OM4 · 12-strand', sub: 'Corning · LSZH', tone: '#E5B23A' },
+          { icon: Zap,    label: '60W PoE++ injector', sub: 'Axis T8154 · single port', tone: '#8B5CF6' },
+          { icon: Zap,    label: '4-port PoE midspan', sub: 'Cisco · 802.3bt', tone: '#8B5CF6' },
+          { icon: BatteryCharging, label: 'Rack UPS 3kVA', sub: 'APC Smart-UPS', tone: '#8B5CF6' },
+          { icon: ShieldAlert, label: 'Cat6 surge protector', sub: 'Ditek MRJ45C6', tone: '#8B5CF6' },
+          { icon: Folder, label: 'Conduit · 3/4" EMT', sub: 'For exterior camera runs', tone: '#7D8590' },
+        ].map((it) => <RowLink key={it.label} {...it} />)}
+      </Wrapper>
+    );
+  }
+
+  if (section === 'other') {
+    return (
+      <Wrapper title="Other elements" sub="Annotations, regions, and notes">
+        {[
+          { icon: Type,        label: 'Text annotation', sub: 'Drop a label or callout' },
+          { icon: MessageSquare, label: 'Comment pin', sub: 'Thread on the canvas' },
+          { icon: Ruler,       label: 'Dimension line', sub: 'Measured with snap' },
+          { icon: WallIcon,    label: 'Wall segment', sub: 'Click-click-double-click' },
+          { icon: Grid3x3,     label: 'Coverage region', sub: 'Polygon for risk zones' },
+          { icon: AlertTriangle, label: 'Hazard area', sub: 'No-camera / privacy zone' },
+          { icon: MapPin,      label: 'Custom marker', sub: 'Generic pin' },
+          { icon: Sparkles,    label: 'AI suggestion zone', sub: 'Ask Vision to recommend' },
+        ].map((it) => <RowLink key={it.label} {...it as any} />)}
+      </Wrapper>
+    );
+  }
+
+  if (section === 'maps') {
+    return <MapsPanel />;
+  }
+
+  if (section === 'reports') {
+    return (
+      <Wrapper title="Reports" sub="Auto-generated from the canvas">
+        <RowLink icon={FileBarChart} label="Bill of materials" sub={`${devices.length} line items · $${(devices.length * 1280).toLocaleString()} est.`} tone="#1F6FEB" />
+        <RowLink icon={Activity}     label="Coverage heatmap" sub="By floor · highlight gaps" tone="#3FB950" />
+        <RowLink icon={BarChart3}    label="Bandwidth & storage" sub="Per stream · 30 day retention" tone="#F08F3C" />
+        <RowLink icon={DollarSign}   label="Cost summary" sub="Hardware + labor estimate" tone="#E5B23A" />
+        <RowLink icon={ListChecks}   label="Compliance checklist" sub="NDAA · SOC2 · GDPR" tone="#A371F7" />
+        <RowLink icon={Clock}        label="Install schedule" sub="Phased rollout (3 weeks)" tone="#14B8A6" />
+        <RowLink icon={ShieldCheck}  label="Security posture" sub="Score 86/100 · 3 findings" tone="#E5484D" />
+        <div className="p-3">
+          <button className="w-full inline-flex items-center justify-center gap-1.5 text-xs h-9 rounded-lg bg-primary text-primary-foreground">
+            <FileText className="w-3.5 h-3.5" /> Export full report (PDF)
+          </button>
+        </div>
+      </Wrapper>
+    );
+  }
+
+  // docs
+  return (
+    <Wrapper title="Documentation" sub="Attached files and references">
+      {[
+        { icon: FileText, label: 'Scope of work — Riverbend HQ', sub: 'PDF · 14 pages · Jordan S.' },
+        { icon: FileText, label: 'Statement of work (signed)', sub: 'PDF · countersigned 04-12' },
+        { icon: ImageIcon, label: 'Site walk photos (32)', sub: 'Captured during vision scan' },
+        { icon: FileText, label: 'Riser diagram — Level 1', sub: 'Drawing · Visio export' },
+        { icon: FileText, label: 'Cable schedule v3', sub: 'Spreadsheet · 412 runs' },
+        { icon: FileText, label: 'Permit application', sub: 'Submitted 04-18 · pending' },
+        { icon: FileText, label: 'Client decision log', sub: '8 decisions · 2 open' },
+      ].map((it) => <RowLink key={it.label} {...it as any} />)}
+      <div className="p-3">
+        <button className="w-full inline-flex items-center justify-center gap-1.5 text-xs h-9 rounded-lg border border-border hover:bg-secondary">
+          <Upload className="w-3.5 h-3.5" /> Upload document
+        </button>
+      </div>
+    </Wrapper>
+  );
+}
+
+function InsertDock(props: {
+  openCat: DeviceKind | null;
+  setOpenCat: (c: DeviceKind | null) => void;
+  openType: DeviceType | null;
+  setOpenType: (t: DeviceType | null) => void;
+  mfrFilter: string | null;
+  setMfrFilter: (m: string | null) => void;
+  query: string;
+  setQuery: (q: string) => void;
+  onStartDrag: (p: Product, e: React.PointerEvent) => void;
+  layersOpen: boolean;
+  onToggleLayers: () => void;
+}) {
+  const cat = CATEGORIES.find((c) => c.id === props.openCat);
+  const products = useMemo(() => {
+    if (!props.openType) return [];
+    return PRODUCTS
+      .filter((p) => p.type === props.openType)
+      .filter((p) => !props.mfrFilter || p.mfr === props.mfrFilter)
+      .filter((p) => !props.query || `${p.mfr} ${p.model} ${p.sub}`.toLowerCase().includes(props.query.toLowerCase()));
+  }, [props.openType, props.mfrFilter, props.query]);
+
+  const manufacturers = useMemo(() => {
+    if (!props.openType) return [];
+    return Array.from(new Set(PRODUCTS.filter((p) => p.type === props.openType).map((p) => p.mfr)));
+  }, [props.openType]);
+
+  const activeCat = CATEGORIES.find((c) => c.id === props.openCat) ?? null;
+  return (
+    <div className="shrink-0 flex bg-background relative">
+      <div className="w-[360px] border-r border-border flex flex-col bg-card">
+        {/* Header with breadcrumb / back */}
+        <div className="px-4 pt-4 pb-3 border-b border-border flex items-center justify-between">
+          <div className="min-w-0">
+            {activeCat ? (
+              <>
+                <button onClick={() => { props.setOpenCat(null); props.setOpenType(null); }} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground -ml-1">
+                  <ChevronLeft className="w-3.5 h-3.5" /> All categories
+                </button>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${activeCat.tone}1a`, color: activeCat.tone }}>
+                    <CategoryGlyph kind={activeCat.id} active />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-semibold tracking-tight truncate">{activeCat.label}</div>
+                    <div className="text-[10.5px] text-muted-foreground">{activeCat.types.length} types · {PRODUCTS.filter((p) => TYPE_KIND[p.type] === activeCat.id).length} products</div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-[13px] font-semibold tracking-tight">Device library</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{PRODUCTS.length} products · {CATEGORIES.length} categories</div>
+              </>
+            )}
+          </div>
+          <button onClick={props.onToggleLayers} title="Layers" className={`p-1.5 rounded-lg ${props.layersOpen ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>
+            <Layers className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Search — works at any level */}
+        <div className="px-3 py-2.5 border-b border-border">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <input
+              value={props.query} onChange={(e) => props.setQuery(e.target.value)}
+              placeholder={activeCat ? `Search ${activeCat.label.toLowerCase()}…` : 'Search 49 products…'}
+              className="w-full bg-input-background border border-input-border rounded-lg pl-8 pr-3 h-8 text-[11.5px] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+          </div>
+        </div>
+
+        {/* LEVEL 1 — Category cards */}
+        {!activeCat && (
+          <div className="flex-1 overflow-auto p-3 grid grid-cols-2 gap-2 content-start">
+            {CATEGORIES.map((c) => {
+              const productCount = PRODUCTS.filter((p) => TYPE_KIND[p.type] === c.id).length;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => { props.setOpenCat(c.id); props.setOpenType(null); }}
+                  className="text-left rounded-xl border border-border bg-background hover:border-border-strong hover:shadow-sm p-3 flex flex-col gap-2 transition-all group"
+                  style={{ ['--tone' as any]: c.tone }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${c.tone}14`, color: c.tone, boxShadow: `inset 0 0 0 1px ${c.tone}30` }}>
+                      <CategoryGlyph kind={c.id} active />
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  <div>
+                    <div className="text-[12.5px] font-medium leading-tight">{c.label}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{c.types.length} types</div>
+                  </div>
+                  <div className="mt-auto flex items-center gap-1 text-[10px]" style={{ color: c.tone }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.tone }} />
+                    {productCount} products
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* LEVEL 2 — Types under the chosen category, with their products */}
+        {activeCat && (
+          <div className="flex-1 overflow-auto py-2">
+            {activeCat.types.map((t) => {
+              const items = PRODUCTS.filter((p) => p.type === t.id && (!props.query || `${p.mfr} ${p.model} ${p.sub}`.toLowerCase().includes(props.query.toLowerCase())));
+              if (props.query && items.length === 0) return null;
+              return (
+                <div key={t.id} className="mb-1">
+                  <div className="px-4 pt-2 pb-1 flex items-center gap-2">
+                    <span className="w-0.5 h-3.5 rounded-full" style={{ background: activeCat.tone }} />
+                    <span className="text-[10.5px] uppercase tracking-[0.07em] text-muted-foreground font-medium">{t.label}</span>
+                    <span className="text-[10px] text-muted-foreground/60">· {items.length}</span>
+                  </div>
+                  {items.map((p) => (
+                    <button
+                      key={p.id}
+                      onPointerDown={(e) => { e.preventDefault(); props.onStartDrag(p, e); }}
+                      className="w-full text-left px-3 py-2 hover:bg-secondary/60 cursor-grab active:cursor-grabbing flex items-center gap-2.5 transition-colors group"
+                    >
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${activeCat.tone}14`, color: activeCat.tone, boxShadow: `inset 0 0 0 1px ${activeCat.tone}33` }}>
+                        <DeviceGlyph type={p.type} size={18} tone={activeCat.tone} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12.5px] truncate"><span className="font-medium">{p.mfr}</span> <span className="text-muted-foreground">{p.model}</span></div>
+                        <div className="text-[10.5px] text-muted-foreground truncate">{p.sub}</div>
+                      </div>
+                      <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="px-4 py-2 border-t border-border text-[10px] text-muted-foreground flex items-center gap-1.5 bg-secondary/20">
+          {activeCat ? <><GripVertical className="w-3 h-3" />Drag a product onto the canvas</> : <><MousePointer2 className="w-3 h-3" />Click a category to browse devices</>}
+        </div>
+      </div>
+
+      {/* Legacy drilled-in drawer kept for compatibility but never rendered now */}
+      {false && cat && (
+        <div className="w-[340px] border-r border-border flex flex-col bg-background">
+          {/* Header */}
+          <div className="px-4 pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${cat.tone}1f`, color: cat.tone }}>
+                  <CategoryGlyph kind={cat.id} active />
+                </div>
+                <div>
+                  <div className="text-sm font-medium">{cat.label}</div>
+                  <div className="text-[11px] text-muted-foreground">{PRODUCTS.filter((p) => TYPE_KIND[p.type] === cat.id).length} products · {cat.types.length} types</div>
+                </div>
+              </div>
+              <button onClick={() => props.setOpenCat(null)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {!props.openType && (
+            <div className="flex-1 overflow-auto px-2 pb-3">
+              <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground px-2 pt-1 pb-1.5">Types</div>
+              <div className="space-y-0.5">
+                {cat.types.map((t) => {
+                  const count = PRODUCTS.filter((p) => p.type === t.id).length;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => props.setOpenType(t.id)}
+                      className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-secondary text-left group transition-colors"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-secondary group-hover:bg-background border border-border flex items-center justify-center shrink-0">
+                        <DeviceGlyph type={t.id} size={20} tone={cat.tone} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm">{t.label}</div>
+                        <div className="text-[11px] text-muted-foreground">{count} product{count !== 1 ? 's' : ''}</div>
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {props.openType && (
+            <>
+              <div className="px-4 pb-3 flex items-center gap-1.5 text-xs">
+                <button onClick={() => { props.setOpenType(null); props.setMfrFilter(null); }} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                  <ChevronLeft className="w-3.5 h-3.5" />{cat.label}
+                </button>
+                <Slash className="w-3 h-3 text-muted-foreground/60" />
+                <span className="text-foreground">{cat.types.find((t) => t.id === props.openType)!.label}</span>
+              </div>
+
+              <div className="px-3 pb-3 space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <input
+                    value={props.query} onChange={(e) => props.setQuery(e.target.value)}
+                    placeholder="Search products…"
+                    className="w-full bg-input-background border border-input-border rounded-lg pl-8 pr-3 h-8 text-xs focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  />
+                </div>
+                {manufacturers.length > 1 && (
+                  <div className="flex flex-wrap gap-1">
+                    <Chip active={props.mfrFilter === null} onClick={() => props.setMfrFilter(null)}>All</Chip>
+                    {manufacturers.map((m) => (
+                      <Chip key={m} active={props.mfrFilter === m} onClick={() => props.setMfrFilter(m)}>{m}</Chip>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-auto px-3 pb-3 space-y-1.5">
+                {products.map((p) => (
+                  <button
+                    key={p.id}
+                    onPointerDown={(e) => { e.preventDefault(); props.onStartDrag(p, e); }}
+                    className="w-full text-left p-2.5 rounded-xl border border-border hover:border-primary/60 hover:bg-primary/[0.04] cursor-grab active:cursor-grabbing flex items-center gap-3 transition-colors group"
+                  >
+                    <div className="w-11 h-11 rounded-lg bg-secondary group-hover:bg-background border border-border flex items-center justify-center shrink-0">
+                      <DeviceGlyph type={p.type} size={24} tone={cat.tone} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm truncate">{p.mfr} <span className="text-muted-foreground">{p.model}</span></div>
+                      <div className="text-[11px] text-muted-foreground truncate mt-0.5">{p.sub}</div>
+                    </div>
+                    <GripVertical className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                ))}
+                {products.length === 0 && (
+                  <div className="text-center text-xs text-muted-foreground py-10">No products match.</div>
+                )}
+              </div>
+
+              <div className="px-4 py-2.5 border-t border-border text-[11px] text-muted-foreground flex items-center gap-1.5 bg-secondary/20">
+                <GripVertical className="w-3 h-3" />Drag a card onto the canvas
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, setHiddenIds, lockedIds, setLockedIds, onClose }: {
+  devices: Device[];
+  selId: string | null;
+  setSelId: (id: string | null) => void;
+  selIds: Set<string>;
+  setSelIds: (s: Set<string>) => void;
+  hiddenIds: Set<string>;
+  setHiddenIds: (s: Set<string>) => void;
+  lockedIds: Set<string>;
+  setLockedIds: (s: Set<string>) => void;
+  onClose: () => void;
+}) {
+  const lastIndexRef = useRef<number>(-1);
+  const flat = devices;
+  const handleRowClick = (e: React.MouseEvent, d: Device, idx: number) => {
+    if (e.shiftKey && lastIndexRef.current >= 0) {
+      const [a, b] = [lastIndexRef.current, idx].sort((x, y) => x - y);
+      const range = flat.slice(a, b + 1).map((x) => x.id);
+      const next = new Set(selIds);
+      range.forEach((id) => next.add(id));
+      setSelIds(next);
+      setSelId(d.id);
+    } else if (e.metaKey || e.ctrlKey) {
+      const next = new Set(selIds);
+      if (next.has(d.id)) next.delete(d.id); else next.add(d.id);
+      setSelIds(next);
+      setSelId(d.id);
+      lastIndexRef.current = idx;
+    } else {
+      setSelIds(new Set([d.id]));
+      setSelId(d.id);
+      lastIndexRef.current = idx;
+    }
+  };
+  const groups: Array<{ kind: DeviceKind; label: string; tone: string; items: Device[] }> = [
+    { kind: 'camera',  label: 'Cameras', tone: KIND_TONE.camera,  items: devices.filter((d) => TYPE_KIND[d.type] === 'camera') },
+    { kind: 'access',  label: 'Access',  tone: KIND_TONE.access,  items: devices.filter((d) => TYPE_KIND[d.type] === 'access') },
+    { kind: 'network', label: 'Network', tone: KIND_TONE.network, items: devices.filter((d) => TYPE_KIND[d.type] === 'network') },
+  ];
+  const toggle = (set: Set<string>, setter: (s: Set<string>) => void, id: string) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setter(next);
+  };
+  return (
+    <div className="w-[300px] border-r border-border bg-background flex flex-col">
+      <div className="px-4 pt-4 pb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-secondary border border-border flex items-center justify-center">
+            <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+          </div>
+          <div>
+            <div className="text-sm font-medium">Layers</div>
+            <div className="text-[11px] text-muted-foreground">{devices.length} devices · {selIds.size > 0 ? `${selIds.size} selected` : `${hiddenIds.size} hidden`}</div>
+          </div>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-auto px-2 pb-3">
+        {groups.map((g) => (
+          <div key={g.kind} className="mb-2">
+            <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: g.tone }} />
+              {g.label}
+              <span className="text-muted-foreground/60">· {g.items.length}</span>
+            </div>
+            {g.items.length === 0 && (
+              <div className="px-2 py-1.5 text-[11px] text-muted-foreground/60 italic">No devices</div>
+            )}
+            {g.items.map((d) => {
+              const hidden = hiddenIds.has(d.id);
+              const locked = lockedIds.has(d.id);
+              const active = selId === d.id;
+              const multi = selIds.has(d.id);
+              const idx = flat.findIndex((x) => x.id === d.id);
+              return (
+                <div
+                  key={d.id}
+                  onClick={(e) => handleRowClick(e, d, idx)}
+                  className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${active ? 'bg-primary/10 ring-1 ring-primary/30' : multi ? 'bg-primary/[0.06] ring-1 ring-primary/20' : 'hover:bg-secondary'}`}
+                >
+                  <div className="w-6 h-6 rounded bg-secondary border border-border flex items-center justify-center shrink-0">
+                    <DeviceGlyph type={d.type} size={14} tone={g.tone} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-xs truncate ${hidden ? 'text-muted-foreground/60 line-through' : ''}`}>{d.id}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{d.label}</div>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggle(lockedIds, setLockedIds, d.id); }}
+                    className={`p-1 rounded hover:bg-background/60 transition-opacity ${locked ? 'opacity-100 text-primary' : 'opacity-0 group-hover:opacity-100 text-muted-foreground'}`}
+                    title={locked ? 'Unlock' : 'Lock'}
+                  >
+                    {locked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggle(hiddenIds, setHiddenIds, d.id); }}
+                    className={`p-1 rounded hover:bg-background/60 transition-opacity ${hidden ? 'opacity-100 text-muted-foreground' : 'opacity-0 group-hover:opacity-100 text-muted-foreground'}`}
+                    title={hidden ? 'Show' : 'Hide'}
+                  >
+                    {hidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Chip({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`text-[11px] h-6 px-2.5 rounded-md border transition-colors ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/70 text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>{children}</button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CANVAS SURFACE
+   ═══════════════════════════════════════════════════════════════════════ */
+
+interface PresenceCursor { id: string; name: string; tone: string; x: number; y: number; hoverId: string | null; }
+type CoverageMode = 'minimal' | 'soft' | 'tactical' | 'heatmap' | 'wireframe' | 'presentation' | 'night';
+
+interface SurfaceProps {
+  tool: Tool;
+  zoom: number;
+  devices: Device[];
+  selId: string | null;
+  selIds: Set<string>;
+  presence: PresenceCursor[];
+  hoverByPresence: Record<string, { name: string; tone: string }>;
+  planSource: 'blueprint' | 'satellite' | 'blank';
+  siteAddress: string;
+  walls: Wall[];
+  wallStart: { x: number; y: number } | null;
+  wallCursor: { x: number; y: number } | null;
+  onPick: (id: string) => void;
+  onBlank: () => void;
+  snap: boolean;
+  dragging: boolean;
+  onSurfaceClick: (x: number, y: number) => void;
+  onSurfaceMove: (x: number, y: number) => void;
+  onSurfaceDblClick: () => void;
+  onMoveDevice: (id: string, x: number, y: number) => void;
+  onRotateDevice: (id: string, rot: number) => void;
+  coverageMode: CoverageMode;
+  densityMode: boolean;
+}
+
+import { forwardRef } from 'react';
+const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, coverageMode, densityMode }, ref
+) {
+  const moveRef = useRef<{ id: string; offX: number; offY: number } | null>(null);
+  const [movingId, setMovingId] = useState<string | null>(null);
+  const movingDev = movingId ? devices.find((d) => d.id === movingId) ?? null : null;
+  // snap candidates — other devices aligned within 4px of the moving device
+  const snapTargets = useMemo(() => {
+    if (!movingDev) return [] as { axis: 'v' | 'h'; coord: number; otherX: number; otherY: number }[];
+    const out: { axis: 'v' | 'h'; coord: number; otherX: number; otherY: number }[] = [];
+    devices.forEach((o) => {
+      if (o.id === movingDev.id) return;
+      if (Math.abs(o.x - movingDev.x) < 5) out.push({ axis: 'v', coord: o.x, otherX: o.x, otherY: o.y });
+      if (Math.abs(o.y - movingDev.y) < 5) out.push({ axis: 'h', coord: o.y, otherX: o.x, otherY: o.y });
+    });
+    return out;
+  }, [movingDev, devices]);
+  // nearest neighbor (for distance telemetry while dragging)
+  const nearest = useMemo(() => {
+    if (!movingDev) return null;
+    let best: { id: string; d: number; x: number; y: number } | null = null;
+    devices.forEach((o) => {
+      if (o.id === movingDev.id) return;
+      const dd = Math.hypot(o.x - movingDev.x, o.y - movingDev.y);
+      if (!best || dd < best.d) best = { id: o.id, d: dd, x: o.x, y: o.y };
+    });
+    return best;
+  }, [movingDev, devices]);
+  const coords = (e: React.MouseEvent) => {
+    const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
+  };
+  return (
+    <svg
+      ref={ref}
+      onClick={(e) => {
+        if (tool === 'wall') {
+          const { x, y } = coords(e);
+          onSurfaceClick(x, y);
+          return;
+        }
+        if (e.target === e.currentTarget || (e.target as Element).tagName === 'rect') onBlank();
+      }}
+      onMouseMove={(e) => {
+        if (tool !== 'wall') return;
+        const { x, y } = coords(e);
+        onSurfaceMove(x, y);
+      }}
+      onDoubleClick={onSurfaceDblClick}
+      style={{ background: 'radial-gradient(ellipse at 50% 35%, #0F1722 0%, #070A10 55%, #03060B 100%)' }}
+      className={`absolute inset-0 w-full h-full ${tool === 'wall' ? 'cursor-crosshair' : tool === 'pan' ? 'cursor-grab' : dragging ? 'cursor-copy' : 'cursor-default'}`}
+    >
+      <defs>
+        <style>{`
+          @keyframes presence-pulse { 0% { opacity: 0.9; } 50% { opacity: 0.4; } 100% { opacity: 0.9; } }
+          @keyframes scan-sweep { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -200; } }
+          @keyframes glow-breathe { 0%,100% { opacity: 0.5; } 50% { opacity: 0.9; } }
+        `}</style>
+        <pattern id="canvas-grid-fine" width="16" height="16" patternUnits="userSpaceOnUse">
+          <path d="M 16 0 L 0 0 0 16" fill="none" stroke="#2F81F7" strokeWidth="0.3" opacity="0.05" />
+        </pattern>
+        <pattern id="canvas-grid-coarse" width="96" height="96" patternUnits="userSpaceOnUse">
+          <path d="M 96 0 L 0 0 0 96" fill="none" stroke="#38BDF8" strokeWidth="0.6" opacity="0.10" />
+          <circle cx="0" cy="0" r="1" fill="#38BDF8" opacity="0.35" />
+        </pattern>
+        <radialGradient id="canvas-vignette" cx="50%" cy="45%" r="75%">
+          <stop offset="0%"  stopColor="#0F1722" stopOpacity="0" />
+          <stop offset="70%" stopColor="#03060B" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0.85" />
+        </radialGradient>
+        <linearGradient id="plan-fill" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%"  stopColor="#0E1622" />
+          <stop offset="100%" stopColor="#0A111B" />
+        </linearGradient>
+        <pattern id="plan-paper" width="32" height="32" patternUnits="userSpaceOnUse">
+          <rect width="32" height="32" fill="url(#plan-fill)" />
+          <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#38BDF8" strokeWidth="0.4" opacity="0.18" />
+        </pattern>
+        {/* Atmospheric coverage gradients — saturated near the lens, vapor at the edge */}
+        <radialGradient id="fov-grad" cx="0%" cy="50%" r="100%">
+          <stop offset="0%"   stopColor="#FFD24D" stopOpacity="0.75" />
+          <stop offset="35%"  stopColor="#F2C744" stopOpacity="0.42" />
+          <stop offset="75%"  stopColor="#F2C744" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="#F2C744" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="fov-grad-ptz" cx="0%" cy="50%" r="100%">
+          <stop offset="0%"   stopColor="#7CC2FF" stopOpacity="0.7" />
+          <stop offset="40%"  stopColor="#5BA0F2" stopOpacity="0.35" />
+          <stop offset="80%"  stopColor="#5BA0F2" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="#5BA0F2" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="fov-grad-360" cx="50%" cy="50%" r="50%">
+          <stop offset="0%"   stopColor="#FF7B6B" stopOpacity="0.6" />
+          <stop offset="55%"  stopColor="#E5484D" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="#E5484D" stopOpacity="0" />
+        </radialGradient>
+        <filter id="fov-bloom" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="2.5" />
+        </filter>
+      </defs>
+
+      {/* Cinematic backdrop: grid lattice + atmospheric vignette */}
+      <rect width="100%" height="100%" fill="url(#canvas-grid-fine)" />
+      <rect width="100%" height="100%" fill="url(#canvas-grid-coarse)" />
+      <rect width="100%" height="100%" fill="url(#canvas-vignette)" />
+
+      <g transform={`scale(${zoom})`}>
+        {/* The plan — clearly delineated as the building */}
+        <FloorPlan source={planSource} siteAddress={siteAddress} />
+
+        {/* User-drawn walls */}
+        {walls.map((w) => (
+          <line key={w.id} x1={w.x1} y1={w.y1} x2={w.x2} y2={w.y2} stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" opacity="0.9" />
+        ))}
+        {wallStart && wallCursor && (
+          <g>
+            <line x1={wallStart.x} y1={wallStart.y} x2={wallCursor.x} y2={wallCursor.y} stroke="#2F81F7" strokeWidth="2" strokeDasharray="4 4" />
+            <circle cx={wallStart.x} cy={wallStart.y} r="3" fill="#2F81F7" />
+            <circle cx={wallCursor.x} cy={wallCursor.y} r="3" fill="#2F81F7" />
+          </g>
+        )}
+
+        {/* FOV cones */}
+        <g style={{ mixBlendMode: coverageMode === 'heatmap' ? 'screen' : 'normal' }}>
+          {devices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
+            const isSel = d.id === selId;
+            const dim = selId ? (isSel ? 1 : 0.28) : 1;
+            return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} />;
+          })}
+        </g>
+
+        {/* Devices — real top-down hardware silhouettes with drag-to-move */}
+        {devices.map((d) => {
+          const multi = selIds.has(d.id);
+          const tone = KIND_TONE[TYPE_KIND[d.type]];
+          const isSel = selId === d.id;
+          return (
+            <g
+              key={d.id}
+              className="cursor-move"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                (e.currentTarget as Element).setPointerCapture(e.pointerId);
+                const svg = (ref as React.RefObject<SVGSVGElement>).current;
+                if (!svg) return;
+                const r = svg.getBoundingClientRect();
+                const cx = (e.clientX - r.left) / zoom;
+                const cy = (e.clientY - r.top) / zoom;
+                moveRef.current = { id: d.id, offX: cx - d.x, offY: cy - d.y };
+                setMovingId(d.id);
+                onPick(d.id);
+              }}
+              onPointerMove={(e) => {
+                const m = moveRef.current;
+                if (!m || m.id !== d.id) return;
+                const svg = (ref as React.RefObject<SVGSVGElement>).current;
+                if (!svg) return;
+                const r = svg.getBoundingClientRect();
+                const cx = (e.clientX - r.left) / zoom;
+                const cy = (e.clientY - r.top) / zoom;
+                onMoveDevice(d.id, cx - m.offX, cy - m.offY);
+              }}
+              onPointerUp={(e) => {
+                if (moveRef.current?.id === d.id) moveRef.current = null;
+                setMovingId(null);
+                (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+              }}
+            >
+              {isSel && <circle cx={d.x} cy={d.y} r={20} fill={tone} opacity="0.16" />}
+              {multi && !isSel && <circle cx={d.x} cy={d.y} r={18} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
+              <HardwareGlyph d={d} tone={tone} selected={isSel} />
+              {/* dark-glass label pill */}
+              <g transform={`translate(${d.x}, ${d.y + 22})`} pointerEvents="none">
+                <rect x={-(d.id.length * 3.4 + 6)} y={-7} width={d.id.length * 6.8 + 12} height={14} rx={3} fill="rgba(8,12,20,0.85)" stroke={tone} strokeWidth="0.6" />
+                <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="600">{d.id}</text>
+              </g>
+            </g>
+          );
+        })}
+
+        {/* Rotation ring + DORI handle on the selected camera (direct manipulation) */}
+        {(() => {
+          const s = devices.find((d) => d.id === selId);
+          if (!s || TYPE_KIND[s.type] !== 'camera') return null;
+          return <RotationRing d={s} onRotate={(r) => onRotateDevice(s.id, r)} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} />;
+        })()}
+
+        {/* Live snap guides while dragging — vertical & horizontal alignment lines */}
+        {movingDev && snapTargets.map((g, i) => (
+          <g key={`snap-${i}`} pointerEvents="none">
+            {g.axis === 'v' ? (
+              <line x1={g.coord} y1={0} x2={g.coord} y2={10000} stroke="#7CC2FF" strokeWidth="0.8" strokeDasharray="2 3" opacity="0.7" />
+            ) : (
+              <line x1={0} y1={g.coord} x2={10000} y2={g.coord} stroke="#7CC2FF" strokeWidth="0.8" strokeDasharray="2 3" opacity="0.7" />
+            )}
+            <circle cx={g.otherX} cy={g.otherY} r={3} fill="#7CC2FF" opacity="0.8" />
+          </g>
+        ))}
+
+        {/* Distance line to nearest neighbor while dragging */}
+        {movingDev && nearest && (
+          <g pointerEvents="none">
+            <line x1={movingDev.x} y1={movingDev.y} x2={nearest.x} y2={nearest.y} stroke="#FACC15" strokeWidth="0.7" strokeDasharray="2 2" opacity="0.85" />
+            <g transform={`translate(${(movingDev.x + nearest.x) / 2}, ${(movingDev.y + nearest.y) / 2})`}>
+              <rect x={-20} y={-7} width={40} height={14} rx={3} fill="rgba(8,12,20,0.9)" stroke="#FACC15" strokeWidth="0.5" />
+              <text textAnchor="middle" y={3} fontSize="9" fontFamily="ui-monospace, monospace" fill="#FACC15" fontWeight="700">
+                {(nearest.d / 20).toFixed(1)} ft
+              </text>
+            </g>
+          </g>
+        )}
+
+        {/* Live telemetry HUD attached to the moving device */}
+        {movingDev && (
+          <g pointerEvents="none" transform={`translate(${movingDev.x + 18}, ${movingDev.y - 32})`}>
+            <rect x={0} y={-12} width={108} height={36} rx={4} fill="rgba(8,12,20,0.92)" stroke="rgba(124,194,255,0.45)" strokeWidth="0.7" />
+            <text x={6} y={0} fontSize="8" fontFamily="ui-monospace, monospace" fill="#94A3B8" letterSpacing="0.6">X · Y · NEAR</text>
+            <text x={6} y={11} fontSize="10" fontFamily="ui-monospace, monospace" fill="#E2E8F0" fontWeight="700">
+              {(movingDev.x / 20).toFixed(1)} · {(movingDev.y / 20).toFixed(1)} ft
+            </text>
+            <text x={6} y={21} fontSize="9" fontFamily="ui-monospace, monospace" fill="#7CC2FF">
+              {nearest ? `${nearest.id} · ${(nearest.d / 20).toFixed(1)} ft` : 'isolated'}
+            </text>
+          </g>
+        )}
+
+        {/* Engineering density: dimension chains between adjacent cameras */}
+        {densityMode && (() => {
+          const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera').sort((a, b) => a.x - b.x);
+          const pairs: { a: Device; b: Device }[] = [];
+          for (let i = 0; i < cams.length - 1; i++) pairs.push({ a: cams[i], b: cams[i + 1] });
+          return pairs.map((p, i) => {
+            const dist = Math.hypot(p.a.x - p.b.x, p.a.y - p.b.y);
+            const mx = (p.a.x + p.b.x) / 2;
+            const my = (p.a.y + p.b.y) / 2;
+            return (
+              <g key={`dim-${i}`} pointerEvents="none" opacity="0.65">
+                <line x1={p.a.x} y1={p.a.y} x2={p.b.x} y2={p.b.y} stroke="#94A3B8" strokeWidth="0.4" strokeDasharray="1 3" />
+                <rect x={mx - 18} y={my - 7} width={36} height={12} rx={2} fill="rgba(8,12,20,0.85)" stroke="rgba(148,163,184,0.45)" strokeWidth="0.4" />
+                <text x={mx} y={my + 3} textAnchor="middle" fontSize="8" fontFamily="ui-monospace, monospace" fill="#CBD5E1">
+                  {(dist / 20).toFixed(1)}′
+                </text>
+              </g>
+            );
+          });
+        })()}
+
+        {/* Presence cursors — live collaborators */}
+        {presence.map((p) => (
+          <g key={p.id} style={{ transition: 'transform 80ms linear' }} transform={`translate(${p.x}, ${p.y})`} pointerEvents="none">
+            <path d="M 0 0 L 14 5 L 6 7 L 4 14 Z" fill={p.tone} stroke="#0D1117" strokeWidth="1" />
+            <g transform="translate(14, 14)">
+              <rect rx="3" ry="3" x="0" y="0" width={p.name.length * 6.2 + 12} height="16" fill={p.tone} />
+              <text x="6" y="12" fill="#0D1117" fontSize="10" fontWeight="600">{p.name}</text>
+            </g>
+          </g>
+        ))}
+      </g>
+    </svg>
+  );
+});
+
+function FloorPlan({ source, siteAddress }: { source: 'blueprint' | 'satellite' | 'blank'; siteAddress: string }) {
+  if (source === 'blank') {
+    return (
+      <g>
+        <rect x="80" y="80" width="640" height="480" fill="url(#plan-paper)" stroke="#30363D" strokeWidth="1" strokeDasharray="6 6" rx="4" />
+        <text x="400" y="316" textAnchor="middle" fill="#7D8590" fontSize="13">Press W or pick the wall tool to start sketching</text>
+        <text x="400" y="336" textAnchor="middle" fill="#484F58" fontSize="11">Click to drop vertices · double-click to end a run</text>
+      </g>
+    );
+  }
+  if (source === 'satellite') {
+    return (
+      <g>
+        <image
+          href="https://images.unsplash.com/photo-1569163139394-de4798aa62b6?w=1200&q=70"
+          x="80" y="80" width="640" height="480" preserveAspectRatio="xMidYMid slice"
+        />
+        <rect x="80" y="80" width="640" height="480" fill="#0D1117" opacity="0.28" />
+        {/* Parcel outline */}
+        <rect x="80" y="80" width="640" height="480" fill="none" stroke="#2F81F7" strokeWidth="2" strokeDasharray="8 6" />
+        {/* Building footprint over the satellite */}
+        <g>
+          <rect x="220" y="200" width="360" height="240" fill="#0D1117" fillOpacity="0.55" stroke="#E6EDF3" strokeWidth="2" />
+          <text x="400" y="328" textAnchor="middle" fill="#E6EDF3" fontSize="12">Building footprint</text>
+        </g>
+        {/* Address chip */}
+        <g transform="translate(96, 100)">
+          <rect width="220" height="26" rx="13" fill="#0D1117" fillOpacity="0.7" stroke="#30363D" />
+          <circle cx="14" cy="13" r="3.5" fill="#2F81F7" />
+          <text x="26" y="17" fill="#E6EDF3" fontSize="11">{siteAddress || 'No address set'}</text>
+        </g>
+        <g transform="translate(740, 90)">
+          <circle r="18" fill="#161B22" stroke="#30363D" strokeWidth="1" />
+          <path d="M 0 -10 L 4 6 L 0 2 L -4 6 Z" fill="#E6EDF3" />
+          <text y="-22" textAnchor="middle" fill="#7D8590" fontSize="10">N</text>
+        </g>
+        <g transform="translate(100, 580)">
+          <line x1="0" y1="0" x2="100" y2="0" stroke="#E6EDF3" strokeWidth="2" />
+          <line x1="0" y1="-4" x2="0" y2="4" stroke="#E6EDF3" strokeWidth="2" />
+          <line x1="100" y1="-4" x2="100" y2="4" stroke="#E6EDF3" strokeWidth="2" />
+          <text x="50" y="-7" textAnchor="middle" fill="#E6EDF3" fontSize="10">~30 ft</text>
+        </g>
+      </g>
+    );
+  }
+  // Crisp, obvious building outline with paper-fill interior so you SEE the floor plan
+  return (
+    <g>
+      {/* North arrow */}
+      <g transform="translate(740, 90)">
+        <circle r="18" fill="#161B22" stroke="#30363D" strokeWidth="1" />
+        <path d="M 0 -10 L 4 6 L 0 2 L -4 6 Z" fill="#E6EDF3" />
+        <text y="-22" textAnchor="middle" fill="#7D8590" fontSize="10">N</text>
+      </g>
+
+      {/* Floor plan — light architectural rendering, paper feel with clean wall lines */}
+      <g>
+        <rect x="84" y="86" width="640" height="480" fill="#0F172A" opacity="0.12" rx="3" />
+        <rect x="80" y="80" width="640" height="480" fill="url(#plan-paper)" rx="3" />
+        <rect x="80" y="80" width="640" height="480" fill="none" stroke="#1F2937" strokeWidth="2.5" rx="3" />
+      </g>
+
+      <g stroke="#1F2937" strokeWidth="1.8" opacity="0.85" strokeLinecap="square">
+        <line x1="80"  y1="320" x2="720" y2="320" />
+        <line x1="400" y1="80"  x2="400" y2="560" />
+        <line x1="240" y1="80"  x2="240" y2="320" />
+        <line x1="560" y1="320" x2="560" y2="560" />
+      </g>
+
+      {/* Door openings (gaps + swing arc) */}
+      <g>
+        <line x1="380" y1="80" x2="420" y2="80" stroke="#F5F7FA" strokeWidth="3" />
+        <path d="M 380 80 A 40 40 0 0 1 420 120" fill="none" stroke="#6B7280" strokeWidth="1" strokeDasharray="3 3" />
+        <line x1="680" y1="320" x2="720" y2="320" stroke="#F5F7FA" strokeWidth="3" />
+        <path d="M 680 320 A 40 40 0 0 1 720 360" fill="none" stroke="#6B7280" strokeWidth="1" strokeDasharray="3 3" />
+      </g>
+
+      <g fill="#374151" fontSize="11" fontWeight="500">
+        <text x="160" y="200">Lobby</text>
+        <text x="320" y="200">Reception</text>
+        <text x="480" y="200">Open office</text>
+        <text x="640" y="200">IT room</text>
+        <text x="160" y="440">Conference A</text>
+        <text x="320" y="440">Conference B</text>
+        <text x="480" y="440">Open office</text>
+        <text x="640" y="440">Storage</text>
+      </g>
+
+      <g fill="#9CA3AF" fontSize="10">
+        <text x="40" y="320" transform="rotate(-90 40 320)">Exterior — parking</text>
+        <text x="400" y="50" textAnchor="middle">Exterior — courtyard</text>
+      </g>
+
+      <g transform="translate(100, 580)">
+        <line x1="0" y1="0" x2="100" y2="0" stroke="#1F2937" strokeWidth="1.5" />
+        <line x1="0" y1="-4" x2="0" y2="4" stroke="#1F2937" strokeWidth="1.5" />
+        <line x1="100" y1="-4" x2="100" y2="4" stroke="#1F2937" strokeWidth="1.5" />
+        <text x="50" y="-7" textAnchor="middle" fill="#1F2937" fontSize="10">10 ft</text>
+      </g>
+    </g>
+  );
+}
+
+function FOV({ d, mode = 'soft', dim = 1, selected = false }: { d: Device; mode?: CoverageMode; dim?: number; selected?: boolean }) {
+  // Mode-driven render parameters
+  const opacity = (mode === 'minimal' ? 0.35 : mode === 'presentation' ? 0.7 : mode === 'tactical' ? 0.9 : mode === 'heatmap' ? 0.85 : mode === 'night' ? 0.55 : 0.75) * dim * (selected ? 1.15 : 1);
+  const wireframe = mode === 'wireframe';
+  const showArcs = mode !== 'minimal' && mode !== 'presentation';
+  const showAim = mode === 'tactical' || mode === 'wireframe' || selected;
+  if (d.type === 'cam.fisheye') {
+    return (
+      <g opacity={opacity}>
+        {!wireframe && <circle cx={d.x} cy={d.y} r={72} fill="url(#fov-grad-360)" />}
+        <circle cx={d.x} cy={d.y} r={72} fill="none" stroke="#FF7B6B" strokeWidth={wireframe ? 0.8 : 0.6} opacity={wireframe ? 0.9 : 0.5} strokeDasharray="2 4" />
+      </g>
+    );
+  }
+  const r = d.type === 'cam.ptz' ? 170 : d.type === 'cam.multisensor' ? 130 : 115;
+  const half = d.type === 'cam.ptz' ? 18 : d.type === 'cam.multisensor' ? 60 : 35;
+  const rot = d.rot;
+  const a1 = ((rot - half) * Math.PI) / 180;
+  const a2 = ((rot + half) * Math.PI) / 180;
+  const x1 = d.x + Math.cos(a1) * r;
+  const y1 = d.y + Math.sin(a1) * r;
+  const x2 = d.x + Math.cos(a2) * r;
+  const y2 = d.y + Math.sin(a2) * r;
+  const large = half > 90 ? 1 : 0;
+  const gradId = d.type === 'cam.ptz' ? 'fov-grad-ptz' : 'fov-grad';
+  const edge = d.type === 'cam.ptz' ? '#7CC2FF' : '#FFD24D';
+  // Rotate gradient so its origin aligns with the lens and decays outward
+  const path = `M ${d.x} ${d.y} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+  return (
+    <g opacity={opacity}>
+      {!wireframe && <path d={path} fill={`url(#${gradId})`} opacity="0.95" />}
+      {!wireframe && mode !== 'minimal' && <path d={path} fill={`url(#${gradId})`} filter="url(#fov-bloom)" opacity="0.5" />}
+      <path d={path} fill="none" stroke={edge} strokeWidth={wireframe ? 1 : 0.8} opacity={wireframe ? 0.9 : 0.55} />
+      {showArcs && [0.35, 0.6, 0.8].map((f, i) => {
+        const rr = r * f;
+        const xa = d.x + Math.cos(a1) * rr;
+        const ya = d.y + Math.sin(a1) * rr;
+        const xb = d.x + Math.cos(a2) * rr;
+        const yb = d.y + Math.sin(a2) * rr;
+        return (
+          <path key={i}
+            d={`M ${xa} ${ya} A ${rr} ${rr} 0 0 1 ${xb} ${yb}`}
+            fill="none" stroke={edge} strokeWidth="0.4" opacity={0.4 - i * 0.08} strokeDasharray="1 3"
+          />
+        );
+      })}
+      {showAim && (
+        <line
+          x1={d.x} y1={d.y}
+          x2={d.x + Math.cos((rot * Math.PI) / 180) * r}
+          y2={d.y + Math.sin((rot * Math.PI) / 180) * r}
+          stroke={edge} strokeWidth="0.5" opacity="0.7" strokeDasharray="2 3"
+        />
+      )}
+    </g>
+  );
+}
+
+function RotationRing({ d, onRotate, svgRef, zoom }: { d: Device; onRotate: (r: number) => void; svgRef: React.RefObject<SVGSVGElement>; zoom: number }) {
+  const tone = KIND_TONE[TYPE_KIND[d.type]];
+  const R = 34;
+  const rad = (d.rot * Math.PI) / 180;
+  const handleX = d.x + Math.cos(rad) * R;
+  const handleY = d.y + Math.sin(rad) * R;
+  const dragging = useRef(false);
+
+  const onDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    dragging.current = true;
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!dragging.current || !svgRef.current) return;
+    const r = svgRef.current.getBoundingClientRect();
+    const cx = (e.clientX - r.left) / zoom;
+    const cy = (e.clientY - r.top) / zoom;
+    const ang = Math.round((Math.atan2(cy - d.y, cx - d.x) * 180) / Math.PI);
+    onRotate(((ang % 360) + 360) % 360);
+  };
+  const onUp = (e: React.PointerEvent) => { dragging.current = false; (e.currentTarget as Element).releasePointerCapture?.(e.pointerId); };
+
+  return (
+    <g pointerEvents="none">
+      {/* outer ring — drag anywhere on the ring to rotate */}
+      <circle cx={d.x} cy={d.y} r={R} fill="none" stroke={tone} strokeWidth="1" opacity="0.35" />
+      <circle cx={d.x} cy={d.y} r={R} fill="none" stroke={tone} strokeWidth="6" opacity="0.001" pointerEvents="stroke"
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} style={{ cursor: 'grab' }}
+      />
+      {/* tick marks every 30° */}
+      {Array.from({ length: 12 }).map((_, i) => {
+        const a = (i * 30 * Math.PI) / 180;
+        const x1 = d.x + Math.cos(a) * (R - 2);
+        const y1 = d.y + Math.sin(a) * (R - 2);
+        const x2 = d.x + Math.cos(a) * (R + 2);
+        const y2 = d.y + Math.sin(a) * (R + 2);
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={tone} strokeWidth="0.6" opacity="0.5" />;
+      })}
+      {/* heading badge above the device */}
+      <g transform={`translate(${d.x}, ${d.y - R - 10})`}>
+        <rect x={-16} y={-7} width={32} height={14} rx={3} fill="rgba(8,12,20,0.85)" stroke={tone} strokeWidth="0.6" />
+        <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="700" fontFamily="ui-monospace, monospace">{d.rot}°</text>
+      </g>
+      {/* drag handle on the ring */}
+      <g pointerEvents="auto" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} style={{ cursor: 'grab' }}>
+        <circle cx={handleX} cy={handleY} r={6} fill={tone} opacity="0.2" />
+        <circle cx={handleX} cy={handleY} r={3.5} fill={tone} stroke="#0B131F" strokeWidth="1" />
+      </g>
+    </g>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DEVICE GLYPHS — each looks like the physical hardware (top-down)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const DEVICE_ICON: Record<DeviceType, any> = {
+  'cam.bullet': Video, 'cam.dome': Aperture, 'cam.ptz': ScanEye, 'cam.multisensor': Grid3x3,
+  'cam.fisheye': Disc, 'cam.thermal': Flame, 'cam.lpr': Car, 'cam.body': UserSquare2,
+  'acc.reader': ScanFace, 'acc.biometric': Fingerprint, 'acc.strike': KeyRound, 'acc.maglock': Lock,
+  'acc.exit': DoorOpen, 'acc.turnstile': GitBranch, 'acc.intercom': Phone,
+  'int.motion': Radar, 'int.glassbreak': AlertTriangle, 'int.contact': DoorOpen, 'int.panic': BellRing,
+  'int.vibration': Vibrate, 'int.keypad': Hash,
+  'net.switch': Cable, 'net.idf': Server, 'net.ap': Wifi, 'net.firewall': ShieldCheck, 'net.bridge': Antenna,
+  'aud.speaker': Volume2, 'aud.horn': Megaphone, 'aud.amp': Speaker, 'aud.mic': Mic, 'aud.intercom': Phone,
+  'sto.nvr': HardDrive, 'sto.server': Server, 'sto.archive': Database, 'sto.cloud': Cloud,
+  'dis.monitor': Monitor, 'dis.wall': Tv2, 'dis.kiosk': AppWindow, 'dis.signage': MonitorSmartphone,
+  'pwr.ups': BatteryCharging, 'pwr.poe': Zap, 'pwr.surge': ShieldAlert, 'pwr.solar': Sun,
+  'sen.temp': Thermometer, 'sen.smoke': CloudFog, 'sen.water': Droplets, 'sen.occupancy': Users2,
+  'sen.gas': Wind, 'sen.gunshot': CrosshairIcon,
+};
+
+// Modern device chip — used in InsertDock cards, layer rows, drag ghost, etc.
+// Axis Site Designer-style minimal marker — white circle with thin colored ring and line glyph
+// HardwareGlyph — Axis Site Designer style. Single-tone line glyphs drawn
+// directly on the plan: no card backgrounds, no fills beyond the tone, no shading.
+// Each device type reads as a tiny technical drawing of the actual hardware.
+function HardwareGlyph({ d, tone, selected }: { d: Device; tone: string; selected: boolean }) {
+  const kind = TYPE_KIND[d.type];
+  const rot = d.rot;
+  const ink = tone;
+  const sw = 1.4;
+
+  return (
+    <g transform={`translate(${d.x}, ${d.y})`}>
+      {/* glass knock-out with tone glow — reads on the cinematic dark plan */}
+      <circle r={15} fill={ink} opacity="0.10" />
+      <circle r={13} fill="#0B131F" opacity="0.92" stroke={ink} strokeWidth="0.8" />
+
+      <g transform={`rotate(${rot})`} fill="none" stroke={ink} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round">
+        {kind === 'camera' && d.type === 'cam.bullet' && (
+          <g>
+            {/* mounting arm */}
+            <path d="M -11 5 L -8 -1 L -5 -1" />
+            {/* barrel */}
+            <rect x={-8} y={-5} width={15} height={10} rx={4} />
+            {/* sunshade lip */}
+            <line x1={-8} y1={-2.5} x2={7} y2={-2.5} />
+            {/* lens face */}
+            <circle cx={7} cy={0} r={3.2} />
+            <circle cx={7} cy={0} r={1} fill={ink} stroke="none" />
+          </g>
+        )}
+        {kind === 'camera' && d.type === 'cam.dome' && (
+          <g>
+            {/* base plate */}
+            <line x1={-10} y1={4} x2={10} y2={4} />
+            {/* dome */}
+            <path d="M -10 4 A 10 10 0 0 1 10 4" />
+            {/* internal lens */}
+            <circle cx={3} cy={0} r={2.4} />
+            <circle cx={3} cy={0} r={0.9} fill={ink} stroke="none" />
+          </g>
+        )}
+        {kind === 'camera' && d.type === 'cam.ptz' && (
+          <g>
+            {/* ceiling line */}
+            <line x1={-7} y1={-8} x2={7} y2={-8} />
+            {/* pendant arm */}
+            <line x1={0} y1={-8} x2={0} y2={-4} />
+            {/* sphere */}
+            <circle cx={0} cy={2} r={6} />
+            {/* equator line */}
+            <path d="M -6 2 A 6 6 0 0 1 6 2" />
+            {/* forward lens */}
+            <circle cx={3.5} cy={3} r={2} />
+            <circle cx={3.5} cy={3} r={0.8} fill={ink} stroke="none" />
+          </g>
+        )}
+        {kind === 'camera' && d.type === 'cam.multisensor' && (
+          <g>
+            <line x1={-11} y1={4} x2={11} y2={4} />
+            <path d="M -11 4 A 11 6 0 0 1 11 4" />
+            {[-7, -2.4, 2.4, 7].map((x, i) => (
+              <g key={i}>
+                <circle cx={x} cy={1.6} r={1.5} />
+                <circle cx={x} cy={1.6} r={0.5} fill={ink} stroke="none" />
+              </g>
+            ))}
+          </g>
+        )}
+        {kind === 'camera' && d.type === 'cam.fisheye' && (
+          <g>
+            <circle r={10} />
+            <circle r={6.5} />
+            <circle r={2.5} />
+            <line x1={-10} y1={0} x2={10} y2={0} strokeWidth={0.7} />
+            <line x1={0} y1={-10} x2={0} y2={10} strokeWidth={0.7} />
+          </g>
+        )}
+        {kind === 'camera' && d.type === 'cam.thermal' && (
+          <g>
+            <path d="M -12 6 L -9 0 L -6 0" />
+            <rect x={-9} y={-5} width={18} height={10} rx={1.5} />
+            <rect x={-6} y={-3} width={8} height={6} />
+            {[-4, -2, 0, 1.8].map((x) => <line key={x} x1={x} y1={-2.5} x2={x} y2={2.5} strokeWidth={0.6} />)}
+            <circle cx={6} cy={0} r={2} />
+          </g>
+        )}
+        {kind === 'camera' && d.type === 'cam.lpr' && (
+          <g>
+            <path d="M -13 6 L -10 0 L -7 0" />
+            <rect x={-10} y={-4.5} width={20} height={9} rx={1.5} />
+            <rect x={-7} y={-2.6} width={8} height={2.6} />
+            <circle cx={6.5} cy={1} r={2.4} />
+            <circle cx={6.5} cy={1} r={0.8} fill={ink} stroke="none" />
+          </g>
+        )}
+        {kind === 'camera' && d.type === 'cam.body' && (
+          <g>
+            <rect x={-4.5} y={-9} width={9} height={17} rx={1.6} />
+            <line x1={-3} y1={-9} x2={3} y2={-9} strokeWidth={2.2} />
+            <circle cx={0} cy={-3} r={2.2} />
+            <circle cx={0} cy={-3} r={0.8} fill={ink} stroke="none" />
+            <circle cx={0} cy={4} r={1.2} />
+          </g>
+        )}
+
+        {kind === 'access' && (
+          <g>
+            <rect x={-4} y={-10} width={8} height={20} rx={1.4} />
+            <circle cx={0} cy={-6} r={1} />
+            <rect x={-2.6} y={-2.6} width={5.2} height={8} rx={1} />
+            <line x1={-1.6} y1={-0.8} x2={1.6} y2={-0.8} strokeWidth={0.7} />
+            <line x1={-1.6} y1={1} x2={1.6} y2={1} strokeWidth={0.7} />
+            <line x1={-1.6} y1={2.8} x2={1.6} y2={2.8} strokeWidth={0.7} />
+          </g>
+        )}
+        {kind === 'network' && (
+          <g>
+            <rect x={-12} y={-4} width={24} height={8} rx={1.2} />
+            <line x1={-12} y1={-1.4} x2={12} y2={-1.4} />
+            {[-8, -4.5, -1, 2.5, 6, 9.5].map((x) => <rect key={x} x={x - 0.8} y={0.4} width={1.6} height={2.8} rx={0.2} />)}
+          </g>
+        )}
+        {kind === 'intrusion' && (
+          <g>
+            <path d="M -10 7 L 0 -10 L 10 7 Z" />
+            <line x1={0} y1={-3} x2={0} y2={3} strokeWidth={2} />
+            <circle cx={0} cy={5.2} r={0.8} fill={ink} stroke="none" />
+          </g>
+        )}
+        {kind === 'audio' && (
+          <g>
+            <circle r={10} />
+            <circle r={7} />
+            <circle r={4} />
+            <circle r={1.4} fill={ink} stroke="none" />
+          </g>
+        )}
+        {kind === 'storage' && (
+          <g>
+            <rect x={-11} y={-7} width={22} height={14} rx={1.2} />
+            {[-3.5, -0.5, 2.5].map((y) => <line key={y} x1={-9} y1={y} x2={9} y2={y} strokeWidth={0.8} />)}
+            <circle cx={8} cy={-5} r={0.6} fill={ink} stroke="none" />
+          </g>
+        )}
+        {kind === 'display' && (
+          <g>
+            <rect x={-12} y={-8} width={24} height={14} rx={1} />
+            <line x1={-3} y1={6} x2={3} y2={6} />
+            <line x1={-6} y1={8.5} x2={6} y2={8.5} strokeWidth={1.6} />
+          </g>
+        )}
+        {kind === 'power' && (
+          <g>
+            <rect x={-8} y={-11} width={16} height={22} rx={1.4} />
+            <line x1={-6} y1={-7} x2={6} y2={-7} />
+            <path d="M -2 -3 L 2 -3 L 0 1 L 3 1 L -2 7 L 0 2 L -3 2 Z" />
+          </g>
+        )}
+        {kind === 'sensor' && (
+          <g>
+            <line x1={-10} y1={4} x2={10} y2={4} />
+            <path d="M -10 4 A 10 7 0 0 1 10 4" />
+            {[-6, -2, 2, 6].map((x) => <line key={x} x1={x} y1={4} x2={x} y2={-3} strokeWidth={0.7} />)}
+            <circle cx={0} cy={1} r={1} fill={ink} stroke="none" />
+          </g>
+        )}
+      </g>
+
+      {/* Selection ring */}
+      {selected && <circle r={15} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 2" />}
+    </g>
+  );
+}
+
+const KIND_INITIAL: Record<DeviceKind, string> = {
+  camera: 'C', access: 'A', network: 'N', intrusion: '!',
+  audio: '♪', storage: 'R', display: '▢', power: '⚡', sensor: '°',
+};
+
+function IsoDeviceBadge({ d }: { d: Device }) {
+  const tone = KIND_TONE[TYPE_KIND[d.type]];
+  const Icon = DEVICE_ICON[d.type];
+  return (
+    <div style={{ width: 56, position: 'relative', textAlign: 'center', userSelect: 'none', fontFamily: 'inherit' }}>
+      <div style={{ position: 'relative', width: 32, height: 32, margin: '0 auto' }}>
+        <div style={{ width: 32, height: 32, borderRadius: 999, background: '#FFFFFF', boxShadow: `inset 0 0 0 2px ${tone}, 0 2px 6px rgba(15,23,42,0.18)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon style={{ width: 16, height: 16, color: tone }} strokeWidth={2.2} />
+        </div>
+      </div>
+      <div style={{ marginTop: 4, display: 'inline-block', padding: '1px 7px', background: 'rgba(255,255,255,0.95)', color: '#1F2937', borderRadius: 3, fontSize: 10, fontWeight: 600, border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 1px 3px rgba(15,23,42,0.12)', whiteSpace: 'nowrap' }}>
+        {d.id}
+      </div>
+    </div>
+  );
+}
+
+function DeviceGlyph({ type, size, tone }: { type: DeviceType; size: number; tone: string }) {
+  const Icon = DEVICE_ICON[type] ?? Video;
+  return (
+    <span className="inline-flex items-center justify-center" style={{ width: size, height: size, color: tone }}>
+      <Icon style={{ width: size, height: size }} strokeWidth={1.9} />
+    </span>
+  );
+}
+
+// SVG path version kept for use inside the canvas SVG layer (presence cursors etc.)
+// Kept as a no-op fallback in case anything still references it.
+function DeviceGlyphPaths({ type, tone }: { type: DeviceType; tone: string }) {
+  const s = 1;
+  switch (type) {
+    case 'cam.bullet':
+      return (
+        <g transform={`scale(${s})`}>
+          <rect x="-10" y="-5" width="20" height="10" rx="2" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <circle cx="8" cy="0" r="3.5" fill="#0D1117" />
+          <circle cx="8" cy="0" r="1.6" fill={tone} />
+          <rect x="-11" y="-2" width="3" height="4" fill="#0D1117" />
+        </g>
+      );
+    case 'cam.dome':
+      return (
+        <g transform={`scale(${s})`}>
+          <circle r="10" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <circle r="6" fill="#0D1117" />
+          <circle r="3" fill={tone} />
+        </g>
+      );
+    case 'cam.ptz':
+      return (
+        <g transform={`scale(${s})`}>
+          <circle r="11" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <path d="M -7 -2 A 7 7 0 0 1 7 -2" fill="none" stroke="#0D1117" strokeWidth="1.5" />
+          <circle r="3.5" fill="#0D1117" />
+          <polygon points="7,-4 11,-2 7,0" fill="#0D1117" />
+        </g>
+      );
+    case 'cam.multisensor':
+      return (
+        <g transform={`scale(${s})`}>
+          <circle r="12" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          {[[-5,-5],[5,-5],[-5,5],[5,5]].map(([x,y],i) => (
+            <g key={i}>
+              <circle cx={x} cy={y} r="3" fill="#0D1117" />
+              <circle cx={x} cy={y} r="1.4" fill={tone} />
+            </g>
+          ))}
+        </g>
+      );
+    case 'cam.fisheye':
+      return (
+        <g transform={`scale(${s})`}>
+          <circle r="11" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <circle r="7" fill="#0D1117" />
+          <circle r="3" fill={tone} />
+          <line x1="-11" y1="0" x2="11" y2="0" stroke="#0D1117" strokeWidth="0.8" />
+          <line x1="0" y1="-11" x2="0" y2="11" stroke="#0D1117" strokeWidth="0.8" />
+        </g>
+      );
+    case 'cam.thermal':
+      return (
+        <g transform={`scale(${s})`}>
+          <rect x="-10" y="-6" width="20" height="12" rx="2" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <rect x="-7" y="-3" width="14" height="6" fill="#0D1117" />
+          <text x="0" y="2" textAnchor="middle" fill={tone} fontSize="6" fontWeight="700">TH</text>
+        </g>
+      );
+    case 'acc.reader':
+      return (
+        <g transform={`scale(${s})`}>
+          <rect x="-4" y="-11" width="8" height="22" rx="1.5" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <circle cx="0" cy="-7" r="1.6" fill="#0D1117" />
+          <rect x="-2.5" y="-3" width="5" height="9" rx="0.5" fill="#0D1117" />
+        </g>
+      );
+    case 'acc.strike':
+      return (
+        <g transform={`scale(${s})`}>
+          <rect x="-10" y="-4" width="20" height="8" rx="1.5" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <rect x="-3" y="-2" width="6" height="4" fill="#0D1117" />
+          <rect x="-3" y="-1" width="6" height="2" fill={tone} />
+        </g>
+      );
+    case 'acc.maglock':
+      return (
+        <g transform={`scale(${s})`}>
+          <rect x="-12" y="-3" width="24" height="6" rx="1" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <rect x="-10" y="-1.5" width="3" height="3" fill="#0D1117" />
+          <rect x="7" y="-1.5" width="3" height="3" fill="#0D1117" />
+        </g>
+      );
+    case 'acc.exit':
+      return (
+        <g transform={`scale(${s})`}>
+          <circle r="9" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <circle r="5" fill="#0D1117" />
+          <path d="M -2 0 L 0 -2 L 2 0 L 0 2 Z" fill={tone} />
+        </g>
+      );
+    case 'net.switch':
+      return (
+        <g transform={`scale(${s})`}>
+          <rect x="-12" y="-5" width="24" height="10" rx="1.5" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          {[-8,-4,0,4,8].map((x,i) => <rect key={i} x={x-1} y={-1.5} width="2" height="3" fill="#0D1117" />)}
+        </g>
+      );
+    case 'net.idf':
+      return (
+        <g transform={`scale(${s})`}>
+          <rect x="-9" y="-12" width="18" height="24" rx="1.5" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          {[-8,-4,0,4,8].map((y,i) => <rect key={i} x={-6} y={y-1} width="12" height="2" fill="#0D1117" />)}
+        </g>
+      );
+    case 'net.ap':
+      return (
+        <g transform={`scale(${s})`}>
+          <circle r="11" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <circle r="7" fill="none" stroke="#0D1117" strokeWidth="1.2" />
+          <circle r="3.5" fill="none" stroke="#0D1117" strokeWidth="1.2" />
+          <circle r="1.5" fill="#0D1117" />
+        </g>
+      );
+  }
+}
+
+const KIND_ICON: Record<DeviceKind, any> = {
+  camera: Video, access: ScanFace, network: Cable, intrusion: Radar,
+  audio: Volume2, storage: HardDrive, display: Monitor, power: BatteryCharging, sensor: Thermometer,
+};
+
+function CategoryGlyph({ kind, active }: { kind: DeviceKind; active?: boolean }) {
+  const Icon = KIND_ICON[kind];
+  return <Icon style={{ width: 14, height: 14 }} strokeWidth={2} />;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SELECTION PILL — floats near the selected device
+   ═══════════════════════════════════════════════════════════════════════ */
+
+type EditTab = 'overview' | 'lens' | 'ai' | 'network' | 'power' | 'mounting' | 'compliance' | 'telemetry' | 'linked' | 'notes';
+
+interface ToolbarAction {
+  id: string;
+  icon: any;
+  label: string;
+  tone?: string;
+  onClick: () => void;
+  primary?: boolean;
+}
+
+function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
+  const Icon = a.icon;
+  const accent = a.primary ? tone : 'rgba(226,232,240,0.85)';
+  return (
+    <button
+      onClick={a.onClick}
+      title={a.label}
+      className="group relative px-2 py-1.5 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors hover:bg-white/5"
+      style={{ color: accent }}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      <span className="text-[10.5px] uppercase tracking-[0.08em] font-medium">{a.label}</span>
+      {a.primary && (
+        <span
+          className="absolute inset-x-1 bottom-0 h-px"
+          style={{ background: tone, boxShadow: `0 0 6px ${tone}` }}
+        />
+      )}
+    </button>
+  );
+}
+
+function MultisensorLensChips({
+  activeLens, setActiveLens, lensMode, setLensMode, tone,
+}: { activeLens: 'A' | 'B' | 'C' | 'D'; setActiveLens: (l: 'A' | 'B' | 'C' | 'D') => void; lensMode: 'linked' | 'independent'; setLensMode: (m: 'linked' | 'independent') => void; tone: string }) {
+  return (
+    <div
+      className="mb-1.5 flex items-stretch text-[10px] rounded-lg overflow-hidden"
+      style={{
+        background: 'rgba(8,12,20,0.78)',
+        backdropFilter: 'blur(14px)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: `0 10px 24px -10px rgba(0,0,0,0.7), 0 0 0 1px ${tone}22`,
+      }}
+    >
+      <div className="px-2 py-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500 border-r border-white/8">Lens</div>
+      {(['A', 'B', 'C', 'D'] as const).map((l) => {
+        const active = activeLens === l;
+        return (
+          <button
+            key={l}
+            onClick={() => setActiveLens(l)}
+            className="px-2.5 py-1.5 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors"
+            style={{
+              background: active ? `${tone}22` : 'transparent',
+              color: active ? '#F8FAFC' : '#94A3B8',
+              boxShadow: active ? `inset 0 0 0 1px ${tone}66` : 'none',
+            }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: active ? tone : '#475569' }} />
+            <span className="tabular-nums font-medium">{l}</span>
+          </button>
+        );
+      })}
+      <button
+        onClick={() => setLensMode(lensMode === 'linked' ? 'independent' : 'linked')}
+        className="px-2.5 py-1.5 inline-flex items-center gap-1.5 text-[10px] transition-colors hover:bg-white/5"
+        style={{ color: lensMode === 'linked' ? tone : '#94A3B8' }}
+      >
+        {lensMode === 'linked' ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+        <span className="uppercase tracking-[0.14em]">{lensMode}</span>
+      </button>
+    </div>
+  );
+}
+
+function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode }: {
+  d: Device; zoom: number;
+  onRotate: (r: number) => void;
+  onDelete: () => void;
+  onUpdate: (p: Partial<Device>) => void;
+  onEdit: () => void;
+  onTargetSim: () => void;
+  onDuplicate: () => void;
+  onOpenTab: (t: EditTab) => void;
+  activeLens: 'A' | 'B' | 'C' | 'D';
+  setActiveLens: (l: 'A' | 'B' | 'C' | 'D') => void;
+  lensMode: 'linked' | 'independent';
+  setLensMode: (m: 'linked' | 'independent') => void;
+}) {
+  const product = PRODUCTS.find((p) => p.id === d.product);
+  const kind = TYPE_KIND[d.type];
+  const tone = KIND_TONE[kind];
+  const isCam = kind === 'camera';
+  const isMultisensor = d.type === 'cam.multisensor';
+  const isDoor = d.type === 'acc.exit' || d.type === 'acc.door' || d.type === 'acc.gate';
+  const isIDF = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'net.switch';
+  const isPathway = kind === 'network' && !isIDF;
+
+  // Build toolbar actions per device kind
+  const actions: ToolbarAction[] = (() => {
+    if (isCam) {
+      return [
+        { id: 'edit',     icon: Settings2,     label: 'Edit',        onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'rotate',   icon: RotateCw,      label: `${d.rot}°`,   onClick: () => onRotate((d.rot + 15) % 360) },
+        { id: 'fov',      icon: Aperture,      label: 'FOV',         onClick: () => onOpenTab('lens') },
+        { id: 'dup',      icon: Copy,          label: 'Duplicate',   onClick: onDuplicate },
+        { id: 'ai',       icon: Sparkles,      label: 'AI Optimize', onClick: () => onOpenTab('ai') },
+        { id: 'target',   icon: ScanFace,      label: 'Target Sim',  onClick: onTargetSim },
+        { id: 'link',     icon: GitBranch,     label: 'Link Path',   onClick: () => onOpenTab('linked') },
+        { id: 'note',     icon: MessageSquare, label: 'Note',        onClick: () => onOpenTab('notes') },
+        { id: 'del',      icon: Trash2,        label: 'Delete',      onClick: onDelete },
+      ];
+    }
+    if (isDoor) {
+      return [
+        { id: 'edit',     icon: Settings2,     label: 'Edit Hardware', onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'elec',     icon: Zap,           label: 'Electrify',     onClick: () => onOpenTab('power') },
+        { id: 'reader',   icon: KeyRound,      label: 'Reader',        onClick: () => onOpenTab('linked') },
+        { id: 'egress',   icon: DoorOpen,      label: 'Egress',        onClick: () => onOpenTab('compliance') },
+        { id: 'ai',       icon: ShieldCheck,   label: 'AI Validate',   onClick: () => onOpenTab('ai') },
+        { id: 'sched',    icon: Calendar,      label: 'Schedule',      onClick: () => onOpenTab('notes') },
+        { id: 'link',     icon: GitBranch,     label: 'Pathway',       onClick: () => onOpenTab('linked') },
+        { id: 'explode',  icon: Layers,        label: 'Exploded',      onClick: () => onOpenTab('mounting') },
+        { id: 'del',      icon: Trash2,        label: 'Delete',        onClick: onDelete },
+      ];
+    }
+    if (isIDF) {
+      return [
+        { id: 'edit',     icon: Settings2,     label: 'Edit',          onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'switch',   icon: Server,        label: 'Switch Cap',    onClick: () => onOpenTab('network') },
+        { id: 'poe',      icon: BatteryCharging, label: 'PoE',         onClick: () => onOpenTab('power') },
+        { id: 'thermal',  icon: Thermometer,   label: 'Thermal',       onClick: () => onOpenTab('telemetry') },
+        { id: 'ups',      icon: Zap,           label: 'UPS',           onClick: () => onOpenTab('power') },
+        { id: 'fiber',    icon: Cable,         label: 'Fiber',         onClick: () => onOpenTab('network') },
+        { id: 'linked',   icon: GitBranch,     label: 'Linked',        onClick: () => onOpenTab('linked') },
+        { id: 'failure',  icon: AlertTriangle, label: 'Failure',       onClick: () => onOpenTab('ai') },
+        { id: 'del',      icon: Trash2,        label: 'Delete',        onClick: onDelete },
+      ];
+    }
+    if (isPathway) {
+      return [
+        { id: 'edit',     icon: Settings2,     label: 'Edit Route',    onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'junction', icon: CircleDot,     label: 'Junction',      onClick: () => onOpenTab('linked') },
+        { id: 'pull',     icon: Hash,          label: 'Pull Box',      onClick: () => onOpenTab('mounting') },
+        { id: 'fiber',    icon: Cable,         label: 'Fiber',         onClick: () => onOpenTab('network') },
+        { id: 'emt',      icon: Slash,         label: 'EMT',           onClick: () => onOpenTab('compliance') },
+        { id: 'bridge',   icon: Wifi,          label: 'Wireless',      onClick: () => onOpenTab('network') },
+        { id: 'ai',       icon: Sparkles,      label: 'AI Optimize',   onClick: () => onOpenTab('ai') },
+        { id: 'fill',     icon: BarChart3,     label: 'Fill %',        onClick: () => onOpenTab('telemetry') },
+        { id: 'del',      icon: Trash2,        label: 'Delete',        onClick: onDelete },
+      ];
+    }
+    return [
+      { id: 'edit',  icon: Settings2,     label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
+      { id: 'dup',   icon: Copy,          label: 'Duplicate', onClick: onDuplicate },
+      { id: 'note',  icon: MessageSquare, label: 'Note',      onClick: () => onOpenTab('notes') },
+      { id: 'del',   icon: Trash2,        label: 'Delete',    onClick: onDelete },
+    ];
+  })();
+  const focal = (d.type === 'cam.ptz' ? 4.3 + ((d.rot % 30) / 30) * 25 : d.type === 'cam.fisheye' ? 1.4 : 2.8 + ((Math.abs(d.rot) % 60) / 60) * 6).toFixed(1);
+  const doriRange = d.type === 'cam.ptz' ? 64 : d.type === 'cam.fisheye' ? 14 : 28;
+  const kindLabel = isCam ? 'Camera' : isDoor ? 'Opening' : isIDF ? 'Network Node' : isPathway ? 'Pathway' : 'Device';
+
+  return (
+    <div
+      className="absolute z-30 pointer-events-auto select-none"
+      style={{ left: d.x * zoom, top: d.y * zoom - 110, transform: 'translateX(-50%)' }}
+    >
+      {/* tether */}
+      <div className="absolute left-1/2 top-full h-[28px] w-px" style={{ background: `linear-gradient(to bottom, ${tone}, transparent)` }} />
+      <div className="absolute left-1/2 top-full mt-[26px] w-1.5 h-1.5 rounded-full -translate-x-1/2" style={{ background: tone, boxShadow: `0 0 8px ${tone}` }} />
+
+      {/* Multisensor lens chips */}
+      {isMultisensor && (
+        <MultisensorLensChips activeLens={activeLens} setActiveLens={setActiveLens} lensMode={lensMode} setLensMode={setLensMode} tone={tone} />
+      )}
+
+      {/* Header strip — device identity */}
+      <div
+        className="mb-1.5 flex items-stretch text-[10px] rounded-md overflow-hidden"
+        style={{
+          background: 'rgba(8,12,20,0.78)',
+          backdropFilter: 'blur(14px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        <div className="px-2 py-1 flex items-center gap-1.5 border-r border-white/8">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: tone, boxShadow: `0 0 8px ${tone}` }} />
+          <span className="text-[9px] uppercase tracking-[0.18em] text-slate-500">{kindLabel}</span>
+        </div>
+        <div className="px-2 py-1 border-r border-white/8">
+          <CommitInput value={d.id} onCommit={(v) => onUpdate({ id: v })} className="bg-transparent w-[90px] focus:outline-none font-medium tracking-wide text-slate-100" />
+        </div>
+        {product && (
+          <div className="px-2 py-1 text-slate-400 tabular-nums">{product.mfr} · {product.model}</div>
+        )}
+        {isCam && (
+          <div className="px-2 py-1 border-l border-white/8 flex items-center gap-2 text-slate-400 tabular-nums">
+            <span><span className="text-slate-500">rot</span> {d.rot}°</span>
+            <span><span className="text-slate-500">f</span> {focal}mm</span>
+            <span><span className="text-slate-500">DORI</span> {doriRange}ft</span>
+          </div>
+        )}
+      </div>
+
+      {/* Primary action toolbar */}
+      <div
+        className="flex items-stretch rounded-lg overflow-hidden"
+        style={{
+          background: 'rgba(8,12,20,0.82)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          border: '1px solid rgba(255,255,255,0.10)',
+          boxShadow: `0 14px 32px -10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px ${tone}22`,
+        }}
+      >
+        {actions.map((a) => <ToolbarButton key={a.id} a={a} tone={tone} />)}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EDIT DRAWER — right-side engineering inspector with 10 tabs
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const EDIT_TABS: { id: EditTab; label: string; icon: any }[] = [
+  { id: 'overview',   label: 'Overview',       icon: ListChecks },
+  { id: 'lens',       label: 'Lens & FOV',     icon: Aperture },
+  { id: 'ai',         label: 'AI & Analytics', icon: Sparkles },
+  { id: 'network',    label: 'Network',        icon: Wifi },
+  { id: 'power',      label: 'Power',          icon: BatteryCharging },
+  { id: 'mounting',   label: 'Mounting',       icon: Wrench },
+  { id: 'compliance', label: 'Compliance',     icon: ShieldCheck },
+  { id: 'telemetry',  label: 'Telemetry',      icon: Activity },
+  { id: 'linked',     label: 'Linked',         icon: GitBranch },
+  { id: 'notes',      label: 'Notes',          icon: FileText },
+];
+
+function Row({ label, value, tone }: { label: string; value: any; tone?: string }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-b-0">
+      <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-500">{label}</span>
+      <span className="text-[12px] tabular-nums" style={{ color: tone || '#E2E8F0' }}>{value}</span>
+    </div>
+  );
+}
+
+function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-4">
+      <div className="text-[9.5px] uppercase tracking-[0.18em] text-slate-500 mb-2 flex items-center gap-2">
+        <span>{title}</span>
+        <span className="flex-1 h-px bg-white/5" />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Slider({ label, value, min, max, step = 1, unit, onChange, tone }: { label: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void; tone: string }) {
+  return (
+    <div className="mb-2.5">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-500">{label}</span>
+        <span className="text-[12px] tabular-nums text-slate-200">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
+      </div>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full"
+        style={{ accentColor: tone }}
+      />
+    </div>
+  );
+}
+
+function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode }: {
+  d: Device; open: boolean; tab: EditTab; setTab: (t: EditTab) => void; onClose: () => void;
+  onUpdate: (p: Partial<Device>) => void;
+  activeLens: 'A' | 'B' | 'C' | 'D'; setActiveLens: (l: 'A' | 'B' | 'C' | 'D') => void;
+  lensMode: 'linked' | 'independent'; setLensMode: (m: 'linked' | 'independent') => void;
+}) {
+  const product = PRODUCTS.find((p) => p.id === d.product);
+  const kind = TYPE_KIND[d.type];
+  const tone = KIND_TONE[kind];
+  const isCam = kind === 'camera';
+  const isMultisensor = d.type === 'cam.multisensor';
+  const focal = d.type === 'cam.ptz' ? 12 : d.type === 'cam.fisheye' ? 1.4 : 4.0;
+  const [localFocal, setLocalFocal] = useState(focal);
+  const [hfov, setHfov] = useState(d.type === 'cam.fisheye' ? 360 : 88);
+  const [distance, setDistance] = useState(d.type === 'cam.ptz' ? 70 : 30);
+  const doriRange = distance;
+  const overlapPct = 18 + (Math.abs(d.rot) % 30);
+  const blindPct = 6 + (Math.abs(d.rot) % 12);
+  const pxPerFt = Math.round(180 - distance * 1.4);
+
+  return (
+    <div
+      className={`absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 ease-out pointer-events-auto ${open ? 'translate-x-0' : 'translate-x-full'}`}
+      style={{
+        width: 380,
+        background: 'linear-gradient(180deg, rgba(10,14,22,0.96), rgba(6,9,15,0.96))',
+        backdropFilter: 'blur(20px)',
+        borderLeft: `1px solid ${tone}33`,
+        boxShadow: `-12px 0 40px -10px rgba(0,0,0,0.7), inset 1px 0 0 rgba(255,255,255,0.04)`,
+      }}
+    >
+      {/* Drawer header */}
+      <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: tone, boxShadow: `0 0 10px ${tone}` }} />
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{d.type}</div>
+          <div className="text-[14px] font-medium text-slate-100 truncate">{d.id}</div>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/5 text-slate-400 hover:text-slate-100">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Tab strip */}
+      <div className="px-1.5 py-1.5 border-b border-white/5 flex flex-wrap gap-0.5">
+        {EDIT_TABS.map((t) => {
+          const active = tab === t.id;
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className="px-2 py-1 rounded-md inline-flex items-center gap-1 text-[10px] transition-colors"
+              style={{
+                background: active ? `${tone}1F` : 'transparent',
+                color: active ? '#F8FAFC' : '#94A3B8',
+                boxShadow: active ? `inset 0 0 0 1px ${tone}55` : 'none',
+              }}
+            >
+              <Icon className="w-3 h-3" style={{ color: active ? tone : undefined }} />
+              <span className="uppercase tracking-[0.08em]">{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab body */}
+      <div className="px-4 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100% - 110px)' }}>
+        {tab === 'overview' && (
+          <>
+            <DrawerSection title="Identity">
+              <Row label="Name" value={d.id} />
+              <Row label="Type" value={d.type} />
+              {product && <Row label="Manufacturer" value={product.mfr} />}
+              {product && <Row label="Model" value={product.model} />}
+              <Row label="Status" value={<span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#34D399', boxShadow: '0 0 6px #34D399' }} />Online</span>} />
+              <Row label="Firmware" value="11.8.61" />
+            </DrawerSection>
+            <DrawerSection title="Location">
+              <Row label="Position" value={`${(d.x / 20).toFixed(1)}, ${(d.y / 20).toFixed(1)} ft`} />
+              <Row label="Room" value="Lobby 01" />
+              <Row label="Mount" value="Ceiling — 9' AFF" />
+              <Row label="Tags" value="prosecution · entry" tone="#7CC2FF" />
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'lens' && (
+          <>
+            {isMultisensor && (
+              <div className="mb-3 flex items-center gap-1 p-1 rounded-md" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                {(['A', 'B', 'C', 'D'] as const).map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => setActiveLens(l)}
+                    className="flex-1 py-1 rounded text-[11px] tabular-nums transition-colors"
+                    style={{
+                      background: activeLens === l ? `${tone}22` : 'transparent',
+                      color: activeLens === l ? '#F8FAFC' : '#94A3B8',
+                      boxShadow: activeLens === l ? `inset 0 0 0 1px ${tone}66` : 'none',
+                    }}
+                  >Lens {l}</button>
+                ))}
+                <button
+                  onClick={() => setLensMode(lensMode === 'linked' ? 'independent' : 'linked')}
+                  className="px-2 py-1 rounded text-[10px] inline-flex items-center gap-1"
+                  style={{ color: lensMode === 'linked' ? tone : '#94A3B8' }}
+                >{lensMode === 'linked' ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}{lensMode}</button>
+              </div>
+            )}
+            <DrawerSection title="Direct manipulation">
+              <Slider label="Rotation" value={d.rot} min={-180} max={180} unit="°" tone={tone} onChange={(v) => onUpdate({ rot: v })} />
+              <Slider label="Focal length" value={localFocal} min={1.4} max={30} step={0.1} unit="mm" tone={tone} onChange={setLocalFocal} />
+              <Slider label="Horizontal FOV" value={hfov} min={20} max={360} unit="°" tone={tone} onChange={setHfov} />
+              <Slider label="Distance" value={distance} min={5} max={150} unit="ft" tone={tone} onChange={setDistance} />
+            </DrawerSection>
+            <DrawerSection title="DORI ranges">
+              {[
+                { k: 'Identify',  d: Math.round(doriRange * 0.35), c: '#34D399' },
+                { k: 'Recognize', d: Math.round(doriRange * 0.55), c: '#FACC15' },
+                { k: 'Observe',   d: Math.round(doriRange * 0.75), c: '#FB923C' },
+                { k: 'Detect',    d: doriRange, c: '#F87171' },
+              ].map((row) => (
+                <div key={row.k} className="flex items-center gap-2 py-1">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: row.c, boxShadow: `0 0 6px ${row.c}` }} />
+                  <span className="flex-1 text-[11.5px] text-slate-300">{row.k}</span>
+                  <span className="text-[12px] tabular-nums text-slate-200">{row.d} ft</span>
+                </div>
+              ))}
+            </DrawerSection>
+            <DrawerSection title="Telemetry">
+              <Row label="px / ft @ 30ft" value={pxPerFt} />
+              <Row label="Overlap %" value={`${overlapPct}%`} tone={overlapPct > 35 ? '#FACC15' : undefined} />
+              <Row label="Blind spot %" value={`${blindPct}%`} tone={blindPct > 12 ? '#F87171' : undefined} />
+              <Row label="Confidence" value="0.92" tone="#34D399" />
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'ai' && (
+          <>
+            <DrawerSection title="Optimize">
+              <div className="flex gap-1 mb-3">
+                <button className="flex-1 py-1.5 rounded text-[11px] text-slate-300 hover:bg-white/5 border border-white/10">Overview</button>
+                <button className="flex-1 py-1.5 rounded text-[11px]" style={{ background: `${tone}1A`, color: '#F8FAFC', boxShadow: `inset 0 0 0 1px ${tone}55` }}>Prosecution</button>
+              </div>
+              {[
+                'Rotate −12° to remove blind spot at SW corner',
+                'Step focal to 6.0 mm for prosecution at door',
+                'Move 4 ft east to clear column occlusion',
+                'Enable IR cut filter (low-light confidence +18%)',
+              ].map((s, i) => (
+                <button key={i} className="w-full text-left text-[11.5px] text-slate-200 px-2 py-1.5 mb-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5">
+                  <Sparkles className="w-3 h-3 inline mr-1.5" style={{ color: tone }} />{s}
+                </button>
+              ))}
+            </DrawerSection>
+            <DrawerSection title="Analytics">
+              <Row label="Face recognition" value="Enabled" tone="#34D399" />
+              <Row label="LPR" value="—" />
+              <Row label="Object detection" value="People · Vehicle" />
+              <Row label="Edge GPU" value="74% load" tone="#FACC15" />
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'network' && (
+          <>
+            <DrawerSection title="Network">
+              <Row label="IDF" value="IDF-02 / Port 14" />
+              <Row label="VLAN" value="240 / cctv" />
+              <Row label="IPv4" value="10.40.12.84" />
+              <Row label="MAC" value="B8:A4:4F:91:0C:2A" />
+              <Row label="Switch" value="Aruba 2930F-24P" />
+              <Row label="Link" value="1 Gbps full duplex" tone="#34D399" />
+            </DrawerSection>
+            <DrawerSection title="Bandwidth">
+              <Row label="Avg bitrate" value="6.4 Mbps" />
+              <Row label="Peak" value="12.1 Mbps" />
+              <Row label="Storage / day" value="68 GB" />
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'power' && (
+          <>
+            <DrawerSection title="PoE">
+              <Row label="Standard" value="802.3at (Type 2)" />
+              <Row label="Draw" value="9.8 W" />
+              <Row label="Budget" value="25.5 W" />
+              <Row label="UPS" value="APC SRT-3000 · 18 min" tone="#34D399" />
+            </DrawerSection>
+            <DrawerSection title="Thermal">
+              <Row label="Operating temp" value="32 °C" />
+              <Row label="Headroom" value="28 °C" tone="#34D399" />
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'mounting' && (
+          <>
+            <DrawerSection title="Mount">
+              <Row label="Type" value="Ceiling pendant" />
+              <Row label="Height" value="9' 0'' AFF" />
+              <Row label="Tilt" value="−14°" />
+              <Row label="Pan" value={`${d.rot}°`} />
+              <Row label="Surface" value="ACT — needs T-bar adapter" tone="#FACC15" />
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'compliance' && (
+          <>
+            <DrawerSection title="Codes">
+              <Row label="NEC 725" value="Class 2" tone="#34D399" />
+              <Row label="ADA arc" value="Clear" tone="#34D399" />
+              <Row label="Fire rating" value="Plenum cable required" tone="#FACC15" />
+              <Row label="UL 2802" value="Verified" tone="#34D399" />
+            </DrawerSection>
+            <DrawerSection title="Privacy">
+              <Row label="Masked zones" value="2" />
+              <Row label="Retention" value="30 days" />
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'telemetry' && (
+          <>
+            <DrawerSection title="Live telemetry">
+              <Row label="Uptime" value="99.94%" tone="#34D399" />
+              <Row label="Packet loss" value="0.02%" />
+              <Row label="Frame drops / hr" value="3" />
+              <Row label="Signal" value="Excellent" tone="#34D399" />
+              <Row label="Last reboot" value="14d ago" />
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'linked' && (
+          <>
+            <DrawerSection title="Linked systems">
+              {[
+                { id: 'IDF-02',     k: 'Network', tone: '#7CC2FF' },
+                { id: 'UPS-RM-A',   k: 'Power',   tone: '#FACC15' },
+                { id: 'DR-LBY-01',  k: 'Access',  tone: '#34D399' },
+                { id: 'NVR-03',     k: 'Storage', tone: '#A78BFA' },
+              ].map((l) => (
+                <div key={l.id} className="flex items-center gap-2 py-1.5 border-b border-white/5">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: l.tone, boxShadow: `0 0 6px ${l.tone}` }} />
+                  <span className="text-[11.5px] text-slate-200">{l.id}</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-[0.12em] text-slate-500">{l.k}</span>
+                </div>
+              ))}
+            </DrawerSection>
+          </>
+        )}
+
+        {tab === 'notes' && (
+          <>
+            <DrawerSection title="Field notes">
+              <textarea
+                defaultValue="Confirm mount blocking with GC before drywall close-in. Camera aim toward turnstile exit, not lobby entrance."
+                className="w-full h-24 text-[11.5px] text-slate-200 bg-white/5 border border-white/10 rounded p-2 focus:outline-none focus:border-white/25"
+              />
+            </DrawerSection>
+            <DrawerSection title="Media">
+              <div className="grid grid-cols-3 gap-1.5">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="aspect-square rounded border border-white/10 bg-white/5 flex items-center justify-center text-slate-600">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                ))}
+              </div>
+            </DrawerSection>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TARGET SIMULATION — drag a human into coverage, live portrait card
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
+  d: Device; zoom: number;
+  pos: { x: number; y: number };
+  setPos: (p: { x: number; y: number }) => void;
+  onClose: () => void;
+}) {
+  const tone = KIND_TONE[TYPE_KIND[d.type]];
+  const dx = pos.x - d.x;
+  const dy = pos.y - d.y;
+  const dist = Math.hypot(dx, dy);
+  const distFt = dist / 20;
+  const angleToCam = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
+  const camAim = ((d.rot + 360) % 360);
+  const aimDelta = Math.min(Math.abs(angleToCam - camAim), 360 - Math.abs(angleToCam - camAim));
+  const inFOV = aimDelta < 44 && distFt < 80;
+  // Synthetic quality scoring
+  const faceClarity = Math.max(0, Math.min(100, Math.round(100 - distFt * 1.6 - aimDelta * 0.9)));
+  const prosecution = Math.max(0, Math.min(100, faceClarity - 8));
+  const irScore = Math.max(0, Math.min(100, Math.round(85 - distFt * 0.7)));
+  const lowLight = Math.max(0, Math.min(100, Math.round(70 - distFt * 0.5)));
+  const glare = Math.round(20 + (Math.abs(d.rot) % 25));
+  const fog = Math.round(30 + (Math.abs(d.x) % 18));
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    (e.target as Element).setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!(e.buttons & 1)) return;
+    setPos({ x: pos.x + e.movementX / zoom, y: pos.y + e.movementY / zoom });
+  };
+
+  return (
+    <>
+      {/* Draggable human silhouette on canvas */}
+      <div
+        className="absolute z-30 pointer-events-auto select-none cursor-grab active:cursor-grabbing"
+        style={{ left: pos.x * zoom, top: pos.y * zoom, transform: 'translate(-50%, -100%)' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+      >
+        <svg width="28" height="56" viewBox="0 0 28 56" style={{ filter: `drop-shadow(0 4px 10px ${inFOV ? tone : '#1E293B'}88)` }}>
+          <circle cx="14" cy="8" r="6" fill={inFOV ? tone : '#64748B'} opacity="0.95" />
+          <path d="M14 14 L14 38 M14 18 L4 30 M14 18 L24 30 M14 38 L8 54 M14 38 L20 54" stroke={inFOV ? tone : '#64748B'} strokeWidth="3" strokeLinecap="round" fill="none" />
+        </svg>
+        <div className="text-center mt-0.5 text-[9px] uppercase tracking-[0.18em] tabular-nums" style={{ color: inFOV ? tone : '#64748B' }}>
+          {distFt.toFixed(1)} ft
+        </div>
+      </div>
+
+      {/* Live portrait + quality card */}
+      <div
+        className="absolute z-40 pointer-events-auto select-none"
+        style={{ left: pos.x * zoom + 36, top: pos.y * zoom - 120, width: 240 }}
+      >
+        <div
+          className="rounded-lg overflow-hidden"
+          style={{
+            background: 'linear-gradient(180deg, rgba(10,14,22,0.96), rgba(6,9,15,0.96))',
+            backdropFilter: 'blur(20px)',
+            border: `1px solid ${tone}55`,
+            boxShadow: `0 16px 36px -10px rgba(0,0,0,0.8), 0 0 0 1px ${tone}22`,
+          }}
+        >
+          <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
+            <ScanFace className="w-3.5 h-3.5" style={{ color: tone }} />
+            <span className="text-[10px] uppercase tracking-[0.18em] text-slate-300">Target Sim</span>
+            <button onClick={onClose} className="ml-auto text-slate-500 hover:text-slate-200"><X className="w-3.5 h-3.5" /></button>
+          </div>
+          {/* synthetic portrait */}
+          <div className="relative h-[120px]" style={{ background: 'radial-gradient(circle at 50% 40%, #1E293B 0%, #060912 80%)' }}>
+            <svg viewBox="0 0 100 120" className="absolute inset-0 w-full h-full" style={{ opacity: Math.max(0.25, faceClarity / 100) }}>
+              <defs>
+                <linearGradient id="ts-face" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="#D8B89A" />
+                  <stop offset="100%" stopColor="#7B5C44" />
+                </linearGradient>
+              </defs>
+              <ellipse cx="50" cy="46" rx="22" ry="28" fill="url(#ts-face)" />
+              <ellipse cx="42" cy="42" rx="2.4" ry="3" fill="#0B131F" />
+              <ellipse cx="58" cy="42" rx="2.4" ry="3" fill="#0B131F" />
+              <path d="M40 58 Q50 64 60 58" stroke="#0B131F" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+              <path d="M28 78 Q50 70 72 78 L72 120 L28 120 Z" fill="#1E293B" />
+            </svg>
+            {/* scan-line overlay */}
+            <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, transparent, ${tone}06 50%, transparent)`, mixBlendMode: 'screen' }} />
+            {/* corner brackets */}
+            {[['top-2 left-2','border-t border-l'],['top-2 right-2','border-t border-r'],['bottom-2 left-2','border-b border-l'],['bottom-2 right-2','border-b border-r']].map(([pos, b], i) => (
+              <span key={i} className={`absolute ${pos} w-3 h-3 ${b}`} style={{ borderColor: tone }} />
+            ))}
+            <div className="absolute bottom-1.5 left-2 text-[9px] tabular-nums text-slate-400">{faceClarity}% face</div>
+            <div className="absolute bottom-1.5 right-2 text-[9px] tabular-nums" style={{ color: inFOV ? '#34D399' : '#F87171' }}>{inFOV ? 'IN FOV' : 'OUT'}</div>
+          </div>
+          {/* scores */}
+          <div className="px-3 py-2 space-y-1">
+            {[
+              { k: 'Face clarity',     v: faceClarity, c: '#34D399', icon: ScanFace },
+              { k: 'Prosecution',     v: prosecution, c: '#7CC2FF', icon: ShieldCheck },
+              { k: 'IR effectiveness', v: irScore,    c: '#FB923C', icon: Sun },
+              { k: 'Low-light',       v: lowLight,   c: '#A78BFA', icon: Eye },
+              { k: 'Glare',           v: glare,      c: '#FACC15', icon: Sun },
+              { k: 'Fog',             v: fog,        c: '#94A3B8', icon: CloudFog },
+            ].map((row) => {
+              const Icon = row.icon;
+              return (
+                <div key={row.k} className="flex items-center gap-2">
+                  <Icon className="w-3 h-3" style={{ color: row.c }} />
+                  <span className="text-[10.5px] text-slate-400 flex-1">{row.k}</span>
+                  <div className="w-16 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                    <div className="h-full" style={{ width: `${row.v}%`, background: row.c, boxShadow: `0 0 6px ${row.c}` }} />
+                  </div>
+                  <span className="w-7 text-[10px] text-right tabular-nums text-slate-300">{row.v}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="px-3 py-2 border-t border-white/5 flex items-center gap-1.5 text-[10px]">
+            <button className="flex-1 py-1 rounded border border-white/10 text-slate-300 hover:bg-white/5">Day</button>
+            <button className="flex-1 py-1 rounded text-slate-100" style={{ background: `${tone}1A`, boxShadow: `inset 0 0 0 1px ${tone}55` }}>Night</button>
+            <button className="flex-1 py-1 rounded border border-white/10 text-slate-300 hover:bg-white/5">Fog</button>
+            <button className="flex-1 py-1 rounded border border-white/10 text-slate-300 hover:bg-white/5">Rain</button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ImmersionControls({ focusMode, setFocusMode, densityMode, setDensityMode }: { focusMode: boolean; setFocusMode: (b: boolean) => void; densityMode: boolean; setDensityMode: (b: boolean) => void }) {
+  const Btn = ({ active, onClick, icon: Icon, label, tone }: { active: boolean; onClick: () => void; icon: any; label: string; tone: string }) => (
+    <button
+      onClick={onClick}
+      className="px-2 py-1 rounded-md flex items-center gap-1.5 text-[10px] transition-colors"
+      style={{
+        background: active ? `${tone}1A` : 'transparent',
+        color: active ? '#F8FAFC' : '#94A3B8',
+        boxShadow: active ? `inset 0 0 0 1px ${tone}55` : 'none',
+      }}
+    >
+      <Icon className="w-3 h-3" style={{ color: active ? tone : undefined }} />
+      <span className="uppercase tracking-[0.16em]">{label}</span>
+    </button>
+  );
+  return (
+    <div className="absolute top-3 right-[180px] z-20 pointer-events-auto select-none">
+      <div
+        className="flex items-center gap-0.5 p-1 rounded-lg"
+        style={{
+          background: 'rgba(8,12,20,0.78)',
+          backdropFilter: 'blur(14px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 10px 24px -10px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}
+      >
+        <Btn active={focusMode} onClick={() => setFocusMode(!focusMode)} icon={Maximize2} label="Focus" tone="#7CC2FF" />
+        <Btn active={densityMode} onClick={() => setDensityMode(!densityMode)} icon={Ruler} label="Density" tone="#FACC15" />
+      </div>
+    </div>
+  );
+}
+
+function CoverageModeSwitch({ mode, setMode }: { mode: CoverageMode; setMode: (m: CoverageMode) => void }) {
+  const modes: { id: CoverageMode; label: string; tone: string }[] = [
+    { id: 'minimal',      label: 'Minimal',      tone: '#94A3B8' },
+    { id: 'soft',         label: 'Soft',         tone: '#7CC2FF' },
+    { id: 'tactical',     label: 'Tactical',     tone: '#FACC15' },
+    { id: 'heatmap',      label: 'Heatmap',      tone: '#FB7185' },
+    { id: 'wireframe',    label: 'Wireframe',    tone: '#34D399' },
+    { id: 'presentation', label: 'Presentation', tone: '#A78BFA' },
+    { id: 'night',        label: 'Night',        tone: '#60A5FA' },
+  ];
+  return (
+    <div className="absolute top-3 left-3 z-20 pointer-events-auto select-none">
+      <div
+        className="flex items-center gap-0.5 p-1 rounded-lg text-[10px]"
+        style={{
+          background: 'rgba(8,12,20,0.78)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 10px 24px -10px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}
+      >
+        <div className="px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-slate-500 border-r border-white/8 mr-1">Coverage</div>
+        {modes.map((m) => {
+          const active = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => setMode(m.id)}
+              className="px-2 py-1 rounded-md transition-colors flex items-center gap-1.5"
+              style={{
+                background: active ? `${m.tone}1A` : 'transparent',
+                color: active ? '#F8FAFC' : '#94A3B8',
+                boxShadow: active ? `inset 0 0 0 1px ${m.tone}55` : 'none',
+              }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.tone, boxShadow: active ? `0 0 6px ${m.tone}` : 'none' }} />
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+interface IntelIssue {
+  id: string;
+  kind: 'overlap' | 'blindspot' | 'poe' | 'low-light' | 'nec';
+  severity: 'info' | 'warn' | 'high';
+  x: number;
+  y: number;
+  label: string;
+  detail: string;
+}
+
+function computeIntelIssues(devices: Device[]): IntelIssue[] {
+  const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera');
+  const out: IntelIssue[] = [];
+  // Overlap heuristic: two cameras within 80px
+  for (let i = 0; i < cams.length; i++) {
+    for (let j = i + 1; j < cams.length; j++) {
+      const a = cams[i], b = cams[j];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 80) {
+        out.push({
+          id: `ov-${a.id}-${b.id}`,
+          kind: 'overlap',
+          severity: dist < 50 ? 'high' : 'warn',
+          x: (a.x + b.x) / 2,
+          y: (a.y + b.y) / 2,
+          label: 'Coverage overlap',
+          detail: `${a.id} ↔ ${b.id} · ${Math.round((1 - dist / 110) * 100)}% redundant`,
+        });
+      }
+    }
+  }
+  // PoE pressure: too many cameras (>6) ⇒ flag the centroid
+  if (cams.length >= 6) {
+    const cx = cams.reduce((s, c) => s + c.x, 0) / cams.length;
+    const cy = cams.reduce((s, c) => s + c.y, 0) / cams.length;
+    out.push({
+      id: 'poe-load',
+      kind: 'poe',
+      severity: cams.length >= 10 ? 'high' : 'warn',
+      x: cx, y: cy,
+      label: 'PoE budget',
+      detail: `${cams.length} cameras · est. ${(cams.length * 8).toFixed(0)}W on IDF-1`,
+    });
+  }
+  // Blind spot: any LPR or thermal pointing away from device cluster gets a info flag
+  cams.forEach((c) => {
+    if (c.type === 'cam.bullet' && Math.abs(c.rot) > 150) {
+      out.push({
+        id: `bs-${c.id}`,
+        kind: 'blindspot',
+        severity: 'info',
+        x: c.x - 22, y: c.y - 18,
+        label: 'Possible blind spot',
+        detail: `${c.id} aimed away from entry path`,
+      });
+    }
+  });
+  return out;
+}
+
+function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]; zoom: number; open: boolean; setOpen: (b: boolean) => void }) {
+  const issues = useMemo(() => computeIntelIssues(devices), [devices]);
+  const summary = useMemo(() => {
+    const by: Record<string, number> = {};
+    issues.forEach((i) => { by[i.severity] = (by[i.severity] ?? 0) + 1; });
+    return by;
+  }, [issues]);
+  const toneFor = (k: IntelIssue['kind']) => k === 'overlap' ? '#F59E0B' : k === 'blindspot' ? '#FB7185' : k === 'poe' ? '#7CC2FF' : k === 'low-light' ? '#A78BFA' : '#34D399';
+  const sevDot = (s: IntelIssue['severity']) => s === 'high' ? '#F87171' : s === 'warn' ? '#FACC15' : '#7CC2FF';
+  return (
+    <>
+      {/* canvas chips */}
+      {open && issues.map((iss) => (
+        <div
+          key={iss.id}
+          className="absolute z-20 pointer-events-auto select-none"
+          style={{ left: iss.x * zoom, top: iss.y * zoom, transform: 'translate(-50%, -50%)' }}
+        >
+          <div
+            className="flex items-center gap-1.5 px-1.5 py-1 rounded-md text-[10px] whitespace-nowrap"
+            style={{
+              background: 'rgba(8,12,20,0.82)',
+              backdropFilter: 'blur(10px)',
+              border: `1px solid ${toneFor(iss.kind)}55`,
+              boxShadow: `0 6px 14px -6px rgba(0,0,0,0.6), 0 0 0 1px ${toneFor(iss.kind)}22`,
+              color: '#E2E8F0',
+            }}
+            title={iss.detail}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: sevDot(iss.severity), animation: 'glow-breathe 2.4s ease-in-out infinite' }} />
+            <span className="font-medium tracking-wide">{iss.label}</span>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-400">{iss.detail}</span>
+          </div>
+        </div>
+      ))}
+
+      {/* top-right intelligence summary */}
+      <div className="absolute top-3 right-3 z-20 pointer-events-auto select-none">
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px]"
+          style={{
+            background: 'rgba(8,12,20,0.78)',
+            backdropFilter: 'blur(14px)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: '#E2E8F0',
+            boxShadow: '0 10px 24px -10px rgba(0,0,0,0.7)',
+          }}
+        >
+          <Activity className="w-3.5 h-3.5 text-sky-300" />
+          <span className="uppercase tracking-[0.18em] text-[9px] text-slate-400">Intelligence</span>
+          {summary.high ? <span className="tabular-nums text-rose-300">{summary.high}</span> : null}
+          {summary.warn ? <span className="tabular-nums text-amber-300">{summary.warn}</span> : null}
+          {summary.info ? <span className="tabular-nums text-sky-300">{summary.info}</span> : null}
+          {!issues.length && <span className="tabular-nums text-emerald-300">clear</span>}
+          {open ? <Eye className="w-3 h-3 text-slate-400" /> : <EyeOff className="w-3 h-3 text-slate-500" />}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function HudChip({ children, onClick, active, title }: { children: any; onClick: () => void; active?: boolean; title: string }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`px-2 inline-flex items-center gap-1 border-r border-white/8 transition-colors ${
+        active ? 'bg-white/10 text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CommitInput({ value, onCommit, className }: { value: string; onCommit: (v: string) => void; className?: string }) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+  return (
+    <input
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => { if (local !== value) onCommit(local); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); }
+        if (e.key === 'Escape') { setLocal(value); (e.target as HTMLInputElement).blur(); }
+      }}
+      className={className}
+    />
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <div className="text-[10px] text-muted-foreground mb-1">{label}</div>
+      {children}
+    </label>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   QUICK TOOLS CAPSULE  ·  ZOOM DOCK  ·  MINIMAP  ·  STATUS BAR
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool) => void; showWall: boolean }) {
+  const items: Array<{ id: Tool; icon: any; label: string; key: string }> = [
+    { id: 'select',  icon: MousePointer2,  label: 'Select',  key: 'V' },
+    { id: 'pan',     icon: Hand,           label: 'Pan',     key: 'H' },
+    { id: 'measure', icon: Ruler,          label: 'Measure', key: 'M' },
+    { id: 'text',    icon: Type,           label: 'Text',    key: 'T' },
+    { id: 'comment', icon: MessageSquare,  label: 'Comment', key: 'N' },
+    ...(showWall ? [{ id: 'wall' as Tool, icon: WallIcon, label: 'Wall', key: 'W' }] : []),
+  ];
+  return (
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-20">
+      <style>{`@keyframes tool-hint-in { from { opacity: 0; transform: translate(-50%, -4px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
+      <div className="bg-card/85 backdrop-blur-xl border border-border/80 rounded-2xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.04)] px-1.5 py-1.5 flex items-center gap-0.5">
+        {items.map((it) => {
+          const Icon = it.icon;
+          const active = tool === it.id;
+          return (
+            <button
+              key={it.id}
+              onClick={() => setTool(it.id)}
+              title={`${it.label} · ${it.key}`}
+              className={`relative w-10 h-10 rounded-xl inline-flex items-center justify-center transition-all duration-200 ease-out will-change-transform ${active ? 'bg-primary text-primary-foreground shadow-[0_4px_12px_-4px_rgba(47,129,247,0.6)] scale-[1.08]' : 'text-muted-foreground hover:bg-secondary hover:text-foreground scale-100'}`}
+            >
+              <Icon className={`w-[18px] h-[18px] transition-transform duration-200 ${active ? 'scale-110' : ''}`} />
+              {active && (
+                <span
+                  key={it.id + '-hint'}
+                  className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] text-foreground/60 font-mono tracking-wide"
+                  style={{ animation: 'tool-hint-in 220ms ease-out both' }}
+                >{it.key}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ZoomDock({ zoom, setZoom }: { zoom: number; setZoom: React.Dispatch<React.SetStateAction<number>> }) {
+  return (
+    <div className="absolute bottom-5 left-5 z-20 inline-flex items-center bg-card/85 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] overflow-hidden text-xs">
+      <button onClick={() => setZoom((z) => Math.max(0.25, z / 1.2))} className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"><ZoomOut className="w-3.5 h-3.5" /></button>
+      <button onClick={() => setZoom(1)} className="px-2.5 h-9 border-x border-border/60 hover:bg-secondary min-w-[58px] text-center tabular-nums font-medium">{Math.round(zoom * 100)}%</button>
+      <button onClick={() => setZoom((z) => Math.min(4, z * 1.2))} className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"><ZoomIn className="w-3.5 h-3.5" /></button>
+      <button onClick={() => setZoom(1)} className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground border-l border-border/60 transition-colors" title="Fit (⌘0)"><Maximize2 className="w-3.5 h-3.5" /></button>
+    </div>
+  );
+}
+
+function MiniMap({ devices }: { devices: Device[] }) {
+  const [visible, setVisible] = useState(true);
+  if (!visible) return (
+    <button onClick={() => setVisible(true)} className="absolute bottom-5 right-5 z-20 w-9 h-9 rounded-xl bg-card/85 backdrop-blur-xl border border-border/80 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] flex items-center justify-center text-muted-foreground hover:text-foreground">
+      <Eye className="w-4 h-4" />
+    </button>
+  );
+  return (
+    <div className="absolute bottom-5 right-5 z-20 w-48 bg-card/85 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)] overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5"><CircleDot className="w-3 h-3" />Overview</span>
+        <button onClick={() => setVisible(false)} className="hover:text-foreground"><EyeOff className="w-3 h-3" /></button>
+      </div>
+      <div className="p-2">
+        <svg viewBox="0 0 800 600" className="w-full h-24 rounded-md" style={{ background: '#0D1117' }}>
+          <rect x="80" y="80" width="640" height="480" fill="#1A2030" stroke="#E6EDF3" strokeWidth="6" />
+          {devices.map((d) => (
+            <circle key={d.id} cx={d.x} cy={d.y} r="18" fill={KIND_TONE[TYPE_KIND[d.type]]} />
+          ))}
+          <rect x="80" y="80" width="640" height="480" fill="none" stroke="#2F81F7" strokeWidth="6" strokeDasharray="18 10" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function StatusBar({ tool, zoom, counts, units }: { tool: Tool; zoom: number; counts: Record<DeviceKind, number>; units: 'ft' | 'm' }) {
+  const toolLabel = tool === 'select' ? 'Select' : tool === 'pan' ? 'Pan' : tool === 'measure' ? 'Measure' : tool === 'text' ? 'Text' : tool === 'wall' ? 'Wall' : 'Comment';
+  return (
+    <div className="absolute left-1/2 -translate-x-1/2 top-4 z-20 inline-flex items-center gap-2 px-3 h-7 rounded-full bg-card/80 backdrop-blur-md border border-border/70 text-[11px] text-muted-foreground shadow-[0_6px_18px_-10px_rgba(0,0,0,0.5)]">
+      <span className="inline-flex items-center gap-1.5 text-primary"><span className="w-1.5 h-1.5 rounded-full bg-primary" />{toolLabel}</span>
+      <span className="w-px h-3 bg-border/70" />
+      <span>1 in = 10 {units}</span>
+      <span className="w-px h-3 bg-border/70" />
+      <span className="tabular-nums">{counts.camera} <span style={{ color: '#2F81F7' }}>●</span> &nbsp;{counts.access} <span style={{ color: '#3FB950' }}>●</span> &nbsp;{counts.network} <span style={{ color: '#D29922' }}>●</span></span>
+    </div>
+  );
+}
