@@ -33,6 +33,7 @@ import { PipelineView } from './screens/PipelineView';
 import { AccountDetail } from './screens/AccountDetail';
 import { PdfExporter } from './components/PdfExporter';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
+import { Toaster } from './components/ui/sonner';
 
 export default function App() {
   return (
@@ -75,6 +76,7 @@ export default function App() {
         </Routes>
         <PdfExporter />
         <ShortcutOverlay />
+        <Toaster richColors position="bottom-right" closeButton />
       </div>
     </BrowserRouter>
   );

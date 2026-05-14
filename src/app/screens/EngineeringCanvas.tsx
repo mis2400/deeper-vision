@@ -22,6 +22,9 @@ import {
   Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy,
 } from 'lucide-react';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { canHost } from '../lib/compatibility';
+import { buildLabel, COMMIT_HASH } from '../../build-info';
+import { toast } from 'sonner';
 
 /*
   Engineering Canvas v2 — designed around four ideas
@@ -378,6 +381,24 @@ export function EngineeringCanvas() {
     // Adds + updates
     for (const d of after) {
       if (!beforeIds.has(d.id)) {
+        // Compatibility check on add: anything dropped onto the floorplan
+        // that should be attached to a host (strike / maglock / rex) gets a
+        // soft warning toast pointing the user to drag it onto a door. The
+        // add still goes through — the user is the engineer and can
+        // override — but the platform tells them so misconfigurations
+        // don't sneak in.
+        const compat = canHost('floor', d.type);
+        if (!compat.allowed) {
+          toast.warning(compat.reason ?? 'Compatibility issue', {
+            description: compat.hint,
+            duration: 6000,
+          });
+        } else if (compat.requires) {
+          toast.message('Heads up', {
+            description: compat.requires,
+            duration: 5000,
+          });
+        }
         storeAddDevice({ ...(d as any), projectId: pid, floorId: fid } as StoreDevice);
       } else {
         const prev = before.find((p) => p.id === d.id)!;
@@ -394,6 +415,14 @@ export function EngineeringCanvas() {
   const [walls, setWalls] = useState<Wall[]>([]);
   const [wallStart, setWallStart] = useState<{ x: number; y: number } | null>(null);
   const [wallCursor, setWallCursor] = useState<{ x: number; y: number } | null>(null);
+
+  // Measure tool — two-click distance measurement. First click sets a
+  // start point; second click freezes the measurement. ESC clears.
+  const [measure, setMeasure] = useState<{
+    start: { x: number; y: number } | null;
+    end:   { x: number; y: number } | null;
+    cursor:{ x: number; y: number } | null;
+  }>({ start: null, end: null, cursor: null });
   const [selId, setSelId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [floor, setFloor] = useState(0);
@@ -434,6 +463,12 @@ export function EngineeringCanvas() {
     : display.baseMap === 'satellite' || display.baseMap === 'hybrid' ? 'satellite'
     : 'blank';
   const setPlanSource = (m: BaseMapMode) => setCanvasDisplay(projectId, { baseMap: m });
+
+  // Project tech model — filters which manufacturers the library / drawer
+  // suggests. Surfaced in the TopBar as a 3-way segmented control.
+  const projectTechModelsMap = useProjectStore((s) => s.projectTechModels);
+  const setProjectTechModel  = useProjectStore((s) => s.setProjectTechModel);
+  const techModel = projectTechModelsMap[projectId] ?? 'hybrid';
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
   const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
@@ -506,7 +541,11 @@ export function EngineeringCanvas() {
       if (e.key === 't' || e.key === 'T') setTool('text');
       if (e.key === 'n' || e.key === 'N') setTool('comment');
       if (e.key === 'w' || e.key === 'W') setTool('wall');
-      if (e.key === 'Escape') { setSelId(null); setDrag(null); setOpenCat(null); setOpenType(null); setWallStart(null); }
+      if (e.key === 'Escape') {
+        setSelId(null); setDrag(null); setOpenCat(null); setOpenType(null);
+        setWallStart(null);
+        setMeasure({ start: null, end: null, cursor: null });
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selId) {
         setDevices((ds) => ds.filter((d) => d.id !== selId));
         setSelId(null);
@@ -608,6 +647,8 @@ export function EngineeringCanvas() {
             units={units} setUnits={setUnits}
             onScan={() => nav('/visionscan')}
             onSetup={() => setOnboarded(false)}
+            techModel={techModel}
+            setTechModel={(m) => setProjectTechModel(projectId, m)}
           />
         )}
         {focusMode && (
@@ -683,13 +724,26 @@ export function EngineeringCanvas() {
               snap={snap}
               dragging={!!drag}
               onSurfaceClick={(x, y) => {
-                if (tool !== 'wall') return;
-                const sx = snap ? Math.round(x / 20) * 20 : x;
-                const sy = snap ? Math.round(y / 20) * 20 : y;
-                if (!wallStart) { setWallStart({ x: sx, y: sy }); }
-                else {
-                  setWalls((ws) => [...ws, { id: `w${ws.length + 1}`, x1: wallStart.x, y1: wallStart.y, x2: sx, y2: sy }]);
-                  setWallStart({ x: sx, y: sy });
+                if (tool === 'wall') {
+                  const sx = snap ? Math.round(x / 20) * 20 : x;
+                  const sy = snap ? Math.round(y / 20) * 20 : y;
+                  if (!wallStart) { setWallStart({ x: sx, y: sy }); }
+                  else {
+                    setWalls((ws) => [...ws, { id: `w${ws.length + 1}`, x1: wallStart.x, y1: wallStart.y, x2: sx, y2: sy }]);
+                    setWallStart({ x: sx, y: sy });
+                  }
+                  return;
+                }
+                if (tool === 'measure') {
+                  if (!measure.start) {
+                    setMeasure({ start: { x, y }, end: null, cursor: { x, y } });
+                  } else if (!measure.end) {
+                    setMeasure({ start: measure.start, end: { x, y }, cursor: { x, y } });
+                  } else {
+                    // Already have a finished measurement — start a new one.
+                    setMeasure({ start: { x, y }, end: null, cursor: { x, y } });
+                  }
+                  return;
                 }
               }}
               onSurfaceMove={(x, y) => {
@@ -697,9 +751,18 @@ export function EngineeringCanvas() {
                   const sx = snap ? Math.round(x / 20) * 20 : x;
                   const sy = snap ? Math.round(y / 20) * 20 : y;
                   setWallCursor({ x: sx, y: sy });
+                  return;
+                }
+                if (tool === 'measure' && measure.start && !measure.end) {
+                  setMeasure((m) => ({ ...m, cursor: { x, y } }));
+                  return;
                 }
               }}
-              onSurfaceDblClick={() => { if (tool === 'wall') setWallStart(null); }}
+              onSurfaceDblClick={() => {
+                if (tool === 'wall') setWallStart(null);
+                if (tool === 'measure') setMeasure({ start: null, end: null, cursor: null });
+              }}
+              measure={measure}
             />
 
             {/* Coverage-mode switcher (top-left) */}
@@ -771,6 +834,16 @@ export function EngineeringCanvas() {
 
             {/* Minimap (bottom-right) */}
             <MiniMap devices={devices} />
+
+            {/* Build stamp (bottom-left, just above ZoomDock). Discreet so it
+                never competes with controls but verifiable so the user can
+                confirm the live deployment matches the latest commit. */}
+            <div
+              className="absolute bottom-1 left-1 z-20 pointer-events-none select-none text-[8.5px] tabular-nums text-muted-foreground/40 font-mono tracking-tight"
+              title={`Build ${buildLabel()}`}
+            >
+              {COMMIT_HASH} · {buildLabel().split('·').slice(-1)[0].trim()}
+            </div>
 
             {/* Drag ghost */}
             {drag && (
@@ -901,6 +974,8 @@ function TopBar(props: {
   snap: boolean; setSnap: (b: boolean) => void;
   units: 'ft' | 'm'; setUnits: (u: 'ft' | 'm') => void;
   onScan: () => void; onSetup: () => void;
+  techModel: 'cloud' | 'on_prem' | 'hybrid';
+  setTechModel: (m: 'cloud' | 'on_prem' | 'hybrid') => void;
 }) {
   return (
     <div className="h-14 shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-4 pr-3 gap-4 text-sm relative z-30">
@@ -927,6 +1002,30 @@ function TopBar(props: {
         <SegButton active={props.snap} onClick={() => props.setSnap(!props.snap)} icon={Magnet} label="Snap" hint="S" />
         <SegButton active={false} onClick={() => props.setUnits(props.units === 'ft' ? 'm' : 'ft')} icon={Ruler} label={props.units === 'ft' ? 'ft' : 'm'} hint="U" />
         <SegButton active={false} onClick={props.onSetup} icon={FileText} label="Plan source" />
+
+        {/* Tech-model selector — gates which manufacturer ecosystem the
+            library / drawer suggests. Persistent per project. */}
+        <div className="ml-1.5 flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
+          <span className="inline-flex items-center px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground border-r border-border">Stack</span>
+          {(['cloud', 'on_prem', 'hybrid'] as const).map((m) => {
+            const active = props.techModel === m;
+            const label = m === 'cloud' ? 'Cloud' : m === 'on_prem' ? 'On-prem' : 'Hybrid';
+            return (
+              <button
+                key={m}
+                onClick={() => props.setTechModel(m)}
+                className={`px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                title={
+                  m === 'cloud' ? 'Cloud-first ecosystem — Verkada / Rhombus / Meraki / Brivo / Openpath' :
+                  m === 'on_prem' ? 'On-prem ecosystem — Axis / Hanwha / Avigilon / Bosch / Genetec' :
+                  'Hybrid — show all manufacturers; compatibility flagged'
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex-1" />
@@ -1909,6 +2008,13 @@ interface SurfaceProps {
   /** Display preferences — icon scale, label density, coverage opacity.
    *  Drives the visual density of the canvas. */
   display: CanvasDisplayPrefs;
+  /** Active measurement state for the Measure tool. start = first click,
+   *  end = second click (committed), cursor = live rubber-band point. */
+  measure: {
+    start: { x: number; y: number } | null;
+    end:   { x: number; y: number } | null;
+    cursor:{ x: number; y: number } | null;
+  };
 }
 
 const ICON_SCALE: Record<IconSize, number> = { compact: 0.75, standard: 1, large: 1.35 };
@@ -1927,7 +2033,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display }, ref
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -1978,7 +2084,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       }}
       onDoubleClick={onSurfaceDblClick}
       style={{ background: 'radial-gradient(ellipse at 50% 35%, #0F1722 0%, #070A10 55%, #03060B 100%)' }}
-      className={`absolute inset-0 w-full h-full ${tool === 'wall' ? 'cursor-crosshair' : tool === 'pan' ? 'cursor-grab' : dragging ? 'cursor-copy' : 'cursor-default'}`}
+      className={`absolute inset-0 w-full h-full ${tool === 'wall' || tool === 'measure' ? 'cursor-crosshair' : tool === 'pan' ? 'cursor-grab' : dragging ? 'cursor-copy' : 'cursor-default'}`}
     >
       <defs>
         <style>{`
@@ -2270,6 +2376,40 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               </g>
             );
           });
+        })()}
+
+        {/* Measure tool — live distance line between two clicks, with a
+            distance chip at the midpoint. Renders in real engineering
+            yellow so it never gets confused with FOV cones or pathways. */}
+        {tool === 'measure' && measure.start && (() => {
+          const end = measure.end ?? measure.cursor ?? measure.start;
+          const dx = end.x - measure.start.x;
+          const dy = end.y - measure.start.y;
+          const distPx = Math.hypot(dx, dy);
+          const ft = distPx / 20;
+          const mx = (measure.start.x + end.x) / 2;
+          const my = (measure.start.y + end.y) / 2;
+          const committed = !!measure.end;
+          return (
+            <g pointerEvents="none">
+              <line
+                x1={measure.start.x} y1={measure.start.y}
+                x2={end.x} y2={end.y}
+                stroke="#FACC15" strokeWidth="1.2"
+                strokeDasharray={committed ? undefined : "3 3"}
+                opacity={committed ? 1 : 0.85}
+              />
+              {/* End-tick marks */}
+              <circle cx={measure.start.x} cy={measure.start.y} r={3} fill="#FACC15" />
+              <circle cx={end.x} cy={end.y} r={3} fill="#FACC15" />
+              <g transform={`translate(${mx}, ${my})`}>
+                <rect x={-32} y={-9} width={64} height={18} rx={4} fill="rgba(8,12,20,0.92)" stroke="#FACC15" strokeWidth="0.6" />
+                <text textAnchor="middle" y={4} fontSize="11" fontFamily="ui-monospace, monospace" fill="#FACC15" fontWeight="700">
+                  {ft.toFixed(1)} ft
+                </text>
+              </g>
+            </g>
+          );
         })()}
 
         {/* Presence cursors — live collaborators. Off by default; the
@@ -3414,18 +3554,30 @@ function MoreButton({ items, tone }: { items: ToolbarAction[]; tone: string }) {
    EDIT DRAWER — right-side engineering inspector with 10 tabs
    ═══════════════════════════════════════════════════════════════════════ */
 
-const EDIT_TABS: { id: EditTab; label: string; icon: any }[] = [
-  { id: 'overview',   label: 'Overview',       icon: ListChecks },
-  { id: 'lens',       label: 'Lens & FOV',     icon: Aperture },
-  { id: 'ai',         label: 'AI & Analytics', icon: Sparkles },
-  { id: 'network',    label: 'Network',        icon: Wifi },
-  { id: 'power',      label: 'Power',          icon: BatteryCharging },
-  { id: 'mounting',   label: 'Mounting',       icon: Wrench },
-  { id: 'compliance', label: 'Compliance',     icon: ShieldCheck },
-  { id: 'telemetry',  label: 'Telemetry',      icon: Activity },
-  { id: 'linked',     label: 'Linked',         icon: GitBranch },
-  { id: 'notes',      label: 'Notes',          icon: FileText },
+// Six visible drawer tabs. Each visible tab covers one or more internal
+// section ids — clicking the Coverage tab renders Lens + AI + Telemetry
+// content together so the user has ONE place to do coverage work, not three.
+const EDIT_TABS: { id: EditTab; label: string; icon: any; covers: EditTab[] }[] = [
+  { id: 'overview',   label: 'General',          icon: ListChecks,      covers: ['overview'] },
+  { id: 'mounting',   label: 'Placement',        icon: Wrench,          covers: ['mounting'] },
+  { id: 'lens',       label: 'Coverage',         icon: Aperture,        covers: ['lens', 'ai', 'telemetry'] },
+  { id: 'power',      label: 'Power & Network',  icon: BatteryCharging, covers: ['power', 'network'] },
+  { id: 'compliance', label: 'Compatibility',    icon: ShieldCheck,     covers: ['compliance', 'linked'] },
+  { id: 'notes',      label: 'Notes & Media',    icon: FileText,        covers: ['notes'] },
 ];
+
+/** Which visible tab does this internal section belong to? Used to keep
+ *  the strip highlight in sync when toolbar buttons open hidden section
+ *  ids (e.g. clicking "AI" still shows the Coverage tab as active). */
+function tabGroupOf(t: EditTab): EditTab {
+  for (const g of EDIT_TABS) if (g.covers.includes(t)) return g.id;
+  return 'overview';
+}
+/** Should the section's body render for the currently-active tab? True
+ *  when the section belongs to the same visible group as `tab`. */
+function bodyShows(tab: EditTab, section: EditTab): boolean {
+  return tabGroupOf(tab) === tabGroupOf(section);
+}
 
 function Row({ label, value, tone }: { label: string; value: any; tone?: string }) {
   return (
@@ -3560,32 +3712,37 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         </button>
       </div>
 
-      {/* Tab strip */}
-      <div className="px-1.5 py-1.5 border-b border-white/5 flex flex-wrap gap-0.5">
+      {/* Tab strip — 6 labelled tabs. Strip uses tabGroupOf so that opening
+          a hidden section (e.g. SelectionPill's AI button → 'ai') still
+          highlights the visible parent ('Coverage'). */}
+      <div className="px-2 py-1.5 border-b border-white/5 flex flex-wrap gap-1">
         {EDIT_TABS.map((t) => {
-          const active = tab === t.id;
+          const active = tabGroupOf(tab) === t.id;
           const Icon = t.icon;
           return (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className="px-2 py-1 rounded-md inline-flex items-center gap-1 text-[10px] transition-colors"
+              className="px-2.5 py-1.5 rounded-md inline-flex items-center gap-1.5 text-[11px] transition-colors"
               style={{
                 background: active ? `${tone}1F` : 'transparent',
                 color: active ? '#F8FAFC' : '#94A3B8',
                 boxShadow: active ? `inset 0 0 0 1px ${tone}55` : 'none',
               }}
             >
-              <Icon className="w-3 h-3" style={{ color: active ? tone : undefined }} />
-              <span className="uppercase tracking-[0.08em]">{t.label}</span>
+              <Icon className="w-3.5 h-3.5" style={{ color: active ? tone : undefined }} />
+              <span className="font-medium tracking-tight">{t.label}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Tab body */}
+      {/* Tab body. Each section renders when its tab group is active —
+          so Coverage shows Lens + AI + Telemetry together, Power & Network
+          shows Power + Network together, Compatibility shows Compliance +
+          Linked together. No more 10-tab maze. */}
       <div className="px-4 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100% - 110px)' }}>
-        {tab === 'overview' && (
+        {bodyShows(tab, 'overview') && (
           <>
             <DrawerSection title="Identity">
               <Row label="Name" value={d.id} />
@@ -3604,7 +3761,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'lens' && (
+        {bodyShows(tab, 'lens') && (
           <>
             {isMultisensor && (
               <div className="mb-3 flex items-center gap-1 p-1 rounded-md" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -3678,7 +3835,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'ai' && (
+        {bodyShows(tab, 'ai') && (
           <>
             <DrawerSection title="Optimize">
               <div className="flex gap-1 mb-3">
@@ -3705,7 +3862,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'network' && (
+        {bodyShows(tab, 'network') && (
           <>
             <DrawerSection title="Network">
               <Row label="IDF" value="IDF-02 / Port 14" />
@@ -3723,7 +3880,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'power' && (
+        {bodyShows(tab, 'power') && (
           <>
             <DrawerSection title="PoE">
               <Row label="Standard" value="802.3at (Type 2)" />
@@ -3738,7 +3895,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'mounting' && (
+        {bodyShows(tab, 'mounting') && (
           <>
             <DrawerSection title="Mount">
               <Row label="Type" value="Ceiling pendant" />
@@ -3750,7 +3907,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'compliance' && (
+        {bodyShows(tab, 'compliance') && (
           <>
             <DrawerSection title="Codes">
               <Row label="NEC 725" value="Class 2" tone="#34D399" />
@@ -3765,7 +3922,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'telemetry' && (
+        {bodyShows(tab, 'telemetry') && (
           <>
             <DrawerSection title="Live telemetry">
               <Row label="Uptime" value="99.94%" tone="#34D399" />
@@ -3777,7 +3934,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'linked' && (
+        {bodyShows(tab, 'linked') && (
           <>
             <DrawerSection title="Linked systems">
               {[
@@ -3796,7 +3953,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {tab === 'notes' && (
+        {bodyShows(tab, 'notes') && (
           <>
             <DrawerSection title="Field notes">
               <textarea
@@ -3833,22 +3990,43 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
   setPos: (p: { x: number; y: number }) => void;
   onClose: () => void;
 }) {
+  // Real DORI math instead of decorative scoring. Each camera carries its
+  // own horizontal FOV in degrees + sensor width in pixels. Pixels-on-target
+  // at the simulated subject = sensorPx / (2 * distance * tan(fov / 2)).
+  // DORI thresholds (px per m on subject) are the EN-50132-7 / IEC 62676
+  // standard. We render those next to the live px/m calculation so the user
+  // sees, at distance X, which threshold the camera achieves.
   const tone = KIND_TONE[TYPE_KIND[d.type]];
   const dx = pos.x - d.x;
   const dy = pos.y - d.y;
   const dist = Math.hypot(dx, dy);
   const distFt = dist / 20;
+  const distM  = distFt * 0.3048;
   const angleToCam = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
   const camAim = ((d.rot + 360) % 360);
   const aimDelta = Math.min(Math.abs(angleToCam - camAim), 360 - Math.abs(angleToCam - camAim));
-  const inFOV = aimDelta < 44 && distFt < 80;
-  // Synthetic quality scoring
-  const faceClarity = Math.max(0, Math.min(100, Math.round(100 - distFt * 1.6 - aimDelta * 0.9)));
-  const prosecution = Math.max(0, Math.min(100, faceClarity - 8));
-  const irScore = Math.max(0, Math.min(100, Math.round(85 - distFt * 0.7)));
-  const lowLight = Math.max(0, Math.min(100, Math.round(70 - distFt * 0.5)));
-  const glare = Math.round(20 + (Math.abs(d.rot) % 25));
-  const fog = Math.round(30 + (Math.abs(d.x) % 18));
+  // Camera spec defaults if not yet edited
+  const sensorPx = 1920; // 1080p horizontal
+  const fovDeg   = (d.fov ?? (d.type === 'cam.ptz' ? 60 : d.type === 'cam.fisheye' ? 180 : 90));
+  const halfFovRad = (fovDeg * Math.PI / 180) / 2;
+  const fovWidthM  = Math.max(0.01, 2 * distM * Math.tan(halfFovRad));
+  const pxPerM = sensorPx / fovWidthM;
+  const pxPerFt = pxPerM * 0.3048;
+  const inHalfFov = aimDelta < (fovDeg / 2) + 4;
+  const inRange = distFt < (d.range ?? 80);
+  const inFOV = inHalfFov && inRange;
+  // DORI bands (px / m). EN-50132-7 / IEC 62676.
+  const DORI = [
+    { id: 'identify',  label: 'Identify',  min: 250, tone: '#34D399' },
+    { id: 'recognize', label: 'Recognize', min: 125, tone: '#7CC2FF' },
+    { id: 'observe',   label: 'Observe',   min:  63, tone: '#FACC15' },
+    { id: 'detect',    label: 'Detect',    min:  25, tone: '#FB923C' },
+  ];
+  const achieved = DORI.find((b) => pxPerM >= b.min);
+  // Person assumed 1.7m tall, face 0.18m wide → expected pixels on subject.
+  const facePx = Math.round(pxPerM * 0.18);
+  const bodyPx = Math.round(pxPerM * 0.5);   // shoulder width
+  const heightPx = Math.round(pxPerM * 1.7);
 
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -3861,93 +4039,120 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
 
   return (
     <>
-      {/* Draggable human silhouette on canvas */}
+      {/* Subject indicator on canvas — minimal stick figure, no cartoon face.
+          Color reflects whether the subject is in FOV + range. The label
+          underneath shows distance in feet. */}
       <div
         className="absolute z-30 pointer-events-auto select-none cursor-grab active:cursor-grabbing"
         style={{ left: pos.x * zoom, top: pos.y * zoom, transform: 'translate(-50%, -100%)' }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
       >
-        <svg width="28" height="56" viewBox="0 0 28 56" style={{ filter: `drop-shadow(0 4px 10px ${inFOV ? tone : '#1E293B'}88)` }}>
-          <circle cx="14" cy="8" r="6" fill={inFOV ? tone : '#64748B'} opacity="0.95" />
-          <path d="M14 14 L14 38 M14 18 L4 30 M14 18 L24 30 M14 38 L8 54 M14 38 L20 54" stroke={inFOV ? tone : '#64748B'} strokeWidth="3" strokeLinecap="round" fill="none" />
+        <svg width="22" height="44" viewBox="0 0 22 44" style={{ filter: `drop-shadow(0 2px 6px rgba(0,0,0,0.6))` }}>
+          <circle cx="11" cy="6" r="4" fill="none" stroke={inFOV ? tone : '#64748B'} strokeWidth="1.6" />
+          <path d="M11 10 L11 28 M11 14 L4 22 M11 14 L18 22 M11 28 L6 42 M11 28 L16 42" stroke={inFOV ? tone : '#64748B'} strokeWidth="1.8" strokeLinecap="round" fill="none" />
         </svg>
         <div className="text-center mt-0.5 text-[9px] uppercase tracking-[0.18em] tabular-nums" style={{ color: inFOV ? tone : '#64748B' }}>
           {distFt.toFixed(1)} ft
         </div>
       </div>
 
-      {/* Live portrait + quality card */}
+      {/* DORI panel. Engineering numbers, not a cartoon portrait. */}
       <div
         className="absolute z-40 pointer-events-auto select-none"
-        style={{ left: pos.x * zoom + 36, top: pos.y * zoom - 120, width: 240 }}
+        style={{ left: pos.x * zoom + 36, top: pos.y * zoom - 140, width: 280 }}
       >
         <div
           className="rounded-lg overflow-hidden"
           style={{
-            background: 'linear-gradient(180deg, rgba(10,14,22,0.96), rgba(6,9,15,0.96))',
+            background: 'linear-gradient(180deg, rgba(14,19,30,0.97), rgba(10,14,22,0.97))',
             backdropFilter: 'blur(20px)',
-            border: `1px solid ${tone}55`,
-            boxShadow: `0 16px 36px -10px rgba(0,0,0,0.8), 0 0 0 1px ${tone}22`,
+            border: `1px solid ${tone}44`,
+            boxShadow: `0 16px 36px -12px rgba(0,0,0,0.75), 0 0 0 1px ${tone}1A`,
           }}
         >
+          {/* Header */}
           <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
             <ScanFace className="w-3.5 h-3.5" style={{ color: tone }} />
-            <span className="text-[10px] uppercase tracking-[0.18em] text-slate-300">Target Sim</span>
-            <button onClick={onClose} className="ml-auto text-slate-500 hover:text-slate-200"><X className="w-3.5 h-3.5" /></button>
+            <span className="text-[10px] uppercase tracking-[0.18em] text-slate-200">Coverage check</span>
+            <span className="text-[9px] uppercase tracking-[0.16em] text-amber-300/70 px-1.5 py-0.5 rounded border border-amber-300/30 ml-auto">Simulated</span>
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X className="w-3.5 h-3.5" /></button>
           </div>
-          {/* synthetic portrait */}
-          <div className="relative h-[120px]" style={{ background: 'radial-gradient(circle at 50% 40%, #1E293B 0%, #060912 80%)' }}>
-            <svg viewBox="0 0 100 120" className="absolute inset-0 w-full h-full" style={{ opacity: Math.max(0.25, faceClarity / 100) }}>
-              <defs>
-                <linearGradient id="ts-face" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#D8B89A" />
-                  <stop offset="100%" stopColor="#7B5C44" />
-                </linearGradient>
-              </defs>
-              <ellipse cx="50" cy="46" rx="22" ry="28" fill="url(#ts-face)" />
-              <ellipse cx="42" cy="42" rx="2.4" ry="3" fill="#0B131F" />
-              <ellipse cx="58" cy="42" rx="2.4" ry="3" fill="#0B131F" />
-              <path d="M40 58 Q50 64 60 58" stroke="#0B131F" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-              <path d="M28 78 Q50 70 72 78 L72 120 L28 120 Z" fill="#1E293B" />
-            </svg>
-            {/* scan-line overlay */}
-            <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, transparent, ${tone}06 50%, transparent)`, mixBlendMode: 'screen' }} />
-            {/* corner brackets */}
-            {[['top-2 left-2','border-t border-l'],['top-2 right-2','border-t border-r'],['bottom-2 left-2','border-b border-l'],['bottom-2 right-2','border-b border-r']].map(([pos, b], i) => (
-              <span key={i} className={`absolute ${pos} w-3 h-3 ${b}`} style={{ borderColor: tone }} />
-            ))}
-            <div className="absolute bottom-1.5 left-2 text-[9px] tabular-nums text-slate-400">{faceClarity}% face</div>
-            <div className="absolute bottom-1.5 right-2 text-[9px] tabular-nums" style={{ color: inFOV ? '#34D399' : '#F87171' }}>{inFOV ? 'IN FOV' : 'OUT'}</div>
+
+          {/* In-FOV chip + distance */}
+          <div className="px-3 py-2.5 border-b border-white/5 grid grid-cols-3 gap-3">
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500">Distance</div>
+              <div className="text-base font-medium tabular-nums text-slate-100">{distFt.toFixed(1)} <span className="text-[10px] text-slate-500">ft</span></div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500">Off-axis</div>
+              <div className="text-base font-medium tabular-nums text-slate-100">{aimDelta.toFixed(0)}<span className="text-[10px] text-slate-500">°</span></div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500">In FOV</div>
+              <div className="text-[12px] font-medium uppercase tracking-wider tabular-nums" style={{ color: inFOV ? '#34D399' : '#F87171' }}>
+                {inFOV ? 'YES' : (!inHalfFov ? 'Off-axis' : 'Past range')}
+              </div>
+            </div>
           </div>
-          {/* scores */}
-          <div className="px-3 py-2 space-y-1">
-            {[
-              { k: 'Face clarity',     v: faceClarity, c: '#34D399', icon: ScanFace },
-              { k: 'Prosecution',     v: prosecution, c: '#7CC2FF', icon: ShieldCheck },
-              { k: 'IR effectiveness', v: irScore,    c: '#FB923C', icon: Sun },
-              { k: 'Low-light',       v: lowLight,   c: '#A78BFA', icon: Eye },
-              { k: 'Glare',           v: glare,      c: '#FACC15', icon: Sun },
-              { k: 'Fog',             v: fog,        c: '#94A3B8', icon: CloudFog },
-            ].map((row) => {
-              const Icon = row.icon;
+
+          {/* DORI ladder — which band is achieved at the current distance */}
+          <div className="px-3 py-2.5 border-b border-white/5">
+            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-2 flex items-center gap-2">
+              <span>DORI band</span>
+              <span className="flex-1 h-px bg-white/5" />
+              <span className="tabular-nums text-slate-400">{pxPerM.toFixed(0)} px/m</span>
+            </div>
+            {DORI.map((b) => {
+              const hit = pxPerM >= b.min;
+              const isTop = achieved?.id === b.id;
               return (
-                <div key={row.k} className="flex items-center gap-2">
-                  <Icon className="w-3 h-3" style={{ color: row.c }} />
-                  <span className="text-[10.5px] text-slate-400 flex-1">{row.k}</span>
-                  <div className="w-16 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                    <div className="h-full" style={{ width: `${row.v}%`, background: row.c, boxShadow: `0 0 6px ${row.c}` }} />
-                  </div>
-                  <span className="w-7 text-[10px] text-right tabular-nums text-slate-300">{row.v}</span>
+                <div key={b.id} className={`flex items-center gap-2 py-1 ${hit ? '' : 'opacity-40'}`}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: b.tone, boxShadow: hit ? `0 0 6px ${b.tone}` : 'none' }} />
+                  <span className={`flex-1 text-[11.5px] ${isTop ? 'text-slate-100 font-medium' : 'text-slate-300'}`}>{b.label}</span>
+                  <span className="text-[10px] tabular-nums text-slate-500">≥{b.min} px/m</span>
+                  {hit && <Check className="w-3 h-3 ml-1" style={{ color: b.tone }} />}
                 </div>
               );
             })}
+            {!achieved && (
+              <div className="text-[10px] text-rose-300 mt-1">Below Detect threshold — too far for usable coverage.</div>
+            )}
           </div>
-          <div className="px-3 py-2 border-t border-white/5 flex items-center gap-1.5 text-[10px]">
-            <button className="flex-1 py-1 rounded border border-white/10 text-slate-300 hover:bg-white/5">Day</button>
-            <button className="flex-1 py-1 rounded text-slate-100" style={{ background: `${tone}1A`, boxShadow: `inset 0 0 0 1px ${tone}55` }}>Night</button>
-            <button className="flex-1 py-1 rounded border border-white/10 text-slate-300 hover:bg-white/5">Fog</button>
-            <button className="flex-1 py-1 rounded border border-white/10 text-slate-300 hover:bg-white/5">Rain</button>
+
+          {/* Pixels on subject */}
+          <div className="px-3 py-2.5 border-b border-white/5">
+            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-1.5">Pixels on subject</div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div className="text-[14px] font-medium tabular-nums text-slate-100">{facePx}</div>
+                <div className="text-[9px] uppercase tracking-wide text-slate-500">Face px</div>
+              </div>
+              <div>
+                <div className="text-[14px] font-medium tabular-nums text-slate-100">{bodyPx}</div>
+                <div className="text-[9px] uppercase tracking-wide text-slate-500">Body px</div>
+              </div>
+              <div>
+                <div className="text-[14px] font-medium tabular-nums text-slate-100">{heightPx}</div>
+                <div className="text-[9px] uppercase tracking-wide text-slate-500">Height px</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Operating conditions */}
+          <div className="px-3 py-2.5">
+            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-1.5">Operating conditions</div>
+            <div className="grid grid-cols-2 gap-1 text-[10.5px]">
+              <div className="flex items-center justify-between"><span className="text-slate-500">Sensor</span><span className="tabular-nums text-slate-300">1920px</span></div>
+              <div className="flex items-center justify-between"><span className="text-slate-500">HFOV</span><span className="tabular-nums text-slate-300">{fovDeg}°</span></div>
+              <div className="flex items-center justify-between"><span className="text-slate-500">Width@dist</span><span className="tabular-nums text-slate-300">{fovWidthM.toFixed(1)} m</span></div>
+              <div className="flex items-center justify-between"><span className="text-slate-500">px/ft</span><span className="tabular-nums text-slate-300">{pxPerFt.toFixed(1)}</span></div>
+            </div>
+          </div>
+
+          <div className="px-3 py-1.5 border-t border-white/5 text-[9px] text-slate-500 leading-relaxed">
+            Computed from camera FOV + range. No video feed simulated.
           </div>
         </div>
       </div>
@@ -4195,15 +4400,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
    ═══════════════════════════════════════════════════════════════════════ */
 
 function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool) => void; showWall: boolean }) {
-  // Tool tooltips clarify what each one DOES, not just what it's called.
-  // The brief's most common confusion: Select vs Pan. Select edits objects;
-  // Pan moves the map view only and never selects.
+  // Every tool here MUST have a working canvas behavior. Text and comment
+  // tools were previously listed but never handled a click — they've been
+  // removed until they're implemented. The brief's rule: no dead controls.
   const items: Array<{ id: Tool; icon: any; label: string; key: string; hint: string }> = [
     { id: 'select',  icon: MousePointer2, label: 'Select',  key: 'V', hint: 'Select and edit objects' },
     { id: 'pan',     icon: Hand,          label: 'Pan',     key: 'H', hint: 'Pan the map · does not select' },
-    { id: 'measure', icon: Ruler,         label: 'Measure', key: 'M', hint: 'Measure distance between two points' },
-    { id: 'text',    icon: Type,          label: 'Text',    key: 'T', hint: 'Drop a text annotation' },
-    { id: 'comment', icon: MessageSquare, label: 'Comment', key: 'N', hint: 'Add a comment pin' },
+    { id: 'measure', icon: Ruler,         label: 'Measure', key: 'M', hint: 'Click two points to measure distance · ESC to cancel' },
     ...(showWall ? [{ id: 'wall' as Tool, icon: WallIcon, label: 'Wall', key: 'W', hint: 'Draw a wall · double-click to finish' }] : []),
   ];
   return (

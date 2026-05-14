@@ -3,29 +3,33 @@
 :root {
   --font-size: 14px;
 
-  /* DEEPER VISION - Architectural slate */
-  --background: #0D1117;
+  /* DEEPER VISION — infrastructure-grade. Deep navy base instead of
+     pure black; warmer slate elevation steps; calmer overall contrast.
+     The intent: feel like architectural / construction software, not a
+     spaceship dashboard. */
+  --background: #0F1623;
   --foreground: #E6EDF3;
 
-  /* Card surfaces - one subtle elevation step */
-  --card: #161B22;
-  --card-foreground: #E6EDF3;
+  /* Card surfaces — single, intentional elevation step above the canvas. */
+  --card: #1A2233;
+  --card-foreground: #EAF0F7;
 
   /* Popovers & Modals */
-  --popover: #161B22;
-  --popover-foreground: #E6EDF3;
+  --popover: #1A2233;
+  --popover-foreground: #EAF0F7;
 
-  /* Primary - single accent (blueprint blue) */
-  --primary: #2F81F7;
+  /* Primary — single accent (cyan-blueprint). Reserved for active
+     engineering states only. Per palette discipline: no decorative use. */
+  --primary: #3B8EF3;
   --primary-foreground: #FFFFFF;
 
-  /* Secondary - graphite */
-  --secondary: #21262D;
+  /* Secondary — slate, one step warmer than the card. */
+  --secondary: #232C40;
   --secondary-foreground: #E6EDF3;
 
-  /* Muted */
-  --muted: #30363D;
-  --muted-foreground: #7D8590;
+  /* Muted — engineering label tone. Slate gray. */
+  --muted: #2F3A50;
+  --muted-foreground: #94A0B5;
 
   /* Accent - same blueprint blue (single accent doctrine) */
   --accent: #2F81F7;
@@ -43,15 +47,16 @@
   --warning: #F59E0B;
   --warning-foreground: #FFFFFF;
 
-  /* Borders - hairline */
-  --border: #21262D;
-  --border-strong: #30363D;
+  /* Borders — warmer slate so panel boundaries read more like draftsman's
+     pencil lines than glowing HUD chrome. */
+  --border: #2A3447;
+  --border-strong: #3A475F;
 
   /* Inputs */
   --input: transparent;
-  --input-background: #0D1117;
-  --input-border: #30363D;
-  --switch-background: #30363D;
+  --input-background: #131A28;
+  --input-border: #3A475F;
+  --switch-background: #3A475F;
 
   /* Typography */
   --font-weight-medium: 500;
@@ -92,14 +97,15 @@
   --sidebar-border: rgba(148, 163, 184, 0.1);
   --sidebar-ring: #3B82F6;
 
-  /* Canvas - architectural drawing paper */
-  --canvas-background: #0D1117;
-  --canvas-grid: rgba(125, 133, 144, 0.06);
-  --canvas-axis: rgba(125, 133, 144, 0.18);
+  /* Canvas — architectural drawing paper. Slightly deeper than the body
+     so panels read as elevated surfaces sitting on the plan. */
+  --canvas-background: #0B1220;
+  --canvas-grid: rgba(148, 163, 184, 0.05);
+  --canvas-axis: rgba(148, 163, 184, 0.16);
 
   /* Floating panels */
-  --panel-background: #161B22;
-  --panel-border: #30363D;
+  --panel-background: #1A2233;
+  --panel-border: #3A475F;
 
   /* Typography tokens */
   --text-2xl: 1.5rem;
