@@ -547,9 +547,11 @@ export function EngineeringCanvas() {
     }
     // Spring toward the cursor target. Tuned for "carrying a small
     // brick" — heavy enough to feel weight, light enough that it
-    // never feels sluggish.
-    const k = 0.32;
-    const damping = 0.74;
+    // never feels sluggish. Damping bumped from 0.74 → 0.79 in this
+    // pass for a cleaner release feel; the device settles instead of
+    // ringing briefly around the target.
+    const k = 0.30;
+    const damping = 0.79;
     const dx = dev.x - lag.x;
     const dy = dev.y - lag.y;
     const vel = dragVelRef.current;
@@ -702,39 +704,122 @@ export function EngineeringCanvas() {
   }, [selId]);
 
   /* Drag-to-place from the library --------------------------------------- */
+  // hoverHost is the door / IDF currently under the cursor while a drag is
+  // active. Drives the on-canvas attach ring + the attach-vs-reject
+  // decision on drop. The compatibility module (lib/compatibility) is the
+  // single source of truth for what can host what.
+  const [hoverHost, setHoverHost] = useState<{
+    id: string;
+    cx: number; cy: number;
+    allowed: boolean;
+    reason?: string;
+    hint?: string;
+  } | null>(null);
   useEffect(() => {
-    if (!drag) return;
+    if (!drag) { setHoverHost(null); return; }
+    const HOST_RANGE = 26; // canvas units — how close the cursor needs to be
     const onMove = (e: PointerEvent) => {
       const r = surfaceRef.current?.getBoundingClientRect();
       if (!r) return;
       setDrag((d) => d ? { ...d, x: e.clientX - r.left, y: e.clientY - r.top } : null);
+      // Detect the nearest door / IDF host under the cursor and ask
+      // canHost whether the dragged product is compatible. We use the
+      // CANVAS-space cursor (px / zoom) so the range is consistent at
+      // any zoom level.
+      const cx = (e.clientX - r.left) / zoom;
+      const cy = (e.clientY - r.top) / zoom;
+      let best: { id: string; type: DeviceType; cx: number; cy: number; d: number } | null = null;
+      for (const dev of devices) {
+        const isHost = dev.type === 'acc.door' || dev.type === 'acc.gate' || dev.type === 'acc.exit'
+          || dev.type === 'net.idf' || dev.type === 'net.mdf';
+        if (!isHost) continue;
+        const d = Math.hypot(dev.x - cx, dev.y - cy);
+        if (d < HOST_RANGE && (!best || d < best.d)) best = { id: dev.id, type: dev.type, cx: dev.x, cy: dev.y, d };
+      }
+      if (!best) { setHoverHost(null); return; }
+      const hostKind: 'door' | 'idf' =
+        (best.type === 'acc.door' || best.type === 'acc.gate' || best.type === 'acc.exit') ? 'door' : 'idf';
+      const compat = canHost(hostKind, drag.product.type);
+      setHoverHost({
+        id: best.id, cx: best.cx, cy: best.cy,
+        allowed: compat.allowed,
+        reason: compat.reason,
+        hint: compat.hint,
+      });
     };
     const onUp = (e: PointerEvent) => {
       const r = surfaceRef.current?.getBoundingClientRect();
-      if (!r) { setDrag(null); return; }
+      if (!r) { setDrag(null); setHoverHost(null); return; }
       const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-      if (inside && drag) {
-        const rawX = (e.clientX - r.left) / zoom;
-        const rawY = (e.clientY - r.top) / zoom;
-        const x = snap ? Math.round(rawX / 20) * 20 : rawX;
-        const y = snap ? Math.round(rawY / 20) * 20 : rawY;
+      if (!inside || !drag) { setDrag(null); setHoverHost(null); return; }
+      // ── Drop on a host? ──
+      if (hoverHost) {
+        if (!hoverHost.allowed) {
+          // Clean rejection. No device created. Toast the reason and the
+          // suggested action — the user gets a real warning, not silence.
+          toast.warning(hoverHost.reason ?? 'Not compatible with that host', {
+            description: hoverHost.hint,
+            duration: 6500,
+          });
+          setDrag(null); setHoverHost(null);
+          return;
+        }
+        // Compatible attach. Place the new device adjacent to the host
+        // and store the host↔device link via the existing linkedIds
+        // field. The host gets the new device's id appended; the new
+        // device carries the host's id. BOM (deriveBOM) treats the
+        // attached device as a normal line.
+        const host = devices.find((d) => d.id === hoverHost.id);
+        if (!host) { setDrag(null); setHoverHost(null); return; }
         const kind = TYPE_KIND[drag.product.type];
         const prefix = kind === 'camera' ? 'CAM' : kind === 'access' ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR') : 'NW';
         const id = `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
+        // Offset the new device just outside the host so both glyphs are
+        // visible. 22px adjacent to the host center reads as "attached".
         const newDevice: Device = {
-          id, type: drag.product.type,
-          label: drag.product.model, product: drag.product.id,
-          x, y, rot: 0,
+          id, type: drag.product.type, label: drag.product.model, product: drag.product.id,
+          x: host.x + 22, y: host.y, rot: 0,
+          linkedIds: [host.id],
         };
-        setDevices((ds) => [...ds, newDevice]);
+        setDevices((ds) => ds.map((d) => d.id === host.id
+          ? { ...d, linkedIds: [...(d.linkedIds ?? []), id] }
+          : d).concat(newDevice));
         setSelId(id);
+        toast.success(`Attached ${drag.product.model} to ${host.id}`, {
+          description: hoverHost.reason ? undefined : 'Linked and added to BOM',
+          duration: 3500,
+        });
+        if (drag.product.type === 'acc.maglock') {
+          // canHost flagged the maglock → REX dependency. Surface it.
+          toast.message('Heads up', {
+            description: 'A REX (request-to-exit) is required when using a maglock for fire-egress compliance.',
+            duration: 6000,
+          });
+        }
+        setDrag(null); setHoverHost(null);
+        return;
       }
-      setDrag(null);
+      // ── Normal floor drop ──
+      const rawX = (e.clientX - r.left) / zoom;
+      const rawY = (e.clientY - r.top) / zoom;
+      const x = snap ? Math.round(rawX / 20) * 20 : rawX;
+      const y = snap ? Math.round(rawY / 20) * 20 : rawY;
+      const kind = TYPE_KIND[drag.product.type];
+      const prefix = kind === 'camera' ? 'CAM' : kind === 'access' ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR') : 'NW';
+      const id = `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
+      const newDevice: Device = {
+        id, type: drag.product.type,
+        label: drag.product.model, product: drag.product.id,
+        x, y, rot: 0,
+      };
+      setDevices((ds) => [...ds, newDevice]);
+      setSelId(id);
+      setDrag(null); setHoverHost(null);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
-  }, [drag, zoom, snap, devices]);
+  }, [drag, zoom, snap, devices, hoverHost]);
 
   const updateSel = (patch: Partial<Device>) => sel && setDevices((ds) => ds.map((d) => d.id === sel.id ? { ...d, ...patch } : d));
   const deleteSel = () => { if (sel) { setDevices((ds) => ds.filter((d) => d.id !== sel.id)); setSelId(null); } };
@@ -890,6 +975,7 @@ export function EngineeringCanvas() {
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
               hoveredLens={hoveredLens}
+              hoverHost={hoverHost}
               onBlank={() => setSelId(null)}
               snap={snap}
               dragging={!!drag}
@@ -2291,6 +2377,17 @@ interface SurfaceProps {
    *  carries that lens id so the corresponding cone can subtly
    *  highlight. Null when nothing is being hovered. */
   hoveredLens: LensId | null;
+  /** Currently-hovered host while a drag is in flight. When set, the
+   *  canvas paints an attach ring around the host with allowed/rejected
+   *  feedback. Null when no host is under the cursor or no drag is
+   *  in progress. */
+  hoverHost: {
+    id: string;
+    cx: number; cy: number;
+    allowed: boolean;
+    reason?: string;
+    hint?: string;
+  } | null;
 }
 
 const ICON_SCALE: Record<IconSize, number> = { compact: 0.75, standard: 1, large: 1.35 };
@@ -2309,7 +2406,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens }, ref
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -2847,6 +2944,43 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               <g transform={`translate(${tipX + 12}, ${tipY + 8})`}>
                 <text fontSize="9" fontFamily="ui-sans-serif" fill="rgba(226,232,240,0.55)">
                   Enter / dbl-click to finish · Esc cancels
+                </text>
+              </g>
+            </g>
+          );
+        })()}
+
+        {/* Drag-onto-host attach ring. Visible only while a drag from
+            the library is in flight AND the cursor is over a candidate
+            host (door / gate / exit / IDF / MDF). Green ring + "Attach"
+            label when compatible; rose ring + reason when not. Soft
+            breathe via the existing glow-breathe keyframe so the host
+            communicates magnetism without flashing. */}
+        {hoverHost && (() => {
+          const ringTone = hoverHost.allowed ? '#34D399' : '#F87171';
+          return (
+            <g pointerEvents="none">
+              <circle
+                cx={hoverHost.cx} cy={hoverHost.cy} r={26}
+                fill="none" stroke={ringTone} strokeWidth="1.6"
+                strokeDasharray="3 3" opacity="0.85"
+                style={{ animation: 'glow-breathe 1.6s ease-in-out infinite' }}
+              />
+              <circle
+                cx={hoverHost.cx} cy={hoverHost.cy} r={32}
+                fill="none" stroke={ringTone} strokeWidth="0.8" opacity="0.25"
+              />
+              <g transform={`translate(${hoverHost.cx}, ${hoverHost.cy + 44})`}>
+                <rect
+                  x={-58} y={-9} width={116} height={18} rx={3}
+                  fill="rgba(13,20,36,0.92)" stroke={ringTone} strokeWidth="0.7"
+                />
+                <text
+                  x={0} y={3.5} textAnchor="middle"
+                  fontSize="10" fontWeight="600" fontFamily="ui-sans-serif"
+                  fill={ringTone}
+                >
+                  {hoverHost.allowed ? `Attach to ${hoverHost.id}` : 'Not compatible'}
                 </text>
               </g>
             </g>
@@ -4465,6 +4599,65 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
               <Row label="Blind spot %" value={`${blindPct}%`} tone={blindPct > 12 ? '#F87171' : undefined} />
               <Row label="Confidence" value="0.92" tone="#34D399" />
             </DrawerSection>
+            {/* Multisensor scene presets — one-click orientations for
+                common deployments. Each writes a new lens config to the
+                device; the user can then fine-tune from there. Hidden
+                for non-multisensor cameras. */}
+            {isMultisensor && (
+              <DrawerSection title="Scene presets">
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'corridor',  label: 'Corridor',  hint: 'Two long cones, two narrow sides' },
+                    { id: 'parking',   label: 'Parking',   hint: 'Four 90° quadrants, full coverage' },
+                    { id: 'warehouse', label: 'Warehouse', hint: 'Narrow long cones for aisles' },
+                    { id: 'lobby',     label: 'Lobby',     hint: 'Forward fan for face recognition' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        const cur = getLenses(d);
+                        let next = cur;
+                        if (p.id === 'corridor') {
+                          next = {
+                            a: { ...cur.a, rotation: 0,   fov: 60, range: 80, enabled: true },
+                            b: { ...cur.b, rotation: 180, fov: 60, range: 80, enabled: true },
+                            c: { ...cur.c, rotation: 90,  fov: 45, range: 30, enabled: true },
+                            d: { ...cur.d, rotation: 270, fov: 45, range: 30, enabled: true },
+                          };
+                        } else if (p.id === 'parking') {
+                          next = {
+                            a: { ...cur.a, rotation: 0,   fov: 90, range: 100, enabled: true },
+                            b: { ...cur.b, rotation: 90,  fov: 90, range: 100, enabled: true },
+                            c: { ...cur.c, rotation: 180, fov: 90, range: 100, enabled: true },
+                            d: { ...cur.d, rotation: 270, fov: 90, range: 100, enabled: true },
+                          };
+                        } else if (p.id === 'warehouse') {
+                          next = {
+                            a: { ...cur.a, rotation: 0,   fov: 50, range: 120, enabled: true },
+                            b: { ...cur.b, rotation: 90,  fov: 50, range: 80,  enabled: true },
+                            c: { ...cur.c, rotation: 180, fov: 50, range: 120, enabled: true },
+                            d: { ...cur.d, rotation: 270, fov: 50, range: 80,  enabled: true },
+                          };
+                        } else if (p.id === 'lobby') {
+                          next = {
+                            a: { ...cur.a, rotation: 350, fov: 50, range: 40, enabled: true },
+                            b: { ...cur.b, rotation: 30,  fov: 50, range: 40, enabled: true },
+                            c: { ...cur.c, rotation: 70,  fov: 50, range: 40, enabled: true },
+                            d: { ...cur.d, rotation: 110, fov: 50, range: 40, enabled: true },
+                          };
+                        }
+                        onUpdate({ lenses: next });
+                      }}
+                      className="text-left px-3 py-2 rounded-md border border-white/[0.08] hover:border-white/[0.18] hover:bg-white/[0.04] transition-colors duration-150"
+                      style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
+                    >
+                      <div className="text-[12px] font-medium text-slate-100 tracking-tight">{p.label}</div>
+                      <div className="text-[10.5px] text-muted-foreground/80 mt-0.5">{p.hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </DrawerSection>
+            )}
           </>
         )}
 
