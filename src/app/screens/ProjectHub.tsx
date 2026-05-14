@@ -119,7 +119,7 @@ export function ProjectHub() {
                 resetDemoData();
               }
             }}
-            className="text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded"
+            className="text-[11.5px] text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded"
             title="Reset demo data"
           >
             <RotateCcw className="w-3 h-3" />
@@ -185,7 +185,7 @@ export function ProjectHub() {
                         <span className={`w-1.5 h-1.5 rounded-full ${phaseCfg.tone.dot}`} />
                         {phaseCfg.label}
                       </span>
-                      <span className={`text-[10px] uppercase tracking-wider ${h.cls}`}>{h.label}</span>
+                      <span className={`text-[11px] ${h.cls}`}>{h.label}</span>
                     </div>
                     <h3 className="text-base font-medium leading-tight">{p.name}</h3>
                     {p.customerId ? (
@@ -205,7 +205,7 @@ export function ProjectHub() {
 
                     {p.nextAction && (
                       <div className="mt-3 px-2.5 py-2 rounded bg-secondary/30 border border-border/50">
-                        <div className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Next action</div>
+                        <div className="text-[11px] text-muted-foreground mb-0.5">Next action</div>
                         <div className="text-xs text-foreground leading-snug">{p.nextAction}</div>
                       </div>
                     )}

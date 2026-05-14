@@ -146,7 +146,7 @@ export function Commissioning() {
       <div className="max-w-[1200px] mx-auto px-6 py-6 grid grid-cols-[280px_1fr] gap-4">
         <div>
           <div className="bg-card border border-border rounded-lg p-3 mb-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Progress</div>
+            <div className="text-[11.5px] font-medium text-slate-200 tracking-tight">Progress</div>
             <div className="text-2xl font-medium mt-1">{counts.pass} <span className="text-sm text-muted-foreground">/ {counts.total} pass</span></div>
             <div className="mt-2 h-1 bg-secondary rounded-full overflow-hidden">
               <div className="h-full bg-emerald-400" style={{ width: `${counts.pct}%` }} />

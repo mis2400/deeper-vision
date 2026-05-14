@@ -178,7 +178,7 @@ export function AccountDetail() {
                   </span>
                 )}
                 {customer.industry && (
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{industryLabel(customer.industry)}</span>
+                  <span className="text-[11.5px] text-muted-foreground">{industryLabel(customer.industry)}</span>
                 )}
               </div>
 
@@ -205,7 +205,7 @@ export function AccountDetail() {
             </div>
 
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Primary contact</div>
+              <div className="text-[11.5px] font-medium text-slate-200 mb-2 tracking-tight">Primary contact</div>
               {primaryContact ? (
                 <div className="bg-secondary/30 border border-border/60 rounded-md p-3">
                   <div className="text-sm font-medium">{primaryContact.firstName} {primaryContact.lastName}</div>
@@ -364,7 +364,7 @@ function ContactsTab({ contacts, customer }: { contacts: Contact[]; customer: { 
                   {isPrimary && <Star className="w-3 h-3 text-amber-400" />}
                 </div>
                 {c.title && <div className="text-xs text-muted-foreground mt-0.5">{c.title}</div>}
-                {c.role && <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-2">{ROLE_LABEL[c.role] ?? c.role}</div>}
+                {c.role && <div className="text-[11px] text-muted-foreground mt-2">{ROLE_LABEL[c.role] ?? c.role}</div>}
               </div>
             </div>
             <div className="mt-3 space-y-1 text-xs">
@@ -440,7 +440,7 @@ function ActivityTab({ items, touches }: { items: import('../store/types').Activ
               <div className="text-xs text-muted-foreground mt-0.5">{(m as any).detail}</div>
             )}
             <div className="text-[10px] text-muted-foreground mt-1">
-              <span className="uppercase tracking-wider">{m.type.replace(/_/g, ' ')}</span>
+              <span className="text-muted-foreground/80">{m.type.replace(/_/g, ' ')}</span>
               {m.userName ? <> · {m.userName}</> : null} · {timeAgo(m.ts)}
             </div>
           </div>
@@ -488,7 +488,7 @@ function TasksTab({ tasks, onComplete }: { tasks: Task[]; onComplete: (id: strin
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="bg-card border border-border rounded-lg p-3">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-[11.5px] text-muted-foreground">{label}</div>
       <div className="text-xl font-medium mt-1 tabular-nums">{value}</div>
       {hint && <div className="text-[10px] text-muted-foreground mt-0.5">{hint}</div>}
     </div>
@@ -498,7 +498,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 function InfoRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">{icon}{label}</div>
+      <div className="text-[11.5px] text-muted-foreground inline-flex items-center gap-1">{icon}{label}</div>
       <div className="text-sm mt-0.5">{children}</div>
     </div>
   );

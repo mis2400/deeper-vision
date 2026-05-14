@@ -134,7 +134,7 @@ export function EstimatorView() {
 
         <div className="space-y-3">
           <div className="bg-card border border-border rounded-lg p-4 sticky top-4">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Totals</div>
+            <div className="text-[11.5px] font-medium text-slate-200 tracking-tight">Totals</div>
             <div className="mt-3 space-y-1.5 text-sm">
               <div className="flex justify-between text-muted-foreground"><span>Hardware</span><span className="tabular-nums">{currency(bom.hardwareTotal)}</span></div>
               <div className="flex justify-between text-muted-foreground"><span>Cable & pathway</span><span className="tabular-nums">{currency(bom.cableTotal)}</span></div>

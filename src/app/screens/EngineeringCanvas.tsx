@@ -469,6 +469,100 @@ export function EngineeringCanvas() {
   const projectTechModelsMap = useProjectStore((s) => s.projectTechModels);
   const setProjectTechModel  = useProjectStore((s) => s.setProjectTechModel);
   const techModel = projectTechModelsMap[projectId] ?? 'hybrid';
+
+  // Cross-component lens hover. When the user hovers a lens chip in the
+  // SelectionPill, that lens id flows here and out to the canvas so the
+  // corresponding cone subtly highlights. Reads as "this chip controls
+  // that cone" without any explicit instruction.
+  const [hoveredLens, setHoveredLens] = useState<LensId | null>(null);
+
+  // ── Drag physics ────────────────────────────────────────────────
+  // Real spring-mass-damper, not CSS easing. The store position (d.x /
+  // d.y) tracks the *cursor target* — updated synchronously by the
+  // pointer move handler (with magnetic snap applied). The display
+  // position `dragLag` lerps toward the target via a spring loop. The
+  // device, its cones, and its selection pill ALL render from the
+  // lagged position so the experience reads as one piece of physical
+  // matter responding to a magnet, not a sprite teleporting to the
+  // cursor.
+  //
+  // dragLag is null when nothing is being dragged. When non-null,
+  // either the user is still holding the pointer down (isDraggingRef
+  // = true) or we're in the post-release settle phase (RAF continues
+  // until velocity and distance both fall below threshold).
+  const [dragLag, setDragLag] = useState<{ id: string; x: number; y: number } | null>(null);
+  const dragLagRef    = useRef<{ id: string; x: number; y: number } | null>(null);
+  const dragVelRef    = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isDraggingRef = useRef<boolean>(false);
+  const rafRef        = useRef<number | null>(null);
+  // devicesRef so the physics loop can read the latest cursor target
+  // without re-creating the loop callback on every device update.
+  const devicesRef    = useRef<Device[]>([]);
+  useEffect(() => { devicesRef.current = devices; }, [devices]);
+
+  const stepPhysics = useCallback(() => {
+    const lag = dragLagRef.current;
+    if (!lag) { rafRef.current = null; return; }
+    const dev = devicesRef.current.find((d) => d.id === lag.id);
+    if (!dev) {
+      dragLagRef.current = null;
+      setDragLag(null);
+      rafRef.current = null;
+      return;
+    }
+    // Spring toward the cursor target. Tuned for "carrying a small
+    // brick" — heavy enough to feel weight, light enough that it
+    // never feels sluggish.
+    const k = 0.32;
+    const damping = 0.74;
+    const dx = dev.x - lag.x;
+    const dy = dev.y - lag.y;
+    const vel = dragVelRef.current;
+    vel.x = (vel.x + dx * k) * damping;
+    vel.y = (vel.y + dy * k) * damping;
+    lag.x += vel.x;
+    lag.y += vel.y;
+    // Mirror the new position to React state so subscribers re-render.
+    setDragLag({ id: lag.id, x: lag.x, y: lag.y });
+    // Settle: pointer released AND essentially still AND essentially
+    // on-target. Slight tolerance avoids endless infinitesimal motion.
+    if (!isDraggingRef.current) {
+      const speed2 = vel.x * vel.x + vel.y * vel.y;
+      const dist2  = dx * dx + dy * dy;
+      if (speed2 < 0.04 && dist2 < 0.20) {
+        dragLagRef.current = null;
+        dragVelRef.current = { x: 0, y: 0 };
+        setDragLag(null);
+        rafRef.current = null;
+        return;
+      }
+    }
+    rafRef.current = requestAnimationFrame(stepPhysics);
+  }, []);
+
+  /** Called from CanvasSurface when a device drag begins. */
+  const onDragStart = useCallback((id: string, x: number, y: number) => {
+    isDraggingRef.current = true;
+    dragLagRef.current = { id, x, y };
+    dragVelRef.current = { x: 0, y: 0 };
+    setDragLag({ id, x, y });
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(stepPhysics);
+    }
+  }, [stepPhysics]);
+
+  /** Called from CanvasSurface on pointer release. Marks the
+   *  drag as no longer active; the physics loop continues running
+   *  until the device settles, then stops itself. */
+  const onDragEnd = useCallback(() => {
+    isDraggingRef.current = false;
+    // RAF will detect (no longer dragging) and settle.
+  }, []);
+
+  useEffect(() => () => {
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+  }, []);
+
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
   const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
@@ -511,7 +605,18 @@ export function EngineeringCanvas() {
   }, [lockedIds, projectId]);
 
   const surfaceRef = useRef<SVGSVGElement>(null);
-  const sel = devices.find((d) => d.id === selId) ?? null;
+  // `sel` is what the SelectionPill anchors to. During a drag, swap in
+  // the lagged position so the pill rides with the device's visual mass
+  // (and its tether stays connected) instead of teleporting to the
+  // cursor target.
+  const sel = useMemo(() => {
+    const found = devices.find((d) => d.id === selId) ?? null;
+    if (!found) return null;
+    if (dragLag && dragLag.id === found.id) {
+      return { ...found, x: dragLag.x, y: dragLag.y };
+    }
+    return found;
+  }, [devices, selId, dragLag]);
 
   // Presence cursors — three teammates drifting around the canvas
   const [presence, setPresence] = useState<Array<{ id: string; name: string; tone: string; x: number; y: number; tx: number; ty: number; hoverId: string | null }>>([
@@ -519,8 +624,8 @@ export function EngineeringCanvas() {
     { id: 'MK', name: 'Mira',    tone: '#A371F7', x: 560, y: 360, tx: 560, ty: 360, hoverId: null },
     { id: 'RT', name: 'Rafael',  tone: '#3FB950', x: 220, y: 420, tx: 220, ty: 420, hoverId: null },
   ]);
-  const devicesRef = useRef(devices);
-  useEffect(() => { devicesRef.current = devices; }, [devices]);
+  // devicesRef is already declared above for the drag physics loop;
+  // no second declaration here.
   // Presence cursors are static — no autonomous movement. Real session would
   // drive these from a CRDT/socket. Mock teammates stay put to avoid distraction.
 
@@ -743,6 +848,10 @@ export function EngineeringCanvas() {
               coverageMode={coverageMode}
               layers={layers}
               display={display}
+              dragLag={dragLag}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              hoveredLens={hoveredLens}
               onBlank={() => setSelId(null)}
               snap={snap}
               dragging={!!drag}
@@ -813,6 +922,7 @@ export function EngineeringCanvas() {
                 setActiveLens={setActiveLens}
                 lensMode={(sel.lensMode ?? 'linked') as LensMode}
                 setLensMode={setLensModeForSel}
+                onLensHover={setHoveredLens}
               />
             )}
 
@@ -2065,6 +2175,22 @@ interface SurfaceProps {
     end:   { x: number; y: number } | null;
     cursor:{ x: number; y: number } | null;
   };
+  /** Lagged display position of the device currently being dragged.
+   *  When set, the device, its cones, and the selection pill all
+   *  render from this position instead of the store position — giving
+   *  the drag its weighted, spring-physics feel. Null when nothing is
+   *  being dragged or settling. */
+  dragLag: { id: string; x: number; y: number } | null;
+  /** Called by the pointerDown handler on a device. Parent kicks off
+   *  the physics loop. */
+  onDragStart: (id: string, x: number, y: number) => void;
+  /** Called by the pointerUp handler on a device. Parent marks the
+   *  drag as no longer active; physics continues until settled. */
+  onDragEnd: () => void;
+  /** When the user hovers a lens chip in the SelectionPill, this
+   *  carries that lens id so the corresponding cone can subtly
+   *  highlight. Null when nothing is being hovered. */
+  hoveredLens: LensId | null;
 }
 
 const ICON_SCALE: Record<IconSize, number> = { compact: 0.75, standard: 1, large: 1.35 };
@@ -2083,35 +2209,45 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure }, ref
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, dragLag, onDragStart, onDragEnd, hoveredLens }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
   const moveRef = useRef<{ id: string; offX: number; offY: number } | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
-  const movingDev = movingId ? devices.find((d) => d.id === movingId) ?? null : null;
+
+  // While a device is being dragged, every render — cones, glyphs,
+  // labels, snap calculations — pulls position from `renderedDevices`
+  // (which substitutes the lagged display position for the dragged
+  // device). This is what makes the visual mass lag behind the cursor.
+  // When nothing is dragging, renderedDevices === devices.
+  const renderedDevices = useMemo(() => {
+    if (!dragLag) return devices;
+    return devices.map((d) => d.id === dragLag.id ? { ...d, x: dragLag.x, y: dragLag.y } : d);
+  }, [devices, dragLag]);
+  const movingDev = movingId ? renderedDevices.find((d) => d.id === movingId) ?? null : null;
   // snap candidates — other devices aligned within 4px of the moving device
   const snapTargets = useMemo(() => {
     if (!movingDev) return [] as { axis: 'v' | 'h'; coord: number; otherX: number; otherY: number }[];
     const out: { axis: 'v' | 'h'; coord: number; otherX: number; otherY: number }[] = [];
-    devices.forEach((o) => {
+    renderedDevices.forEach((o) => {
       if (o.id === movingDev.id) return;
       if (Math.abs(o.x - movingDev.x) < 5) out.push({ axis: 'v', coord: o.x, otherX: o.x, otherY: o.y });
       if (Math.abs(o.y - movingDev.y) < 5) out.push({ axis: 'h', coord: o.y, otherX: o.x, otherY: o.y });
     });
     return out;
-  }, [movingDev, devices]);
+  }, [movingDev, renderedDevices]);
   // nearest neighbor (for distance telemetry while dragging)
   const nearest = useMemo(() => {
     if (!movingDev) return null;
     let best: { id: string; d: number; x: number; y: number } | null = null;
-    devices.forEach((o) => {
+    renderedDevices.forEach((o) => {
       if (o.id === movingDev.id) return;
       const dd = Math.hypot(o.x - movingDev.x, o.y - movingDev.y);
       if (!best || dd < best.d) best = { id: o.id, d: dd, x: o.x, y: o.y };
     });
     return best;
-  }, [movingDev, devices]);
+  }, [movingDev, renderedDevices]);
   const coords = (e: React.MouseEvent) => {
     const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
     return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
@@ -2247,16 +2383,16 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             never goes blind. Opacity is further multiplied by the user's
             coverage opacity setting so dense maps can be quieted. */}
         <g style={{ mixBlendMode: coverageMode === 'heatmap' ? 'screen' : 'normal' }}>
-          {devices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
+          {renderedDevices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
             const isSel = d.id === selId;
             if (!layers.fov && !isSel) return null;
             const dim = (selId ? (isSel ? 1 : 0.28) : 1) * coverageAlpha;
-            return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} />;
+            return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} />;
           })}
         </g>
 
         {/* Devices — real top-down hardware silhouettes with drag-to-move */}
-        {devices.map((d) => {
+        {renderedDevices.map((d) => {
           const multi = selIds.has(d.id);
           const tone = KIND_TONE[TYPE_KIND[d.type]];
           const isSel = selId === d.id;
@@ -2282,6 +2418,9 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 moveRef.current = { id: d.id, offX: cx - d.x, offY: cy - d.y };
                 setMovingId(d.id);
                 onPick(d.id);
+                // Kick off the parent's physics loop with this device's
+                // current position as the starting lag.
+                onDragStart(d.id, d.x, d.y);
               }}
               onPointerMove={(e) => {
                 const m = moveRef.current;
@@ -2291,12 +2430,37 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 const r = svg.getBoundingClientRect();
                 const cx = (e.clientX - r.left) / zoom;
                 const cy = (e.clientY - r.top) / zoom;
-                onMoveDevice(d.id, cx - m.offX, cy - m.offY);
+                let nx = cx - m.offX;
+                let ny = cy - m.offY;
+                // Magnetic snap on the *cursor target*. The visual still
+                // springs toward this target via the parent's physics, so
+                // the snap reads as the device being pulled in — not a
+                // teleport. Snap tolerance is the same as the existing
+                // guide-line tolerance (5px) so the visible guides line
+                // up with the actual pull moment.
+                if (snap) {
+                  const SNAP = 5;
+                  for (const o of devices) {
+                    if (o.id === d.id) continue;
+                    if (Math.abs(nx - o.x) < SNAP) nx = o.x;
+                    if (Math.abs(ny - o.y) < SNAP) ny = o.y;
+                  }
+                  // Grid snap — every 20px (matches the canvas grid).
+                  const gx = Math.round(nx / 20) * 20;
+                  const gy = Math.round(ny / 20) * 20;
+                  if (Math.abs(nx - gx) < 3) nx = gx;
+                  if (Math.abs(ny - gy) < 3) ny = gy;
+                }
+                onMoveDevice(d.id, nx, ny);
               }}
               onPointerUp={(e) => {
                 if (moveRef.current?.id === d.id) moveRef.current = null;
                 setMovingId(null);
                 (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+                // Tell the parent the pointer is released. Physics
+                // continues running until the device's visual position
+                // settles onto the (snapped) store position.
+                onDragEnd();
               }}
             >
               {isSel && (
@@ -2365,7 +2529,11 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             local rotation, relative to device). In linked mode — or with 'all'
             active — it rotates the device body (which carries all lenses). */}
         {(() => {
-          const s = devices.find((d) => d.id === selId);
+          // Use renderedDevices so the rotation ring and cone handles
+          // stick to the selected device's *lagged* position during
+          // drag — otherwise the manipulation rig would teleport ahead
+          // of the device visual.
+          const s = renderedDevices.find((d) => d.id === selId);
           if (!s || TYPE_KIND[s.type] !== 'camera') return null;
           const isMs = s.type === 'cam.multisensor';
           const lensMode = s.lensMode ?? 'linked';
@@ -2475,7 +2643,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             Gated by the `dimensions` engineering layer (default off — only
             on when the user wants to see camera-to-camera spacing). */}
         {layers.dimensions && (() => {
-          const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera').sort((a, b) => a.x - b.x);
+          const cams = renderedDevices.filter((d) => TYPE_KIND[d.type] === 'camera').sort((a, b) => a.x - b.x);
           const pairs: { a: Device; b: Device }[] = [];
           for (let i = 0; i < cams.length - 1; i++) pairs.push({ a: cams[i], b: cams[i + 1] });
           return pairs.map((p, i) => {
@@ -2717,7 +2885,7 @@ function FovCone({
   );
 }
 
-function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all' }: { d: Device; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens }) {
+function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null }: { d: Device; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null }) {
   // Mode-driven render parameters
   const opacity = (mode === 'minimal' ? 0.35 : mode === 'presentation' ? 0.7 : mode === 'tactical' ? 0.9 : mode === 'heatmap' ? 0.85 : mode === 'night' ? 0.55 : 0.75) * dim * (selected ? 1.15 : 1);
   const wireframe = mode === 'wireframe';
@@ -2743,11 +2911,18 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all' }
           const L = lenses[k];
           if (!L.enabled) return null;
           const isActive = selected && (activeLens === k || activeLens === 'all');
+          const isHovered = selected && hoveredLens === k;
           // Lens rotation is relative to the multisensor body — adding d.rot
           // lets the user rotate the whole device while preserving the
           // cardinal spread between lenses.
           const absRot = ((L.rotation + d.rot) % 360 + 360) % 360;
-          const coneOpacity = opacity * (selected && activeLens !== 'all' && activeLens !== k ? 0.32 : 1);
+          // When a lens chip is being hovered, lift its corresponding
+          // cone slightly and dim the others — so the user can visually
+          // pair "this chip" → "that cone" without any explanation.
+          let coneOpacity = opacity * (selected && activeLens !== 'all' && activeLens !== k ? 0.32 : 1);
+          if (selected && hoveredLens) {
+            coneOpacity = opacity * (isHovered ? 1.15 : 0.25);
+          }
           return (
             <FovCone
               key={`lens-${d.id}-${k}`}
@@ -3363,8 +3538,8 @@ function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
 }
 
 function MultisensorLensChips({
-  activeLens, setActiveLens, lensMode, setLensMode, tone,
-}: { activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void; lensMode: LensMode; setLensMode: (m: LensMode) => void; tone: string }) {
+  activeLens, setActiveLens, lensMode, setLensMode, tone, onLensHover,
+}: { activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void; lensMode: LensMode; setLensMode: (m: LensMode) => void; tone: string; onLensHover?: (lens: LensId | null) => void }) {
   // Refined lens selector. Each chip carries its lens color as a small dot
   // that scales up subtly when active — the only motion needed for a feel
   // of premium tactility. No uppercase tracking; no neon underlines; the
@@ -3400,12 +3575,14 @@ function MultisensorLensChips({
           <button
             key={l}
             onClick={() => setActiveLens(l)}
+            onPointerEnter={() => onLensHover?.(l)}
+            onPointerLeave={() => onLensHover?.(null)}
             className="px-3 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors duration-150 hover:bg-white/[0.04]"
             style={{
               background: active ? `${lensColor}1A` : 'transparent',
               color: active ? '#F1F5F9' : 'rgba(148,163,184,0.85)',
             }}
-            title={`Edit lens ${LENS_LABEL[l]} only`}
+            title={`Edit lens ${LENS_LABEL[l]} only — hover to highlight on canvas`}
           >
             <span
               className="rounded-full transition-all duration-200 ease-out"
@@ -3433,7 +3610,7 @@ function MultisensorLensChips({
   );
 }
 
-function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode }: {
+function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode, onLensHover }: {
   d: Device; zoom: number;
   onRotate: (r: number) => void;
   onDelete: () => void;
@@ -3446,6 +3623,10 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   setActiveLens: (l: ActiveLens) => void;
   lensMode: LensMode;
   setLensMode: (m: LensMode) => void;
+  /** Carries lens-chip hover state up to the parent so the matching
+   *  cone on the canvas can subtly emphasize. Optional — single-lens
+   *  cameras don't use it. */
+  onLensHover?: (lens: LensId | null) => void;
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
   const kind = TYPE_KIND[d.type];
@@ -3590,7 +3771,12 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
 
       {/* Multisensor lens chips sit above the strip when applicable. */}
       {isMultisensor && (
-        <MultisensorLensChips activeLens={activeLens} setActiveLens={setActiveLens} lensMode={lensMode} setLensMode={setLensMode} tone={tone} />
+        <MultisensorLensChips
+          activeLens={activeLens} setActiveLens={setActiveLens}
+          lensMode={lensMode} setLensMode={setLensMode}
+          tone={tone}
+          onLensHover={onLensHover}
+        />
       )}
 
       {/* Single elegant strip — identity + actions inline. Reads as one

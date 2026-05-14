@@ -227,7 +227,7 @@ function ModeRolePill() {
           <div className="grid grid-cols-2 divide-x divide-border">
             {/* ── Role column ── */}
             <div>
-              <div className="px-3 pt-2.5 pb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <div className="px-3 pt-3 pb-1.5 flex items-center gap-1.5 text-[11.5px] font-medium text-slate-300 tracking-tight">
                 <UserIcon className="w-3 h-3" /> Role
               </div>
               <div className="px-1 pb-1.5">
@@ -251,7 +251,7 @@ function ModeRolePill() {
 
             {/* ── Mode column ── */}
             <div>
-              <div className="px-3 pt-2.5 pb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <div className="px-3 pt-3 pb-1.5 flex items-center gap-1.5 text-[11.5px] font-medium text-slate-300 tracking-tight">
                 <LayersIcon className="w-3 h-3" /> Mode
                 {projectId && projectModes[projectId] && (
                   <button
@@ -369,23 +369,24 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
           />
           <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">esc</kbd>
         </div>
-        <div className="max-h-96 overflow-auto p-1.5">
-          {groups.map((g) => (
-            <div key={g} className="mb-1">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">{g}</div>
+        <div className="max-h-96 overflow-auto py-2 px-2">
+          {groups.map((g, gi) => (
+            <div key={g} className={gi > 0 ? 'mt-3' : ''}>
+              <div className="text-[11px] text-muted-foreground/70 px-2.5 pt-1 pb-1.5">{g}</div>
               {filtered.filter((i) => i.group === g).map((i) => (
                 <button
                   key={i.path}
                   onClick={() => { navigate(i.path); onClose(); }}
-                  className="w-full text-left px-2 py-1.5 rounded text-sm hover:bg-secondary flex items-center justify-between"
+                  className="w-full text-left px-2.5 py-2 rounded-md text-[13px] hover:bg-secondary/60 flex items-center justify-between transition-colors duration-150"
+                  style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
                 >
-                  <span>{i.label}</span>
-                  <span className="text-[10px] text-muted-foreground">{i.path}</span>
+                  <span className="text-slate-100">{i.label}</span>
+                  <span className="text-[10.5px] text-muted-foreground/70 font-mono tracking-tight">{i.path}</span>
                 </button>
               ))}
             </div>
           ))}
-          {filtered.length === 0 && <div className="text-xs text-muted-foreground p-4 text-center">No matches</div>}
+          {filtered.length === 0 && <div className="text-xs text-muted-foreground p-6 text-center">No matches</div>}
         </div>
       </div>
     </div>
