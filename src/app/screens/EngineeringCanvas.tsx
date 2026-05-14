@@ -636,7 +636,30 @@ export function EngineeringCanvas() {
       crumbs={[{ label: 'Projects', to: '/projects' }, { label: 'Riverbend HQ', to: `/project/${projectId}` }, { label: 'Canvas' }]}
       fullBleed
     >
-      <div className="h-full flex flex-col bg-[#070A10] text-slate-100 relative">
+      <div className="h-full flex flex-col bg-[#0B1220] text-slate-100 relative">
+        {/* Motion keyframes — used by the selection pill, spotlight ring,
+            and lens chips. The easing is the same throughout (cubic-bezier
+            0.22, 1, 0.36, 1 — a calm decelerate) so motion feels like one
+            product, not many. Reduced-motion preferences are respected. */}
+        <style>{`
+          @keyframes pill-in {
+            from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+            to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+          }
+          @keyframes soft-fade-in {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+          }
+          @keyframes lens-chip-in {
+            from { opacity: 0; transform: translateY(2px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            @keyframes pill-in { from { opacity: 1; transform: translateX(-50%); } to { opacity: 1; transform: translateX(-50%); } }
+            @keyframes soft-fade-in { from { opacity: 1; } to { opacity: 1; } }
+            @keyframes lens-chip-in { from { opacity: 1; } to { opacity: 1; } }
+          }
+        `}</style>
         {/* Focus mode = immersive canvas. Hide the top toolbar entirely so the
             floorplan dominates. A small floating chip in the corner lets the
             user exit. The intent is "canvas is the product" — no SaaS chrome. */}
@@ -2109,24 +2132,28 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           <rect width="32" height="32" fill="url(#plan-fill)" />
           <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#38BDF8" strokeWidth="0.4" opacity="0.18" />
         </pattern>
-        {/* Atmospheric coverage gradients — saturated near the lens, vapor at the edge */}
+        {/* Coverage gradients — drafting-paper wash. Lower alpha across
+            every stop, less saturated near the lens. The cone should
+            read as a quiet engineering callout, not an atmospheric
+            spotlight beam. */}
         <radialGradient id="fov-grad" cx="0%" cy="50%" r="100%">
-          <stop offset="0%"   stopColor="#FFD24D" stopOpacity="0.75" />
-          <stop offset="35%"  stopColor="#F2C744" stopOpacity="0.42" />
-          <stop offset="75%"  stopColor="#F2C744" stopOpacity="0.16" />
+          <stop offset="0%"   stopColor="#F2C744" stopOpacity="0.32" />
+          <stop offset="45%"  stopColor="#F2C744" stopOpacity="0.16" />
           <stop offset="100%" stopColor="#F2C744" stopOpacity="0" />
         </radialGradient>
         <radialGradient id="fov-grad-ptz" cx="0%" cy="50%" r="100%">
-          <stop offset="0%"   stopColor="#7CC2FF" stopOpacity="0.7" />
-          <stop offset="40%"  stopColor="#5BA0F2" stopOpacity="0.35" />
-          <stop offset="80%"  stopColor="#5BA0F2" stopOpacity="0.12" />
+          <stop offset="0%"   stopColor="#5BA0F2" stopOpacity="0.30" />
+          <stop offset="50%"  stopColor="#5BA0F2" stopOpacity="0.14" />
           <stop offset="100%" stopColor="#5BA0F2" stopOpacity="0" />
         </radialGradient>
         <radialGradient id="fov-grad-360" cx="50%" cy="50%" r="50%">
-          <stop offset="0%"   stopColor="#FF7B6B" stopOpacity="0.6" />
-          <stop offset="55%"  stopColor="#E5484D" stopOpacity="0.25" />
+          <stop offset="0%"   stopColor="#E5484D" stopOpacity="0.22" />
+          <stop offset="60%"  stopColor="#E5484D" stopOpacity="0.10" />
           <stop offset="100%" stopColor="#E5484D" stopOpacity="0" />
         </radialGradient>
+        {/* fov-bloom filter retained for backward compatibility, but is
+            no longer applied to cone renders — the bloom pass was the main
+            source of the "spotlight" cyber feel. */}
         <filter id="fov-bloom" x="-20%" y="-20%" width="140%" height="140%">
           <feGaussianBlur stdDeviation="2.5" />
         </filter>
@@ -2210,7 +2237,13 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
               }}
             >
-              {isSel && <circle cx={d.x} cy={d.y} r={20 * iconScale} fill={tone} opacity="0.16" />}
+              {isSel && (
+                <circle
+                  cx={d.x} cy={d.y} r={20 * iconScale} fill={tone}
+                  opacity="0.16"
+                  style={{ animation: 'soft-fade-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both' }}
+                />
+              )}
               {multi && !isSel && <circle cx={d.x} cy={d.y} r={18 * iconScale} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
               <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
               {/* Label pill — id + manufacturer model below. Gated by BOTH
@@ -2564,20 +2597,20 @@ function FovCone({
   return (
     <g opacity={opacity}>
       <defs>
+        {/* Lens-cone wash — drafting paper alpha, not spotlight beam. */}
         <radialGradient id={gid} cx={cx} cy={cy} r={r} gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.42" />
-          <stop offset="45%"  stopColor={color} stopOpacity="0.22" />
-          <stop offset="78%"  stopColor={color} stopOpacity="0.08" />
+          <stop offset="0%"   stopColor={color} stopOpacity="0.22" />
+          <stop offset="50%"  stopColor={color} stopOpacity="0.10" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </radialGradient>
       </defs>
+      {/* Single-pass fill. The bloom pass that used to live here was the
+          main source of the lens's "spotlight" cyber feel; without it the
+          cone reads as a clean engineering callout. */}
       {!wireframe && <path d={path} fill={`url(#${gid})`} />}
-      {/* Soft inner bloom for atmosphere (only when not in wireframe mode) */}
-      {!wireframe && <path d={path} fill={`url(#${gid})`} filter="url(#fov-bloom)" opacity="0.7" />}
-      {/* Outer stroke — fades along the arc via the gradient, but the lens-
-          edge rays stay sharper so the cone reads as a precise FOV. */}
-      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 1 : 0.9} opacity={wireframe ? 0.95 : 0.55} />
-      {/* DORI band rings — visual reference points at 35% / 60% / 80% of range. */}
+      {/* Edge stroke — thin draftsman line, low opacity. */}
+      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 0.9 : 0.7} opacity={wireframe ? 0.85 : 0.42} />
+      {/* DORI band rings — quieter so they don't compete with the cone. */}
       {!wireframe && [0.35, 0.6, 0.8].map((f) => {
         const rr = r * f;
         const xa = cx + Math.cos(a1) * rr;
@@ -2586,7 +2619,7 @@ function FovCone({
         const yb = cy + Math.sin(a2) * rr;
         return (
           <path key={f} d={`M ${xa} ${ya} A ${rr} ${rr} 0 ${half > 90 ? 1 : 0} 1 ${xb} ${yb}`}
-            fill="none" stroke={color} strokeWidth="0.4" opacity="0.35" strokeDasharray="2 4" />
+            fill="none" stroke={color} strokeWidth="0.35" opacity="0.25" strokeDasharray="2 4" />
         );
       })}
       {label && (
@@ -2619,8 +2652,14 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all' }
   // active one reads clearly.
   if (d.type === 'cam.multisensor') {
     const lenses = getLenses(d);
+    // When the user is viewing all four lenses together (multisensor
+    // selected, 'all' active), apply a soft screen blend so where two
+    // cones overlap their colors add — visualizing the stitching and
+    // overlap regions without any extra UI. This is the multisensor's
+    // signature visual moment.
+    const useScreenBlend = selected && activeLens === 'all' && !wireframe;
     return (
-      <g>
+      <g style={useScreenBlend ? { mixBlendMode: 'screen' } : undefined}>
         {(['a', 'b', 'c', 'd'] as const).map((k) => {
           const L = lenses[k];
           if (!L.enabled) return null;
@@ -2680,9 +2719,9 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all' }
   const path = `M ${d.x} ${d.y} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
   return (
     <g opacity={opacity}>
-      {!wireframe && <path d={path} fill={`url(#${gradId})`} opacity="0.95" />}
-      {!wireframe && mode !== 'minimal' && <path d={path} fill={`url(#${gradId})`} filter="url(#fov-bloom)" opacity="0.5" />}
-      <path d={path} fill="none" stroke={edge} strokeWidth={wireframe ? 1 : 0.8} opacity={wireframe ? 0.9 : 0.55} />
+      {/* Single-pass fill — no more bloom doubling. Thin edge stroke. */}
+      {!wireframe && <path d={path} fill={`url(#${gradId})`} />}
+      <path d={path} fill="none" stroke={edge} strokeWidth={wireframe ? 0.9 : 0.6} opacity={wireframe ? 0.85 : 0.45} />
       {showArcs && [0.35, 0.6, 0.8].map((f, i) => {
         const rr = r * f;
         const xa = d.x + Math.cos(a1) * rr;
@@ -2692,7 +2731,7 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all' }
         return (
           <path key={i}
             d={`M ${xa} ${ya} A ${rr} ${rr} 0 0 1 ${xb} ${yb}`}
-            fill="none" stroke={edge} strokeWidth="0.4" opacity={0.4 - i * 0.08} strokeDasharray="1 3"
+            fill="none" stroke={edge} strokeWidth="0.35" opacity={0.3 - i * 0.07} strokeDasharray="1 3"
           />
         );
       })}
@@ -2701,7 +2740,7 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all' }
           x1={d.x} y1={d.y}
           x2={d.x + Math.cos((rot * Math.PI) / 180) * r}
           y2={d.y + Math.sin((rot * Math.PI) / 180) * r}
-          stroke={edge} strokeWidth="0.5" opacity="0.7" strokeDasharray="2 3"
+          stroke={edge} strokeWidth="0.4" opacity="0.55" strokeDasharray="2 3"
         />
       )}
     </g>
@@ -3247,29 +3286,33 @@ function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
 function MultisensorLensChips({
   activeLens, setActiveLens, lensMode, setLensMode, tone,
 }: { activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void; lensMode: LensMode; setLensMode: (m: LensMode) => void; tone: string }) {
+  // Refined lens selector. Each chip carries its lens color as a small dot
+  // that scales up subtly when active — the only motion needed for a feel
+  // of premium tactility. No uppercase tracking; no neon underlines; the
+  // chip background tints in the lens's own color when selected, which
+  // pairs visually with the cone-color screen-blend on the canvas.
   return (
     <div
-      className="mb-1.5 flex items-stretch text-[10px] rounded-lg overflow-hidden"
+      className="mb-1.5 flex items-stretch h-8 rounded-lg overflow-hidden text-[11px]"
       style={{
-        background: 'rgba(8,12,20,0.78)',
-        backdropFilter: 'blur(14px)',
+        background: 'rgba(22,30,46,0.94)',
+        backdropFilter: 'blur(18px)',
+        WebkitBackdropFilter: 'blur(18px)',
         border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: `0 10px 24px -10px rgba(0,0,0,0.7), 0 0 0 1px ${tone}22`,
+        boxShadow: '0 10px 28px -14px rgba(0,0,0,0.5)',
+        animation: 'lens-chip-in 240ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both',
       }}
     >
-      <div className="px-2 py-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500 border-r border-white/8">Lens</div>
-      {/* 'all' = linked control of every lens. Per-lens chips key off the
-          lens's own color so each lens is identifiable at a glance. */}
       <button
         onClick={() => setActiveLens('all')}
-        className="px-2.5 py-1.5 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors"
+        className="px-3 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors duration-150 hover:bg-white/[0.04]"
         style={{
-          background: activeLens === 'all' ? `${tone}22` : 'transparent',
-          color: activeLens === 'all' ? '#F8FAFC' : '#94A3B8',
-          boxShadow: activeLens === 'all' ? `inset 0 0 0 1px ${tone}66` : 'none',
+          background: activeLens === 'all' ? `${tone}18` : 'transparent',
+          color: activeLens === 'all' ? '#F1F5F9' : 'rgba(148,163,184,0.85)',
         }}
+        title="Control all four lenses together"
       >
-        <span className="tabular-nums font-medium">All</span>
+        <span className="font-medium tracking-tight">All</span>
       </button>
       {(['a', 'b', 'c', 'd'] as const).map((l) => {
         const active = activeLens === l;
@@ -3278,25 +3321,34 @@ function MultisensorLensChips({
           <button
             key={l}
             onClick={() => setActiveLens(l)}
-            className="px-2.5 py-1.5 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors"
+            className="px-3 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors duration-150 hover:bg-white/[0.04]"
             style={{
-              background: active ? `${lensColor}22` : 'transparent',
-              color: active ? '#F8FAFC' : '#94A3B8',
-              boxShadow: active ? `inset 0 0 0 1px ${lensColor}66` : 'none',
+              background: active ? `${lensColor}1A` : 'transparent',
+              color: active ? '#F1F5F9' : 'rgba(148,163,184,0.85)',
             }}
+            title={`Edit lens ${LENS_LABEL[l]} only`}
           >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: active ? lensColor : '#475569' }} />
-            <span className="tabular-nums font-medium">{LENS_LABEL[l]}</span>
+            <span
+              className="rounded-full transition-all duration-200 ease-out"
+              style={{
+                width: active ? 7 : 5,
+                height: active ? 7 : 5,
+                background: active ? lensColor : 'rgba(100,116,139,0.7)',
+                boxShadow: active ? `0 0 6px ${lensColor}99` : 'none',
+              }}
+            />
+            <span className="font-medium tracking-tight">{LENS_LABEL[l]}</span>
           </button>
         );
       })}
       <button
         onClick={() => setLensMode(lensMode === 'linked' ? 'independent' : 'linked')}
-        className="px-2.5 py-1.5 inline-flex items-center gap-1.5 text-[10px] transition-colors hover:bg-white/5"
-        style={{ color: lensMode === 'linked' ? tone : '#94A3B8' }}
+        className="px-3 inline-flex items-center gap-1.5 transition-colors duration-150 hover:bg-white/[0.04]"
+        style={{ color: lensMode === 'linked' ? tone : 'rgba(148,163,184,0.85)' }}
+        title={lensMode === 'linked' ? 'Linked — moving one lens moves all four' : 'Independent — each lens moves alone'}
       >
         {lensMode === 'linked' ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-        <span className="uppercase tracking-[0.14em]">{lensMode}</span>
+        <span className="font-medium tracking-tight">{lensMode === 'linked' ? 'Linked' : 'Indep.'}</span>
       </button>
     </div>
   );
@@ -3442,7 +3494,12 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   return (
     <div
       className="absolute z-30 pointer-events-auto select-none"
-      style={{ left: d.x * zoom, top: d.y * zoom - 70, transform: 'translateX(-50%)' }}
+      style={{
+        left: d.x * zoom,
+        top: d.y * zoom - 70,
+        transform: 'translateX(-50%)',
+        animation: 'pill-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both',
+      }}
     >
       {/* Subtle tether — single hairline pencil from pill to device. No
           gradient, no glow dot. Lets the strip feel like a quiet annotation
@@ -3582,22 +3639,32 @@ function bodyShows(tab: EditTab, section: EditTab): boolean {
   return tabGroupOf(tab) === tabGroupOf(section);
 }
 
+/** Human-readable kind for the drawer header. */
+function labelForKind(k: DeviceKind): string {
+  return ({
+    camera: 'Camera', access: 'Access', network: 'Network',
+    power: 'Power', sensor: 'Sensor', audio: 'Audio',
+    storage: 'Storage', display: 'Display', intrusion: 'Intrusion',
+  } as Record<string, string>)[k] ?? k;
+}
+
+// Drawer building blocks — refined for editorial readability over HUD
+// density. Sentence-case labels, no tracking, calmer weights, more
+// breathing room. The drawer body should read like a configuration page,
+// not a debug panel.
 function Row({ label, value, tone }: { label: string; value: any; tone?: string }) {
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-b-0">
-      <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-500">{label}</span>
-      <span className="text-[12px] tabular-nums" style={{ color: tone || '#E2E8F0' }}>{value}</span>
+    <div className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-b-0">
+      <span className="text-[11.5px] text-slate-400">{label}</span>
+      <span className="text-[12.5px] tabular-nums font-medium" style={{ color: tone || '#E7EDF6' }}>{value}</span>
     </div>
   );
 }
 
 function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mb-4">
-      <div className="text-[9.5px] uppercase tracking-[0.18em] text-slate-500 mb-2 flex items-center gap-2">
-        <span>{title}</span>
-        <span className="flex-1 h-px bg-white/5" />
-      </div>
+    <div className="mb-6">
+      <div className="text-[13px] font-medium text-slate-200 mb-3 tracking-tight">{title}</div>
       {children}
     </div>
   );
@@ -3605,15 +3672,15 @@ function DrawerSection({ title, children }: { title: string; children: React.Rea
 
 function Slider({ label, value, min, max, step = 1, unit, onChange, tone }: { label: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void; tone: string }) {
   return (
-    <div className="mb-2.5">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-500">{label}</span>
-        <span className="text-[12px] tabular-nums text-slate-200">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
+    <div className="mb-3.5">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11.5px] text-slate-400">{label}</span>
+        <span className="text-[12.5px] tabular-nums font-medium text-slate-100">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
       </div>
       <input
         type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full"
+        className="w-full cursor-pointer"
         style={{ accentColor: tone }}
       />
     </div>
@@ -3694,31 +3761,48 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
 
   return (
     <div
-      className={`absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 ease-out pointer-events-auto ${open ? 'translate-x-0' : 'translate-x-full'}`}
+      className={`absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 pointer-events-auto ${open ? 'translate-x-0' : 'translate-x-full'}`}
       style={{
-        width: 380,
-        background: 'linear-gradient(180deg, rgba(10,14,22,0.96), rgba(6,9,15,0.96))',
-        backdropFilter: 'blur(20px)',
-        borderLeft: `1px solid ${tone}33`,
-        boxShadow: `-12px 0 40px -10px rgba(0,0,0,0.7), inset 1px 0 0 rgba(255,255,255,0.04)`,
+        width: 400,
+        background: 'rgba(27,35,54,0.96)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        borderLeft: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '-16px 0 40px -16px rgba(0,0,0,0.45)',
+        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
-      {/* Drawer header */}
-      <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: tone, boxShadow: `0 0 10px ${tone}` }} />
-        <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{d.type}</div>
-          <div className="text-[14px] font-medium text-slate-100 truncate">{d.id}</div>
+      {/* Drawer header — editorial. The device id is the headline; the
+          kind sits above it as a soft caption; manufacturer + model
+          supports below. No HUD tracking; calmer hierarchy. */}
+      <div className="px-5 pt-5 pb-4 border-b border-white/[0.05]">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tone, boxShadow: `0 0 6px ${tone}66` }} />
+              <span className="text-[11px] text-slate-400 tracking-tight">{labelForKind(kind)}</span>
+            </div>
+            <div className="text-[18px] font-medium text-slate-50 tracking-tight truncate leading-tight">{d.id}</div>
+            {product && (
+              <div className="text-[11.5px] text-slate-400 mt-1 truncate">{product.mfr} · {product.model}</div>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-md hover:bg-white/[0.05] text-slate-500 hover:text-slate-200 transition-colors duration-150"
+            title="Close inspector"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/5 text-slate-400 hover:text-slate-100">
-          <X className="w-4 h-4" />
-        </button>
       </div>
 
-      {/* Tab strip — 6 labelled tabs. Strip uses tabGroupOf so that opening
-          a hidden section (e.g. SelectionPill's AI button → 'ai') still
-          highlights the visible parent ('Coverage'). */}
-      <div className="px-2 py-1.5 border-b border-white/5 flex flex-wrap gap-1">
+      {/* Tab strip — underlined tabs, editorial. The pill-tinted active
+          state has been replaced with a hairline accent underline that
+          sits on the strip's bottom border, so the active tab anchors
+          the section visually without painting a colored pill on the
+          drawer. */}
+      <div className="px-3 border-b border-white/[0.05] flex gap-0.5 overflow-x-auto">
         {EDIT_TABS.map((t) => {
           const active = tabGroupOf(tab) === t.id;
           const Icon = t.icon;
@@ -3726,15 +3810,17 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className="px-2.5 py-1.5 rounded-md inline-flex items-center gap-1.5 text-[11px] transition-colors"
-              style={{
-                background: active ? `${tone}1F` : 'transparent',
-                color: active ? '#F8FAFC' : '#94A3B8',
-                boxShadow: active ? `inset 0 0 0 1px ${tone}55` : 'none',
-              }}
+              className="relative px-3 py-3 inline-flex items-center gap-1.5 text-[12px] transition-colors duration-150 shrink-0"
+              style={{ color: active ? '#F1F5F9' : 'rgba(148,163,184,0.85)' }}
             >
-              <Icon className="w-3.5 h-3.5" style={{ color: active ? tone : undefined }} />
+              <Icon className="w-3.5 h-3.5" style={{ color: active ? tone : 'rgba(148,163,184,0.6)' }} />
               <span className="font-medium tracking-tight">{t.label}</span>
+              {active && (
+                <span
+                  className="absolute left-2 right-2 -bottom-px h-[1.5px] rounded-full"
+                  style={{ background: tone }}
+                />
+              )}
             </button>
           );
         })}
@@ -3743,8 +3829,9 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
       {/* Tab body. Each section renders when its tab group is active —
           so Coverage shows Lens + AI + Telemetry together, Power & Network
           shows Power + Network together, Compatibility shows Compliance +
-          Linked together. No more 10-tab maze. */}
-      <div className="px-4 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100% - 110px)' }}>
+          Linked together. More generous padding so the editorial typography
+          gets the breathing room it needs. */}
+      <div className="px-5 py-5 overflow-y-auto" style={{ maxHeight: 'calc(100% - 150px)' }}>
         {bodyShows(tab, 'overview') && (
           <>
             <DrawerSection title="Identity">
@@ -4424,7 +4511,8 @@ function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool
               key={it.id}
               onClick={() => setTool(it.id)}
               title={`${it.label} (${it.key}) — ${it.hint}`}
-              className={`relative w-10 h-10 rounded-xl inline-flex items-center justify-center transition-all duration-200 ease-out will-change-transform ${active ? 'bg-primary text-primary-foreground shadow-[0_4px_12px_-4px_rgba(47,129,247,0.6)] scale-[1.08]' : 'text-muted-foreground hover:bg-secondary hover:text-foreground scale-100'}`}
+              className={`relative w-10 h-10 rounded-xl inline-flex items-center justify-center transition-all duration-200 ease-out will-change-transform ${active ? 'bg-primary text-primary-foreground shadow-[0_4px_12px_-4px_rgba(74,149,232,0.5)] scale-[1.08]' : 'text-muted-foreground hover:bg-secondary hover:text-foreground hover:scale-[1.04] active:scale-[0.98] scale-100'}`}
+              style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
             >
               <Icon className={`w-[18px] h-[18px] transition-transform duration-200 ${active ? 'scale-110' : ''}`} />
               {active && (
