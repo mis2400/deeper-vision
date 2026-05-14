@@ -82,6 +82,44 @@ export const DEFAULT_CANVAS_LAYERS: CanvasLayerState = {
   presence:    false,
 };
 
+// ─────────────────────────── Display preferences ─────────────────
+// Persisted per-project. Drives icon scale, label visibility, base map
+// selection, and coverage cone opacity. The engineer can dial these to
+// match a dense site or a quiet presentation. Tracked separately from
+// engineering layer toggles because these are dial-style (size, density,
+// opacity) rather than on/off.
+
+export type IconSize = 'compact' | 'standard' | 'large';
+export type LabelDensity = 'hidden' | 'selected' | 'important' | 'all';
+export type BaseMapMode =
+  | 'blueprint'   // uploaded floorplan
+  | 'satellite'   // aerial imagery
+  | 'street'      // 2D streetmap (light)
+  | 'hybrid'      // satellite + street labels overlaid
+  | 'dark'        // dark 2D map
+  | 'blank';      // pure grid, no base
+
+export interface CanvasDisplayPrefs {
+  iconSize: IconSize;
+  labelDensity: LabelDensity;
+  /** 0..100 — applied to FOV cones as opacity scalar. */
+  coverageOpacity: number;
+  baseMap: BaseMapMode;
+}
+
+export const DEFAULT_DISPLAY_PREFS: CanvasDisplayPrefs = {
+  iconSize:        'standard',
+  labelDensity:    'important',
+  coverageOpacity: 80,
+  baseMap:         'blueprint',
+};
+
+// ─────────────────────────── Project tech model ──────────────────
+// Filters which manufacturers / product lines are surfaced when picking
+// hardware. Cloud-first projects bias toward Verkada/Rhombus/Meraki;
+// on-prem toward Axis/Avigilon/Genetec ecosystem; hybrid shows both.
+export type ProjectTechModel = 'cloud' | 'on_prem' | 'hybrid';
+
 export type OwnerRole =
   | 'sales'
   | 'field'

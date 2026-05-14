@@ -12,6 +12,7 @@ import {
   EstimateLine, LensCfg, ActivityItem, ActivityType, LifecyclePhase, HealthStatus,
   Opportunity, OpportunityStage, Touch, Task,
   ProjectMode, UserRole, EngineeringLayer, CanvasLayerState, DEFAULT_CANVAS_LAYERS,
+  CanvasDisplayPrefs, DEFAULT_DISPLAY_PREFS, ProjectTechModel,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -74,6 +75,12 @@ interface ProjectState {
   /** Per-project canvas layer visibility. Defaults to DEFAULT_CANVAS_LAYERS
    *  on first read. */
   canvasLayers: Record<string, CanvasLayerState>;
+  /** Per-project display preferences (icon size, label density, base map,
+   *  coverage opacity). Defaults to DEFAULT_DISPLAY_PREFS on first read. */
+  canvasDisplay: Record<string, CanvasDisplayPrefs>;
+  /** Per-project tech model — drives manufacturer / product filtering.
+   *  When unset, defaults to 'hybrid'. */
+  projectTechModels: Record<string, ProjectTechModel>;
   /** Global current-user role preference. Defaults to 'engineer'. */
   currentRole: UserRole;
 
@@ -86,6 +93,11 @@ interface ProjectState {
   setCanvasLayer:    (projectId: string, layer: EngineeringLayer, on: boolean) => void;
   setCanvasLayers:   (projectId: string, patch: Partial<CanvasLayerState>) => void;
   resetCanvasLayers: (projectId: string) => void;
+
+  setCanvasDisplay:  (projectId: string, patch: Partial<CanvasDisplayPrefs>) => void;
+  resetCanvasDisplay:(projectId: string) => void;
+
+  setProjectTechModel: (projectId: string, model: ProjectTechModel) => void;
 
   // ── CRM actions ──
   updateCustomer:    (id: string, patch: Partial<Customer>) => void;
@@ -169,9 +181,11 @@ export const useProjectStore = create<ProjectState>()(
       ...buildSeed(),
 
       // UX prefs default state — populated lazily per project.
-      projectModes: {},
-      canvasLayers: {},
-      currentRole:  'engineer',
+      projectModes:      {},
+      canvasLayers:      {},
+      canvasDisplay:     {},
+      projectTechModels: {},
+      currentRole:       'engineer',
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -201,6 +215,22 @@ export const useProjectStore = create<ProjectState>()(
           const { [projectId]: _, ...rest } = s.canvasLayers;
           return { canvasLayers: rest };
         }),
+      setCanvasDisplay: (projectId, patch) =>
+        set((s) => ({
+          canvasDisplay: {
+            ...s.canvasDisplay,
+            [projectId]: { ...DEFAULT_DISPLAY_PREFS, ...s.canvasDisplay[projectId], ...patch },
+          },
+        })),
+      resetCanvasDisplay: (projectId) =>
+        set((s) => {
+          const { [projectId]: _, ...rest } = s.canvasDisplay;
+          return { canvasDisplay: rest };
+        }),
+      setProjectTechModel: (projectId, model) =>
+        set((s) => ({
+          projectTechModels: { ...s.projectTechModels, [projectId]: model },
+        })),
 
       updateProject: (id, patch) =>
         set((s) => ({
@@ -624,9 +654,11 @@ export const useProjectStore = create<ProjectState>()(
         touches:       s.touches,
         tasks:         s.tasks,
         activity:      s.activity,
-        projectModes:  s.projectModes,
-        canvasLayers:  s.canvasLayers,
-        currentRole:   s.currentRole,
+        projectModes:      s.projectModes,
+        canvasLayers:      s.canvasLayers,
+        canvasDisplay:     s.canvasDisplay,
+        projectTechModels: s.projectTechModels,
+        currentRole:       s.currentRole,
       }),
     },
   ),
@@ -773,6 +805,14 @@ export const selectors = {
   /** Resolved canvas layer state for a project. Falls back to defaults. */
   layersForProject: (s: ProjectState, projectId: string): CanvasLayerState =>
     ({ ...DEFAULT_CANVAS_LAYERS, ...s.canvasLayers[projectId] }),
+
+  /** Resolved display preferences for a project. */
+  displayForProject: (s: ProjectState, projectId: string): CanvasDisplayPrefs =>
+    ({ ...DEFAULT_DISPLAY_PREFS, ...s.canvasDisplay[projectId] }),
+
+  /** Resolved tech model for a project. Defaults to 'hybrid'. */
+  techModelForProject: (s: ProjectState, projectId: string): ProjectTechModel =>
+    s.projectTechModels[projectId] ?? 'hybrid',
 
   /** Pipeline totals. Sum of estValue across open opportunities and
    *  probability-weighted forecast across the same set. */

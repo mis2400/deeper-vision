@@ -2,8 +2,11 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { useProjectStore, selectors as storeSelectors } from '../store/projectStore';
-import type { EngineeringLayer, CanvasLayerState } from '../store/types';
-import { DEFAULT_CANVAS_LAYERS } from '../store/types';
+import type {
+  EngineeringLayer, CanvasLayerState, CanvasDisplayPrefs, IconSize,
+  LabelDensity, BaseMapMode,
+} from '../store/types';
+import { DEFAULT_CANVAS_LAYERS, DEFAULT_DISPLAY_PREFS } from '../store/types';
 import type { Device as StoreDevice } from '../store/types';
 import {
   MousePointer2, Hand, Ruler, Type, MessageSquare, ChevronRight, ChevronLeft,
@@ -326,7 +329,6 @@ export function EngineeringCanvas() {
   const nav = useNavigate();
 
   const [onboarded, setOnboarded] = useState(true);
-  const [planSource, setPlanSource] = useState<'blueprint' | 'satellite' | 'blank'>('blueprint');
   const [siteAddress, setSiteAddress] = useState<string>('');
 
   const [tool, setTool] = useState<Tool>('select');
@@ -413,6 +415,25 @@ export function EngineeringCanvas() {
     () => ({ ...DEFAULT_CANVAS_LAYERS, ...canvasLayersMap[projectId] }),
     [canvasLayersMap, projectId],
   );
+
+  // Canvas display preferences — icon size, label density, coverage
+  // opacity, base map. Persistent per project. Replaces the previous
+  // local `planSource` state with a fuller, store-driven model.
+  const canvasDisplayMap = useProjectStore((s) => s.canvasDisplay);
+  const setCanvasDisplay = useProjectStore((s) => s.setCanvasDisplay);
+  const display: CanvasDisplayPrefs = useMemo(
+    () => ({ ...DEFAULT_DISPLAY_PREFS, ...canvasDisplayMap[projectId] }),
+    [canvasDisplayMap, projectId],
+  );
+  // Legacy `planSource` token used by CanvasSurface — derived from the
+  // new BaseMapMode pref. We keep the CanvasSurface signature stable in
+  // this pass and treat anything that isn't 'blueprint' / 'satellite' as
+  // 'blank' for the underlying renderer.
+  const planSource: 'blueprint' | 'satellite' | 'blank' =
+    display.baseMap === 'blueprint' ? 'blueprint'
+    : display.baseMap === 'satellite' || display.baseMap === 'hybrid' ? 'satellite'
+    : 'blank';
+  const setPlanSource = (m: BaseMapMode) => setCanvasDisplay(projectId, { baseMap: m });
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
   const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
@@ -628,6 +649,8 @@ export function EngineeringCanvas() {
               lockedIds={lockedIds} setLockedIds={setLockedIds}
               layers={layers}
               onToggleLayer={(layer, on) => setCanvasLayer(projectId, layer, on)}
+              display={display}
+              onDisplayChange={(patch) => setCanvasDisplay(projectId, patch)}
               onClose={() => setLayersOpen(false)}
             />
           )}
@@ -655,6 +678,7 @@ export function EngineeringCanvas() {
               setActiveLens={setActiveLens}
               coverageMode={coverageMode}
               layers={layers}
+              display={display}
               onBlank={() => setSelId(null)}
               snap={snap}
               dragging={!!drag}
@@ -1535,7 +1559,7 @@ function InsertDock(props: {
   );
 }
 
-function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, setHiddenIds, lockedIds, setLockedIds, layers, onToggleLayer, onClose }: {
+function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, setHiddenIds, lockedIds, setLockedIds, layers, onToggleLayer, display, onDisplayChange, onClose }: {
   devices: Device[];
   selId: string | null;
   setSelId: (id: string | null) => void;
@@ -1548,6 +1572,9 @@ function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, s
   /** Engineering overlay visibility, gated per layer. */
   layers: CanvasLayerState;
   onToggleLayer: (layer: EngineeringLayer, on: boolean) => void;
+  /** Display preferences (icon size, label density, coverage opacity, base map). */
+  display: CanvasDisplayPrefs;
+  onDisplayChange: (patch: Partial<CanvasDisplayPrefs>) => void;
   onClose: () => void;
 }) {
   const lastIndexRef = useRef<number>(-1);
@@ -1599,6 +1626,12 @@ function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, s
         </button>
       </div>
       <div className="flex-1 overflow-auto px-2 pb-3">
+        {/* ── Display preferences ───────────────────────────────────
+            Dial-style controls: base map, icon size, label density,
+            coverage opacity. These are the levers that let the engineer
+            adapt the canvas to a dense site or a quiet presentation. */}
+        <DisplaySection display={display} onChange={onDisplayChange} />
+
         {/* ── Engineering layers (overlays) ──────────────────────────
             Calm-by-default toggles. Most are off until the engineer
             asks for them. Anything that paints on top of the blueprint
@@ -1661,6 +1694,124 @@ function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, s
 function Chip({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} className={`text-[11px] h-6 px-2.5 rounded-md border transition-colors ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/70 text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>{children}</button>
+  );
+}
+
+/** Display preferences — base map, icon size, label density, coverage
+ *  opacity. Sits above the engineering layer toggles in the Layers panel.
+ *  These are the dials the engineer reaches for first to make a dense
+ *  map readable. Persistent per project. */
+function DisplaySection({ display, onChange }: { display: CanvasDisplayPrefs; onChange: (patch: Partial<CanvasDisplayPrefs>) => void }) {
+  const [open, setOpen] = useState(true);
+  const baseMaps: { id: BaseMapMode; label: string }[] = [
+    { id: 'blueprint', label: 'Blueprint' },
+    { id: 'satellite', label: 'Satellite' },
+    { id: 'street',    label: 'Street' },
+    { id: 'hybrid',    label: 'Hybrid' },
+    { id: 'dark',      label: 'Dark' },
+    { id: 'blank',     label: 'Blank' },
+  ];
+  const sizes: { id: IconSize; label: string }[] = [
+    { id: 'compact',  label: 'Compact' },
+    { id: 'standard', label: 'Standard' },
+    { id: 'large',    label: 'Large' },
+  ];
+  const densities: { id: LabelDensity; label: string }[] = [
+    { id: 'hidden',    label: 'Hidden' },
+    { id: 'selected',  label: 'Selected' },
+    { id: 'important', label: 'Important' },
+    { id: 'all',       label: 'All' },
+  ];
+  return (
+    <div className="mb-3 border-b border-border/40 pb-3">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight className={`w-3 h-3 transition-transform ${open ? 'rotate-90' : ''}`} />
+        <Eye className="w-3 h-3" />
+        Display
+      </button>
+      {open && (
+        <div className="px-2 mt-1 space-y-3">
+          {/* Map mode */}
+          <div>
+            <div className="text-[10px] text-muted-foreground mb-1.5">Map</div>
+            <div className="grid grid-cols-3 gap-1">
+              {baseMaps.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => onChange({ baseMap: m.id })}
+                  className={`text-[10.5px] py-1 px-1 rounded transition-colors ${display.baseMap === m.id ? 'bg-primary/15 text-primary border border-primary/40' : 'border border-border/40 text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                  title={`Use ${m.label} as base map`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Icon size */}
+          <SegmentRow
+            label="Icon size"
+            value={display.iconSize}
+            options={sizes}
+            onChange={(v) => onChange({ iconSize: v as IconSize })}
+          />
+
+          {/* Label density */}
+          <SegmentRow
+            label="Labels"
+            value={display.labelDensity}
+            options={densities}
+            onChange={(v) => onChange({ labelDensity: v as LabelDensity })}
+          />
+
+          {/* Coverage opacity */}
+          <div>
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+              <span>Coverage opacity</span>
+              <span className="tabular-nums">{display.coverageOpacity}%</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={display.coverageOpacity}
+              onChange={(e) => onChange({ coverageOpacity: Number(e.target.value) })}
+              className="w-full accent-primary cursor-pointer"
+              title="Dim FOV cones for a calmer canvas"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Small segmented-control row used by DisplaySection. */
+function SegmentRow<T extends string>({ label, value, options, onChange }: {
+  label: string;
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div>
+      <div className="text-[10px] text-muted-foreground mb-1">{label}</div>
+      <div className="flex items-stretch border border-border/50 rounded p-0.5">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => onChange(o.id)}
+            className={`flex-1 text-[10.5px] py-0.5 rounded transition-colors ${value === o.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1755,12 +1906,31 @@ interface SurfaceProps {
   /** Toggleable engineering overlay state. Each layer gates a class
    *  of visual noise so the canvas is calm by default. */
   layers: CanvasLayerState;
+  /** Display preferences — icon scale, label density, coverage opacity.
+   *  Drives the visual density of the canvas. */
+  display: CanvasDisplayPrefs;
+}
+
+const ICON_SCALE: Record<IconSize, number> = { compact: 0.75, standard: 1, large: 1.35 };
+
+/** Should this device's label render given the global density setting? */
+function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): boolean {
+  if (density === 'hidden') return isSel;       // selected device label always wins
+  if (density === 'selected') return isSel;
+  if (density === 'important') {
+    if (isSel) return true;
+    const k = TYPE_KIND[d.type];
+    return k === 'camera' || k === 'network';   // cameras + IDFs / switches
+  }
+  return true;                                  // 'all'
 }
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers }, ref
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display }, ref
 ) {
+  const iconScale = ICON_SCALE[display.iconSize];
+  const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
   const moveRef = useRef<{ id: string; offX: number; offY: number } | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
   const movingDev = movingId ? devices.find((d) => d.id === movingId) ?? null : null;
@@ -1882,12 +2052,13 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
 
         {/* FOV cones — gated by the `fov` engineering layer. The selected
             camera still shows its cone regardless, so direct manipulation
-            never goes blind. */}
+            never goes blind. Opacity is further multiplied by the user's
+            coverage opacity setting so dense maps can be quieted. */}
         <g style={{ mixBlendMode: coverageMode === 'heatmap' ? 'screen' : 'normal' }}>
           {devices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
             const isSel = d.id === selId;
             if (!layers.fov && !isSel) return null;
-            const dim = selId ? (isSel ? 1 : 0.28) : 1;
+            const dim = (selId ? (isSel ? 1 : 0.28) : 1) * coverageAlpha;
             return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} />;
           })}
         </g>
@@ -1936,15 +2107,16 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
               }}
             >
-              {isSel && <circle cx={d.x} cy={d.y} r={20} fill={tone} opacity="0.16" />}
-              {multi && !isSel && <circle cx={d.x} cy={d.y} r={18} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
-              <HardwareGlyph d={d} tone={tone} selected={isSel} />
-              {/* dark-glass label pill — id + manufacturer model below.
-                  Gated by the `labels` layer so users can dim the canvas
-                  to just blueprint + glyphs. The selected device's label
-                  always shows so identity is never ambiguous. */}
-              {(layers.labels || isSel) && (
-                <g transform={`translate(${d.x}, ${d.y + 22})`} pointerEvents="none">
+              {isSel && <circle cx={d.x} cy={d.y} r={20 * iconScale} fill={tone} opacity="0.16" />}
+              {multi && !isSel && <circle cx={d.x} cy={d.y} r={18 * iconScale} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
+              <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
+              {/* Label pill — id + manufacturer model below. Gated by BOTH
+                  the `labels` engineering layer AND the user's label
+                  density preference (hidden / selected / important / all).
+                  Selected device's label always wins so identity is never
+                  ambiguous. */}
+              {layers.labels && labelVisibleFor(d, display.labelDensity, isSel) && (
+                <g transform={`translate(${d.x}, ${d.y + 7 + 15 * iconScale})`} pointerEvents="none">
                   <rect x={-(d.id.length * 3.4 + 6)} y={-7} width={d.id.length * 6.8 + 12} height={14} rx={3} fill="rgba(8,12,20,0.85)" stroke={tone} strokeWidth="0.6" />
                   <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="600">{d.id}</text>
                   {isSel && (() => {
@@ -2550,14 +2722,14 @@ const DEVICE_ICON: Record<DeviceType, any> = {
 // HardwareGlyph — Axis Site Designer style. Single-tone line glyphs drawn
 // directly on the plan: no card backgrounds, no fills beyond the tone, no shading.
 // Each device type reads as a tiny technical drawing of the actual hardware.
-function HardwareGlyph({ d, tone, selected }: { d: Device; tone: string; selected: boolean }) {
+function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: string; selected: boolean; scale?: number }) {
   const kind = TYPE_KIND[d.type];
   const rot = d.rot;
   const ink = tone;
   const sw = 1.4;
 
   return (
-    <g transform={`translate(${d.x}, ${d.y})`}>
+    <g transform={`translate(${d.x}, ${d.y}) scale(${scale})`}>
       {/* glass knock-out with tone glow — reads on the cinematic dark plan */}
       <circle r={15} fill={ink} opacity="0.10" />
       <circle r={13} fill="#0B131F" opacity="0.92" stroke={ink} strokeWidth="0.8" />
@@ -3006,8 +3178,9 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   const isCam = kind === 'camera';
   const isMultisensor = d.type === 'cam.multisensor';
   const isDoor = d.type === 'acc.exit' || d.type === 'acc.door' || d.type === 'acc.gate';
+  const isReader = d.type === 'acc.reader' || d.type === 'acc.biometric';
   const isIDF = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'net.switch';
-  const isPathway = kind === 'network' && !isIDF;
+  const isPathway = kind === 'network' && !isIDF && !isReader;
 
   // Build toolbar actions per device kind. Each kind exposes at most 5
   // primary actions; the rest fall into the "More" overflow popover. The
@@ -3016,77 +3189,97 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   // reader + egress). Less-used controls (link, note, schedule, target
   // sim, delete) move behind More so the toolbar stays calm.
   const actions: ToolbarAction[] = (() => {
+    // Toolbars follow the published canvas spec: max 5 visible actions
+    // per device kind. Everything else falls into the "More" overflow.
+    // Camera:      Edit · Rotate · FOV · Duplicate · More
+    // Multisensor: Edit · Lens · Mode · Target · More
+    // Door:        Edit · Hardware · Electrify · Egress · More
+    // Reader:      Edit · Link Door · Mount · Validate · More
+    // Pathway:     Edit Route · Add Bend · Add Pull Box · Cable · More
+    // IDF:         Edit · Switches · PoE · Links · More
     if (isMultisensor) {
-      // Multisensor lens selection is already shown inline as
-      // MultisensorLensChips above the toolbar — we don't repeat the
-      // lens buttons here. The toolbar focuses on edit / mode / AI.
       return [
-        { id: 'edit',   icon: Settings2,  label: 'Edit',  onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'edit',   icon: Settings2,     label: 'Edit',   onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'lens',   icon: Aperture,      label: 'Lens',   onClick: () => onOpenTab('lens') },
         { id: 'mode',   icon: lensMode === 'linked' ? Lock : Unlock,
           label: lensMode === 'linked' ? 'Linked' : 'Indep',
           onClick: () => setLensMode(lensMode === 'linked' ? 'independent' : 'linked') },
-        { id: 'auto',   icon: Sparkles,      label: 'AI',     onClick: () => onOpenTab('ai') },
         { id: 'target', icon: ScanFace,      label: 'Target', onClick: onTargetSim },
         // Overflow
+        { id: 'auto',   icon: Sparkles,      label: 'AI optimize', onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'dup',    icon: Copy,          label: 'Duplicate',   onClick: onDuplicate, overflow: true },
+        { id: 'note',   icon: MessageSquare, label: 'Note',        onClick: () => onOpenTab('notes'), overflow: true },
+        { id: 'del',    icon: Trash2,        label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
+      ];
+    }
+    if (isCam) {
+      return [
+        { id: 'edit',   icon: Settings2, label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'rotate', icon: RotateCw,  label: 'Rotate',    onClick: () => onRotate((d.rot + 15) % 360) },
+        { id: 'fov',    icon: Aperture,  label: 'FOV',       onClick: () => onOpenTab('lens') },
+        { id: 'dup',    icon: Copy,      label: 'Duplicate', onClick: onDuplicate },
+        // Overflow
+        { id: 'ai',     icon: Sparkles,      label: 'AI optimize', onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'target', icon: ScanFace,      label: 'Target sim',  onClick: onTargetSim, overflow: true },
+        { id: 'link',   icon: GitBranch,     label: 'Link path',   onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'note',   icon: MessageSquare, label: 'Note',        onClick: () => onOpenTab('notes'), overflow: true },
+        { id: 'del',    icon: Trash2,        label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
+      ];
+    }
+    if (isReader) {
+      return [
+        { id: 'edit',     icon: Settings2,   label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'linkdoor', icon: KeyRound,    label: 'Link door', onClick: () => onOpenTab('linked') },
+        { id: 'mount',    icon: Crosshair,   label: 'Mount',     onClick: () => onOpenTab('mounting') },
+        { id: 'validate', icon: ShieldCheck, label: 'Validate',  onClick: () => onOpenTab('compliance') },
+        // Overflow
+        { id: 'ai',     icon: Sparkles,      label: 'AI hint', onClick: () => onOpenTab('ai'), overflow: true },
         { id: 'dup',    icon: Copy,          label: 'Duplicate', onClick: onDuplicate, overflow: true },
         { id: 'note',   icon: MessageSquare, label: 'Note',      onClick: () => onOpenTab('notes'), overflow: true },
         { id: 'del',    icon: Trash2,        label: 'Delete',    onClick: onDelete, overflow: true, danger: true },
       ];
     }
-    if (isCam) {
-      return [
-        { id: 'edit',   icon: Settings2, label: 'Edit',   onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'rotate', icon: RotateCw,  label: 'Rotate', onClick: () => onRotate((d.rot + 15) % 360) },
-        { id: 'fov',    icon: Aperture,  label: 'FOV',    onClick: () => onOpenTab('lens') },
-        { id: 'ai',     icon: Sparkles,  label: 'AI',     onClick: () => onOpenTab('ai') },
-        // Overflow
-        { id: 'dup',    icon: Copy,          label: 'Duplicate',  onClick: onDuplicate, overflow: true },
-        { id: 'target', icon: ScanFace,      label: 'Target sim', onClick: onTargetSim, overflow: true },
-        { id: 'link',   icon: GitBranch,     label: 'Link path',  onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'note',   icon: MessageSquare, label: 'Note',       onClick: () => onOpenTab('notes'), overflow: true },
-        { id: 'del',    icon: Trash2,        label: 'Delete',     onClick: onDelete, overflow: true, danger: true },
-      ];
-    }
     if (isDoor) {
       return [
-        { id: 'edit',   icon: Settings2,   label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'elec',   icon: Zap,         label: 'Electrify', onClick: () => onOpenTab('power') },
-        { id: 'reader', icon: KeyRound,    label: 'Reader',    onClick: () => onOpenTab('linked') },
-        { id: 'egress', icon: DoorOpen,    label: 'Egress',    onClick: () => onOpenTab('compliance') },
+        { id: 'edit',     icon: Settings2,   label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'hardware', icon: KeyRound,    label: 'Hardware',  onClick: () => onOpenTab('linked') },
+        { id: 'elec',     icon: Zap,         label: 'Electrify', onClick: () => onOpenTab('power') },
+        { id: 'egress',   icon: DoorOpen,    label: 'Egress',    onClick: () => onOpenTab('compliance') },
         // Overflow
-        { id: 'ai',     icon: ShieldCheck, label: 'AI validate', onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'sched',  icon: Calendar,    label: 'Schedule',    onClick: () => onOpenTab('notes'), overflow: true },
-        { id: 'link',   icon: GitBranch,   label: 'Pathway',     onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'explode',icon: Layers,      label: 'Exploded view', onClick: () => onOpenTab('mounting'), overflow: true },
-        { id: 'del',    icon: Trash2,      label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
+        { id: 'validate', icon: ShieldCheck, label: 'Validate',    onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'sched',    icon: Calendar,    label: 'Schedule',    onClick: () => onOpenTab('notes'), overflow: true },
+        { id: 'link',     icon: GitBranch,   label: 'Pathway',     onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'explode',  icon: Layers,      label: 'Exploded view', onClick: () => onOpenTab('mounting'), overflow: true },
+        { id: 'del',      icon: Trash2,      label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
       ];
     }
     if (isIDF) {
       return [
-        { id: 'edit',    icon: Settings2,       label: 'Edit',    onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'switch',  icon: Server,          label: 'Switch',  onClick: () => onOpenTab('network') },
-        { id: 'poe',     icon: BatteryCharging, label: 'PoE',     onClick: () => onOpenTab('power') },
-        { id: 'thermal', icon: Thermometer,     label: 'Thermal', onClick: () => onOpenTab('telemetry') },
+        { id: 'edit',     icon: Settings2,       label: 'Edit',     onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'switches', icon: Server,          label: 'Switches', onClick: () => onOpenTab('network') },
+        { id: 'poe',      icon: BatteryCharging, label: 'PoE',      onClick: () => onOpenTab('power') },
+        { id: 'links',    icon: GitBranch,       label: 'Links',    onClick: () => onOpenTab('linked') },
         // Overflow
-        { id: 'ups',     icon: Zap,           label: 'UPS',     onClick: () => onOpenTab('power'), overflow: true },
-        { id: 'fiber',   icon: Cable,         label: 'Fiber',   onClick: () => onOpenTab('network'), overflow: true },
-        { id: 'linked',  icon: GitBranch,     label: 'Linked',  onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'failure', icon: AlertTriangle, label: 'Failure analysis', onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'del',     icon: Trash2,        label: 'Delete',  onClick: onDelete, overflow: true, danger: true },
+        { id: 'thermal', icon: Thermometer,    label: 'Thermal',  onClick: () => onOpenTab('telemetry'), overflow: true },
+        { id: 'ups',     icon: Zap,            label: 'UPS',      onClick: () => onOpenTab('power'), overflow: true },
+        { id: 'fiber',   icon: Cable,          label: 'Fiber',    onClick: () => onOpenTab('network'), overflow: true },
+        { id: 'failure', icon: AlertTriangle,  label: 'Failure analysis', onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'del',     icon: Trash2,         label: 'Delete',   onClick: onDelete, overflow: true, danger: true },
       ];
     }
     if (isPathway) {
       return [
-        { id: 'edit',    icon: Settings2, label: 'Edit',     onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'junction',icon: CircleDot, label: 'Junction', onClick: () => onOpenTab('linked') },
-        { id: 'pull',    icon: Hash,      label: 'Pull box', onClick: () => onOpenTab('mounting') },
-        { id: 'fiber',   icon: Cable,     label: 'Fiber',    onClick: () => onOpenTab('network') },
+        { id: 'edit',   icon: Settings2, label: 'Edit route',   onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'bend',   icon: CircleDot, label: 'Add bend',     onClick: () => onOpenTab('linked') },
+        { id: 'pull',   icon: Hash,      label: 'Add pull box', onClick: () => onOpenTab('mounting') },
+        { id: 'cable',  icon: Cable,     label: 'Cable',        onClick: () => onOpenTab('network') },
         // Overflow
-        { id: 'emt',     icon: Slash,     label: 'EMT',         onClick: () => onOpenTab('compliance'), overflow: true },
-        { id: 'bridge',  icon: Wifi,      label: 'Wireless',    onClick: () => onOpenTab('network'), overflow: true },
-        { id: 'ai',      icon: Sparkles,  label: 'AI optimize', onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'fill',    icon: BarChart3, label: 'Fill %',      onClick: () => onOpenTab('telemetry'), overflow: true },
-        { id: 'del',     icon: Trash2,    label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
+        { id: 'fiber',  icon: Cable,     label: 'Fiber',       onClick: () => onOpenTab('network'), overflow: true },
+        { id: 'emt',    icon: Slash,     label: 'EMT',         onClick: () => onOpenTab('compliance'), overflow: true },
+        { id: 'bridge', icon: Wifi,      label: 'Wireless',    onClick: () => onOpenTab('network'), overflow: true },
+        { id: 'ai',     icon: Sparkles,  label: 'AI optimize', onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'fill',   icon: BarChart3, label: 'Fill %',      onClick: () => onOpenTab('telemetry'), overflow: true },
+        { id: 'del',    icon: Trash2,    label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
       ];
     }
     return [
@@ -4002,13 +4195,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
    ═══════════════════════════════════════════════════════════════════════ */
 
 function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool) => void; showWall: boolean }) {
-  const items: Array<{ id: Tool; icon: any; label: string; key: string }> = [
-    { id: 'select',  icon: MousePointer2,  label: 'Select',  key: 'V' },
-    { id: 'pan',     icon: Hand,           label: 'Pan',     key: 'H' },
-    { id: 'measure', icon: Ruler,          label: 'Measure', key: 'M' },
-    { id: 'text',    icon: Type,           label: 'Text',    key: 'T' },
-    { id: 'comment', icon: MessageSquare,  label: 'Comment', key: 'N' },
-    ...(showWall ? [{ id: 'wall' as Tool, icon: WallIcon, label: 'Wall', key: 'W' }] : []),
+  // Tool tooltips clarify what each one DOES, not just what it's called.
+  // The brief's most common confusion: Select vs Pan. Select edits objects;
+  // Pan moves the map view only and never selects.
+  const items: Array<{ id: Tool; icon: any; label: string; key: string; hint: string }> = [
+    { id: 'select',  icon: MousePointer2, label: 'Select',  key: 'V', hint: 'Select and edit objects' },
+    { id: 'pan',     icon: Hand,          label: 'Pan',     key: 'H', hint: 'Pan the map · does not select' },
+    { id: 'measure', icon: Ruler,         label: 'Measure', key: 'M', hint: 'Measure distance between two points' },
+    { id: 'text',    icon: Type,          label: 'Text',    key: 'T', hint: 'Drop a text annotation' },
+    { id: 'comment', icon: MessageSquare, label: 'Comment', key: 'N', hint: 'Add a comment pin' },
+    ...(showWall ? [{ id: 'wall' as Tool, icon: WallIcon, label: 'Wall', key: 'W', hint: 'Draw a wall · double-click to finish' }] : []),
   ];
   return (
     <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-20">
@@ -4021,7 +4217,7 @@ function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool
             <button
               key={it.id}
               onClick={() => setTool(it.id)}
-              title={`${it.label} · ${it.key}`}
+              title={`${it.label} (${it.key}) — ${it.hint}`}
               className={`relative w-10 h-10 rounded-xl inline-flex items-center justify-center transition-all duration-200 ease-out will-change-transform ${active ? 'bg-primary text-primary-foreground shadow-[0_4px_12px_-4px_rgba(47,129,247,0.6)] scale-[1.08]' : 'text-muted-foreground hover:bg-secondary hover:text-foreground scale-100'}`}
             >
               <Icon className={`w-[18px] h-[18px] transition-transform duration-200 ${active ? 'scale-110' : ''}`} />
