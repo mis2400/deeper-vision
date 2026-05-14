@@ -13,7 +13,7 @@ import {
   Activity, ArrowRight, Check, Circle, CheckCircle2, AlertTriangle, ChevronRight, MapPin,
   Calendar, Clock, ShieldCheck, ShieldAlert, Shield, Sparkles, RotateCcw,
 } from 'lucide-react';
-import { useProjectStore, selectors as sel } from '../store/projectStore';
+import { useProjectStore } from '../store/projectStore';
 import {
   PHASES, PHASE_TIMELINE, expandRoute, quickActionFor, progressPctFor,
   nextPhase, previousPhase, healthTone,
@@ -24,23 +24,41 @@ export function ProjectCenter() {
   const { projectId = 'p1' } = useParams();
   const navigate = useNavigate();
 
-  // Everything we need from the store. Subscribing to the project object
-  // directly so phase changes / nextAction edits re-render us live.
+  // Subscribe to raw maps (stable object identity until something mutates).
+  // Derive arrays/objects via useMemo below — subscribing to a selector that
+  // returned `Object.values(...).filter(...)` directly caused infinite
+  // re-renders by tripping Zustand's getSnapshot identity check.
   const project = useProjectStore((s) => s.projects[projectId]);
-  const customer = useProjectStore((s) => project?.customerId ? s.customers[project.customerId] : undefined);
-  const counts = useProjectStore((s) => ({
-    devices:  sel.devicesForProject(s, projectId).length,
-    pathways: sel.pathwaysForProject(s, projectId).length,
-    idfs:     sel.idfsForProject(s, projectId).length,
-    doors:    Object.values(s.doors).filter((d) => d.projectId === projectId).length,
-  }));
-  const activity = useProjectStore((s) => sel.activityForProject(s, projectId, 20));
+  const customersMap = useProjectStore((s) => s.customers);
+  const devicesMap   = useProjectStore((s) => s.devices);
+  const pathwaysMap  = useProjectStore((s) => s.pathways);
+  const idfsMap      = useProjectStore((s) => s.idfs);
+  const doorsMap     = useProjectStore((s) => s.doors);
+  const activityMap  = useProjectStore((s) => s.activity);
   const setNextAction = useProjectStore((s) => s.setNextAction);
   const advancePhase = useProjectStore((s) => s.advanceProjectPhase);
   const revertPhase = useProjectStore((s) => s.revertProjectPhase);
   const completePhaseItem = useProjectStore((s) => s.completePhaseItem);
   const uncompletePhaseItem = useProjectStore((s) => s.uncompletePhaseItem);
   const setHealth = useProjectStore((s) => s.setProjectHealth);
+
+  const customer = project?.customerId ? customersMap[project.customerId] : undefined;
+  const counts = useMemo(
+    () => ({
+      devices:  Object.values(devicesMap).filter((d) => d.projectId === projectId).length,
+      pathways: Object.values(pathwaysMap).filter((p) => p.projectId === projectId).length,
+      idfs:     Object.values(idfsMap).filter((i) => i.projectId === projectId).length,
+      doors:    Object.values(doorsMap).filter((d) => d.projectId === projectId).length,
+    }),
+    [devicesMap, pathwaysMap, idfsMap, doorsMap, projectId],
+  );
+  const activity = useMemo(
+    () => Object.values(activityMap)
+      .filter((a) => a.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 20),
+    [activityMap, projectId],
+  );
 
   if (!project) {
     return (

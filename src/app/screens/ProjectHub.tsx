@@ -51,13 +51,18 @@ export function ProjectHub() {
   };
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
-  // Live project list from the store. Counts (devices/team/etc.) are derived
-  // from store entities so they tick up as the user adds objects on each
-  // project's canvas.
-  const storeProjects = useProjectStore((s) => sel.projectList(s));
+  // Subscribe to raw maps (stable identity until mutated). Sorting / mapping
+  // is done in useMemo below — selectors that returned new arrays per call
+  // tripped Zustand's infinite-loop guard via getSnapshot.
+  const projectsMap   = useProjectStore((s) => s.projects);
   const storeCustomers = useProjectStore((s) => s.customers);
-  const storeDevices = useProjectStore((s) => s.devices);
-  const resetDemoData = useProjectStore((s) => s.resetDemoData);
+  const storeDevices   = useProjectStore((s) => s.devices);
+  const resetDemoData  = useProjectStore((s) => s.resetDemoData);
+
+  const storeProjects = useMemo(
+    () => Object.values(projectsMap).sort((a, b) => b.updatedAt - a.updatedAt),
+    [projectsMap],
+  );
 
   const projects: Project[] = useMemo(() => storeProjects.map((p) => {
     const customer = p.customerId ? storeCustomers[p.customerId] : undefined;

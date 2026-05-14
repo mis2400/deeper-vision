@@ -7,17 +7,33 @@ import { useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { Cable, Route } from 'lucide-react';
-import { useProjectStore, selectors as sel } from '../store/projectStore';
+import { useProjectStore } from '../store/projectStore';
 
 export function PathwayRouting() {
   const { projectId = 'p1' } = useParams();
   const [showRuns, setShowRuns] = useState(true);
   const [showDevices, setShowDevices] = useState(true);
 
-  const pathways = useProjectStore((s) => sel.pathwaysForProject(s, projectId));
-  const devices  = useProjectStore((s) => sel.devicesForProject(s, projectId));
-  const idfs     = useProjectStore((s) => sel.idfsForProject(s, projectId));
+  // Subscribe to raw maps — sorting/filtering happens in useMemo. Selectors
+  // that returned `Object.values(...).filter(...)` directly caused infinite
+  // re-renders because the array identity changed every call.
+  const pathwaysMap = useProjectStore((s) => s.pathways);
+  const devicesMap  = useProjectStore((s) => s.devices);
+  const idfsMap     = useProjectStore((s) => s.idfs);
   const projectName = useProjectStore((s) => s.projects[projectId]?.name ?? 'Project');
+
+  const pathways = useMemo(
+    () => Object.values(pathwaysMap).filter((p) => p.projectId === projectId),
+    [pathwaysMap, projectId],
+  );
+  const devices = useMemo(
+    () => Object.values(devicesMap).filter((d) => d.projectId === projectId),
+    [devicesMap, projectId],
+  );
+  const idfs = useMemo(
+    () => Object.values(idfsMap).filter((i) => i.projectId === projectId),
+    [idfsMap, projectId],
+  );
 
   // Pathway fill telemetry — each pathway carries cableCount + conduitFill.
   // We surface a unique row per pathway, derived from the live store.

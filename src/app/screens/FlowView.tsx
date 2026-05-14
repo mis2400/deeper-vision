@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
-import { useProjectStore, selectors as sel } from '../store/projectStore';
+import { useProjectStore } from '../store/projectStore';
 
 interface Node { id: string; label: string; sub: string; route: string; col: number; row: number; }
 interface Edge { from: string; to: string; }
@@ -41,15 +41,24 @@ export function FlowView() {
   const nav = useNavigate();
   const [hover, setHover] = useState<string | null>(null);
 
-  // Live project context from the store so the workflow shows real counts.
+  // Live project context — subscribe to raw maps and derive counts via
+  // useMemo. Inline object-literal selectors return a new identity every
+  // call and trip Zustand's getSnapshot infinite-loop guard.
   const projectName = useProjectStore((s) => s.projects[projectId]?.name ?? 'Project');
   const phase       = useProjectStore((s) => s.projects[projectId]?.lifecyclePhase ?? 'engineering');
-  const counts = useProjectStore((s) => ({
-    devices:  sel.devicesForProject(s, projectId).length,
-    pathways: sel.pathwaysForProject(s, projectId).length,
-    idfs:     sel.idfsForProject(s, projectId).length,
-    doors:    Object.values(s.doors).filter((d) => d.projectId === projectId).length,
-  }));
+  const devicesMap  = useProjectStore((s) => s.devices);
+  const pathwaysMap = useProjectStore((s) => s.pathways);
+  const idfsMap     = useProjectStore((s) => s.idfs);
+  const doorsMap    = useProjectStore((s) => s.doors);
+  const counts = useMemo(
+    () => ({
+      devices:  Object.values(devicesMap).filter((d) => d.projectId === projectId).length,
+      pathways: Object.values(pathwaysMap).filter((p) => p.projectId === projectId).length,
+      idfs:     Object.values(idfsMap).filter((i) => i.projectId === projectId).length,
+      doors:    Object.values(doorsMap).filter((d) => d.projectId === projectId).length,
+    }),
+    [devicesMap, pathwaysMap, idfsMap, doorsMap, projectId],
+  );
 
   const pos = (n: Node) => ({ x: n.col * COL_W + 30, y: n.row * ROW_H + 30 });
   const byId = (id: string) => NODES.find((n) => n.id === id)!;

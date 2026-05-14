@@ -3,7 +3,7 @@ import { useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { Check, X, Minus, FileDown } from 'lucide-react';
-import { useProjectStore, selectors as sel } from '../store/projectStore';
+import { useProjectStore } from '../store/projectStore';
 import type { DeviceType } from '../store/types';
 import { PhaseGateBanner } from '../lifecycle/PhaseGate';
 import { PHASE_TIMELINE } from '../lifecycle/phases';
@@ -43,9 +43,25 @@ const KIND_LABEL: Partial<Record<DeviceType, string>> = {
 export function Commissioning() {
   const { projectId = 'p1' } = useParams();
   const projectName = useProjectStore((s) => s.projects[projectId]?.name ?? 'Project');
-  const storeDevices = useProjectStore((s) => sel.devicesForProject(s, projectId));
-  const storeDoors   = useProjectStore((s) => Object.values(s.doors).filter((d) => d.projectId === projectId));
-  const storeIDFs    = useProjectStore((s) => sel.idfsForProject(s, projectId));
+  // Subscribe to raw maps; derive arrays via useMemo. Returning a fresh
+  // `Object.values(...).filter(...)` array from a Zustand selector breaks
+  // its getSnapshot identity check and causes infinite re-renders.
+  const devicesMap = useProjectStore((s) => s.devices);
+  const doorsMap   = useProjectStore((s) => s.doors);
+  const idfsMap    = useProjectStore((s) => s.idfs);
+
+  const storeDevices = useMemo(
+    () => Object.values(devicesMap).filter((d) => d.projectId === projectId),
+    [devicesMap, projectId],
+  );
+  const storeDoors = useMemo(
+    () => Object.values(doorsMap).filter((d) => d.projectId === projectId),
+    [doorsMap, projectId],
+  );
+  const storeIDFs = useMemo(
+    () => Object.values(idfsMap).filter((i) => i.projectId === projectId),
+    [idfsMap, projectId],
+  );
 
   // Build a single commissioning list from canvas devices + doors + IDFs.
   // Every entry on this page now corresponds to a real canvas object.
