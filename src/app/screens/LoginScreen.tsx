@@ -2,7 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '../components/Button';
 import { BrandLogo } from '../components/BrandLogo';
-import { Mail, Lock, ArrowRight } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Sparkles } from 'lucide-react';
+
+/** Demo credentials advertised publicly on the login page so any reviewer
+ *  (human or AI browser) can step in without friction. Any other input also
+ *  works — the form has no real auth backend yet. */
+const DEMO_EMAIL = 'demo@deepervision.ai';
+const DEMO_PASSWORD = 'Demo123!';
 
 export function LoginScreen() {
   const navigate = useNavigate();
@@ -13,15 +19,41 @@ export function LoginScreen() {
     e.preventDefault();
     navigate('/projects');
   };
+  const fillDemo = () => {
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+    // Auto-submit a tick later so the field updates render first.
+    setTimeout(() => navigate('/projects'), 60);
+  };
 
   return (
     <div className="min-h-screen bg-background flex">
       <div className="flex-1 flex items-center justify-center px-6">
         <div className="w-full max-w-sm">
-          <div className="mb-10">
+          <div className="mb-8">
             <BrandLogo variant="full" theme="dark" height={28} />
             <p className="mt-4 text-sm text-muted-foreground">Engineering OS for physical security.</p>
           </div>
+
+          {/* Public-demo affordance. Auto-fills the demo credentials and signs
+              the visitor straight in — no manual typing, no friction for
+              reviewers and AI browsers. Any other email/password also works
+              (no backend auth yet) so this is purely a UX shortcut. */}
+          <button
+            type="button"
+            onClick={fillDemo}
+            className="w-full mb-5 px-3 py-2.5 rounded-md border border-primary/40 bg-primary/5 hover:bg-primary/10 text-left transition-colors group"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-medium text-primary">Try the demo · one click</span>
+              <ArrowRight className="w-3.5 h-3.5 text-primary ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+            <div className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground font-mono">
+              <span>email</span>    <span className="text-foreground">{DEMO_EMAIL}</span>
+              <span>password</span> <span className="text-foreground">{DEMO_PASSWORD}</span>
+            </div>
+          </button>
 
           <form onSubmit={submit} className="space-y-4">
             <div>

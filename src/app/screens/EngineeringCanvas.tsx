@@ -503,13 +503,28 @@ export function EngineeringCanvas() {
       fullBleed
     >
       <div className="h-full flex flex-col bg-[#070A10] text-slate-100 relative">
-        <TopBar
-          floor={floor} setFloor={setFloor}
-          snap={snap} setSnap={setSnap}
-          units={units} setUnits={setUnits}
-          onScan={() => nav('/visionscan')}
-          onSetup={() => setOnboarded(false)}
-        />
+        {/* Focus mode = immersive canvas. Hide the top toolbar entirely so the
+            floorplan dominates. A small floating chip in the corner lets the
+            user exit. The intent is "canvas is the product" — no SaaS chrome. */}
+        {!focusMode && (
+          <TopBar
+            floor={floor} setFloor={setFloor}
+            snap={snap} setSnap={setSnap}
+            units={units} setUnits={setUnits}
+            onScan={() => nav('/visionscan')}
+            onSetup={() => setOnboarded(false)}
+          />
+        )}
+        {focusMode && (
+          <button
+            onClick={() => setFocusMode(false)}
+            className="absolute top-3 left-3 z-50 px-2.5 py-1.5 rounded-md bg-[#0F1722]/85 border border-white/10 text-[10px] uppercase tracking-[0.18em] text-slate-300 hover:text-white hover:border-white/25 backdrop-blur-xl flex items-center gap-1.5"
+            title="Exit immersive mode"
+          >
+            <ChevronLeft className="w-3 h-3" />
+            Exit immersive
+          </button>
+        )}
 
         <div className="flex-1 min-h-0 flex">
           {!focusMode && <LeftNavRail section={navSection} setSection={setNavSection} />}
@@ -1734,10 +1749,17 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           const multi = selIds.has(d.id);
           const tone = KIND_TONE[TYPE_KIND[d.type]];
           const isSel = selId === d.id;
+          // Selected-device spotlight: when SOMETHING is selected, every other
+          // device fades back so the focused one reads clearly. The glyph dims
+          // less aggressively than the cone (cones fade hard to 0.28 in FOV's
+          // own opacity calc) so the user can still locate inactive devices
+          // and click to switch focus.
+          const spotlightDim = selId && !isSel ? 0.42 : 1;
           return (
             <g
               key={d.id}
               className="cursor-move"
+              style={{ opacity: spotlightDim, transition: 'opacity 160ms ease' }}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -1769,10 +1791,24 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               {isSel && <circle cx={d.x} cy={d.y} r={20} fill={tone} opacity="0.16" />}
               {multi && !isSel && <circle cx={d.x} cy={d.y} r={18} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
               <HardwareGlyph d={d} tone={tone} selected={isSel} />
-              {/* dark-glass label pill */}
+              {/* dark-glass label pill — id + manufacturer model below.
+                  The model only appears when the device is selected so unsel-
+                  ected cameras stay calm; the spec lives on the active one. */}
               <g transform={`translate(${d.x}, ${d.y + 22})`} pointerEvents="none">
                 <rect x={-(d.id.length * 3.4 + 6)} y={-7} width={d.id.length * 6.8 + 12} height={14} rx={3} fill="rgba(8,12,20,0.85)" stroke={tone} strokeWidth="0.6" />
                 <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="600">{d.id}</text>
+                {isSel && (() => {
+                  const product = PRODUCTS.find((p) => p.id === d.product);
+                  if (!product) return null;
+                  const label = `${product.mfr} · ${product.model}`;
+                  const w = label.length * 5.5 + 12;
+                  return (
+                    <g transform="translate(0, 16)">
+                      <rect x={-w / 2} y={-6} width={w} height={11} rx={2} fill="rgba(8,12,20,0.78)" stroke={tone} strokeWidth="0.4" opacity="0.9" />
+                      <text x={0} y={2} textAnchor="middle" fill={tone} fontSize="8" fontWeight="500" fontFamily="ui-monospace, monospace">{label}</text>
+                    </g>
+                  );
+                })()}
               </g>
             </g>
           );
@@ -2049,11 +2085,39 @@ function FovCone({
   // tip of the cone (used to anchor the small telemetry chip)
   const tipX = cx + Math.cos((rotDeg * Math.PI) / 180) * r;
   const tipY = cy + Math.sin((rotDeg * Math.PI) / 180) * r;
+  // Per-cone radial gradient — saturated at the lens (cx, cy) and fading to
+  // zero at the cone's outer arc. Gives the cinematic "vapor at the edge"
+  // depth instead of the flat SVG-ish fill that read as decorative. The id
+  // encodes color+position+range so two cones never share a gradient.
+  const gid = `cone-${color.replace('#', '')}-${Math.round(cx)}-${Math.round(cy)}-${Math.round(r)}-${Math.round(rotDeg)}-${Math.round(fovDeg)}`;
   return (
     <g opacity={opacity}>
-      {!wireframe && <path d={path} fill={color} opacity="0.18" />}
-      {!wireframe && <path d={path} fill={color} opacity="0.08" filter="url(#fov-bloom)" />}
-      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 1 : 0.9} opacity={wireframe ? 0.95 : 0.7} />
+      <defs>
+        <radialGradient id={gid} cx={cx} cy={cy} r={r} gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor={color} stopOpacity="0.42" />
+          <stop offset="45%"  stopColor={color} stopOpacity="0.22" />
+          <stop offset="78%"  stopColor={color} stopOpacity="0.08" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      {!wireframe && <path d={path} fill={`url(#${gid})`} />}
+      {/* Soft inner bloom for atmosphere (only when not in wireframe mode) */}
+      {!wireframe && <path d={path} fill={`url(#${gid})`} filter="url(#fov-bloom)" opacity="0.7" />}
+      {/* Outer stroke — fades along the arc via the gradient, but the lens-
+          edge rays stay sharper so the cone reads as a precise FOV. */}
+      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 1 : 0.9} opacity={wireframe ? 0.95 : 0.55} />
+      {/* DORI band rings — visual reference points at 35% / 60% / 80% of range. */}
+      {!wireframe && [0.35, 0.6, 0.8].map((f) => {
+        const rr = r * f;
+        const xa = cx + Math.cos(a1) * rr;
+        const ya = cy + Math.sin(a1) * rr;
+        const xb = cx + Math.cos(a2) * rr;
+        const yb = cy + Math.sin(a2) * rr;
+        return (
+          <path key={f} d={`M ${xa} ${ya} A ${rr} ${rr} 0 ${half > 90 ? 1 : 0} 1 ${xb} ${yb}`}
+            fill="none" stroke={color} strokeWidth="0.4" opacity="0.35" strokeDasharray="2 4" />
+        );
+      })}
       {label && (
         <g transform={`translate(${tipX}, ${tipY})`} pointerEvents="none">
           <circle r={9} fill="rgba(8,12,20,0.88)" stroke={color} strokeWidth="0.8" />
