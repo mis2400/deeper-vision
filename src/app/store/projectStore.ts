@@ -8,28 +8,69 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
-  Customer, Project, Site, Building, Floor, Device, Door, Pathway, IDF, Estimate,
+  Customer, Contact, Project, Site, Building, Floor, Device, Door, Pathway, IDF, Estimate,
   EstimateLine, LensCfg, ActivityItem, ActivityType, LifecyclePhase, HealthStatus,
+  Opportunity, OpportunityStage, Touch, Task,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
 
+/** Default probability a stage carries unless the opportunity overrides it. */
+export const STAGE_PROBABILITY: Record<OpportunityStage, number> = {
+  inquiry:     0.10,
+  qualified:   0.30,
+  discovery:   0.45,
+  proposing:   0.60,
+  negotiating: 0.80,
+  won:         1.00,
+  lost:        0.00,
+  on_hold:     0.20,
+};
+
 // ─────────────────────────── State shape ──────────────────────────
 interface ProjectState {
-  customers: Record<string, Customer>;
-  projects:  Record<string, Project>;
-  sites:     Record<string, Site>;
-  buildings: Record<string, Building>;
-  floors:    Record<string, Floor>;
-  devices:   Record<string, Device>;
-  doors:     Record<string, Door>;
-  pathways:  Record<string, Pathway>;
-  idfs:      Record<string, IDF>;
-  estimates: Record<string, Estimate>;
-  activity:  Record<string, ActivityItem>;
+  customers:     Record<string, Customer>;
+  contacts:      Record<string, Contact>;
+  projects:      Record<string, Project>;
+  sites:         Record<string, Site>;
+  buildings:     Record<string, Building>;
+  floors:        Record<string, Floor>;
+  devices:       Record<string, Device>;
+  doors:         Record<string, Door>;
+  pathways:      Record<string, Pathway>;
+  idfs:          Record<string, IDF>;
+  estimates:     Record<string, Estimate>;
+  opportunities: Record<string, Opportunity>;
+  touches:       Record<string, Touch>;
+  tasks:         Record<string, Task>;
+  activity:      Record<string, ActivityItem>;
 
   // ── Project actions ──
   updateProject: (id: string, patch: Partial<Project>) => void;
+
+  // ── CRM actions ──
+  updateCustomer:    (id: string, patch: Partial<Customer>) => void;
+
+  addContact:        (c: Contact, opts?: { userName?: string }) => void;
+  updateContact:     (id: string, patch: Partial<Contact>) => void;
+  removeContact:     (id: string) => void;
+
+  addOpportunity:    (o: Opportunity, opts?: { userName?: string }) => void;
+  updateOpportunity: (id: string, patch: Partial<Opportunity>) => void;
+  setOpportunityStage: (id: string, stage: OpportunityStage, opts?: { userName?: string; lossReason?: string }) => void;
+  removeOpportunity: (id: string) => void;
+  /** Convert a (typically won) opportunity into a real Project record.
+   *  Returns the new project's id, or null on failure. */
+  convertOpportunityToProject: (oppId: string, opts?: { userName?: string; projectName?: string; startingPhase?: LifecyclePhase }) => string | null;
+
+  logTouch:          (t: Omit<Touch, 'id' | 'createdAt'> & { id?: string; createdAt?: number }) => string;
+  removeTouch:       (id: string) => void;
+
+  addTask:           (t: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { id?: string; status?: import('./types').TaskStatus }) => string;
+  updateTask:        (id: string, patch: Partial<Task>) => void;
+  completeTask:      (id: string, opts?: { userName?: string }) => void;
+  snoozeTask:        (id: string, until: number) => void;
+  removeTask:        (id: string) => void;
 
   // ── Lifecycle actions ──
   setProjectPhase:     (projectId: string, phase: LifecyclePhase, opts?: { userName?: string }) => void;
@@ -180,6 +221,8 @@ export const useProjectStore = create<ProjectState>()(
         const item: ActivityItem = {
           id,
           projectId: a.projectId,
+          customerId: a.customerId,
+          opportunityId: a.opportunityId,
           type: a.type,
           message: a.message,
           userName: a.userName,
@@ -188,6 +231,197 @@ export const useProjectStore = create<ProjectState>()(
         };
         set((s) => ({ activity: { ...s.activity, [id]: item } }));
       },
+
+      // ── CRM: Customer ──
+      updateCustomer: (id, patch) =>
+        set((s) => s.customers[id] ? ({
+          customers: { ...s.customers, [id]: { ...s.customers[id], ...patch, updatedAt: Date.now() } },
+        }) : s),
+
+      // ── CRM: Contact ──
+      addContact: (c, opts) => {
+        set((s) => ({ contacts: { ...s.contacts, [c.id]: c } }));
+        get().logActivity({
+          customerId: c.customerId, type: 'contact_added',
+          message: `Added contact ${c.firstName} ${c.lastName}${c.title ? ` (${c.title})` : ''}`,
+          userName: opts?.userName, relatedEntityId: c.id,
+        });
+      },
+      updateContact: (id, patch) =>
+        set((s) => s.contacts[id] ? ({
+          contacts: { ...s.contacts, [id]: { ...s.contacts[id], ...patch, updatedAt: Date.now() } },
+        }) : s),
+      removeContact: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.contacts; return { contacts: rest }; }),
+
+      // ── CRM: Opportunity ──
+      addOpportunity: (o, opts) => {
+        set((s) => ({ opportunities: { ...s.opportunities, [o.id]: o } }));
+        get().logActivity({
+          customerId: o.customerId, opportunityId: o.id, type: 'opportunity_created',
+          message: `New opportunity: ${o.name}${o.estValue ? ` ($${Math.round(o.estValue / 1000)}k)` : ''}`,
+          userName: opts?.userName, relatedEntityId: o.id,
+        });
+      },
+      updateOpportunity: (id, patch) =>
+        set((s) => s.opportunities[id] ? ({
+          opportunities: { ...s.opportunities, [id]: { ...s.opportunities[id], ...patch, updatedAt: Date.now() } },
+        }) : s),
+      setOpportunityStage: (id, stage, opts) => {
+        const prev = get().opportunities[id];
+        if (!prev || prev.stage === stage) return;
+        const now = Date.now();
+        const closing = stage === 'won' || stage === 'lost';
+        set((s) => ({
+          opportunities: { ...s.opportunities, [id]: {
+            ...prev,
+            stage,
+            // Auto-update probability unless the user has overridden it.
+            probability: prev.probability != null && prev.probability !== STAGE_PROBABILITY[prev.stage]
+              ? prev.probability
+              : STAGE_PROBABILITY[stage],
+            lossReason: stage === 'lost' ? (opts?.lossReason ?? prev.lossReason) : prev.lossReason,
+            closedAt: closing ? now : prev.closedAt,
+            updatedAt: now,
+          } },
+        }));
+        const type: ActivityType =
+          stage === 'won'  ? 'opportunity_won' :
+          stage === 'lost' ? 'opportunity_lost' :
+                             'opportunity_stage_changed';
+        const message =
+          stage === 'won'  ? `Closed-won: ${prev.name}${prev.estValue ? ` ($${Math.round(prev.estValue / 1000)}k)` : ''}` :
+          stage === 'lost' ? `Closed-lost: ${prev.name}${opts?.lossReason ? ` · ${opts.lossReason}` : ''}` :
+                             `Opportunity moved: ${prev.stage} → ${stage}`;
+        get().logActivity({
+          customerId: prev.customerId, opportunityId: id, type, message,
+          userName: opts?.userName, relatedEntityId: id,
+        });
+      },
+      removeOpportunity: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.opportunities; return { opportunities: rest }; }),
+
+      convertOpportunityToProject: (oppId, opts) => {
+        const opp = get().opportunities[oppId];
+        if (!opp) return null;
+        if (opp.wonProjectId) return opp.wonProjectId; // already converted
+        // Make sure the opportunity is marked won first.
+        if (opp.stage !== 'won') {
+          get().setOpportunityStage(oppId, 'won', { userName: opts?.userName });
+        }
+        // Spawn a project shell tied back to the opportunity.
+        const now = Date.now();
+        const newId = `p-${oppId}-${now.toString(36).slice(-5)}`;
+        const startingPhase: LifecyclePhase = opts?.startingPhase ?? 'walk_scheduled';
+        const newProject: Project = {
+          id: newId,
+          name: opts?.projectName ?? opp.name,
+          customerId: opp.customerId,
+          status: 'design',
+          lifecyclePhase: startingPhase,
+          createdAt: now, updatedAt: now,
+          phaseStartedAt: now,
+          opportunityId: oppId,
+          contractValue: opp.estValue,
+          assignedSalesUserId: opp.ownerUserId,
+          nextAction: 'Schedule the site walk',
+          healthStatus: 'on_track',
+          priority: 'normal',
+          progress: 0,
+        };
+        set((s) => ({
+          projects:      { ...s.projects, [newId]: newProject },
+          opportunities: { ...s.opportunities, [oppId]: { ...s.opportunities[oppId], wonProjectId: newId, updatedAt: now } },
+        }));
+        get().logActivity({
+          customerId: opp.customerId, opportunityId: oppId, projectId: newId, type: 'opportunity_converted',
+          message: `Opportunity converted to project: ${newProject.name}`, userName: opts?.userName, relatedEntityId: newId,
+        });
+        return newId;
+      },
+
+      // ── CRM: Touch ──
+      logTouch: (t) => {
+        _activityCounter += 1;
+        const id = t.id ?? `tch-${Date.now()}-${_activityCounter}`;
+        const touch: Touch = {
+          id,
+          customerId: t.customerId,
+          contactId: t.contactId,
+          opportunityId: t.opportunityId,
+          projectId: t.projectId,
+          type: t.type,
+          summary: t.summary,
+          detail: t.detail,
+          userId: t.userId,
+          userName: t.userName,
+          occurredAt: t.occurredAt,
+          createdAt: t.createdAt ?? Date.now(),
+        };
+        set((s) => ({ touches: { ...s.touches, [id]: touch } }));
+        get().logActivity({
+          customerId: touch.customerId, opportunityId: touch.opportunityId, projectId: touch.projectId,
+          type: 'touch_logged', message: `${touch.type}: ${touch.summary}`,
+          userName: touch.userName, relatedEntityId: id,
+        });
+        return id;
+      },
+      removeTouch: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.touches; return { touches: rest }; }),
+
+      // ── CRM: Task ──
+      addTask: (t) => {
+        _activityCounter += 1;
+        const id = t.id ?? `tsk-${Date.now()}-${_activityCounter}`;
+        const now = Date.now();
+        const task: Task = {
+          id,
+          customerId: t.customerId,
+          contactId: t.contactId,
+          opportunityId: t.opportunityId,
+          projectId: t.projectId,
+          title: t.title,
+          detail: t.detail,
+          status: t.status ?? 'open',
+          dueDate: t.dueDate,
+          snoozedUntil: t.snoozedUntil,
+          assignedUserId: t.assignedUserId,
+          assignedUserName: t.assignedUserName,
+          createdAt: now, updatedAt: now,
+        };
+        set((s) => ({ tasks: { ...s.tasks, [id]: task } }));
+        if (task.customerId || task.projectId || task.opportunityId) {
+          get().logActivity({
+            customerId: task.customerId, opportunityId: task.opportunityId, projectId: task.projectId,
+            type: 'task_created', message: `Task: ${task.title}`,
+            userName: task.assignedUserName, relatedEntityId: id,
+          });
+        }
+        return id;
+      },
+      updateTask: (id, patch) =>
+        set((s) => s.tasks[id] ? ({
+          tasks: { ...s.tasks, [id]: { ...s.tasks[id], ...patch, updatedAt: Date.now() } },
+        }) : s),
+      completeTask: (id, opts) => {
+        const prev = get().tasks[id];
+        if (!prev) return;
+        const now = Date.now();
+        set((s) => ({
+          tasks: { ...s.tasks, [id]: { ...prev, status: 'done', completedAt: now, updatedAt: now } },
+        }));
+        get().logActivity({
+          customerId: prev.customerId, opportunityId: prev.opportunityId, projectId: prev.projectId,
+          type: 'task_completed', message: `Task done: ${prev.title}`,
+          userName: opts?.userName ?? prev.assignedUserName, relatedEntityId: id,
+        });
+      },
+      snoozeTask: (id, until) =>
+        set((s) => s.tasks[id] ? ({
+          tasks: { ...s.tasks, [id]: { ...s.tasks[id], status: 'snoozed', snoozedUntil: until, updatedAt: Date.now() } },
+        }) : s),
+      removeTask: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.tasks; return { tasks: rest }; }),
 
       addDevice: (d, opts) => {
         set((s) => ({ devices: { ...s.devices, [d.id]: d } }));
@@ -240,24 +474,68 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'deeperVisionStore',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
-      // Migration hook — future schema bumps go here.
-      migrate: (persisted: any, _version: number) => persisted,
+      // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
+      // top-level contacts slice and ensure the new opportunities/touches/tasks
+      // slices exist so v1-persisted state doesn't blow up the new selectors.
+      migrate: (persisted: any, version: number) => {
+        if (!persisted) return persisted;
+        if (version < 2) {
+          const customers: Record<string, any> = {};
+          const contacts:  Record<string, any> = persisted.contacts ?? {};
+          if (persisted.customers) {
+            for (const [cid, raw] of Object.entries(persisted.customers as Record<string, any>)) {
+              const { contacts: inline = [], ...rest } = raw;
+              customers[cid] = rest;
+              for (const ec of inline) {
+                if (!ec?.id) continue;
+                // Map old shape { id, name, role, email, phone } → new Contact.
+                const [first, ...restName] = (ec.name ?? '').split(' ');
+                contacts[ec.id] = {
+                  id: ec.id,
+                  customerId: cid,
+                  firstName: first ?? ec.name ?? '',
+                  lastName:  restName.join(' '),
+                  title:     ec.role,
+                  email:     ec.email,
+                  phone:     ec.phone,
+                  isPrimary: !contacts[`__primary-set-${cid}`],
+                  createdAt: Date.now(),
+                  updatedAt: Date.now(),
+                };
+                contacts[`__primary-set-${cid}`] = true as any;
+              }
+            }
+            // Strip the sentinel markers we used to claim the primary.
+            for (const k of Object.keys(contacts)) if (k.startsWith('__primary-set-')) delete contacts[k];
+            persisted.customers = customers;
+            persisted.contacts  = contacts;
+          }
+          persisted.opportunities ??= {};
+          persisted.touches       ??= {};
+          persisted.tasks         ??= {};
+        }
+        return persisted;
+      },
       // Only persist data slices, not action references (those are on every
       // hydrate anyway).
       partialize: (s) => ({
-        customers: s.customers,
-        projects:  s.projects,
-        sites:     s.sites,
-        buildings: s.buildings,
-        floors:    s.floors,
-        devices:   s.devices,
-        doors:     s.doors,
-        pathways:  s.pathways,
-        idfs:      s.idfs,
-        estimates: s.estimates,
-        activity:  s.activity,
+        customers:     s.customers,
+        contacts:      s.contacts,
+        projects:      s.projects,
+        sites:         s.sites,
+        buildings:     s.buildings,
+        floors:        s.floors,
+        devices:       s.devices,
+        doors:         s.doors,
+        pathways:      s.pathways,
+        idfs:          s.idfs,
+        estimates:     s.estimates,
+        opportunities: s.opportunities,
+        touches:       s.touches,
+        tasks:         s.tasks,
+        activity:      s.activity,
       }),
     },
   ),
@@ -327,7 +605,105 @@ export const selectors = {
       .filter((a) => a.projectId === projectId)
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit),
+
+  // ── CRM selectors ──
+  contactsForCustomer: (s: ProjectState, customerId: string): Contact[] =>
+    Object.values(s.contacts).filter((c) => c.customerId === customerId),
+
+  primaryContactForCustomer: (s: ProjectState, customerId: string): Contact | undefined => {
+    const customer = s.customers[customerId];
+    if (customer?.primaryContactId) return s.contacts[customer.primaryContactId];
+    return Object.values(s.contacts).find((c) => c.customerId === customerId && c.isPrimary)
+      ?? Object.values(s.contacts).find((c) => c.customerId === customerId);
+  },
+
+  opportunitiesForCustomer: (s: ProjectState, customerId: string): Opportunity[] =>
+    Object.values(s.opportunities)
+      .filter((o) => o.customerId === customerId)
+      .sort((a, b) => b.updatedAt - a.updatedAt),
+
+  opportunitiesByStage: (s: ProjectState, stage: OpportunityStage): Opportunity[] =>
+    Object.values(s.opportunities)
+      .filter((o) => o.stage === stage)
+      .sort((a, b) => b.updatedAt - a.updatedAt),
+
+  projectsForCustomer: (s: ProjectState, customerId: string): Project[] =>
+    Object.values(s.projects)
+      .filter((p) => p.customerId === customerId)
+      .sort((a, b) => b.updatedAt - a.updatedAt),
+
+  touchesForCustomer: (s: ProjectState, customerId: string, limit = 50): Touch[] =>
+    Object.values(s.touches)
+      .filter((t) => t.customerId === customerId)
+      .sort((a, b) => b.occurredAt - a.occurredAt)
+      .slice(0, limit),
+
+  touchesForOpportunity: (s: ProjectState, opportunityId: string, limit = 50): Touch[] =>
+    Object.values(s.touches)
+      .filter((t) => t.opportunityId === opportunityId)
+      .sort((a, b) => b.occurredAt - a.occurredAt)
+      .slice(0, limit),
+
+  tasksForCustomer: (s: ProjectState, customerId: string): Task[] =>
+    Object.values(s.tasks)
+      .filter((t) => t.customerId === customerId)
+      .sort(taskSort),
+
+  tasksForUser: (s: ProjectState, userId: string): Task[] =>
+    Object.values(s.tasks)
+      .filter((t) => t.assignedUserId === userId)
+      .sort(taskSort),
+
+  openTasksForUser: (s: ProjectState, userId: string): Task[] =>
+    Object.values(s.tasks)
+      .filter((t) => t.assignedUserId === userId && t.status === 'open')
+      .sort(taskSort),
+
+  /** Activity scoped to a customer — includes events explicitly tagged with
+   *  customerId and those whose projectId belongs to the customer. */
+  activityForCustomer: (s: ProjectState, customerId: string, limit = 50): ActivityItem[] => {
+    const projectIds = new Set(
+      Object.values(s.projects).filter((p) => p.customerId === customerId).map((p) => p.id),
+    );
+    return Object.values(s.activity)
+      .filter((a) => a.customerId === customerId || (a.projectId && projectIds.has(a.projectId)))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
+  },
+
+  /** Pipeline totals. Sum of estValue across open opportunities and
+   *  probability-weighted forecast across the same set. */
+  pipelineSummary: (s: ProjectState): { open: number; weighted: number; openCount: number; wonThisQuarter: number } => {
+    const all = Object.values(s.opportunities);
+    let open = 0, weighted = 0, openCount = 0, wonThisQuarter = 0;
+    const qStart = quarterStart(Date.now());
+    for (const o of all) {
+      if (o.stage === 'won' && o.closedAt && o.closedAt >= qStart) wonThisQuarter += o.estValue ?? 0;
+      if (o.stage === 'won' || o.stage === 'lost') continue;
+      open += o.estValue ?? 0;
+      weighted += (o.estValue ?? 0) * (o.probability ?? STAGE_PROBABILITY[o.stage]);
+      openCount += 1;
+    }
+    return { open, weighted, openCount, wonThisQuarter };
+  },
 };
+
+/** Order tasks: overdue first (oldest due first), then upcoming by due date,
+ *  then no-due, then snoozed/done. */
+function taskSort(a: Task, b: Task): number {
+  const score = (t: Task) => {
+    if (t.status === 'done')   return 1e15;
+    if (t.status === 'snoozed') return 1e14 + (t.snoozedUntil ?? 0);
+    if (t.dueDate == null)     return 1e10;
+    return t.dueDate;
+  };
+  return score(a) - score(b);
+}
+
+function quarterStart(ts: number): number {
+  const d = new Date(ts);
+  return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1).getTime();
+}
 
 // ─────────────────────────── Migration helpers ────────────────────
 // In case localStorage carries a project whose lifecyclePhase value uses an

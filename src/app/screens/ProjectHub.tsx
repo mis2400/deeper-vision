@@ -11,6 +11,8 @@ interface Project {
   id: string;
   name: string;
   client: string;
+  /** Customer id for routing — when present, the client name links to /account/:id. */
+  customerId?: string;
   address: string;
   status: 'design' | 'review' | 'install' | 'live';
   devices: number;
@@ -79,6 +81,7 @@ export function ProjectHub() {
       id: p.id,
       name: p.name,
       client: customer?.companyName ?? '—',
+      customerId: p.customerId,
       address: addr ? `${addr.street}${addr.city ? ` · ${addr.city}, ${addr.state ?? ''}` : ''}` : '—',
       status: p.status === 'archived' ? 'live' : p.status,
       devices: deviceCount,
@@ -185,7 +188,16 @@ export function ProjectHub() {
                       <span className={`text-[10px] uppercase tracking-wider ${h.cls}`}>{h.label}</span>
                     </div>
                     <h3 className="text-base font-medium leading-tight">{p.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">{p.client}</p>
+                    {p.customerId ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/account/${p.customerId}`); }}
+                        className="text-xs text-muted-foreground mt-0.5 hover:text-primary hover:underline text-left"
+                      >
+                        {p.client}
+                      </button>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-0.5">{p.client}</p>
+                    )}
                     <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                       <MapPin className="w-3 h-3 shrink-0" />
                       <span className="truncate">{p.address}</span>

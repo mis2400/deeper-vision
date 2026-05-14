@@ -29,6 +29,8 @@ import { WorkOrders } from './screens/WorkOrders';
 import { Maintenance } from './screens/Maintenance';
 import { ChangeOrders } from './screens/ChangeOrders';
 import { KnowledgeBase } from './screens/KnowledgeBase';
+import { PipelineView } from './screens/PipelineView';
+import { AccountDetail } from './screens/AccountDetail';
 import { PdfExporter } from './components/PdfExporter';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 
@@ -40,6 +42,8 @@ export default function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginScreen />} />
           <Route path="/projects" element={<ProjectHub />} />
+          <Route path="/crm" element={<PipelineView />} />
+          <Route path="/account/:customerId" element={<AccountDetail />} />
           <Route path="/project/:projectId" element={<ProjectCenter />} />
           <Route path="/project/:projectId/canvas" element={<EngineeringCanvas />} />
           <Route path="/visionscan" element={<VisionScan />} />

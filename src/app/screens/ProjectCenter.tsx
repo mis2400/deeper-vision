@@ -96,6 +96,11 @@ export function ProjectCenter() {
       subtitle={`${customer?.companyName ?? '—'} · ${customer?.addresses?.[0]?.city ?? ''}${customer?.addresses?.[0]?.state ? `, ${customer.addresses[0].state}` : ''}`}
       actions={
         <div className="flex items-center gap-2">
+          {project.customerId && (
+            <Button size="sm" variant="ghost" onClick={() => navigate(`/account/${project.customerId}`)}>
+              Account →
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => navigate(`/project/${projectId}/canvas`)}>
             Open canvas
           </Button>

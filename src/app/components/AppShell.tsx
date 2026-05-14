@@ -167,11 +167,12 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
   // Global items always present.
   const global: { label: string; path: string; group: string }[] = [
-    { label: 'Projects',        path: '/projects', group: 'Navigate' },
-    { label: 'Device library',  path: '/devices',  group: 'Navigate' },
-    { label: 'Knowledge base',  path: '/kb',       group: 'Reference' },
-    { label: 'Help center',     path: '/help',     group: 'Reference' },
-    { label: 'Settings',        path: '/settings', group: 'Account' },
+    { label: 'Projects',         path: '/projects', group: 'Navigate' },
+    { label: 'Sales pipeline',   path: '/crm',      group: 'CRM' },
+    { label: 'Device library',   path: '/devices',  group: 'Navigate' },
+    { label: 'Knowledge base',   path: '/kb',       group: 'Reference' },
+    { label: 'Help center',      path: '/help',     group: 'Reference' },
+    { label: 'Settings',         path: '/settings', group: 'Account' },
   ];
 
   const items = contextProjectId

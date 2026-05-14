@@ -36,12 +36,34 @@ export type OwnerRole =
   | 'service';
 
 // ─────────────────────────── CRM / Sales ──────────────────────────
+// First-class CRM entities. A Customer (account) owns contacts and is the
+// target of opportunities; an Opportunity is the pre-project pipeline entity
+// (lead → won → spawns a Project); a Touch is one logged interaction; a
+// Task is a follow-up assigned to a user.
+
+export type ContactRole =
+  | 'decision_maker'
+  | 'champion'
+  | 'technical'
+  | 'finance'
+  | 'security'
+  | 'facilities'
+  | 'operations'
+  | 'other';
+
 export interface Contact {
   id: string;
-  name: string;
-  role?: string;
+  customerId: string;
+  firstName: string;
+  lastName: string;
+  title?: string;
   email?: string;
   phone?: string;
+  role?: ContactRole;
+  isPrimary?: boolean;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Address {
@@ -51,12 +73,105 @@ export interface Address {
   postal?: string;
 }
 
+export type Industry =
+  | 'healthcare' | 'education' | 'retail' | 'data_center' | 'hospitality'
+  | 'government' | 'commercial_re' | 'manufacturing' | 'logistics'
+  | 'multifamily' | 'other';
+
+export type AccountTier = 'strategic' | 'growth' | 'standard';
+
 export interface Customer {
   id: string;
   companyName: string;
-  contacts: Contact[];
   addresses: Address[];
+  industry?: Industry;
+  accountTier?: AccountTier;
+  /** Sales rep / account exec. */
+  ownerUserId?: string;
+  primaryContactId?: string;
+  website?: string;
+  employees?: number;
   notes?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+// ── Opportunities ─────────────────────────────────────────────────
+export type OpportunityStage =
+  | 'inquiry'        // first contact made
+  | 'qualified'      // worth pursuing
+  | 'discovery'      // gathering requirements
+  | 'proposing'      // proposal out for review
+  | 'negotiating'    // working terms
+  | 'won'            // closed-won → project spawned
+  | 'lost'
+  | 'on_hold';
+
+export type OpportunitySource =
+  | 'referral' | 'inbound_web' | 'cold_outreach' | 'existing_customer'
+  | 'partner' | 'rfp' | 'other';
+
+export interface Opportunity {
+  id: string;
+  customerId: string;
+  primaryContactId?: string;
+  name: string;
+  stage: OpportunityStage;
+  /** Expected contract value in USD. */
+  estValue?: number;
+  /** Manual override of the stage's default probability (0..1). */
+  probability?: number;
+  expectedCloseDate?: number;
+  source?: OpportunitySource;
+  ownerUserId?: string;
+  description?: string;
+  lossReason?: string;
+  /** Set when stage='won' and a Project was spawned. */
+  wonProjectId?: string;
+  createdAt: number;
+  updatedAt: number;
+  closedAt?: number;
+}
+
+// ── Touches (interaction log) ─────────────────────────────────────
+export type TouchType =
+  | 'call' | 'email' | 'meeting' | 'note' | 'demo'
+  | 'site_visit' | 'sms' | 'quote_sent';
+
+export interface Touch {
+  id: string;
+  customerId: string;
+  contactId?: string;
+  opportunityId?: string;
+  projectId?: string;
+  type: TouchType;
+  summary: string;
+  detail?: string;
+  userId?: string;
+  userName?: string;
+  occurredAt: number;
+  createdAt: number;
+}
+
+// ── Tasks (follow-ups) ────────────────────────────────────────────
+export type TaskStatus = 'open' | 'done' | 'snoozed';
+
+export interface Task {
+  id: string;
+  customerId?: string;
+  contactId?: string;
+  opportunityId?: string;
+  projectId?: string;
+  title: string;
+  detail?: string;
+  status: TaskStatus;
+  dueDate?: number;
+  snoozedUntil?: number;
+  assignedUserId?: string;
+  assignedUserName?: string;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
 }
 
 // ─────────────────────────── Project tree ─────────────────────────
@@ -98,6 +213,12 @@ export interface Project {
    *  editable. */
   nextAction?: string;
   healthStatus?: HealthStatus;
+
+  // ── CRM linkage ──
+  /** Set when this project was spawned from a won Opportunity. */
+  opportunityId?: string;
+  /** Optional projected contract value carried over from the opportunity. */
+  contractValue?: number;
 }
 
 // ─────────────────────────── Activity feed ────────────────────────
@@ -118,11 +239,25 @@ export type ActivityType =
   | 'commission_test_pass'
   | 'commission_test_fail'
   | 'health_changed'
-  | 'note_added';
+  | 'note_added'
+  // CRM
+  | 'opportunity_created'
+  | 'opportunity_stage_changed'
+  | 'opportunity_won'
+  | 'opportunity_lost'
+  | 'opportunity_converted'
+  | 'touch_logged'
+  | 'task_created'
+  | 'task_completed'
+  | 'contact_added';
 
 export interface ActivityItem {
   id: string;
-  projectId: string;
+  /** Project context (if any). Optional now — CRM events (opp created,
+   *  touch logged) can pre-date project existence. */
+  projectId?: string;
+  customerId?: string;
+  opportunityId?: string;
   type: ActivityType;
   message: string;
   userName?: string;
