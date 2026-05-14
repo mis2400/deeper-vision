@@ -126,8 +126,8 @@ export function ProjectCenter() {
           <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-primary/60 to-primary/10" aria-hidden />
           <div className="grid grid-cols-[1fr_auto] gap-5 items-center">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">
-                <span className="text-primary">Next action</span>
+              <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground mb-1.5">
+                <span className="text-primary font-medium tracking-tight">Next action</span>
                 <span className="text-muted-foreground/40">·</span>
                 <span className={`inline-flex items-center gap-1.5 ${h.cls}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${phaseCfg.tone.dot}`} />
@@ -157,7 +157,7 @@ export function ProjectCenter() {
             but isn't the question the user came here to answer. */}
         <div className="bg-card border border-border rounded-lg px-4 py-3">
           <div className="flex items-center gap-4 flex-wrap">
-            <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground shrink-0">Phase</div>
+            <div className="text-[11.5px] text-muted-foreground shrink-0 font-medium tracking-tight">Phase</div>
 
             <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
               {PHASE_TIMELINE.map((p, i) => {
@@ -274,7 +274,7 @@ export function ProjectCenter() {
           {/* ── Right: activity feed + health controls ─────────────── */}
           <div className="space-y-5">
             <div className="bg-card border border-border rounded-lg p-4">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Health</div>
+              <div className="text-[11.5px] font-medium text-slate-200 mb-2 tracking-tight">Health</div>
               <div className="flex gap-1 mb-3">
                 {(['on_track', 'at_risk', 'blocked', 'complete'] as const).map((opt) => {
                   const active = (project.healthStatus ?? 'on_track') === opt;
@@ -291,7 +291,7 @@ export function ProjectCenter() {
                 })}
               </div>
 
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-4 mb-2">Owners</div>
+              <div className="text-[11.5px] font-medium text-slate-200 mt-5 mb-2 tracking-tight">Owners</div>
               <OwnerRow icon={<Sparkles className="w-3 h-3" />}     label="Sales"      value={project.assignedSalesUserId} />
               <OwnerRow icon={<Activity className="w-3 h-3" />}     label="Engineer"   value={project.assignedEngineerUserId} />
               <OwnerRow icon={<Activity className="w-3 h-3" />}     label="Estimator"  value={project.assignedEstimatorUserId} />
@@ -299,7 +299,7 @@ export function ProjectCenter() {
 
               {project.dueDate && (
                 <>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-4 mb-1">Due</div>
+                  <div className="text-[11.5px] font-medium text-slate-200 mt-5 mb-1 tracking-tight">Due</div>
                   <div className="text-sm">{new Date(project.dueDate).toLocaleDateString()}</div>
                 </>
               )}
@@ -339,7 +339,7 @@ export function ProjectCenter() {
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="bg-card border border-border rounded-lg p-3">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-[11.5px] text-muted-foreground">{label}</div>
       <div className="text-2xl font-medium mt-0.5">{value}</div>
     </div>
   );

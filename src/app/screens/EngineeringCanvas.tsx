@@ -1454,107 +1454,136 @@ function InsertDock(props: {
   return (
     <div className="shrink-0 flex bg-background relative">
       <div className="w-[360px] border-r border-border flex flex-col bg-card">
-        {/* Header with breadcrumb / back */}
-        <div className="px-4 pt-4 pb-3 border-b border-border flex items-center justify-between">
-          <div className="min-w-0">
+        {/* Header — editorial. The device-library title sits as a calm
+            headline; the count below is supporting metadata. When drilled
+            into a category, the category becomes the headline. */}
+        <div className="px-5 pt-5 pb-4 border-b border-border/70 flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             {activeCat ? (
               <>
-                <button onClick={() => { props.setOpenCat(null); props.setOpenType(null); }} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground -ml-1">
+                <button
+                  onClick={() => { props.setOpenCat(null); props.setOpenType(null); }}
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-2 -ml-1"
+                >
                   <ChevronLeft className="w-3.5 h-3.5" /> All categories
                 </button>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${activeCat.tone}1a`, color: activeCat.tone }}>
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: `${activeCat.tone}14`, color: activeCat.tone }}
+                  >
                     <CategoryGlyph kind={activeCat.id} active />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[13px] font-semibold tracking-tight truncate">{activeCat.label}</div>
-                    <div className="text-[10.5px] text-muted-foreground">{activeCat.types.length} types · {PRODUCTS.filter((p) => TYPE_KIND[p.type] === activeCat.id).length} products</div>
+                    <div className="text-[15px] font-medium tracking-tight truncate leading-tight">{activeCat.label}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{PRODUCTS.filter((p) => TYPE_KIND[p.type] === activeCat.id).length} products · {activeCat.types.length} types</div>
                   </div>
                 </div>
               </>
             ) : (
               <>
-                <div className="text-[13px] font-semibold tracking-tight">Device library</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">{PRODUCTS.length} products · {CATEGORIES.length} categories</div>
+                <div className="text-[15px] font-medium tracking-tight leading-tight">Device library</div>
+                <div className="text-[11.5px] text-muted-foreground mt-1">{PRODUCTS.length} products across {CATEGORIES.length} categories</div>
               </>
             )}
           </div>
-          <button onClick={props.onToggleLayers} title="Layers" className={`p-1.5 rounded-lg ${props.layersOpen ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>
+          <button
+            onClick={props.onToggleLayers}
+            title="Layers"
+            className={`p-1.5 rounded-md transition-colors duration-150 ${props.layersOpen ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'}`}
+          >
             <Layers className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Search — works at any level */}
-        <div className="px-3 py-2.5 border-b border-border">
+        {/* Search — calmer materials. Same affordance, gentler chrome. */}
+        <div className="px-5 py-3 border-b border-border/70">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
             <input
-              value={props.query} onChange={(e) => props.setQuery(e.target.value)}
-              placeholder={activeCat ? `Search ${activeCat.label.toLowerCase()}…` : 'Search 49 products…'}
-              className="w-full bg-input-background border border-input-border rounded-lg pl-8 pr-3 h-8 text-[11.5px] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              value={props.query}
+              onChange={(e) => props.setQuery(e.target.value)}
+              placeholder={activeCat ? `Search ${activeCat.label.toLowerCase()}…` : 'Search products'}
+              className="w-full bg-input-background border border-input-border rounded-md pl-8 pr-3 h-9 text-[12px] focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/15 placeholder:text-muted-foreground/50"
             />
           </div>
         </div>
 
-        {/* LEVEL 1 — Category cards */}
+        {/* LEVEL 1 — Categories as a vertical list, not a 2-col grid. Each
+            row is generous (py-3), single-column, sentence-case, with a
+            quiet count instead of a colored badge. Reads as a calm menu,
+            not a tile dashboard. */}
         {!activeCat && (
-          <div className="flex-1 overflow-auto p-3 grid grid-cols-2 gap-2 content-start">
+          <div className="flex-1 overflow-auto py-1.5">
             {CATEGORIES.map((c) => {
               const productCount = PRODUCTS.filter((p) => TYPE_KIND[p.type] === c.id).length;
               return (
                 <button
                   key={c.id}
                   onClick={() => { props.setOpenCat(c.id); props.setOpenType(null); }}
-                  className="text-left rounded-xl border border-border bg-background hover:border-border-strong hover:shadow-sm p-3 flex flex-col gap-2 transition-all group"
-                  style={{ ['--tone' as any]: c.tone }}
+                  className="w-full text-left px-5 py-3 flex items-center gap-3 hover:bg-secondary/30 transition-colors duration-150 group"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${c.tone}14`, color: c.tone, boxShadow: `inset 0 0 0 1px ${c.tone}30` }}>
-                      <CategoryGlyph kind={c.id} active />
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div
+                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-150 group-hover:scale-[1.03]"
+                    style={{
+                      background: `${c.tone}12`,
+                      color: c.tone,
+                      transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                    }}
+                  >
+                    <CategoryGlyph kind={c.id} active />
                   </div>
-                  <div>
-                    <div className="text-[12.5px] font-medium leading-tight">{c.label}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">{c.types.length} types</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-medium tracking-tight leading-tight text-slate-100">{c.label}</div>
+                    <div className="text-[11.5px] text-muted-foreground mt-0.5">{c.types.length} types · {productCount} products</div>
                   </div>
-                  <div className="mt-auto flex items-center gap-1 text-[10px]" style={{ color: c.tone }}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.tone }} />
-                    {productCount} products
-                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
                 </button>
               );
             })}
           </div>
         )}
 
-        {/* LEVEL 2 — Types under the chosen category, with their products */}
+        {/* LEVEL 2 — Types within the chosen category. Each type is its
+            own section: heading + a small grid of product rows. Sentence
+            case throughout; the colored accent is reserved for the
+            single hairline strip beside the heading. */}
         {activeCat && (
-          <div className="flex-1 overflow-auto py-2">
+          <div className="flex-1 overflow-auto py-1.5">
             {activeCat.types.map((t) => {
               const items = PRODUCTS.filter((p) => p.type === t.id && (!props.query || `${p.mfr} ${p.model} ${p.sub}`.toLowerCase().includes(props.query.toLowerCase())));
               if (props.query && items.length === 0) return null;
               return (
-                <div key={t.id} className="mb-1">
-                  <div className="px-4 pt-2 pb-1 flex items-center gap-2">
-                    <span className="w-0.5 h-3.5 rounded-full" style={{ background: activeCat.tone }} />
-                    <span className="text-[10.5px] uppercase tracking-[0.07em] text-muted-foreground font-medium">{t.label}</span>
-                    <span className="text-[10px] text-muted-foreground/60">· {items.length}</span>
+                <div key={t.id} className="mb-2">
+                  <div className="px-5 pt-3 pb-2 flex items-center gap-2.5">
+                    <span className="w-[2px] h-3.5 rounded-full" style={{ background: activeCat.tone }} />
+                    <span className="text-[12px] font-medium text-slate-200 tracking-tight">{t.label}</span>
+                    <span className="text-[10.5px] text-muted-foreground/70 ml-auto">{items.length}</span>
                   </div>
                   {items.map((p) => (
                     <button
                       key={p.id}
                       onPointerDown={(e) => { e.preventDefault(); props.onStartDrag(p, e); }}
-                      className="w-full text-left px-3 py-2 hover:bg-secondary/60 cursor-grab active:cursor-grabbing flex items-center gap-2.5 transition-colors group"
+                      className="w-full text-left px-5 py-2.5 hover:bg-secondary/40 cursor-grab active:cursor-grabbing flex items-center gap-3 transition-colors duration-150 group"
                     >
-                      <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${activeCat.tone}14`, color: activeCat.tone, boxShadow: `inset 0 0 0 1px ${activeCat.tone}33` }}>
-                        <DeviceGlyph type={p.type} size={18} tone={activeCat.tone} />
+                      <div
+                        className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-[1.03]"
+                        style={{
+                          background: `${activeCat.tone}10`,
+                          color: activeCat.tone,
+                          transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                        }}
+                      >
+                        <DeviceGlyph type={p.type} size={22} tone={activeCat.tone} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[12.5px] truncate"><span className="font-medium">{p.mfr}</span> <span className="text-muted-foreground">{p.model}</span></div>
-                        <div className="text-[10.5px] text-muted-foreground truncate">{p.sub}</div>
+                        <div className="text-[12.5px] truncate leading-tight">
+                          <span className="font-medium text-slate-100">{p.mfr}</span>
+                          <span className="text-muted-foreground ml-1.5">{p.model}</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{p.sub}</div>
                       </div>
-                      <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                      <GripVertical className="w-3.5 h-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
                     </button>
                   ))}
                 </div>
@@ -1563,8 +1592,9 @@ function InsertDock(props: {
           </div>
         )}
 
-        <div className="px-4 py-2 border-t border-border text-[10px] text-muted-foreground flex items-center gap-1.5 bg-secondary/20">
-          {activeCat ? <><GripVertical className="w-3 h-3" />Drag a product onto the canvas</> : <><MousePointer2 className="w-3 h-3" />Click a category to browse devices</>}
+        {/* Hint footer — quieter, single line, restrained icon. */}
+        <div className="px-5 py-2.5 border-t border-border/70 text-[11px] text-muted-foreground/70 flex items-center gap-1.5">
+          {activeCat ? <><GripVertical className="w-3 h-3" />Drag a product onto the canvas</> : <><MousePointer2 className="w-3 h-3" />Pick a category to browse</>}
         </div>
       </div>
 
@@ -2112,26 +2142,54 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           @keyframes scan-sweep { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -200; } }
           @keyframes glow-breathe { 0%,100% { opacity: 0.5; } 50% { opacity: 0.9; } }
         `}</style>
+        {/* Canvas atmosphere — refined for spatial depth. Two grid scales
+            (fine + coarse) plus a single soft vignette. The grid dots
+            were intentionally quieted (opacity 0.35 → 0.18) so the
+            blueprint reads as the foreground; the grid is texture, not
+            a competing signal. */}
         <pattern id="canvas-grid-fine" width="16" height="16" patternUnits="userSpaceOnUse">
-          <path d="M 16 0 L 0 0 0 16" fill="none" stroke="#2F81F7" strokeWidth="0.3" opacity="0.05" />
+          <path d="M 16 0 L 0 0 0 16" fill="none" stroke="#4A95E8" strokeWidth="0.3" opacity="0.04" />
         </pattern>
         <pattern id="canvas-grid-coarse" width="96" height="96" patternUnits="userSpaceOnUse">
-          <path d="M 96 0 L 0 0 0 96" fill="none" stroke="#38BDF8" strokeWidth="0.6" opacity="0.10" />
-          <circle cx="0" cy="0" r="1" fill="#38BDF8" opacity="0.35" />
+          <path d="M 96 0 L 0 0 0 96" fill="none" stroke="#4A95E8" strokeWidth="0.55" opacity="0.07" />
+          <circle cx="0" cy="0" r="0.8" fill="#4A95E8" opacity="0.18" />
         </pattern>
-        <radialGradient id="canvas-vignette" cx="50%" cy="45%" r="75%">
-          <stop offset="0%"  stopColor="#0F1722" stopOpacity="0" />
-          <stop offset="70%" stopColor="#03060B" stopOpacity="0.5" />
-          <stop offset="100%" stopColor="#000000" stopOpacity="0.85" />
+        {/* Vignette — softer falloff at the edges. Bottom 100% stop is
+            no longer pure black; uses the canvas-background navy at high
+            alpha so corners feel like material drop-off, not void. */}
+        <radialGradient id="canvas-vignette" cx="50%" cy="45%" r="80%">
+          <stop offset="0%"  stopColor="#0D1424" stopOpacity="0" />
+          <stop offset="75%" stopColor="#070C18" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#070C18" stopOpacity="0.72" />
         </radialGradient>
+        {/* Plan paper — a touch warmer than the canvas around it. The
+            faint stroke is dialed down so the paper reads as a surface,
+            not a print. */}
         <linearGradient id="plan-fill" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%"  stopColor="#0E1622" />
-          <stop offset="100%" stopColor="#0A111B" />
+          <stop offset="0%"  stopColor="#10182A" />
+          <stop offset="100%" stopColor="#0C1322" />
         </linearGradient>
         <pattern id="plan-paper" width="32" height="32" patternUnits="userSpaceOnUse">
           <rect width="32" height="32" fill="url(#plan-fill)" />
-          <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#38BDF8" strokeWidth="0.4" opacity="0.18" />
+          <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#4A95E8" strokeWidth="0.4" opacity="0.10" />
         </pattern>
+        {/* Soft grain — drafting paper tooth. A barely-there speckle at
+            high frequency so the canvas no longer reads as a flat web
+            surface but as a physical drawing sheet. */}
+        <filter id="canvas-grain">
+          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" />
+          <feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.06 0" />
+        </filter>
+        {/* Selected-device drop shadow — quiet elevation, not a glow. */}
+        <filter id="device-elevation" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" />
+          <feOffset dx="0" dy="2" result="offsetblur" />
+          <feComponentTransfer><feFuncA type="linear" slope="0.35" /></feComponentTransfer>
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
         {/* Coverage gradients — drafting-paper wash. Lower alpha across
             every stop, less saturated near the lens. The cone should
             read as a quiet engineering callout, not an atmospheric
@@ -2159,10 +2217,14 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         </filter>
       </defs>
 
-      {/* Cinematic backdrop: grid lattice + atmospheric vignette */}
+      {/* Canvas backdrop — grid lattice, soft vignette, and a high-
+          frequency grain layer that gives the surface physical tooth
+          (the kind you feel under a pencil on drafting paper) without
+          competing with anything painted on top. */}
       <rect width="100%" height="100%" fill="url(#canvas-grid-fine)" />
       <rect width="100%" height="100%" fill="url(#canvas-grid-coarse)" />
       <rect width="100%" height="100%" fill="url(#canvas-vignette)" />
+      <rect width="100%" height="100%" filter="url(#canvas-grain)" opacity="0.55" pointerEvents="none" />
 
       <g transform={`scale(${zoom})`}>
         {/* The plan — clearly delineated as the building */}
@@ -2244,8 +2306,25 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                   style={{ animation: 'soft-fade-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both' }}
                 />
               )}
+              {/* Multisensor signature — when the camera is the selected
+                  multisensor, a subtle inner ring breathes at the body's
+                  edge. Slow, quiet, only visible on the active device.
+                  Communicates the multisensor as an orchestrated whole. */}
+              {isSel && d.type === 'cam.multisensor' && (
+                <circle
+                  cx={d.x} cy={d.y} r={14.5 * iconScale}
+                  fill="none" stroke={tone} strokeWidth="0.7"
+                  opacity="0.55"
+                  style={{ animation: 'glow-breathe 3.2s ease-in-out infinite' }}
+                />
+              )}
               {multi && !isSel && <circle cx={d.x} cy={d.y} r={18 * iconScale} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
-              <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
+              {/* When the device is selected, wrap the glyph in a filter
+                  group that paints a soft drop shadow underneath. Reads
+                  as gentle elevation rather than HUD selection glow. */}
+              <g filter={isSel ? 'url(#device-elevation)' : undefined}>
+                <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
+              </g>
               {/* Label pill — id + manufacturer model below. Gated by BOTH
                   the `labels` engineering layer AND the user's label
                   density preference (hidden / selected / important / all).
