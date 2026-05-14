@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
+import { useProjectStore, selectors as sel } from '../store/projectStore';
 
 interface Node { id: string; label: string; sub: string; route: string; col: number; row: number; }
 interface Edge { from: string; to: string; }
@@ -40,6 +41,16 @@ export function FlowView() {
   const nav = useNavigate();
   const [hover, setHover] = useState<string | null>(null);
 
+  // Live project context from the store so the workflow shows real counts.
+  const projectName = useProjectStore((s) => s.projects[projectId]?.name ?? 'Project');
+  const phase       = useProjectStore((s) => s.projects[projectId]?.lifecyclePhase ?? 'engineering');
+  const counts = useProjectStore((s) => ({
+    devices:  sel.devicesForProject(s, projectId).length,
+    pathways: sel.pathwaysForProject(s, projectId).length,
+    idfs:     sel.idfsForProject(s, projectId).length,
+    doors:    Object.values(s.doors).filter((d) => d.projectId === projectId).length,
+  }));
+
   const pos = (n: Node) => ({ x: n.col * COL_W + 30, y: n.row * ROW_H + 30 });
   const byId = (id: string) => NODES.find((n) => n.id === id)!;
 
@@ -48,9 +59,9 @@ export function FlowView() {
 
   return (
     <AppShell
-      crumbs={[{ label: 'Projects', to: '/projects' }, { label: 'Flow' }]}
-      title="Project flow"
-      subtitle="Every phase of this project, end to end"
+      crumbs={[{ label: 'Projects', to: '/projects' }, { label: projectName, to: `/project/${projectId}/canvas` }, { label: 'Flow' }]}
+      title={`${projectName} · flow`}
+      subtitle={`Phase: ${phase} · ${counts.devices} devices · ${counts.doors} doors · ${counts.pathways} pathways · ${counts.idfs} IDFs`}
     >
       <div className="max-w-[1400px] mx-auto px-6 py-6">
         <div className="bg-card border border-border rounded-lg p-4 overflow-auto">

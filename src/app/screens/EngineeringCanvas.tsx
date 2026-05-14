@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
+import { useProjectStore, selectors as storeSelectors } from '../store/projectStore';
+import type { Device as StoreDevice } from '../store/types';
 import {
   MousePointer2, Hand, Ruler, Type, MessageSquare, ChevronRight, ChevronLeft,
   Search, X, Upload, MapPin, PencilLine, Sparkles, Undo2, Redo2, ZoomIn, ZoomOut,
@@ -326,7 +328,65 @@ export function EngineeringCanvas() {
   const [siteAddress, setSiteAddress] = useState<string>('');
 
   const [tool, setTool] = useState<Tool>('select');
-  const [devices, setDevices] = useState<Device[]>(SEED_DEVICES);
+
+  // ── Project store integration ──────────────────────────────────────
+  // Devices are no longer local state. They're read from the shared project
+  // store (filtered to this project) and written back via granular actions.
+  // The component still calls `setDevices(updater)` internally — we provide
+  // that as a facade so every existing caller continues to work, but each
+  // call now diffs against the persisted store snapshot and dispatches
+  // add/update/remove actions.
+  const storeDevices = useProjectStore((s) => s.devices);
+  const storeAddDevice    = useProjectStore((s) => s.addDevice);
+  const storeUpdateDevice = useProjectStore((s) => s.updateDevice);
+  const storeRemoveDevice = useProjectStore((s) => s.removeDevice);
+
+  // Which floor are we editing? For now: first floor of this project. (When
+  // multi-floor switching lands, this becomes state-driven from the floor
+  // selector in TopBar.)
+  const currentFloorId = useProjectStore((s) =>
+    storeSelectors.firstFloorOfProject(s, projectId ?? 'p1')?.id ?? '',
+  );
+
+  // Devices in scope for this canvas: project + current floor. Memoized so
+  // we don't re-allocate on every parent render.
+  const devices = useMemo(() => {
+    const pid = projectId ?? 'p1';
+    return Object.values(storeDevices).filter(
+      (d) => d.projectId === pid && (currentFloorId === '' || d.floorId === currentFloorId),
+    ) as unknown as Device[];
+  }, [storeDevices, projectId, currentFloorId]);
+
+  // setDevices facade: accepts either a new array OR an updater fn. Diffs
+  // against the current store snapshot and dispatches add/update/remove for
+  // each changed device. Keeps all in-component callers (move/rotate/dup/
+  // delete/drag-drop) working with zero changes elsewhere.
+  const setDevices = useCallback((next: Device[] | ((prev: Device[]) => Device[])) => {
+    const pid = projectId ?? 'p1';
+    const fid = currentFloorId;
+    const before = (Object.values(useProjectStore.getState().devices) as unknown as Device[])
+      .filter((d: any) => d.projectId === pid && (fid === '' || d.floorId === fid));
+    const after = typeof next === 'function' ? next(before) : next;
+    const beforeIds = new Set(before.map((d) => d.id));
+    const afterIds  = new Set(after.map((d) => d.id));
+    // Removals
+    for (const d of before) if (!afterIds.has(d.id)) storeRemoveDevice(d.id);
+    // Adds + updates
+    for (const d of after) {
+      if (!beforeIds.has(d.id)) {
+        storeAddDevice({ ...(d as any), projectId: pid, floorId: fid } as StoreDevice);
+      } else {
+        const prev = before.find((p) => p.id === d.id)!;
+        // Shallow diff — only patch what actually changed to keep undo
+        // history concise.
+        const patch: any = {};
+        for (const k of Object.keys(d)) {
+          if ((d as any)[k] !== (prev as any)[k]) patch[k] = (d as any)[k];
+        }
+        if (Object.keys(patch).length) storeUpdateDevice(d.id, patch);
+      }
+    }
+  }, [projectId, currentFloorId, storeAddDevice, storeUpdateDevice, storeRemoveDevice]);
   const [walls, setWalls] = useState<Wall[]>([]);
   const [wallStart, setWallStart] = useState<{ x: number; y: number } | null>(null);
   const [wallCursor, setWallCursor] = useState<{ x: number; y: number } | null>(null);

@@ -1,72 +1,95 @@
+// Estimator — derived live from the shared project store. Every line on this
+// page comes from the canvas (devices, doors, pathways, IDFs) via deriveBOM.
+// There is no longer a hardcoded SECTIONS array; if you add a camera on the
+// canvas, this BOM grows by one line on next view.
+
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { FileDown, ChevronRight } from 'lucide-react';
+import { useProjectStore, deriveBOM } from '../store/projectStore';
+import type { EstimateLine } from '../store/types';
 
-interface Line { id: string; item: string; qty: number; unit: string; cost: number; }
-interface Section { id: string; title: string; lines: Line[]; }
-
-const SECTIONS: Section[] = [
-  { id: 's1', title: 'Video', lines: [
-    { id: 'l1', item: 'Axis P1468-LE bullet camera', qty: 22, unit: 'ea', cost: 850 },
-    { id: 'l2', item: 'Axis Q6315-LE PTZ',          qty: 4,  unit: 'ea', cost: 3895 },
-    { id: 'l3', item: 'Axis M3215-LVE dome',         qty: 2,  unit: 'ea', cost: 620 },
-  ]},
-  { id: 's2', title: 'Access control', lines: [
-    { id: 'l4', item: 'HID Signo 20 reader',       qty: 16, unit: 'ea', cost: 385 },
-    { id: 'l5', item: 'Mercury MR62e controller',  qty: 4,  unit: 'ea', cost: 695 },
-    { id: 'l6', item: 'Securitron M62 maglock',    qty: 12, unit: 'ea', cost: 245 },
-    { id: 'l7', item: 'Von Duprin 6210 strike',    qty: 4,  unit: 'ea', cost: 385 },
-  ]},
-  { id: 's3', title: 'Network', lines: [
-    { id: 'l8', item: 'Cisco C9300-48P switch',    qty: 1,  unit: 'ea', cost: 6850 },
-    { id: 'l9', item: 'Cisco C9300-24P switch',    qty: 2,  unit: 'ea', cost: 4200 },
-    { id: 'l10',item: 'Cisco C9500-32C core',      qty: 1,  unit: 'ea', cost: 18400 },
-  ]},
-  { id: 's4', title: 'Cabling & misc', lines: [
-    { id: 'l11', item: 'Cat6A plenum cable',       qty: 4200, unit: 'ft', cost: 0.85 },
-    { id: 'l12', item: 'OM4 fiber pre-term',       qty: 3,    unit: 'ea', cost: 480 },
-    { id: 'l13', item: 'Cable tray',                qty: 320,  unit: 'ft', cost: 14 },
-  ]},
-  { id: 's5', title: 'Labor', lines: [
-    { id: 'l14', item: 'Install — technician',      qty: 320, unit: 'hr', cost: 115 },
-    { id: 'l15', item: 'Programming — engineer',    qty: 80,  unit: 'hr', cost: 165 },
-    { id: 'l16', item: 'Project management',        qty: 60,  unit: 'hr', cost: 145 },
-  ]},
-];
+/** Group every BOM line under a presentable section heading. */
+const SECTION_FOR: Record<EstimateLine['sourceKind'], string> = {
+  device:  'Hardware',
+  door:    'Access control · doors',
+  pathway: 'Cable & pathways',
+  idf:     'Network · racks',
+  labor:   'Labor',
+  manual:  'Other',
+};
 
 export function EstimatorView() {
   const { projectId = 'p1' } = useParams();
-  const [open, setOpen] = useState<Record<string, boolean>>({ s1: true, s2: true, s3: true, s4: true, s5: true });
 
-  const totals = useMemo(() => {
-    const subtotals = SECTIONS.map((s) => ({ id: s.id, title: s.title, sum: s.lines.reduce((a, l) => a + l.qty * l.cost, 0) }));
-    const subtotal = subtotals.reduce((a, s) => a + s.sum, 0);
-    const overhead = subtotal * 0.12;
-    const margin = subtotal * 0.18;
-    return { subtotals, subtotal, overhead, margin, total: subtotal + overhead + margin };
-  }, []);
+  // Subscribe to the slices that affect BOM so the page re-renders when the
+  // canvas changes a device. (We can't memoize on the raw maps; their object
+  // identity changes per action.)
+  const state = useProjectStore();
+
+  const bom = useMemo(() => deriveBOM(state, projectId), [state, projectId]);
+  const projectName = state.projects[projectId]?.name ?? 'Project';
+
+  // Bucket lines by section for the existing layout.
+  const sections = useMemo(() => {
+    const groups = new Map<string, EstimateLine[]>();
+    for (const l of bom.lines) {
+      const key = SECTION_FOR[l.sourceKind] ?? 'Other';
+      const arr = groups.get(key) ?? [];
+      arr.push(l);
+      groups.set(key, arr);
+    }
+    // Synthetic labor section — one line per source kind that contributed hours.
+    const laborLines: EstimateLine[] = [];
+    if (bom.laborHours > 0) {
+      laborLines.push({
+        id: 'labor-aggregate',
+        sourceKind: 'labor',
+        description: 'Field install + commissioning labor',
+        qty: Math.round(bom.laborHours * 10) / 10,
+        uom: 'hr',
+        unitPrice: state.estimates[`est-${projectId}`]?.laborRate ?? 95,
+      });
+    }
+    if (laborLines.length) groups.set('Labor', laborLines);
+    return Array.from(groups, ([title, lines]) => ({ id: title, title, lines }));
+  }, [bom, state.estimates, projectId]);
+
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+
+  // Headline totals
+  const markup = state.estimates[`est-${projectId}`]?.markup ?? 0.18;
+  const subtotal = bom.hardwareTotal + bom.cableTotal + bom.laborTotal;
+  const margin = subtotal * markup;
+  const total = subtotal + margin;
 
   return (
     <AppShell
-      crumbs={[{ label: 'Projects', to: '/projects' }, { label: 'Estimator' }]}
+      crumbs={[{ label: 'Projects', to: '/projects' }, { label: projectName, to: `/project/${projectId}/canvas` }, { label: 'Estimator' }]}
       title="Estimator"
-      subtitle="Bottom-up cost roll-up across the BOM"
+      subtitle={`Live BOM derived from the engineering canvas · ${bom.lines.length} line items`}
       actions={<Button size="sm" variant="outline"><FileDown className="w-3.5 h-3.5 mr-1" />Export CSV</Button>}
     >
       <div className="max-w-[1200px] mx-auto px-6 py-6 grid grid-cols-[1fr_300px] gap-4">
         <div className="space-y-3">
-          {SECTIONS.map((s) => {
-            const sum = s.lines.reduce((a, l) => a + l.qty * l.cost, 0);
-            const isOpen = open[s.id];
+          {sections.length === 0 && (
+            <div className="text-center py-16 text-sm text-muted-foreground bg-card border border-border rounded-lg">
+              No devices placed on this project's canvas yet. <br />
+              <span className="text-xs">Go to the canvas, place some cameras, doors, or pathways — they'll roll up here automatically.</span>
+            </div>
+          )}
+          {sections.map((s) => {
+            const sum = s.lines.reduce((a, l) => a + l.qty * l.unitPrice, 0);
+            const isOpen = open[s.id] ?? true; // default expanded
             return (
               <div key={s.id} className="bg-card border border-border rounded-lg overflow-hidden">
                 <button onClick={() => setOpen((p) => ({ ...p, [s.id]: !isOpen }))} className="w-full px-4 py-2.5 border-b border-border flex items-center justify-between hover:bg-secondary/30">
                   <div className="flex items-center gap-2">
                     <ChevronRight className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                     <h3 className="text-sm font-medium">{s.title}</h3>
-                    <span className="text-xs text-muted-foreground">· {s.lines.length} items</span>
+                    <span className="text-xs text-muted-foreground">· {s.lines.length} item{s.lines.length === 1 ? '' : 's'}</span>
                   </div>
                   <div className="text-sm font-medium">{currency(sum)}</div>
                 </button>
@@ -76,17 +99,20 @@ export function EstimatorView() {
                       <tr>
                         <th className="text-left px-4 py-1.5 font-medium">Item</th>
                         <th className="text-right px-4 py-1.5 font-medium">Qty</th>
-                        <th className="text-right px-4 py-1.5 font-medium">Unit cost</th>
+                        <th className="text-right px-4 py-1.5 font-medium">Unit</th>
                         <th className="text-right px-4 py-1.5 font-medium">Extended</th>
                       </tr>
                     </thead>
                     <tbody>
                       {s.lines.map((l) => (
                         <tr key={l.id} className="border-t border-border">
-                          <td className="px-4 py-2">{l.item}</td>
-                          <td className="px-4 py-2 text-right text-muted-foreground">{l.qty} {l.unit}</td>
-                          <td className="px-4 py-2 text-right text-muted-foreground">{currency(l.cost)}</td>
-                          <td className="px-4 py-2 text-right font-medium">{currency(l.qty * l.cost)}</td>
+                          <td className="px-4 py-2">
+                            {l.description}
+                            {l.sku && <span className="ml-2 text-[10px] text-muted-foreground font-mono">{l.sku}</span>}
+                          </td>
+                          <td className="px-4 py-2 text-right text-muted-foreground tabular-nums">{l.qty} {l.uom ?? 'ea'}</td>
+                          <td className="px-4 py-2 text-right text-muted-foreground tabular-nums">{currency(l.unitPrice)}</td>
+                          <td className="px-4 py-2 text-right font-medium tabular-nums">{currency(l.qty * l.unitPrice)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -101,17 +127,20 @@ export function EstimatorView() {
           <div className="bg-card border border-border rounded-lg p-4 sticky top-4">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Totals</div>
             <div className="mt-3 space-y-1.5 text-sm">
-              {totals.subtotals.map((s) => (
-                <div key={s.id} className="flex justify-between text-muted-foreground"><span>{s.title}</span><span>{currency(s.sum)}</span></div>
-              ))}
-              <div className="border-t border-border pt-2 mt-2 flex justify-between"><span>Subtotal</span><span>{currency(totals.subtotal)}</span></div>
-              <div className="flex justify-between text-muted-foreground"><span>Overhead (12%)</span><span>{currency(totals.overhead)}</span></div>
-              <div className="flex justify-between text-muted-foreground"><span>Margin (18%)</span><span>{currency(totals.margin)}</span></div>
+              <div className="flex justify-between text-muted-foreground"><span>Hardware</span><span className="tabular-nums">{currency(bom.hardwareTotal)}</span></div>
+              <div className="flex justify-between text-muted-foreground"><span>Cable & pathway</span><span className="tabular-nums">{currency(bom.cableTotal)}</span></div>
+              <div className="flex justify-between text-muted-foreground"><span>Labor ({bom.laborHours.toFixed(1)} hr)</span><span className="tabular-nums">{currency(bom.laborTotal)}</span></div>
+              <div className="border-t border-border pt-2 mt-2 flex justify-between"><span>Subtotal</span><span className="tabular-nums">{currency(subtotal)}</span></div>
+              <div className="flex justify-between text-muted-foreground"><span>Margin ({(markup * 100).toFixed(0)}%)</span><span className="tabular-nums">{currency(margin)}</span></div>
               <div className="border-t border-border pt-2 mt-2 flex justify-between text-base">
                 <span className="font-medium">Total</span>
-                <span className="font-medium text-primary">{currency(totals.total)}</span>
+                <span className="font-medium text-primary tabular-nums">{currency(total)}</span>
               </div>
             </div>
+            <p className="mt-4 text-[10px] text-muted-foreground leading-snug">
+              All lines are computed live from the project's canvas. Move or add
+              a device and this estimate updates the moment you return.
+            </p>
           </div>
         </div>
       </div>
@@ -119,4 +148,6 @@ export function EstimatorView() {
   );
 }
 
-function currency(n: number) { return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }); }
+function currency(n: number) {
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+}

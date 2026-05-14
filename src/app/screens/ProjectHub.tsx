@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { Search, Plus, MapPin, Users, Calendar, ChevronRight, LayoutGrid, List as ListIcon } from 'lucide-react';
+import { Search, Plus, MapPin, Users, Calendar, ChevronRight, LayoutGrid, List as ListIcon, RotateCcw } from 'lucide-react';
+import { useProjectStore, selectors as sel } from '../store/projectStore';
 
 interface Project {
   id: string;
@@ -15,15 +16,6 @@ interface Project {
   updated: string;
   progress: number;
 }
-
-const PROJECTS: Project[] = [
-  { id: 'p1', name: 'Acme HQ — Austin',          client: 'Acme Industries',     address: '500 Congress Ave · Austin, TX', status: 'design',  devices: 84,  team: 4, updated: '2h ago',   progress: 28 },
-  { id: 'p2', name: 'Mercy Hospital Tower B',    client: 'Mercy Health',         address: '1200 Medical Pkwy · Dallas, TX', status: 'review',  devices: 142, team: 6, updated: '6h ago',   progress: 62 },
-  { id: 'p3', name: 'Westfield Mall Renovation', client: 'Unibail-Rodamco',     address: '865 Market St · San Francisco', status: 'install', devices: 218, team: 9, updated: '1d ago',   progress: 81 },
-  { id: 'p4', name: 'Central Data Center',       client: 'Equinix',              address: '4150 Network Way · Ashburn, VA', status: 'live',    devices: 64,  team: 3, updated: '3d ago',   progress: 100 },
-  { id: 'p5', name: 'Lincoln High School',       client: 'Portland Public Schools', address: '1600 Education Way · Portland', status: 'design',  devices: 38,  team: 3, updated: '1d ago',   progress: 14 },
-  { id: 'p6', name: 'Riverside Apartments',      client: 'BlackRock REIT',       address: '88 Riverside · Brooklyn, NY',    status: 'review',  devices: 96,  team: 5, updated: '4h ago',   progress: 48 },
-];
 
 const STATUS_META = {
   design:  { label: 'Design',     tone: 'text-primary bg-primary/10' },
@@ -38,7 +30,32 @@ export function ProjectHub() {
   const [filter, setFilter] = useState<'all' | Project['status']>('all');
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
-  const filtered = PROJECTS.filter((p) =>
+  // Live project list from the store. Counts (devices/team/etc.) are derived
+  // from store entities so they tick up as the user adds objects on each
+  // project's canvas.
+  const storeProjects = useProjectStore((s) => sel.projectList(s));
+  const storeCustomers = useProjectStore((s) => s.customers);
+  const storeDevices = useProjectStore((s) => s.devices);
+  const resetDemoData = useProjectStore((s) => s.resetDemoData);
+
+  const projects: Project[] = useMemo(() => storeProjects.map((p) => {
+    const customer = p.customerId ? storeCustomers[p.customerId] : undefined;
+    const addr = customer?.addresses?.[0];
+    const deviceCount = Object.values(storeDevices).filter((d) => d.projectId === p.id).length;
+    return {
+      id: p.id,
+      name: p.name,
+      client: customer?.companyName ?? '—',
+      address: addr ? `${addr.street}${addr.city ? ` · ${addr.city}, ${addr.state ?? ''}` : ''}` : '—',
+      status: p.status === 'archived' ? 'live' : p.status,
+      devices: deviceCount,
+      team: p.team ?? 0,
+      updated: p.updated ?? '—',
+      progress: p.progress ?? 0,
+    };
+  }), [storeProjects, storeCustomers, storeDevices]);
+
+  const filtered = projects.filter((p) =>
     (filter === 'all' || p.status === filter) &&
     (!q || `${p.name} ${p.client} ${p.address}`.toLowerCase().includes(q.toLowerCase()))
   );
@@ -47,16 +64,33 @@ export function ProjectHub() {
     <AppShell
       crumbs={[{ label: 'Projects' }]}
       actions={
-        <Button size="sm" onClick={() => navigate('/intake/new')}>
-          <Plus className="w-3.5 h-3.5 mr-1" />New project
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Dev-only escape hatch: restore every project, device, lens, pathway
+              and note back to the seed. Intentionally unobtrusive (ghost
+              button, no glow) so it doesn't compete with primary actions. */}
+          <button
+            onClick={() => {
+              if (confirm('Reset all demo data? Every change you’ve made — moved cameras, edited lens configs, drawn pathways, etc. — will be replaced with the original seed.')) {
+                resetDemoData();
+              }
+            }}
+            className="text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded"
+            title="Reset demo data"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Reset demo
+          </button>
+          <Button size="sm" onClick={() => navigate('/intake/new')}>
+            <Plus className="w-3.5 h-3.5 mr-1" />New project
+          </Button>
+        </div>
       }
     >
       <div className="max-w-[1400px] mx-auto px-6 py-6">
         <div className="flex items-end justify-between mb-5">
           <div>
             <h1 className="text-2xl font-medium tracking-tight">Projects</h1>
-            <p className="text-sm text-muted-foreground mt-1">{filtered.length} of {PROJECTS.length} · last sync 12s ago</p>
+            <p className="text-sm text-muted-foreground mt-1">{filtered.length} of {projects.length} · live from project store</p>
           </div>
         </div>
 

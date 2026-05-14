@@ -1,64 +1,113 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { Check, X, Minus, FileDown } from 'lucide-react';
+import { useProjectStore, selectors as sel } from '../store/projectStore';
+import type { DeviceType } from '../store/types';
 
 type Result = 'pass' | 'fail' | 'na' | null;
 interface Test { id: string; label: string; }
-interface Device { id: string; name: string; type: string; tests: Test[]; }
+interface CommDevice { id: string; name: string; type: string; tests: Test[]; }
 
-const DEVICES: Device[] = [
-  { id: 'CAM-101', name: 'CAM-101 — Lobby NE', type: 'Camera', tests: [
-    { id: 't1', label: 'Power on, link up' },
-    { id: 't2', label: 'Live image at NVR' },
-    { id: 't3', label: 'IR cut filter cycles' },
-    { id: 't4', label: 'Motion zone triggers event' },
-  ]},
-  { id: 'CAM-102', name: 'CAM-102 — Lobby SW', type: 'Camera', tests: [
-    { id: 't1', label: 'Power on, link up' },
-    { id: 't2', label: 'Live image at NVR' },
-    { id: 't3', label: 'Recording to retention policy' },
-  ]},
-  { id: 'DR-1',   name: 'DR-1 — Main Entry', type: 'Door', tests: [
-    { id: 't1', label: 'Reader reads valid card' },
-    { id: 't2', label: 'Strike releases on grant' },
-    { id: 't3', label: 'REX fires on egress' },
-    { id: 't4', label: 'Forced-door alarm at head end' },
-    { id: 't5', label: 'Fire release on alarm' },
-  ]},
-  { id: 'DR-2',   name: 'DR-2 — IT Room', type: 'Door', tests: [
-    { id: 't1', label: 'Reader reads valid card' },
-    { id: 't2', label: 'Strike releases on grant' },
-    { id: 't3', label: 'Held-open alarm > 30s' },
-  ]},
-];
+// Standard test suites by device kind. Generated from store devices live —
+// no hardcoded device list, but the test catalog stays here so commissioning
+// teams can adapt without touching every device.
+const TESTS_FOR_KIND: Record<string, Test[]> = {
+  'cam.bullet':      [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'Live image at NVR' }, { id: 't3', label: 'IR cut filter cycles' }, { id: 't4', label: 'Motion zone triggers event' }],
+  'cam.dome':        [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'Live image at NVR' }, { id: 't3', label: 'Aim verified' }, { id: 't4', label: 'Recording to retention policy' }],
+  'cam.ptz':         [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'Pan/tilt full range' }, { id: 't3', label: 'Zoom + AF' }, { id: 't4', label: 'Preset tour cycles' }],
+  'cam.multisensor': [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'All 4 lenses stream' }, { id: 't3', label: 'Stitching alignment' }, { id: 't4', label: 'Motion zone triggers event' }],
+  'cam.fisheye':     [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'Live image at NVR' }, { id: 't3', label: 'Dewarp at viewer' }],
+  'cam.thermal':     [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'Thermal calibration' }, { id: 't3', label: 'Alarm threshold trip' }],
+  'cam.lpr':         [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'Plate read test (3 trials)' }, { id: 't3', label: 'OCR confidence ≥ 95%' }],
+  'acc.reader':      [{ id: 't1', label: 'Reader reads valid card' }, { id: 't2', label: 'Mobile credential' }, { id: 't3', label: 'Invalid card denied' }],
+  'acc.strike':      [{ id: 't1', label: 'Strike releases on grant' }, { id: 't2', label: 'Fail-mode correct' }, { id: 't3', label: 'Forced-door alarm' }],
+  'acc.maglock':     [{ id: 't1', label: 'Holding force' }, { id: 't2', label: 'Fire release on alarm' }, { id: 't3', label: 'REX bypass' }],
+  'acc.exit':        [{ id: 't1', label: 'Push bar releases' }, { id: 't2', label: 'REX fires on egress' }, { id: 't3', label: 'Held-open alarm > 30s' }],
+  'net.idf':         [{ id: 't1', label: 'Switch boot + uplink' }, { id: 't2', label: 'PoE budget within spec' }, { id: 't3', label: 'UPS runtime test' }],
+  'net.switch':      [{ id: 't1', label: 'Boot + uplink' }, { id: 't2', label: 'PoE budget within spec' }],
+  'net.ap':          [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'SSIDs broadcast' }, { id: 't3', label: 'Roaming verified' }],
+};
+
+const KIND_LABEL: Partial<Record<DeviceType, string>> = {
+  'cam.bullet': 'Camera · bullet', 'cam.dome': 'Camera · dome', 'cam.ptz': 'Camera · PTZ',
+  'cam.multisensor': 'Camera · multisensor', 'cam.fisheye': 'Camera · fisheye',
+  'cam.thermal': 'Camera · thermal', 'cam.lpr': 'Camera · LPR',
+  'acc.reader': 'Reader', 'acc.strike': 'Strike', 'acc.maglock': 'Maglock', 'acc.exit': 'Exit device',
+  'net.idf': 'IDF', 'net.switch': 'Switch', 'net.ap': 'Wireless AP',
+};
 
 export function Commissioning() {
   const { projectId = 'p1' } = useParams();
+  const projectName = useProjectStore((s) => s.projects[projectId]?.name ?? 'Project');
+  const storeDevices = useProjectStore((s) => sel.devicesForProject(s, projectId));
+  const storeDoors   = useProjectStore((s) => Object.values(s.doors).filter((d) => d.projectId === projectId));
+  const storeIDFs    = useProjectStore((s) => sel.idfsForProject(s, projectId));
+
+  // Build a single commissioning list from canvas devices + doors + IDFs.
+  // Every entry on this page now corresponds to a real canvas object.
+  const devices: CommDevice[] = useMemo(() => {
+    const out: CommDevice[] = [];
+    for (const d of storeDevices) {
+      const tests = TESTS_FOR_KIND[d.type] ?? [{ id: 't1', label: 'Power on, link up' }, { id: 't2', label: 'Online at head end' }];
+      const label = KIND_LABEL[d.type] ?? d.type;
+      out.push({ id: d.id, name: `${d.id} — ${d.label}`, type: label, tests });
+    }
+    for (const door of storeDoors) {
+      out.push({
+        id: door.id,
+        name: `${door.id} — ${door.doorType} door`,
+        type: 'Door assembly',
+        tests: [
+          { id: 't1', label: 'All hardware powered' },
+          { id: 't2', label: 'Reader → controller test' },
+          { id: 't3', label: 'Strike/maglock cycle' },
+          { id: 't4', label: 'REX fires on egress' },
+          { id: 't5', label: 'Forced-door alarm at head end' },
+          ...(door.fireRated ? [{ id: 't6', label: 'Fire release on alarm' }] : []),
+        ],
+      });
+    }
+    for (const idf of storeIDFs) {
+      out.push({
+        id: idf.id,
+        name: `${idf.id} — ${idf.name}`,
+        type: 'IDF cabinet',
+        tests: TESTS_FOR_KIND['net.idf'] ?? [{ id: 't1', label: 'Boot + uplink' }],
+      });
+    }
+    return out;
+  }, [storeDevices, storeDoors, storeIDFs]);
+
   const [results, setResults] = useState<Record<string, Result>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [selId, setSelId] = useState(DEVICES[0].id);
-  const sel = DEVICES.find((d) => d.id === selId)!;
+  const [selId, setSelId] = useState<string | null>(null);
+  useEffect(() => {
+    // Auto-select the first device if nothing is selected yet (or selection was removed).
+    if (devices.length && (!selId || !devices.find((d) => d.id === selId))) setSelId(devices[0].id);
+  }, [devices, selId]);
+
+  const selected = devices.find((d) => d.id === selId) ?? null;
 
   const setResult = (k: string, r: Result) => setResults((p) => ({ ...p, [k]: p[k] === r ? null : r }));
 
   const counts = useMemo(() => {
     let pass = 0, fail = 0, total = 0;
-    DEVICES.forEach((d) => d.tests.forEach((t) => {
+    devices.forEach((d) => d.tests.forEach((t) => {
       total++;
       const r = results[`${d.id}.${t.id}`];
       if (r === 'pass') pass++;
       if (r === 'fail') fail++;
     }));
     return { pass, fail, total, pct: total ? Math.round((pass / total) * 100) : 0 };
-  }, [results]);
+  }, [results, devices]);
 
   return (
     <AppShell
-      crumbs={[{ label: 'Projects', to: '/projects' }, { label: 'Operate' }, { label: 'Commissioning' }]}
+      crumbs={[{ label: 'Projects', to: '/projects' }, { label: projectName, to: `/project/${projectId}/canvas` }, { label: 'Commissioning' }]}
       title="Commissioning"
-      subtitle="Run acceptance tests device by device"
+      subtitle={`${devices.length} canvas objects to verify`}
       actions={<Button size="sm" variant="outline"><FileDown className="w-3.5 h-3.5 mr-1" />Export report</Button>}
     >
       <div className="max-w-[1200px] mx-auto px-6 py-6 grid grid-cols-[280px_1fr] gap-4">
@@ -73,7 +122,11 @@ export function Commissioning() {
           </div>
 
           <div className="bg-card border border-border rounded-lg overflow-hidden">
-            {DEVICES.map((d) => {
+            {devices.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-muted-foreground">
+                No canvas objects to commission yet. Place devices on the canvas first.
+              </div>
+            ) : devices.map((d) => {
               const done = d.tests.filter((t) => results[`${d.id}.${t.id}`] === 'pass').length;
               return (
                 <button key={d.id} onClick={() => setSelId(d.id)} className={`w-full text-left px-3 py-2.5 border-b border-border last:border-b-0 ${selId === d.id ? 'bg-secondary' : 'hover:bg-secondary/40'}`}>
@@ -86,13 +139,18 @@ export function Commissioning() {
         </div>
 
         <div className="bg-card border border-border rounded-lg overflow-hidden">
+          {!selected ? (
+            <div className="px-6 py-12 text-center text-sm text-muted-foreground">
+              Select a device from the list to run its commissioning tests.
+            </div>
+          ) : (<>
           <div className="px-4 py-3 border-b border-border">
-            <div className="text-xs text-muted-foreground">{sel.type}</div>
-            <h2 className="text-lg font-medium">{sel.name}</h2>
+            <div className="text-xs text-muted-foreground">{selected.type}</div>
+            <h2 className="text-lg font-medium">{selected.name}</h2>
           </div>
           <div>
-            {sel.tests.map((t) => {
-              const key = `${sel.id}.${t.id}`;
+            {selected.tests.map((t) => {
+              const key = `${selected.id}.${t.id}`;
               const r = results[key];
               return (
                 <div key={t.id} className="px-4 py-3 border-b border-border last:border-b-0">
@@ -111,6 +169,7 @@ export function Commissioning() {
               );
             })}
           </div>
+          </>)}
         </div>
       </div>
     </AppShell>
