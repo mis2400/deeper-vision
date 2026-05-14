@@ -25,6 +25,63 @@ export type LifecyclePhase =
 
 export type HealthStatus = 'on_track' | 'at_risk' | 'blocked' | 'complete';
 
+// ─────────────────────────── Modes & roles ────────────────────────
+// Coarser than the 15-phase lifecycle — these are *operational* modes
+// that change what tools, overlays, telemetry, and drawer content the
+// app surfaces. A user can override the mode independently of the
+// project's lifecycle phase (e.g. flip to 'presentation' for a demo).
+export type ProjectMode =
+  | 'survey'
+  | 'engineering'
+  | 'estimate'
+  | 'proposal'
+  | 'deployment'
+  | 'service'
+  | 'presentation';
+
+// Role is a per-user preference. It changes emphasis: what's hoisted to
+// primary, which shortcuts are surfaced, what's hidden behind "advanced".
+export type UserRole =
+  | 'sales'
+  | 'estimator'
+  | 'engineer'
+  | 'pm'
+  | 'field'
+  | 'service'
+  | 'customer';
+
+// Toggleable engineering overlays on the canvas. Each one gates a class
+// of always-on visual noise so the canvas can be calm by default and
+// loud only when the engineer asks for it.
+export type EngineeringLayer =
+  | 'fov'          // FOV cones on cameras
+  | 'labels'       // device id labels under each device
+  | 'dimensions'   // dimension chains between adjacent cameras
+  | 'pathways'     // pathway runs + cable counts
+  | 'rooms'        // room labels
+  | 'nec'          // NEC / compliance markings
+  | 'thermal'      // thermal-coverage heatmap
+  | 'bandwidth'    // bandwidth / data-flow overlay
+  | 'conduit_ids'  // conduit identifier labels
+  | 'presence';    // live collaborator cursors
+
+export type CanvasLayerState = Record<EngineeringLayer, boolean>;
+
+/** What the canvas paints by default. Quiet. Engineers turn on more
+ *  as they need it. */
+export const DEFAULT_CANVAS_LAYERS: CanvasLayerState = {
+  fov:         true,
+  labels:      true,
+  dimensions:  false,
+  pathways:    true,
+  rooms:       false,
+  nec:         false,
+  thermal:     false,
+  bandwidth:   false,
+  conduit_ids: false,
+  presence:    false,
+};
+
 export type OwnerRole =
   | 'sales'
   | 'field'

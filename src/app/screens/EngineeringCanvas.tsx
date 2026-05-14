@@ -2,6 +2,8 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { useProjectStore, selectors as storeSelectors } from '../store/projectStore';
+import type { EngineeringLayer, CanvasLayerState } from '../store/types';
+import { DEFAULT_CANVAS_LAYERS } from '../store/types';
 import type { Device as StoreDevice } from '../store/types';
 import {
   MousePointer2, Hand, Ruler, Type, MessageSquare, ChevronRight, ChevronLeft,
@@ -396,9 +398,21 @@ export function EngineeringCanvas() {
   const [snap, setSnap] = useState(true);
   const [units, setUnits] = useState<'ft' | 'm'>('ft');
   const [coverageMode, setCoverageMode] = useState<CoverageMode>('soft');
-  const [intelOpen, setIntelOpen] = useState(true);
+  // Intelligence chips and immersion overlays default OFF — the canvas
+  // is calm until the engineer asks for more. Click the top-right
+  // "Intelligence" pill to surface flagged issues.
+  const [intelOpen, setIntelOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const [densityMode, setDensityMode] = useState(false);
+
+  // Canvas engineering layers — toggleable overlays. Pulled from the
+  // store so they persist per project. Replaces the previous ad-hoc
+  // densityMode boolean with a coherent layer system.
+  const canvasLayersMap = useProjectStore((s) => s.canvasLayers);
+  const setCanvasLayer  = useProjectStore((s) => s.setCanvasLayer);
+  const layers: CanvasLayerState = useMemo(
+    () => ({ ...DEFAULT_CANVAS_LAYERS, ...canvasLayersMap[projectId] }),
+    [canvasLayersMap, projectId],
+  );
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
   const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
@@ -612,6 +626,8 @@ export function EngineeringCanvas() {
               setSelIds={setSelIds}
               hiddenIds={hiddenIds} setHiddenIds={setHiddenIds}
               lockedIds={lockedIds} setLockedIds={setLockedIds}
+              layers={layers}
+              onToggleLayer={(layer, on) => setCanvasLayer(projectId, layer, on)}
               onClose={() => setLayersOpen(false)}
             />
           )}
@@ -638,7 +654,7 @@ export function EngineeringCanvas() {
               activeLens={activeLens}
               setActiveLens={setActiveLens}
               coverageMode={coverageMode}
-              densityMode={densityMode}
+              layers={layers}
               onBlank={() => setSelId(null)}
               snap={snap}
               dragging={!!drag}
@@ -668,8 +684,11 @@ export function EngineeringCanvas() {
             {/* Live intelligence chips overlay */}
             <IntelligenceLayer devices={devices.filter((d) => !hiddenIds.has(d.id))} zoom={zoom} open={intelOpen} setOpen={setIntelOpen} />
 
-            {/* Immersion controls — Focus mode + engineering density */}
-            <ImmersionControls focusMode={focusMode} setFocusMode={setFocusMode} densityMode={densityMode} setDensityMode={setDensityMode} />
+            {/* Immersion controls — Focus mode only. Engineering density
+                moved into the layers panel as a toggleable overlay so it
+                lives next to dimensions, NEC, thermal, etc. instead of
+                floating on the canvas. */}
+            <ImmersionControls focusMode={focusMode} setFocusMode={setFocusMode} />
 
             {/* Floating selection toolbar */}
             {sel && surfaceRef.current && (
@@ -1516,7 +1535,7 @@ function InsertDock(props: {
   );
 }
 
-function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, setHiddenIds, lockedIds, setLockedIds, onClose }: {
+function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, setHiddenIds, lockedIds, setLockedIds, layers, onToggleLayer, onClose }: {
   devices: Device[];
   selId: string | null;
   setSelId: (id: string | null) => void;
@@ -1526,6 +1545,9 @@ function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, s
   setHiddenIds: (s: Set<string>) => void;
   lockedIds: Set<string>;
   setLockedIds: (s: Set<string>) => void;
+  /** Engineering overlay visibility, gated per layer. */
+  layers: CanvasLayerState;
+  onToggleLayer: (layer: EngineeringLayer, on: boolean) => void;
   onClose: () => void;
 }) {
   const lastIndexRef = useRef<number>(-1);
@@ -1577,6 +1599,12 @@ function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, s
         </button>
       </div>
       <div className="flex-1 overflow-auto px-2 pb-3">
+        {/* ── Engineering layers (overlays) ──────────────────────────
+            Calm-by-default toggles. Most are off until the engineer
+            asks for them. Anything that paints on top of the blueprint
+            should live here, not as a floating button on the canvas. */}
+        <EngineeringLayersSection layers={layers} onToggle={onToggleLayer} />
+
         {groups.map((g) => (
           <div key={g.kind} className="mb-2">
             <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
@@ -1636,6 +1664,61 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
   );
 }
 
+/** Engineering layer toggles — calm checklist of overlays. Off by
+ *  default unless they're core engineering signals (fov, labels, pathways).
+ *  Layers that don't yet have canvas rendering (NEC, thermal, bandwidth,
+ *  rooms, conduit_ids) are still toggleable so the UI is future-proofed
+ *  and future-painting can drop in without UX work. */
+function EngineeringLayersSection({ layers, onToggle }: { layers: CanvasLayerState; onToggle: (l: EngineeringLayer, on: boolean) => void }) {
+  const [open, setOpen] = useState(true);
+  const rows: { id: EngineeringLayer; label: string; hint: string }[] = [
+    { id: 'fov',         label: 'FOV cones',     hint: 'Camera coverage cones' },
+    { id: 'labels',      label: 'Device labels', hint: 'IDs under each device' },
+    { id: 'pathways',    label: 'Pathways',      hint: 'Cable runs and tray' },
+    { id: 'dimensions',  label: 'Dimensions',    hint: 'Spacing between cameras' },
+    { id: 'rooms',       label: 'Rooms',         hint: 'Room labels and outlines' },
+    { id: 'nec',         label: 'NEC',           hint: 'Code compliance markings' },
+    { id: 'thermal',     label: 'Thermal',       hint: 'Heat coverage map' },
+    { id: 'bandwidth',   label: 'Bandwidth',     hint: 'Data flow saturation' },
+    { id: 'conduit_ids', label: 'Conduit IDs',   hint: 'Identifier labels on pathways' },
+    { id: 'presence',    label: 'Presence',      hint: 'Live collaborator cursors' },
+  ];
+  const onCount = rows.filter((r) => layers[r.id]).length;
+  return (
+    <div className="mb-3 border-b border-border/40 pb-2">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight className={`w-3 h-3 transition-transform ${open ? 'rotate-90' : ''}`} />
+        <Layers className="w-3 h-3" />
+        Engineering layers
+        <span className="text-muted-foreground/60 ml-auto">{onCount} on</span>
+      </button>
+      {open && (
+        <div className="px-1 grid grid-cols-2 gap-x-1 gap-y-0.5">
+          {rows.map((r) => {
+            const on = layers[r.id];
+            return (
+              <button
+                key={r.id}
+                onClick={() => onToggle(r.id, !on)}
+                title={r.hint}
+                className={`flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] text-left transition-colors ${on ? 'text-foreground bg-secondary/60' : 'text-muted-foreground hover:bg-secondary/30'}`}
+              >
+                <span className={`w-3.5 h-3.5 shrink-0 rounded flex items-center justify-center border ${on ? 'border-primary/60 bg-primary/15 text-primary' : 'border-border/60'}`}>
+                  {on && <Check className="w-2.5 h-2.5" />}
+                </span>
+                <span className="truncate">{r.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    CANVAS SURFACE
    ═══════════════════════════════════════════════════════════════════════ */
@@ -1669,12 +1752,14 @@ interface SurfaceProps {
   activeLens: ActiveLens;
   setActiveLens: (l: ActiveLens) => void;
   coverageMode: CoverageMode;
-  densityMode: boolean;
+  /** Toggleable engineering overlay state. Each layer gates a class
+   *  of visual noise so the canvas is calm by default. */
+  layers: CanvasLayerState;
 }
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, densityMode }, ref
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers }, ref
 ) {
   const moveRef = useRef<{ id: string; offX: number; offY: number } | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
@@ -1795,10 +1880,13 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           </g>
         )}
 
-        {/* FOV cones */}
+        {/* FOV cones — gated by the `fov` engineering layer. The selected
+            camera still shows its cone regardless, so direct manipulation
+            never goes blind. */}
         <g style={{ mixBlendMode: coverageMode === 'heatmap' ? 'screen' : 'normal' }}>
           {devices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
             const isSel = d.id === selId;
+            if (!layers.fov && !isSel) return null;
             const dim = selId ? (isSel ? 1 : 0.28) : 1;
             return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} />;
           })}
@@ -1852,24 +1940,27 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               {multi && !isSel && <circle cx={d.x} cy={d.y} r={18} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
               <HardwareGlyph d={d} tone={tone} selected={isSel} />
               {/* dark-glass label pill — id + manufacturer model below.
-                  The model only appears when the device is selected so unsel-
-                  ected cameras stay calm; the spec lives on the active one. */}
-              <g transform={`translate(${d.x}, ${d.y + 22})`} pointerEvents="none">
-                <rect x={-(d.id.length * 3.4 + 6)} y={-7} width={d.id.length * 6.8 + 12} height={14} rx={3} fill="rgba(8,12,20,0.85)" stroke={tone} strokeWidth="0.6" />
-                <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="600">{d.id}</text>
-                {isSel && (() => {
-                  const product = PRODUCTS.find((p) => p.id === d.product);
-                  if (!product) return null;
-                  const label = `${product.mfr} · ${product.model}`;
-                  const w = label.length * 5.5 + 12;
-                  return (
-                    <g transform="translate(0, 16)">
-                      <rect x={-w / 2} y={-6} width={w} height={11} rx={2} fill="rgba(8,12,20,0.78)" stroke={tone} strokeWidth="0.4" opacity="0.9" />
-                      <text x={0} y={2} textAnchor="middle" fill={tone} fontSize="8" fontWeight="500" fontFamily="ui-monospace, monospace">{label}</text>
-                    </g>
-                  );
-                })()}
-              </g>
+                  Gated by the `labels` layer so users can dim the canvas
+                  to just blueprint + glyphs. The selected device's label
+                  always shows so identity is never ambiguous. */}
+              {(layers.labels || isSel) && (
+                <g transform={`translate(${d.x}, ${d.y + 22})`} pointerEvents="none">
+                  <rect x={-(d.id.length * 3.4 + 6)} y={-7} width={d.id.length * 6.8 + 12} height={14} rx={3} fill="rgba(8,12,20,0.85)" stroke={tone} strokeWidth="0.6" />
+                  <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="600">{d.id}</text>
+                  {isSel && (() => {
+                    const product = PRODUCTS.find((p) => p.id === d.product);
+                    if (!product) return null;
+                    const label = `${product.mfr} · ${product.model}`;
+                    const w = label.length * 5.5 + 12;
+                    return (
+                      <g transform="translate(0, 16)">
+                        <rect x={-w / 2} y={-6} width={w} height={11} rx={2} fill="rgba(8,12,20,0.78)" stroke={tone} strokeWidth="0.4" opacity="0.9" />
+                        <text x={0} y={2} textAnchor="middle" fill={tone} fontSize="8" fontWeight="500" fontFamily="ui-monospace, monospace">{label}</text>
+                      </g>
+                    );
+                  })()}
+                </g>
+              )}
             </g>
           );
         })}
@@ -1986,8 +2077,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           </g>
         )}
 
-        {/* Engineering density: dimension chains between adjacent cameras */}
-        {densityMode && (() => {
+        {/* Engineering density: dimension chains between adjacent cameras.
+            Gated by the `dimensions` engineering layer (default off — only
+            on when the user wants to see camera-to-camera spacing). */}
+        {layers.dimensions && (() => {
           const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera').sort((a, b) => a.x - b.x);
           const pairs: { a: Device; b: Device }[] = [];
           for (let i = 0; i < cams.length - 1; i++) pairs.push({ a: cams[i], b: cams[i + 1] });
@@ -2007,8 +2100,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           });
         })()}
 
-        {/* Presence cursors — live collaborators */}
-        {presence.map((p) => (
+        {/* Presence cursors — live collaborators. Off by default; the
+            engineer turns it on when they want to see who's also in the
+            session. */}
+        {layers.presence && presence.map((p) => (
           <g key={p.id} style={{ transition: 'transform 80ms linear' }} transform={`translate(${p.x}, ${p.y})`} pointerEvents="none">
             <path d="M 0 0 L 14 5 L 6 7 L 4 14 Z" fill={p.tone} stroke="#0D1117" strokeWidth="1" />
             <g transform="translate(14, 14)">
@@ -2798,6 +2893,14 @@ interface ToolbarAction {
   tone?: string;
   onClick: () => void;
   primary?: boolean;
+  /** When true, this action is hidden by default and appears in the
+   *  "More" overflow popover instead of the main toolbar row. Keeps
+   *  the toolbar at ≤5 primary actions so it never feels like a wall
+   *  of icons. */
+  overflow?: boolean;
+  /** Destructive action — rendered in rose in the overflow popover
+   *  to telegraph "this removes something." */
+  danger?: boolean;
 }
 
 function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
@@ -2906,94 +3009,95 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   const isIDF = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'net.switch';
   const isPathway = kind === 'network' && !isIDF;
 
-  // Build toolbar actions per device kind. Multisensor gets its own branch
-  // BEFORE the generic camera branch — the lens chips + linked toggle replace
-  // the rotate-degrees / FOV / link buttons that don't make sense for a 4-
-  // lens device.
+  // Build toolbar actions per device kind. Each kind exposes at most 5
+  // primary actions; the rest fall into the "More" overflow popover. The
+  // primary set is chosen for the most frequent operations during that
+  // device's lifecycle (e.g. cameras: rotate + FOV; doors: electrify +
+  // reader + egress). Less-used controls (link, note, schedule, target
+  // sim, delete) move behind More so the toolbar stays calm.
   const actions: ToolbarAction[] = (() => {
     if (isMultisensor) {
-      const lensBtn = (k: LensId): ToolbarAction => ({
-        id: `lens-${k}`,
-        icon: Aperture,
-        label: `Lens ${LENS_LABEL[k]}`,
-        onClick: () => { setActiveLens(k); onOpenTab('lens'); },
-        primary: activeLens === k,
-        tone: LENS_TONE[k],
-      });
+      // Multisensor lens selection is already shown inline as
+      // MultisensorLensChips above the toolbar — we don't repeat the
+      // lens buttons here. The toolbar focuses on edit / mode / AI.
       return [
-        { id: 'edit',   icon: Settings2,  label: 'Edit',           onClick: () => onOpenTab('overview'), primary: activeLens === 'all' },
-        lensBtn('a'),
-        lensBtn('b'),
-        lensBtn('c'),
-        lensBtn('d'),
+        { id: 'edit',   icon: Settings2,  label: 'Edit',  onClick: () => onOpenTab('overview'), primary: true },
         { id: 'mode',   icon: lensMode === 'linked' ? Lock : Unlock,
-          label: lensMode === 'linked' ? 'Linked' : 'Independent',
+          label: lensMode === 'linked' ? 'Linked' : 'Indep',
           onClick: () => setLensMode(lensMode === 'linked' ? 'independent' : 'linked') },
-        { id: 'auto',   icon: Sparkles,      label: 'Auto Optimize', onClick: () => onOpenTab('ai') },
-        { id: 'target', icon: ScanFace,      label: 'Target Sim',    onClick: onTargetSim },
-        { id: 'dup',    icon: Copy,          label: 'Duplicate',     onClick: onDuplicate },
-        { id: 'del',    icon: Trash2,        label: 'Delete',        onClick: onDelete },
+        { id: 'auto',   icon: Sparkles,      label: 'AI',     onClick: () => onOpenTab('ai') },
+        { id: 'target', icon: ScanFace,      label: 'Target', onClick: onTargetSim },
+        // Overflow
+        { id: 'dup',    icon: Copy,          label: 'Duplicate', onClick: onDuplicate, overflow: true },
+        { id: 'note',   icon: MessageSquare, label: 'Note',      onClick: () => onOpenTab('notes'), overflow: true },
+        { id: 'del',    icon: Trash2,        label: 'Delete',    onClick: onDelete, overflow: true, danger: true },
       ];
     }
     if (isCam) {
       return [
-        { id: 'edit',     icon: Settings2,     label: 'Edit',        onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'rotate',   icon: RotateCw,      label: `${d.rot}°`,   onClick: () => onRotate((d.rot + 15) % 360) },
-        { id: 'fov',      icon: Aperture,      label: 'FOV',         onClick: () => onOpenTab('lens') },
-        { id: 'dup',      icon: Copy,          label: 'Duplicate',   onClick: onDuplicate },
-        { id: 'ai',       icon: Sparkles,      label: 'AI Optimize', onClick: () => onOpenTab('ai') },
-        { id: 'target',   icon: ScanFace,      label: 'Target Sim',  onClick: onTargetSim },
-        { id: 'link',     icon: GitBranch,     label: 'Link Path',   onClick: () => onOpenTab('linked') },
-        { id: 'note',     icon: MessageSquare, label: 'Note',        onClick: () => onOpenTab('notes') },
-        { id: 'del',      icon: Trash2,        label: 'Delete',      onClick: onDelete },
+        { id: 'edit',   icon: Settings2, label: 'Edit',   onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'rotate', icon: RotateCw,  label: 'Rotate', onClick: () => onRotate((d.rot + 15) % 360) },
+        { id: 'fov',    icon: Aperture,  label: 'FOV',    onClick: () => onOpenTab('lens') },
+        { id: 'ai',     icon: Sparkles,  label: 'AI',     onClick: () => onOpenTab('ai') },
+        // Overflow
+        { id: 'dup',    icon: Copy,          label: 'Duplicate',  onClick: onDuplicate, overflow: true },
+        { id: 'target', icon: ScanFace,      label: 'Target sim', onClick: onTargetSim, overflow: true },
+        { id: 'link',   icon: GitBranch,     label: 'Link path',  onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'note',   icon: MessageSquare, label: 'Note',       onClick: () => onOpenTab('notes'), overflow: true },
+        { id: 'del',    icon: Trash2,        label: 'Delete',     onClick: onDelete, overflow: true, danger: true },
       ];
     }
     if (isDoor) {
       return [
-        { id: 'edit',     icon: Settings2,     label: 'Edit Hardware', onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'elec',     icon: Zap,           label: 'Electrify',     onClick: () => onOpenTab('power') },
-        { id: 'reader',   icon: KeyRound,      label: 'Reader',        onClick: () => onOpenTab('linked') },
-        { id: 'egress',   icon: DoorOpen,      label: 'Egress',        onClick: () => onOpenTab('compliance') },
-        { id: 'ai',       icon: ShieldCheck,   label: 'AI Validate',   onClick: () => onOpenTab('ai') },
-        { id: 'sched',    icon: Calendar,      label: 'Schedule',      onClick: () => onOpenTab('notes') },
-        { id: 'link',     icon: GitBranch,     label: 'Pathway',       onClick: () => onOpenTab('linked') },
-        { id: 'explode',  icon: Layers,        label: 'Exploded',      onClick: () => onOpenTab('mounting') },
-        { id: 'del',      icon: Trash2,        label: 'Delete',        onClick: onDelete },
+        { id: 'edit',   icon: Settings2,   label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'elec',   icon: Zap,         label: 'Electrify', onClick: () => onOpenTab('power') },
+        { id: 'reader', icon: KeyRound,    label: 'Reader',    onClick: () => onOpenTab('linked') },
+        { id: 'egress', icon: DoorOpen,    label: 'Egress',    onClick: () => onOpenTab('compliance') },
+        // Overflow
+        { id: 'ai',     icon: ShieldCheck, label: 'AI validate', onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'sched',  icon: Calendar,    label: 'Schedule',    onClick: () => onOpenTab('notes'), overflow: true },
+        { id: 'link',   icon: GitBranch,   label: 'Pathway',     onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'explode',icon: Layers,      label: 'Exploded view', onClick: () => onOpenTab('mounting'), overflow: true },
+        { id: 'del',    icon: Trash2,      label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
       ];
     }
     if (isIDF) {
       return [
-        { id: 'edit',     icon: Settings2,     label: 'Edit',          onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'switch',   icon: Server,        label: 'Switch Cap',    onClick: () => onOpenTab('network') },
-        { id: 'poe',      icon: BatteryCharging, label: 'PoE',         onClick: () => onOpenTab('power') },
-        { id: 'thermal',  icon: Thermometer,   label: 'Thermal',       onClick: () => onOpenTab('telemetry') },
-        { id: 'ups',      icon: Zap,           label: 'UPS',           onClick: () => onOpenTab('power') },
-        { id: 'fiber',    icon: Cable,         label: 'Fiber',         onClick: () => onOpenTab('network') },
-        { id: 'linked',   icon: GitBranch,     label: 'Linked',        onClick: () => onOpenTab('linked') },
-        { id: 'failure',  icon: AlertTriangle, label: 'Failure',       onClick: () => onOpenTab('ai') },
-        { id: 'del',      icon: Trash2,        label: 'Delete',        onClick: onDelete },
+        { id: 'edit',    icon: Settings2,       label: 'Edit',    onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'switch',  icon: Server,          label: 'Switch',  onClick: () => onOpenTab('network') },
+        { id: 'poe',     icon: BatteryCharging, label: 'PoE',     onClick: () => onOpenTab('power') },
+        { id: 'thermal', icon: Thermometer,     label: 'Thermal', onClick: () => onOpenTab('telemetry') },
+        // Overflow
+        { id: 'ups',     icon: Zap,           label: 'UPS',     onClick: () => onOpenTab('power'), overflow: true },
+        { id: 'fiber',   icon: Cable,         label: 'Fiber',   onClick: () => onOpenTab('network'), overflow: true },
+        { id: 'linked',  icon: GitBranch,     label: 'Linked',  onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'failure', icon: AlertTriangle, label: 'Failure analysis', onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'del',     icon: Trash2,        label: 'Delete',  onClick: onDelete, overflow: true, danger: true },
       ];
     }
     if (isPathway) {
       return [
-        { id: 'edit',     icon: Settings2,     label: 'Edit Route',    onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'junction', icon: CircleDot,     label: 'Junction',      onClick: () => onOpenTab('linked') },
-        { id: 'pull',     icon: Hash,          label: 'Pull Box',      onClick: () => onOpenTab('mounting') },
-        { id: 'fiber',    icon: Cable,         label: 'Fiber',         onClick: () => onOpenTab('network') },
-        { id: 'emt',      icon: Slash,         label: 'EMT',           onClick: () => onOpenTab('compliance') },
-        { id: 'bridge',   icon: Wifi,          label: 'Wireless',      onClick: () => onOpenTab('network') },
-        { id: 'ai',       icon: Sparkles,      label: 'AI Optimize',   onClick: () => onOpenTab('ai') },
-        { id: 'fill',     icon: BarChart3,     label: 'Fill %',        onClick: () => onOpenTab('telemetry') },
-        { id: 'del',      icon: Trash2,        label: 'Delete',        onClick: onDelete },
+        { id: 'edit',    icon: Settings2, label: 'Edit',     onClick: () => onOpenTab('overview'), primary: true },
+        { id: 'junction',icon: CircleDot, label: 'Junction', onClick: () => onOpenTab('linked') },
+        { id: 'pull',    icon: Hash,      label: 'Pull box', onClick: () => onOpenTab('mounting') },
+        { id: 'fiber',   icon: Cable,     label: 'Fiber',    onClick: () => onOpenTab('network') },
+        // Overflow
+        { id: 'emt',     icon: Slash,     label: 'EMT',         onClick: () => onOpenTab('compliance'), overflow: true },
+        { id: 'bridge',  icon: Wifi,      label: 'Wireless',    onClick: () => onOpenTab('network'), overflow: true },
+        { id: 'ai',      icon: Sparkles,  label: 'AI optimize', onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'fill',    icon: BarChart3, label: 'Fill %',      onClick: () => onOpenTab('telemetry'), overflow: true },
+        { id: 'del',     icon: Trash2,    label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
       ];
     }
     return [
-      { id: 'edit',  icon: Settings2,     label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
-      { id: 'dup',   icon: Copy,          label: 'Duplicate', onClick: onDuplicate },
-      { id: 'note',  icon: MessageSquare, label: 'Note',      onClick: () => onOpenTab('notes') },
-      { id: 'del',   icon: Trash2,        label: 'Delete',    onClick: onDelete },
+      { id: 'edit', icon: Settings2,     label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
+      { id: 'dup',  icon: Copy,          label: 'Duplicate', onClick: onDuplicate },
+      { id: 'note', icon: MessageSquare, label: 'Note',      onClick: () => onOpenTab('notes'), overflow: true },
+      { id: 'del',  icon: Trash2,        label: 'Delete',    onClick: onDelete, overflow: true, danger: true },
     ];
   })();
+  const primaryActions = actions.filter((a) => !a.overflow);
+  const overflowActions = actions.filter((a) => a.overflow);
   const focal = (d.type === 'cam.ptz' ? 4.3 + ((d.rot % 30) / 30) * 25 : d.type === 'cam.fisheye' ? 1.4 : 2.8 + ((Math.abs(d.rot) % 60) / 60) * 6).toFixed(1);
   const doriRange = d.type === 'cam.ptz' ? 64 : d.type === 'cam.fisheye' ? 14 : 28;
   const kindLabel = isCam ? 'Camera' : isDoor ? 'Opening' : isIDF ? 'Network Node' : isPathway ? 'Pathway' : 'Device';
@@ -3031,16 +3135,13 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
         {product && (
           <div className="px-2 py-1 text-slate-400 tabular-nums">{product.mfr} · {product.model}</div>
         )}
-        {isCam && (
-          <div className="px-2 py-1 border-l border-white/8 flex items-center gap-2 text-slate-400 tabular-nums">
-            <span><span className="text-slate-500">rot</span> {d.rot}°</span>
-            <span><span className="text-slate-500">f</span> {focal}mm</span>
-            <span><span className="text-slate-500">DORI</span> {doriRange}ft</span>
-          </div>
-        )}
+        {/* Metric chips (rot / focal / DORI) hidden by default — surfaced
+            inside the Lens drawer where they belong. Keeps the pill header
+            calm. The user opens FOV in the toolbar to see + tune them. */}
       </div>
 
-      {/* Primary action toolbar */}
+      {/* Primary action toolbar — ≤5 visible actions + a More popover for
+          everything else. Keeps the floating UI tactical and minimal. */}
       <div
         className="flex items-stretch rounded-lg overflow-hidden"
         style={{
@@ -3051,8 +3152,67 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
           boxShadow: `0 14px 32px -10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px ${tone}22`,
         }}
       >
-        {actions.map((a) => <ToolbarButton key={a.id} a={a} tone={tone} />)}
+        {primaryActions.map((a) => <ToolbarButton key={a.id} a={a} tone={tone} />)}
+        {overflowActions.length > 0 && <MoreButton items={overflowActions} tone={tone} />}
       </div>
+    </div>
+  );
+}
+
+/** Overflow popover anchored at the end of the SelectionPill toolbar.
+ *  Holds destructive / secondary actions so the primary row stays at
+ *  ≤5 buttons. Click outside or press Escape to close. */
+function MoreButton({ items, tone }: { items: ToolbarAction[]; tone: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="More"
+        className="px-2 py-1.5 inline-flex items-center gap-1 text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+      >
+        <MoreHorizontal className="w-3.5 h-3.5" />
+        <span className="text-[10.5px] uppercase tracking-[0.08em] font-medium">More</span>
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-1.5 z-40 w-44 rounded-md overflow-hidden"
+          style={{
+            background: 'rgba(8,12,20,0.94)',
+            backdropFilter: 'blur(14px)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            boxShadow: `0 14px 32px -10px rgba(0,0,0,0.85), 0 0 0 1px ${tone}22`,
+          }}
+        >
+          {items.map((a) => {
+            const Icon = a.icon;
+            return (
+              <button
+                key={a.id}
+                onClick={() => { a.onClick(); setOpen(false); }}
+                className={`w-full text-left px-3 py-2 flex items-center gap-2 text-xs hover:bg-white/5 transition-colors ${a.danger ? 'text-rose-300 hover:text-rose-200' : 'text-slate-200'}`}
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span>{a.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -3602,35 +3762,27 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
   );
 }
 
-function ImmersionControls({ focusMode, setFocusMode, densityMode, setDensityMode }: { focusMode: boolean; setFocusMode: (b: boolean) => void; densityMode: boolean; setDensityMode: (b: boolean) => void }) {
-  const Btn = ({ active, onClick, icon: Icon, label, tone }: { active: boolean; onClick: () => void; icon: any; label: string; tone: string }) => (
-    <button
-      onClick={onClick}
-      className="px-2 py-1 rounded-md flex items-center gap-1.5 text-[10px] transition-colors"
-      style={{
-        background: active ? `${tone}1A` : 'transparent',
-        color: active ? '#F8FAFC' : '#94A3B8',
-        boxShadow: active ? `inset 0 0 0 1px ${tone}55` : 'none',
-      }}
-    >
-      <Icon className="w-3 h-3" style={{ color: active ? tone : undefined }} />
-      <span className="uppercase tracking-[0.16em]">{label}</span>
-    </button>
-  );
+function ImmersionControls({ focusMode, setFocusMode }: { focusMode: boolean; setFocusMode: (b: boolean) => void }) {
+  // Single-button "Focus" control. Density and other engineering overlays
+  // moved into the Layers panel so the canvas surface stays calm.
   return (
     <div className="absolute top-3 right-[180px] z-20 pointer-events-auto select-none">
-      <div
-        className="flex items-center gap-0.5 p-1 rounded-lg"
+      <button
+        onClick={() => setFocusMode(!focusMode)}
+        className="px-2 py-1 rounded-lg flex items-center gap-1.5 text-[10px] transition-colors"
         style={{
-          background: 'rgba(8,12,20,0.78)',
+          background: focusMode ? 'rgba(124,194,255,0.10)' : 'rgba(8,12,20,0.78)',
           backdropFilter: 'blur(14px)',
+          color: focusMode ? '#F8FAFC' : '#94A3B8',
           border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 10px 24px -10px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06)',
+          boxShadow: focusMode
+            ? 'inset 0 0 0 1px rgba(124,194,255,0.55), 0 10px 24px -10px rgba(0,0,0,0.7)'
+            : '0 10px 24px -10px rgba(0,0,0,0.7)',
         }}
       >
-        <Btn active={focusMode} onClick={() => setFocusMode(!focusMode)} icon={Maximize2} label="Focus" tone="#7CC2FF" />
-        <Btn active={densityMode} onClick={() => setDensityMode(!densityMode)} icon={Ruler} label="Density" tone="#FACC15" />
-      </div>
+        <Maximize2 className="w-3 h-3" style={{ color: focusMode ? '#7CC2FF' : undefined }} />
+        <span className="uppercase tracking-[0.16em]">Focus</span>
+      </button>
     </div>
   );
 }

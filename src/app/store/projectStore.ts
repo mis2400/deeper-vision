@@ -11,9 +11,31 @@ import {
   Customer, Contact, Project, Site, Building, Floor, Device, Door, Pathway, IDF, Estimate,
   EstimateLine, LensCfg, ActivityItem, ActivityType, LifecyclePhase, HealthStatus,
   Opportunity, OpportunityStage, Touch, Task,
+  ProjectMode, UserRole, EngineeringLayer, CanvasLayerState, DEFAULT_CANVAS_LAYERS,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
+
+/** Map a lifecycle phase to its default operational mode. Used when no
+ *  user override is set on a project. */
+export function defaultModeForPhase(phase: LifecyclePhase): ProjectMode {
+  switch (phase) {
+    case 'lead': case 'discovery': case 'walk_scheduled':
+      return 'survey';
+    case 'survey':
+      return 'survey';
+    case 'engineering':
+      return 'engineering';
+    case 'estimate':
+      return 'estimate';
+    case 'proposal': case 'customer_review': case 'approved':
+      return 'proposal';
+    case 'deployment': case 'commissioning':
+      return 'deployment';
+    case 'completed': case 'managed_service': case 'support': case 'archived':
+      return 'service';
+  }
+}
 
 /** Default probability a stage carries unless the opportunity overrides it. */
 export const STAGE_PROBABILITY: Record<OpportunityStage, number> = {
@@ -45,8 +67,25 @@ interface ProjectState {
   tasks:         Record<string, Task>;
   activity:      Record<string, ActivityItem>;
 
+  // ── UX preferences ──
+  /** Per-project mode override. When unset, mode is derived from
+   *  the project's lifecycle phase via defaultModeForPhase. */
+  projectModes: Record<string, ProjectMode>;
+  /** Per-project canvas layer visibility. Defaults to DEFAULT_CANVAS_LAYERS
+   *  on first read. */
+  canvasLayers: Record<string, CanvasLayerState>;
+  /** Global current-user role preference. Defaults to 'engineer'. */
+  currentRole: UserRole;
+
   // ── Project actions ──
   updateProject: (id: string, patch: Partial<Project>) => void;
+
+  // ── UX preference actions ──
+  setProjectMode:    (projectId: string, mode: ProjectMode | null) => void;
+  setUserRole:       (role: UserRole) => void;
+  setCanvasLayer:    (projectId: string, layer: EngineeringLayer, on: boolean) => void;
+  setCanvasLayers:   (projectId: string, patch: Partial<CanvasLayerState>) => void;
+  resetCanvasLayers: (projectId: string) => void;
 
   // ── CRM actions ──
   updateCustomer:    (id: string, patch: Partial<Customer>) => void;
@@ -128,6 +167,40 @@ export const useProjectStore = create<ProjectState>()(
   persist(
     (set, get) => ({
       ...buildSeed(),
+
+      // UX prefs default state — populated lazily per project.
+      projectModes: {},
+      canvasLayers: {},
+      currentRole:  'engineer',
+
+      // ── UX preference actions ──
+      setProjectMode: (projectId, mode) =>
+        set((s) => {
+          const next = { ...s.projectModes };
+          if (mode == null) delete next[projectId];
+          else              next[projectId] = mode;
+          return { projectModes: next };
+        }),
+      setUserRole: (role) => set(() => ({ currentRole: role })),
+      setCanvasLayer: (projectId, layer, on) =>
+        set((s) => ({
+          canvasLayers: {
+            ...s.canvasLayers,
+            [projectId]: { ...DEFAULT_CANVAS_LAYERS, ...s.canvasLayers[projectId], [layer]: on },
+          },
+        })),
+      setCanvasLayers: (projectId, patch) =>
+        set((s) => ({
+          canvasLayers: {
+            ...s.canvasLayers,
+            [projectId]: { ...DEFAULT_CANVAS_LAYERS, ...s.canvasLayers[projectId], ...patch },
+          },
+        })),
+      resetCanvasLayers: (projectId) =>
+        set((s) => {
+          const { [projectId]: _, ...rest } = s.canvasLayers;
+          return { canvasLayers: rest };
+        }),
 
       updateProject: (id, patch) =>
         set((s) => ({
@@ -533,7 +606,8 @@ export const useProjectStore = create<ProjectState>()(
         return merged;
       },
       // Only persist data slices, not action references (those are on every
-      // hydrate anyway).
+      // hydrate anyway). UX prefs (mode/role/layers) ARE persisted so they
+      // survive reloads — that's the whole point of having them.
       partialize: (s) => ({
         customers:     s.customers,
         contacts:      s.contacts,
@@ -550,6 +624,9 @@ export const useProjectStore = create<ProjectState>()(
         touches:       s.touches,
         tasks:         s.tasks,
         activity:      s.activity,
+        projectModes:  s.projectModes,
+        canvasLayers:  s.canvasLayers,
+        currentRole:   s.currentRole,
       }),
     },
   ),
@@ -684,6 +761,18 @@ export const selectors = {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
   },
+
+  /** Effective project mode: user override if set, otherwise derived
+   *  from the project's lifecycle phase. */
+  modeForProject: (s: ProjectState, projectId: string): ProjectMode => {
+    if (s.projectModes[projectId]) return s.projectModes[projectId];
+    const phase = s.projects[projectId]?.lifecyclePhase;
+    return phase ? defaultModeForPhase(phase) : 'engineering';
+  },
+
+  /** Resolved canvas layer state for a project. Falls back to defaults. */
+  layersForProject: (s: ProjectState, projectId: string): CanvasLayerState =>
+    ({ ...DEFAULT_CANVAS_LAYERS, ...s.canvasLayers[projectId] }),
 
   /** Pipeline totals. Sum of estValue across open opportunities and
    *  probability-weighted forecast across the same set. */

@@ -110,60 +110,56 @@ export function ProjectCenter() {
         </div>
       }
     >
-      <div className="max-w-[1400px] mx-auto px-6 py-6 space-y-5">
+      <div className="max-w-[1400px] mx-auto px-6 py-6 space-y-4">
 
-        {/* ── Phase ribbon + next action ───────────────────────────── */}
-        <div className="bg-card border border-border rounded-lg p-5">
-          <div className="flex items-start justify-between gap-6 flex-wrap">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider border ${phaseCfg.tone.outline}`}>
+        {/* ── Next action banner ─────────────────────────────────────
+            The single most important thing on this page: what should
+            happen next? Big, prominent, editable. Everything else on
+            this screen is supporting context for this one question. */}
+        <div
+          className="relative bg-card border border-border-strong rounded-lg p-5 overflow-hidden"
+          style={{
+            boxShadow: '0 0 0 1px rgba(124,194,255,0.10), 0 10px 40px -20px rgba(124,194,255,0.18)',
+          }}
+        >
+          {/* soft glow accent */}
+          <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-primary/60 to-primary/10" aria-hidden />
+          <div className="grid grid-cols-[1fr_auto] gap-5 items-center">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">
+                <span className="text-primary">Next action</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span className={`inline-flex items-center gap-1.5 ${h.cls}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${phaseCfg.tone.dot}`} />
                   {phaseCfg.label}
                 </span>
-                <span className={`text-xs ${h.cls}`}>· {h.label}</span>
-                {project.priority && project.priority !== 'normal' && (
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">· {project.priority}</span>
-                )}
               </div>
-              <p className="text-xs text-muted-foreground mb-3">{phaseCfg.description}</p>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Next action</div>
               <input
                 type="text"
                 value={project.nextAction ?? ''}
                 onChange={(e) => setNextAction(projectId, e.target.value)}
-                placeholder={`Next concrete step for the ${phaseCfg.shortLabel.toLowerCase()} phase…`}
-                className="w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                placeholder={`What's the next concrete step for the ${phaseCfg.shortLabel.toLowerCase()} phase?`}
+                className="w-full bg-transparent text-xl font-medium tracking-tight text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
               />
+              <p className="text-xs text-muted-foreground/70 mt-1.5 line-clamp-1">{phaseCfg.description}</p>
             </div>
 
-            <div className="w-72 shrink-0 space-y-2">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Phase progress</div>
-              <div className="flex items-center justify-between text-sm">
-                <span>{completedCount} / {totalItems}</span>
-                <span className="text-muted-foreground">{phasePct}%</span>
-              </div>
-              <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                <div className={`h-full ${phasePct === 100 ? 'bg-emerald-400' : 'bg-primary'}`} style={{ width: `${phasePct}%` }} />
-              </div>
-              <div className="flex gap-1.5 pt-2">
-                {prev && (
-                  <Button size="sm" variant="ghost" onClick={() => revertPhase(projectId, { userName: 'You' })}>
-                    ← {PHASES[prev].shortLabel}
-                  </Button>
-                )}
-                {next && (
-                  <Button size="sm" variant="outline" onClick={() => advancePhase(projectId, { userName: 'You' })}>
-                    Advance to {PHASES[next].shortLabel} <ChevronRight className="w-3 h-3" />
-                  </Button>
-                )}
-              </div>
+            <div className="shrink-0 flex items-center gap-2">
+              <Button size="sm" onClick={() => navigate(qa.href)}>
+                {qa.label} <ArrowRight className="w-3 h-3 ml-1" />
+              </Button>
             </div>
           </div>
+        </div>
 
-          {/* Phase timeline dots */}
-          <div className="mt-5 pt-5 border-t border-border">
-            <div className="flex items-center gap-1 overflow-x-auto">
+        {/* ── Phase ribbon (demoted: timeline + advance/revert) ─────
+            Below the next-action banner because phase context matters
+            but isn't the question the user came here to answer. */}
+        <div className="bg-card border border-border rounded-lg px-4 py-3">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground shrink-0">Phase</div>
+
+            <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
               {PHASE_TIMELINE.map((p, i) => {
                 const cfg = PHASES[p];
                 const state = i < timelineIdx ? 'past' : i === timelineIdx ? 'current' : 'future';
@@ -171,21 +167,40 @@ export function ProjectCenter() {
                   <div key={p} className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => useProjectStore.getState().setProjectPhase(projectId, p, { userName: 'You' })}
-                      className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider transition-colors border ${
-                        state === 'current' ? cfg.tone.outline + ' bg-secondary/40'
-                        : state === 'past' ? 'border-transparent text-muted-foreground hover:text-foreground'
-                        : 'border-transparent text-muted-foreground/50 hover:text-foreground'
+                      className={`px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider transition-colors ${
+                        state === 'current' ? `${cfg.tone.outline} border bg-secondary/40 px-2`
+                        : state === 'past' ? 'text-muted-foreground hover:text-foreground'
+                        : 'text-muted-foreground/40 hover:text-foreground'
                       }`}
                       title={`Jump to ${cfg.label} — ${cfg.description}`}
                     >
                       {cfg.shortLabel}
                     </button>
                     {i < PHASE_TIMELINE.length - 1 && (
-                      <div className={`w-3 h-px ${state === 'past' || state === 'current' ? 'bg-primary/40' : 'bg-border'}`} />
+                      <div className={`w-2 h-px ${state === 'past' || state === 'current' ? 'bg-primary/40' : 'bg-border'}`} />
                     )}
                   </div>
                 );
               })}
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="tabular-nums">{completedCount}/{totalItems}</span>
+                <div className="w-24 h-1 bg-secondary rounded-full overflow-hidden">
+                  <div className={`h-full ${phasePct === 100 ? 'bg-emerald-400' : 'bg-primary'}`} style={{ width: `${phasePct}%` }} />
+                </div>
+              </div>
+              {prev && (
+                <Button size="sm" variant="ghost" onClick={() => revertPhase(projectId, { userName: 'You' })}>
+                  ←
+                </Button>
+              )}
+              {next && (
+                <Button size="sm" variant="outline" onClick={() => advancePhase(projectId, { userName: 'You' })}>
+                  Advance <ChevronRight className="w-3 h-3" />
+                </Button>
+              )}
             </div>
           </div>
         </div>
