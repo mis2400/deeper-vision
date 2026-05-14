@@ -518,6 +518,20 @@ export const useProjectStore = create<ProjectState>()(
         }
         return persisted;
       },
+      // Custom merge: for the brand-new CRM slices, fall back to the seed
+      // when the persisted slice is empty. Otherwise v1 users whose state
+      // gets migrated to v2 would see a completely empty pipeline (because
+      // Zustand's default merge prefers persisted, and persisted has `{}`
+      // for slices that didn't exist in v1). Their non-CRM state (projects,
+      // canvas devices, etc.) is preserved unchanged.
+      merge: (persisted: any, current: any) => {
+        const merged: any = { ...current, ...(persisted ?? {}) };
+        const isEmpty = (m: any) => !m || Object.keys(m).length === 0;
+        for (const slice of ['contacts', 'opportunities', 'touches', 'tasks'] as const) {
+          if (isEmpty(persisted?.[slice])) merged[slice] = current[slice];
+        }
+        return merged;
+      },
       // Only persist data slices, not action references (those are on every
       // hydrate anyway).
       partialize: (s) => ({
