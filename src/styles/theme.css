@@ -3,33 +3,34 @@
 :root {
   --font-size: 14px;
 
-  /* DEEPER VISION — infrastructure-grade. Deep navy base instead of
-     pure black; warmer slate elevation steps; calmer overall contrast.
-     The intent: feel like architectural / construction software, not a
-     spaceship dashboard. */
-  --background: #0F1623;
-  --foreground: #E6EDF3;
+  /* DEEPER VISION — architectural-grade palette. Pulled toward navy and
+     warm slate; pure black removed because it reads as cyberpunk rather
+     than infrastructure. Each elevation step is intentional, with hair-
+     line separation rather than glow. */
+  --background: #111826;
+  --foreground: #E7ECF3;
 
   /* Card surfaces — single, intentional elevation step above the canvas. */
-  --card: #1A2233;
-  --card-foreground: #EAF0F7;
+  --card: #1B2336;
+  --card-foreground: #EBF0F8;
 
   /* Popovers & Modals */
-  --popover: #1A2233;
-  --popover-foreground: #EAF0F7;
+  --popover: #1B2336;
+  --popover-foreground: #EBF0F8;
 
-  /* Primary — single accent (cyan-blueprint). Reserved for active
-     engineering states only. Per palette discipline: no decorative use. */
-  --primary: #3B8EF3;
+  /* Primary — single accent. Reserved for active engineering states
+     only. Slightly muted compared to a pure neon — feels like blueprint
+     ink rather than HUD glow. */
+  --primary: #4A95E8;
   --primary-foreground: #FFFFFF;
 
   /* Secondary — slate, one step warmer than the card. */
-  --secondary: #232C40;
-  --secondary-foreground: #E6EDF3;
+  --secondary: #243049;
+  --secondary-foreground: #E7ECF3;
 
   /* Muted — engineering label tone. Slate gray. */
-  --muted: #2F3A50;
-  --muted-foreground: #94A0B5;
+  --muted: #2F3A52;
+  --muted-foreground: #98A4BA;
 
   /* Accent - same blueprint blue (single accent doctrine) */
   --accent: #2F81F7;
@@ -47,16 +48,16 @@
   --warning: #F59E0B;
   --warning-foreground: #FFFFFF;
 
-  /* Borders — warmer slate so panel boundaries read more like draftsman's
-     pencil lines than glowing HUD chrome. */
-  --border: #2A3447;
-  --border-strong: #3A475F;
+  /* Borders — hairline draftsman pencil. Lower contrast so panel
+     boundaries divide without competing for attention. */
+  --border: #2C374C;
+  --border-strong: #3D4A65;
 
   /* Inputs */
   --input: transparent;
-  --input-background: #131A28;
-  --input-border: #3A475F;
-  --switch-background: #3A475F;
+  --input-background: #151D2D;
+  --input-border: #3D4A65;
+  --switch-background: #3D4A65;
 
   /* Typography */
   --font-weight-medium: 500;
@@ -97,15 +98,16 @@
   --sidebar-border: rgba(148, 163, 184, 0.1);
   --sidebar-ring: #3B82F6;
 
-  /* Canvas — architectural drawing paper. Slightly deeper than the body
-     so panels read as elevated surfaces sitting on the plan. */
-  --canvas-background: #0B1220;
-  --canvas-grid: rgba(148, 163, 184, 0.05);
-  --canvas-axis: rgba(148, 163, 184, 0.16);
+  /* Canvas — architectural drawing paper. A touch deeper than the body
+     so floating panels feel like material resting on the plan, not
+     painted onto a neon sky. */
+  --canvas-background: #0D1424;
+  --canvas-grid: rgba(151, 165, 188, 0.045);
+  --canvas-axis: rgba(151, 165, 188, 0.14);
 
   /* Floating panels */
-  --panel-background: #1A2233;
-  --panel-border: #3A475F;
+  --panel-background: #1B2336;
+  --panel-border: #3D4A65;
 
   /* Typography tokens */
   --text-2xl: 1.5rem;

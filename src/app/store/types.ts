@@ -109,8 +109,11 @@ export interface CanvasDisplayPrefs {
 
 export const DEFAULT_DISPLAY_PREFS: CanvasDisplayPrefs = {
   iconSize:        'standard',
-  labelDensity:    'important',
-  coverageOpacity: 80,
+  // Default to selected-only labels — the canvas should be calm at first
+  // glance; users opt into more visual density via the Layers panel.
+  labelDensity:    'selected',
+  // 55% reads as a quiet architectural overlay rather than a neon HUD.
+  coverageOpacity: 55,
   baseMap:         'blueprint',
 };
 

@@ -765,17 +765,14 @@ export function EngineeringCanvas() {
               measure={measure}
             />
 
-            {/* Coverage-mode switcher (top-left) */}
-            <CoverageModeSwitch mode={coverageMode} setMode={setCoverageMode} />
-
-            {/* Live intelligence chips overlay */}
+            {/* The canvas is intentionally calm by default. The previous
+                CoverageModeSwitch (top-left) and ImmersionControls (top-
+                right) floats were removed — coverage style and focus mode
+                now live inside the Layers panel where they belong, so the
+                blueprint can dominate the eye. Intelligence chips remain
+                as the single contextual overlay (top-right) and default
+                to off. */}
             <IntelligenceLayer devices={devices.filter((d) => !hiddenIds.has(d.id))} zoom={zoom} open={intelOpen} setOpen={setIntelOpen} />
-
-            {/* Immersion controls — Focus mode only. Engineering density
-                moved into the layers panel as a toggleable overlay so it
-                lives next to dimensions, NEC, thermal, etc. instead of
-                floating on the canvas. */}
-            <ImmersionControls focusMode={focusMode} setFocusMode={setFocusMode} />
 
             {/* Floating selection toolbar */}
             {sel && surfaceRef.current && (
@@ -2223,8 +2220,15 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                   ambiguous. */}
               {layers.labels && labelVisibleFor(d, display.labelDensity, isSel) && (
                 <g transform={`translate(${d.x}, ${d.y + 7 + 15 * iconScale})`} pointerEvents="none">
-                  <rect x={-(d.id.length * 3.4 + 6)} y={-7} width={d.id.length * 6.8 + 12} height={14} rx={3} fill="rgba(8,12,20,0.85)" stroke={tone} strokeWidth="0.6" />
-                  <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="600">{d.id}</text>
+                  {/* Architectural callout: hairline frame, no tone stroke.
+                      The device's color identity is already carried by the
+                      glyph; the label's job is just to name it quietly. */}
+                  <rect
+                    x={-(d.id.length * 3.4 + 6)} y={-7}
+                    width={d.id.length * 6.8 + 12} height={14} rx={3}
+                    fill="rgba(11,18,32,0.86)" stroke="rgba(255,255,255,0.10)" strokeWidth="0.5"
+                  />
+                  <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="500" letterSpacing="0.02em">{d.id}</text>
                   {isSel && (() => {
                     const product = PRODUCTS.find((p) => p.id === d.product);
                     if (!product) return null;
@@ -2232,7 +2236,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                     const w = label.length * 5.5 + 12;
                     return (
                       <g transform="translate(0, 16)">
-                        <rect x={-w / 2} y={-6} width={w} height={11} rx={2} fill="rgba(8,12,20,0.78)" stroke={tone} strokeWidth="0.4" opacity="0.9" />
+                        <rect x={-w / 2} y={-6} width={w} height={11} rx={2} fill="rgba(11,18,32,0.78)" stroke="rgba(255,255,255,0.08)" strokeWidth="0.4" />
                         <text x={0} y={2} textAnchor="middle" fill={tone} fontSize="8" fontWeight="500" fontFamily="ui-monospace, monospace">{label}</text>
                       </g>
                     );
@@ -3217,25 +3221,25 @@ interface ToolbarAction {
 
 function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
   const Icon = a.icon;
-  // a.tone overrides the device-level tone (lets per-lens buttons glow with
-  // their own color: cyan / violet / amber / emerald).
+  // a.tone overrides the device-level tone (lens chips use their own color).
   const buttonTone = a.tone ?? tone;
   const accent = a.primary ? buttonTone : 'rgba(226,232,240,0.85)';
+  // The primary action gets a soft tinted background instead of a neon
+  // underline — a quieter signal that reads as "this is the main thing"
+  // without shouting. Sentence-case label, tighter tracking, all-of-a-piece
+  // with the rest of the contextual strip.
   return (
     <button
       onClick={a.onClick}
       title={a.label}
-      className="group relative px-2 py-1.5 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors hover:bg-white/5"
-      style={{ color: accent }}
+      className="group relative px-3 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors duration-150 hover:bg-white/[0.05]"
+      style={{
+        color: accent,
+        background: a.primary ? `${buttonTone}14` : 'transparent',
+      }}
     >
       <Icon className="w-3.5 h-3.5" />
-      <span className="text-[10.5px] uppercase tracking-[0.08em] font-medium">{a.label}</span>
-      {a.primary && (
-        <span
-          className="absolute inset-x-1 bottom-0 h-px"
-          style={{ background: buttonTone, boxShadow: `0 0 6px ${buttonTone}` }}
-        />
-      )}
+      <span className="text-[11px] font-medium tracking-tight">{a.label}</span>
     </button>
   );
 }
@@ -3438,53 +3442,52 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   return (
     <div
       className="absolute z-30 pointer-events-auto select-none"
-      style={{ left: d.x * zoom, top: d.y * zoom - 110, transform: 'translateX(-50%)' }}
+      style={{ left: d.x * zoom, top: d.y * zoom - 70, transform: 'translateX(-50%)' }}
     >
-      {/* tether */}
-      <div className="absolute left-1/2 top-full h-[28px] w-px" style={{ background: `linear-gradient(to bottom, ${tone}, transparent)` }} />
-      <div className="absolute left-1/2 top-full mt-[26px] w-1.5 h-1.5 rounded-full -translate-x-1/2" style={{ background: tone, boxShadow: `0 0 8px ${tone}` }} />
+      {/* Subtle tether — single hairline pencil from pill to device. No
+          gradient, no glow dot. Lets the strip feel like a quiet annotation
+          rather than a HUD beacon. */}
+      <div
+        className="absolute left-1/2 top-full h-[18px] w-px -translate-x-1/2"
+        style={{ background: 'rgba(255,255,255,0.14)' }}
+      />
 
-      {/* Multisensor lens chips */}
+      {/* Multisensor lens chips sit above the strip when applicable. */}
       {isMultisensor && (
         <MultisensorLensChips activeLens={activeLens} setActiveLens={setActiveLens} lensMode={lensMode} setLensMode={setLensMode} tone={tone} />
       )}
 
-      {/* Header strip — device identity */}
+      {/* Single elegant strip — identity + actions inline. Reads as one
+          contextual control rather than two stacked panels. Restrained
+          materials: hairline border, soft shadow, no neon outline. The
+          dot retains a subtle tone glow as the only color accent. */}
       <div
-        className="mb-1.5 flex items-stretch text-[10px] rounded-md overflow-hidden"
+        className="flex items-stretch h-9 rounded-lg overflow-hidden"
         style={{
-          background: 'rgba(8,12,20,0.78)',
-          backdropFilter: 'blur(14px)',
+          background: 'rgba(22,30,46,0.94)',
+          backdropFilter: 'blur(18px)',
+          WebkitBackdropFilter: 'blur(18px)',
           border: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 10px 28px -14px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)',
         }}
       >
-        <div className="px-2 py-1 flex items-center gap-1.5 border-r border-white/8">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: tone, boxShadow: `0 0 8px ${tone}` }} />
-          <span className="text-[9px] uppercase tracking-[0.18em] text-slate-500">{kindLabel}</span>
+        {/* Identity cell — kind dot, editable id, optional manufacturer */}
+        <div className="flex items-center gap-2 px-2.5 border-r border-white/8">
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: tone, boxShadow: `0 0 6px ${tone}88` }}
+          />
+          <CommitInput
+            value={d.id}
+            onCommit={(v) => onUpdate({ id: v })}
+            className="bg-transparent w-[82px] focus:outline-none text-[11.5px] font-medium tracking-tight text-slate-100"
+          />
+          {product && (
+            <span className="text-[10px] text-slate-400 tracking-tight whitespace-nowrap">{product.mfr}</span>
+          )}
         </div>
-        <div className="px-2 py-1 border-r border-white/8">
-          <CommitInput value={d.id} onCommit={(v) => onUpdate({ id: v })} className="bg-transparent w-[90px] focus:outline-none font-medium tracking-wide text-slate-100" />
-        </div>
-        {product && (
-          <div className="px-2 py-1 text-slate-400 tabular-nums">{product.mfr} · {product.model}</div>
-        )}
-        {/* Metric chips (rot / focal / DORI) hidden by default — surfaced
-            inside the Lens drawer where they belong. Keeps the pill header
-            calm. The user opens FOV in the toolbar to see + tune them. */}
-      </div>
 
-      {/* Primary action toolbar — ≤5 visible actions + a More popover for
-          everything else. Keeps the floating UI tactical and minimal. */}
-      <div
-        className="flex items-stretch rounded-lg overflow-hidden"
-        style={{
-          background: 'rgba(8,12,20,0.82)',
-          backdropFilter: 'blur(14px)',
-          WebkitBackdropFilter: 'blur(14px)',
-          border: '1px solid rgba(255,255,255,0.10)',
-          boxShadow: `0 14px 32px -10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px ${tone}22`,
-        }}
-      >
+        {/* Actions */}
         {primaryActions.map((a) => <ToolbarButton key={a.id} a={a} tone={tone} />)}
         {overflowActions.length > 0 && <MoreButton items={overflowActions} tone={tone} />}
       </div>
@@ -3516,10 +3519,10 @@ function MoreButton({ items, tone }: { items: ToolbarAction[]; tone: string }) {
       <button
         onClick={() => setOpen((v) => !v)}
         title="More"
-        className="px-2 py-1.5 inline-flex items-center gap-1 text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+        className="px-3 inline-flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150"
       >
         <MoreHorizontal className="w-3.5 h-3.5" />
-        <span className="text-[10.5px] uppercase tracking-[0.08em] font-medium">More</span>
+        <span className="text-[11px] font-medium tracking-tight">More</span>
       </button>
       {open && (
         <div
