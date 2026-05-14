@@ -57,7 +57,7 @@ import { toast } from 'sonner';
                               snap indicator appears at the snap target
 */
 
-type Tool = 'select' | 'pan' | 'measure' | 'text' | 'comment' | 'wall';
+type Tool = 'select' | 'pan' | 'measure' | 'text' | 'comment' | 'wall' | 'cable';
 
 interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
 
@@ -423,6 +423,46 @@ export function EngineeringCanvas() {
     end:   { x: number; y: number } | null;
     cursor:{ x: number; y: number } | null;
   }>({ start: null, end: null, cursor: null });
+
+  // Cable / pathway draw — click vertices, double-click or Enter to
+  // finish, Esc to cancel. On finish, a Pathway record is added to the
+  // store with computed length (in feet, via the same 20px/ft scale the
+  // estimator uses). The pathway then appears in /pathways/:id and is
+  // counted in the BOM.
+  const [cableDraw, setCableDraw] = useState<{
+    points: { x: number; y: number }[];
+    cursor: { x: number; y: number } | null;
+    cableType: 'cat6a' | 'cat6' | 'fiber-sm' | 'fiber-mm' | 'composite' | 'coax' | 'power';
+  }>({ points: [], cursor: null, cableType: 'cat6a' });
+  const addPathway = useProjectStore((s) => s.addPathway);
+  const removePathway = useProjectStore((s) => s.removePathway);
+  /** Commit the current cable draw to the store as a Pathway record. */
+  const finishCableDraw = useCallback(() => {
+    setCableDraw((prev) => {
+      if (prev.points.length < 2) return { points: [], cursor: null, cableType: prev.cableType };
+      const id = `PW-${Date.now().toString(36).slice(-5)}`;
+      // Length: sum the segment distances (px) and divide by the canvas
+      // scale (20 px = 1 ft, matching deriveBOM in the store).
+      let lengthPx = 0;
+      for (let i = 1; i < prev.points.length; i++) {
+        lengthPx += Math.hypot(prev.points[i].x - prev.points[i - 1].x, prev.points[i].y - prev.points[i - 1].y);
+      }
+      const lengthFt = Math.round(lengthPx / 20);
+      const fid = useProjectStore.getState().sites[projectId.replace(/^p/, 's') + ''] ? '' : (storeSelectors.firstFloorOfProject(useProjectStore.getState(), projectId)?.id ?? '');
+      addPathway({
+        id,
+        projectId,
+        floorId: fid || (storeSelectors.firstFloorOfProject(useProjectStore.getState(), projectId)?.id ?? ''),
+        type: 'conduit',
+        cableType: prev.cableType,
+        cableCount: 1,
+        points: prev.points,
+        lengthFt,
+      });
+      // Reset
+      return { points: [], cursor: null, cableType: prev.cableType };
+    });
+  }, [addPathway, projectId]);
   const [selId, setSelId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [floor, setFloor] = useState(0);
@@ -454,14 +494,9 @@ export function EngineeringCanvas() {
     () => ({ ...DEFAULT_DISPLAY_PREFS, ...canvasDisplayMap[projectId] }),
     [canvasDisplayMap, projectId],
   );
-  // Legacy `planSource` token used by CanvasSurface — derived from the
-  // new BaseMapMode pref. We keep the CanvasSurface signature stable in
-  // this pass and treat anything that isn't 'blueprint' / 'satellite' as
-  // 'blank' for the underlying renderer.
-  const planSource: 'blueprint' | 'satellite' | 'blank' =
-    display.baseMap === 'blueprint' ? 'blueprint'
-    : display.baseMap === 'satellite' || display.baseMap === 'hybrid' ? 'satellite'
-    : 'blank';
+  // The full base-map mode flows through to FloorPlan unchanged now —
+  // every value renders a distinct surface so the picker is honest.
+  const planSource: BaseMapMode = display.baseMap;
   const setPlanSource = (m: BaseMapMode) => setCanvasDisplay(projectId, { baseMap: m });
 
   // Project tech model — filters which manufacturers the library / drawer
@@ -643,13 +678,16 @@ export function EngineeringCanvas() {
       if (e.key === 'v' || e.key === 'V') setTool('select');
       if (e.key === 'h' || e.key === 'H') setTool('pan');
       if (e.key === 'm' || e.key === 'M') setTool('measure');
-      if (e.key === 't' || e.key === 'T') setTool('text');
-      if (e.key === 'n' || e.key === 'N') setTool('comment');
+      if (e.key === 'c' || e.key === 'C') setTool('cable');
       if (e.key === 'w' || e.key === 'W') setTool('wall');
       if (e.key === 'Escape') {
         setSelId(null); setDrag(null); setOpenCat(null); setOpenType(null);
         setWallStart(null);
         setMeasure({ start: null, end: null, cursor: null });
+        setCableDraw((c) => ({ points: [], cursor: null, cableType: c.cableType }));
+      }
+      if (e.key === 'Enter' && tool === 'cable' && cableDraw.points.length >= 2) {
+        finishCableDraw();
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selId) {
         setDevices((ds) => ds.filter((d) => d.id !== selId));
@@ -872,9 +910,15 @@ export function EngineeringCanvas() {
                   } else if (!measure.end) {
                     setMeasure({ start: measure.start, end: { x, y }, cursor: { x, y } });
                   } else {
-                    // Already have a finished measurement — start a new one.
                     setMeasure({ start: { x, y }, end: null, cursor: { x, y } });
                   }
+                  return;
+                }
+                if (tool === 'cable') {
+                  // Each click adds a vertex. Optional snap to 20px grid.
+                  const sx = snap ? Math.round(x / 20) * 20 : x;
+                  const sy = snap ? Math.round(y / 20) * 20 : y;
+                  setCableDraw((c) => ({ ...c, points: [...c.points, { x: sx, y: sy }] }));
                   return;
                 }
               }}
@@ -889,12 +933,18 @@ export function EngineeringCanvas() {
                   setMeasure((m) => ({ ...m, cursor: { x, y } }));
                   return;
                 }
+                if (tool === 'cable' && cableDraw.points.length > 0) {
+                  setCableDraw((c) => ({ ...c, cursor: { x, y } }));
+                  return;
+                }
               }}
               onSurfaceDblClick={() => {
                 if (tool === 'wall') setWallStart(null);
                 if (tool === 'measure') setMeasure({ start: null, end: null, cursor: null });
+                if (tool === 'cable') finishCableDraw();
               }}
               measure={measure}
+              cableDraw={cableDraw}
             />
 
             {/* The canvas is intentionally calm by default. The previous
@@ -964,6 +1014,53 @@ export function EngineeringCanvas() {
 
             {/* Minimap (bottom-right) */}
             <MiniMap devices={devices} />
+
+            {/* North arrow (top-right corner of canvas surface). A small
+                quiet compass — always visible, every map mode. */}
+            <div className="absolute top-16 right-3 z-20 pointer-events-none select-none">
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center"
+                style={{
+                  background: 'rgba(13,20,36,0.78)',
+                  backdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  boxShadow: '0 6px 16px -8px rgba(0,0,0,0.5)',
+                }}
+                title="North"
+              >
+                <svg viewBox="-12 -12 24 24" width="22" height="22">
+                  <path d="M 0 -8 L 3 5 L 0 2 L -3 5 Z" fill="#E2E8F0" />
+                  <text y="-9" textAnchor="middle" fill="rgba(226,232,240,0.55)" fontSize="6" fontFamily="ui-sans-serif">N</text>
+                </svg>
+              </div>
+            </div>
+
+            {/* Scale bar (bottom-center of canvas, above the QuickTools).
+                The 20px = 1ft constant is the same one deriveBOM uses, so
+                this reads against the canvas geometry truthfully. Adapts
+                to the current zoom — at zoom=1 a 100ft bar is 2000px on
+                the raw canvas; we render the bar in screen pixels so
+                "100ft" stays a constant on-screen size at zoom=1. */}
+            <div
+              className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none flex items-center gap-1.5"
+              style={{
+                background: 'rgba(13,20,36,0.78)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                borderRadius: '6px',
+                padding: '6px 10px',
+                boxShadow: '0 6px 16px -8px rgba(0,0,0,0.5)',
+              }}
+            >
+              <span className="text-[10px] text-muted-foreground tabular-nums">0</span>
+              <svg width={zoom * 100} height={10} className="inline-block">
+                <line x1={0} y1={5} x2={zoom * 100} y2={5} stroke="#E2E8F0" strokeWidth="1.2" />
+                <line x1={0} y1={1} x2={0} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
+                <line x1={zoom * 100} y1={1} x2={zoom * 100} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
+                <line x1={zoom * 50} y1={3} x2={zoom * 50} y2={7} stroke="#E2E8F0" strokeWidth="0.8" opacity="0.6" />
+              </svg>
+              <span className="text-[10px] text-muted-foreground tabular-nums">5 ft</span>
+            </div>
 
             {/* Build stamp (bottom-left, just above ZoomDock). Discreet so it
                 never competes with controls but verifiable so the user can
@@ -1160,12 +1257,9 @@ function TopBar(props: {
 
       <div className="flex-1" />
 
-      {/* Right — collab + history + AI */}
-      <div className="flex items-center gap-1">
-        <IconBtn title="Undo (⌘Z)"><Undo2 className="w-4 h-4" /></IconBtn>
-        <IconBtn title="Redo (⌘⇧Z)"><Redo2 className="w-4 h-4" /></IconBtn>
-      </div>
-      <div className="h-6 w-px bg-border/70" />
+      {/* Right — collab + AI. Undo/Redo buttons removed in the lockdown
+          pass: there's no action history subsystem behind them yet, and
+          per the absolute rule "if a button doesn't work, hide it." */}
       <div className="flex items-center -space-x-1.5">
         <Avatar initials="JS" tone="#2F81F7" />
         <Avatar initials="MK" tone="#A371F7" />
@@ -2081,16 +2175,16 @@ function SegmentRow<T extends string>({ label, value, options, onChange }: {
  *  and future-painting can drop in without UX work. */
 function EngineeringLayersSection({ layers, onToggle }: { layers: CanvasLayerState; onToggle: (l: EngineeringLayer, on: boolean) => void }) {
   const [open, setOpen] = useState(true);
+  // Only layers that visibly affect the canvas are listed here. The
+  // schema still holds rooms / NEC / thermal / bandwidth / conduit_ids
+  // for when those renderers are built — but per the lockdown rule
+  // (no controls that change nothing) they're hidden from this panel
+  // until they paint something real.
   const rows: { id: EngineeringLayer; label: string; hint: string }[] = [
     { id: 'fov',         label: 'FOV cones',     hint: 'Camera coverage cones' },
     { id: 'labels',      label: 'Device labels', hint: 'IDs under each device' },
     { id: 'pathways',    label: 'Pathways',      hint: 'Cable runs and tray' },
     { id: 'dimensions',  label: 'Dimensions',    hint: 'Spacing between cameras' },
-    { id: 'rooms',       label: 'Rooms',         hint: 'Room labels and outlines' },
-    { id: 'nec',         label: 'NEC',           hint: 'Code compliance markings' },
-    { id: 'thermal',     label: 'Thermal',       hint: 'Heat coverage map' },
-    { id: 'bandwidth',   label: 'Bandwidth',     hint: 'Data flow saturation' },
-    { id: 'conduit_ids', label: 'Conduit IDs',   hint: 'Identifier labels on pathways' },
     { id: 'presence',    label: 'Presence',      hint: 'Live collaborator cursors' },
   ];
   const onCount = rows.filter((r) => layers[r.id]).length;
@@ -2144,7 +2238,7 @@ interface SurfaceProps {
   selIds: Set<string>;
   presence: PresenceCursor[];
   hoverByPresence: Record<string, { name: string; tone: string }>;
-  planSource: 'blueprint' | 'satellite' | 'blank';
+  planSource: BaseMapMode;
   siteAddress: string;
   walls: Wall[];
   wallStart: { x: number; y: number } | null;
@@ -2174,6 +2268,12 @@ interface SurfaceProps {
     start: { x: number; y: number } | null;
     end:   { x: number; y: number } | null;
     cursor:{ x: number; y: number } | null;
+  };
+  /** Active cable / pathway draw state. */
+  cableDraw: {
+    points: { x: number; y: number }[];
+    cursor: { x: number; y: number } | null;
+    cableType: string;
   };
   /** Lagged display position of the device currently being dragged.
    *  When set, the device, its cones, and the selection pill all
@@ -2209,7 +2309,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, dragLag, onDragStart, onDragEnd, hoveredLens }, ref
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -2270,7 +2370,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       }}
       onDoubleClick={onSurfaceDblClick}
       style={{ background: 'radial-gradient(ellipse at 50% 35%, #0F1722 0%, #070A10 55%, #03060B 100%)' }}
-      className={`absolute inset-0 w-full h-full ${tool === 'wall' || tool === 'measure' ? 'cursor-crosshair' : tool === 'pan' ? 'cursor-grab' : dragging ? 'cursor-copy' : 'cursor-default'}`}
+      className={`absolute inset-0 w-full h-full ${tool === 'wall' || tool === 'measure' || tool === 'cable' ? 'cursor-crosshair' : tool === 'pan' ? 'cursor-grab' : dragging ? 'cursor-copy' : 'cursor-default'}`}
     >
       <defs>
         <style>{`
@@ -2696,6 +2796,63 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           );
         })()}
 
+        {/* Cable draw — vertices already committed render as a solid
+            polyline; the active rubber-band segment to the cursor is
+            dashed so the user always knows where the next click will go.
+            Each committed vertex gets a small handle so the path reads
+            as a real edited route, not a transient hover effect. Esc to
+            cancel, Enter or double-click to finish. */}
+        {tool === 'cable' && cableDraw.points.length > 0 && (() => {
+          const pts = cableDraw.points;
+          const cursor = cableDraw.cursor ?? pts[pts.length - 1];
+          let lengthPx = 0;
+          for (let i = 1; i < pts.length; i++) {
+            lengthPx += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+          }
+          if (cableDraw.cursor && pts.length > 0) {
+            lengthPx += Math.hypot(cursor.x - pts[pts.length - 1].x, cursor.y - pts[pts.length - 1].y);
+          }
+          const ft = lengthPx / 20;
+          const tipX = cursor.x;
+          const tipY = cursor.y;
+          return (
+            <g pointerEvents="none">
+              {/* Committed segments — solid */}
+              {pts.length >= 2 && (
+                <polyline
+                  points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none" stroke="#F2C744" strokeWidth="1.4" opacity="0.88"
+                />
+              )}
+              {/* Live rubber-band to cursor — dashed */}
+              {cableDraw.cursor && (
+                <line
+                  x1={pts[pts.length - 1].x} y1={pts[pts.length - 1].y}
+                  x2={cursor.x} y2={cursor.y}
+                  stroke="#F2C744" strokeWidth="1.4" strokeDasharray="4 3" opacity="0.75"
+                />
+              )}
+              {/* Vertex handles */}
+              {pts.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="#0E1424" stroke="#F2C744" strokeWidth="1.2" />
+              ))}
+              {/* Length chip at the head */}
+              <g transform={`translate(${tipX + 12}, ${tipY - 18})`}>
+                <rect x={0} y={-10} width={88} height={20} rx={4} fill="rgba(8,12,20,0.92)" stroke="#F2C744" strokeWidth="0.6" />
+                <text x={6} y={3} fontSize="10" fontFamily="ui-monospace, monospace" fill="#F2C744" fontWeight="600">
+                  {cableDraw.cableType.toUpperCase()} · {ft.toFixed(1)} ft
+                </text>
+              </g>
+              {/* Hint */}
+              <g transform={`translate(${tipX + 12}, ${tipY + 8})`}>
+                <text fontSize="9" fontFamily="ui-sans-serif" fill="rgba(226,232,240,0.55)">
+                  Enter / dbl-click to finish · Esc cancels
+                </text>
+              </g>
+            </g>
+          );
+        })()}
+
         {/* Presence cursors — live collaborators. Off by default; the
             engineer turns it on when they want to see who's also in the
             session. */}
@@ -2713,13 +2870,134 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
   );
 });
 
-function FloorPlan({ source, siteAddress }: { source: 'blueprint' | 'satellite' | 'blank'; siteAddress: string }) {
+/** Small honest badge on simulated map modes. The brief is explicit:
+ *  if there's no live provider, label it. */
+function SimulatedMapBadge({ label, tone = 'light' }: { label: string; tone?: 'light' | 'dark' }) {
+  const bg = tone === 'dark' ? 'rgba(13,20,36,0.85)' : 'rgba(13,20,36,0.78)';
+  const fg = '#F4E07A';
+  return (
+    <g transform="translate(540, 580)">
+      <rect width="170" height="20" rx="10" fill={bg} stroke={fg + '55'} strokeWidth="0.6" />
+      <circle cx="11" cy="10" r="3" fill={fg} opacity="0.85" />
+      <text x="20" y="14" fill={fg} fontSize="10.5" fontFamily="ui-sans-serif">{label}</text>
+    </g>
+  );
+}
+
+function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: string }) {
+  // Honest map modes. Every value the picker offers produces a visually
+  // distinct surface so the choice is real. Where there's no live tile
+  // provider (street / hybrid / dark) the surface is clearly a stylised
+  // engineering render and is labelled "Simulated map layer".
   if (source === 'blank') {
     return (
       <g>
         <rect x="80" y="80" width="640" height="480" fill="url(#plan-paper)" stroke="#30363D" strokeWidth="1" strokeDasharray="6 6" rx="4" />
         <text x="400" y="316" textAnchor="middle" fill="#7D8590" fontSize="13">Press W or pick the wall tool to start sketching</text>
         <text x="400" y="336" textAnchor="middle" fill="#484F58" fontSize="11">Click to drop vertices · double-click to end a run</text>
+      </g>
+    );
+  }
+  if (source === 'street') {
+    return (
+      <g>
+        {/* Light cartographic surface — off-white roads on a warm slate. */}
+        <rect x="80" y="80" width="640" height="480" fill="#D8DEE8" rx="3" />
+        {/* Major roads */}
+        <g stroke="#FFFFFF" strokeLinecap="round">
+          <line x1="80"  y1="220" x2="720" y2="220" strokeWidth="16" />
+          <line x1="80"  y1="420" x2="720" y2="420" strokeWidth="12" />
+          <line x1="320" y1="80"  x2="320" y2="560" strokeWidth="14" />
+          <line x1="560" y1="80"  x2="560" y2="560" strokeWidth="10" />
+        </g>
+        {/* Road outlines */}
+        <g stroke="#9BA5B6" strokeWidth="0.6">
+          <line x1="80"  y1="212" x2="720" y2="212" />
+          <line x1="80"  y1="228" x2="720" y2="228" />
+          <line x1="80"  y1="414" x2="720" y2="414" />
+          <line x1="80"  y1="426" x2="720" y2="426" />
+          <line x1="313" y1="80"  x2="313" y2="560" />
+          <line x1="327" y1="80"  x2="327" y2="560" />
+          <line x1="555" y1="80"  x2="555" y2="560" />
+          <line x1="565" y1="80"  x2="565" y2="560" />
+        </g>
+        {/* Building footprints */}
+        <g fill="#BFC8D6" stroke="#9BA5B6" strokeWidth="0.6">
+          <rect x="120" y="100" width="140" height="90" />
+          <rect x="370" y="110" width="160" height="90" />
+          <rect x="600" y="120" width="100" height="80" />
+          <rect x="110" y="260" width="180" height="130" />
+          <rect x="370" y="260" width="160" height="130" />
+          <rect x="600" y="260" width="100" height="120" />
+          <rect x="120" y="450" width="170" height="90" />
+          <rect x="370" y="450" width="160" height="90" />
+        </g>
+        <SimulatedMapBadge label="Simulated street map" />
+      </g>
+    );
+  }
+  if (source === 'hybrid') {
+    return (
+      <g>
+        {/* Satellite imagery + cartographic labels & roads. */}
+        <image
+          href="https://images.unsplash.com/photo-1569163139394-de4798aa62b6?w=1200&q=70"
+          x="80" y="80" width="640" height="480" preserveAspectRatio="xMidYMid slice"
+        />
+        <rect x="80" y="80" width="640" height="480" fill="#0D1424" opacity="0.18" />
+        {/* Road overlay */}
+        <g stroke="#F4E07A" strokeOpacity="0.75" strokeLinecap="round">
+          <line x1="80"  y1="220" x2="720" y2="220" strokeWidth="3" />
+          <line x1="80"  y1="420" x2="720" y2="420" strokeWidth="2.5" />
+          <line x1="320" y1="80"  x2="320" y2="560" strokeWidth="3" />
+        </g>
+        {/* Labels */}
+        <g fill="#F4E07A" fontSize="11" fontFamily="ui-sans-serif">
+          <text x="400" y="216" textAnchor="middle" stroke="#0D1424" strokeWidth="3" paintOrder="stroke">Commerce Blvd</text>
+          <text x="324" y="320" textAnchor="middle" stroke="#0D1424" strokeWidth="3" paintOrder="stroke">7th St</text>
+        </g>
+        <g transform="translate(96, 100)">
+          <rect width="220" height="26" rx="13" fill="#0D1117" fillOpacity="0.78" stroke="#30363D" />
+          <circle cx="14" cy="13" r="3.5" fill="#2F81F7" />
+          <text x="26" y="17" fill="#E6EDF3" fontSize="11">{siteAddress || 'No address set'}</text>
+        </g>
+        <SimulatedMapBadge label="Simulated hybrid (satellite + labels)" />
+      </g>
+    );
+  }
+  if (source === 'dark') {
+    return (
+      <g>
+        {/* Dark cartographic surface — premium night-mode map look. */}
+        <rect x="80" y="80" width="640" height="480" fill="#0E1424" rx="3" />
+        <g stroke="#1F2A40" strokeWidth="22" strokeLinecap="round">
+          <line x1="80" y1="220" x2="720" y2="220" />
+          <line x1="80" y1="420" x2="720" y2="420" />
+          <line x1="320" y1="80" x2="320" y2="560" />
+        </g>
+        <g stroke="#2A3650" strokeWidth="14" strokeLinecap="round">
+          <line x1="80" y1="160" x2="720" y2="160" />
+          <line x1="80" y1="500" x2="720" y2="500" />
+          <line x1="560" y1="80" x2="560" y2="560" />
+        </g>
+        {/* Road inner highlights */}
+        <g stroke="#4A95E8" strokeOpacity="0.35" strokeWidth="1" strokeLinecap="round">
+          <line x1="80" y1="220" x2="720" y2="220" />
+          <line x1="80" y1="420" x2="720" y2="420" />
+          <line x1="320" y1="80" x2="320" y2="560" />
+        </g>
+        {/* Building parcels */}
+        <g fill="#162033" stroke="#243049" strokeWidth="0.6">
+          <rect x="120" y="100" width="140" height="90" />
+          <rect x="370" y="110" width="160" height="90" />
+          <rect x="600" y="120" width="100" height="80" />
+          <rect x="110" y="260" width="180" height="130" />
+          <rect x="370" y="260" width="160" height="130" />
+          <rect x="600" y="260" width="100" height="120" />
+          <rect x="120" y="450" width="170" height="90" />
+          <rect x="370" y="450" width="160" height="90" />
+        </g>
+        <SimulatedMapBadge label="Simulated dark map" tone="dark" />
       </g>
     );
   }
@@ -4762,6 +5040,7 @@ function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool
     { id: 'select',  icon: MousePointer2, label: 'Select',  key: 'V', hint: 'Select and edit objects' },
     { id: 'pan',     icon: Hand,          label: 'Pan',     key: 'H', hint: 'Pan the map · does not select' },
     { id: 'measure', icon: Ruler,         label: 'Measure', key: 'M', hint: 'Click two points to measure distance · ESC to cancel' },
+    { id: 'cable',   icon: Cable,         label: 'Cable',   key: 'C', hint: 'Draw cable / pathway · click vertices · Enter or dbl-click to finish · Esc to cancel' },
     ...(showWall ? [{ id: 'wall' as Tool, icon: WallIcon, label: 'Wall', key: 'W', hint: 'Draw a wall · double-click to finish' }] : []),
   ];
   return (

@@ -134,22 +134,45 @@ export function EstimatorView() {
 
         <div className="space-y-3">
           <div className="bg-card border border-border rounded-lg p-4 sticky top-4">
-            <div className="text-[11.5px] font-medium text-slate-200 tracking-tight">Totals</div>
-            <div className="mt-3 space-y-1.5 text-sm">
-              <div className="flex justify-between text-muted-foreground"><span>Hardware</span><span className="tabular-nums">{currency(bom.hardwareTotal)}</span></div>
-              <div className="flex justify-between text-muted-foreground"><span>Cable & pathway</span><span className="tabular-nums">{currency(bom.cableTotal)}</span></div>
-              <div className="flex justify-between text-muted-foreground"><span>Labor ({bom.laborHours.toFixed(1)} hr)</span><span className="tabular-nums">{currency(bom.laborTotal)}</span></div>
-              <div className="border-t border-border pt-2 mt-2 flex justify-between"><span>Subtotal</span><span className="tabular-nums">{currency(subtotal)}</span></div>
-              <div className="flex justify-between text-muted-foreground"><span>Margin ({(markup * 100).toFixed(0)}%)</span><span className="tabular-nums">{currency(margin)}</span></div>
-              <div className="border-t border-border pt-2 mt-2 flex justify-between text-base">
-                <span className="font-medium">Total</span>
-                <span className="font-medium text-primary tabular-nums">{currency(total)}</span>
-              </div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[11.5px] font-medium text-slate-200 tracking-tight">Totals</div>
+              {state.currentRole === 'customer' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 inline-flex items-center gap-1">
+                  Customer view
+                </span>
+              )}
             </div>
-            <p className="mt-4 text-[10px] text-muted-foreground leading-snug">
-              All lines are computed live from the project's canvas. Move or add
-              a device and this estimate updates the moment you return.
-            </p>
+            {/* Customer-safe view: internal cost breakdown, labor hours,
+                and margin are hidden. Only the customer-facing total
+                remains. This is the role-driven view gate from the
+                permissions blueprint. */}
+            {state.currentRole === 'customer' ? (
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between text-muted-foreground"><span>System + installation</span><span className="tabular-nums">{currency(subtotal + margin)}</span></div>
+                <div className="border-t border-border pt-2 mt-2 flex justify-between text-base">
+                  <span className="font-medium">Total</span>
+                  <span className="font-medium text-primary tabular-nums">{currency(total)}</span>
+                </div>
+                <p className="mt-3 text-[10px] text-muted-foreground/80 leading-snug">
+                  Customer-facing summary. Internal cost, labor hours, and margin are hidden.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between text-muted-foreground"><span>Hardware</span><span className="tabular-nums">{currency(bom.hardwareTotal)}</span></div>
+                <div className="flex justify-between text-muted-foreground"><span>Cable & pathway</span><span className="tabular-nums">{currency(bom.cableTotal)}</span></div>
+                <div className="flex justify-between text-muted-foreground"><span>Labor ({bom.laborHours.toFixed(1)} hr)</span><span className="tabular-nums">{currency(bom.laborTotal)}</span></div>
+                <div className="border-t border-border pt-2 mt-2 flex justify-between"><span>Subtotal</span><span className="tabular-nums">{currency(subtotal)}</span></div>
+                <div className="flex justify-between text-muted-foreground"><span>Margin ({(markup * 100).toFixed(0)}%)</span><span className="tabular-nums">{currency(margin)}</span></div>
+                <div className="border-t border-border pt-2 mt-2 flex justify-between text-base">
+                  <span className="font-medium">Total</span>
+                  <span className="font-medium text-primary tabular-nums">{currency(total)}</span>
+                </div>
+                <p className="mt-4 text-[10px] text-muted-foreground leading-snug">
+                  All lines are computed live from the project's canvas. Move or add a device and this estimate updates the moment you return.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

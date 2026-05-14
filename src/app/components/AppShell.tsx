@@ -55,7 +55,7 @@ export function AppShell({
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       {/* Header — 52px, single line */}
       <header className="h-[52px] shrink-0 border-b border-border bg-background flex items-center px-4 gap-3">
-        <button onClick={() => navigate('/projects')} className="flex items-center gap-2 shrink-0">
+        <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 shrink-0" title="Dashboard">
           <BrandLogo variant="compact" theme="dark" height={22} />
         </button>
 
@@ -312,37 +312,29 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     return m?.[1] ?? null;
   }, [location.pathname]);
 
-  // Project-scoped items: only shown when a project is active. Each uses
-  // the literal `:id` placeholder which we substitute below.
+  // Project-scoped items — only those that are REAL (backed by the store
+  // with working logic). Placeholder Figma-export screens that don't yet
+  // do anything are mounted as routes (so deep links don't 404) but
+  // intentionally absent from the palette per the lockdown rule:
+  // visible navigation must lead somewhere that works.
   const projectScoped: { label: string; path: string; group: string }[] = [
     { label: 'Project overview',     path: '/project/:id',           group: 'This project' },
     { label: 'Engineering canvas',   path: '/project/:id/canvas',    group: 'This project' },
-    { label: 'Site walk',            path: '/sitewalk/:id',          group: 'This project' },
-    { label: 'VisionScan',           path: '/visionscan',            group: 'This project' },
-    { label: 'Calibration',          path: '/calibrate/:id',         group: 'This project' },
     { label: 'Estimator',            path: '/estimate/:id',          group: 'This project' },
-    { label: 'Proposal builder',     path: '/proposal/:id',          group: 'This project' },
+    { label: 'Pathway routing',      path: '/pathways/:id',          group: 'This project' },
+    { label: 'Commissioning',        path: '/commission/:id',        group: 'This project' },
     { label: 'Customer portal',      path: '/portal/:id',            group: 'This project' },
-    { label: 'Permit & compliance',  path: '/permit/:id',            group: 'This project' },
-    { label: 'Threat simulator',     path: '/threat/:id',            group: 'Analyze' },
-    { label: 'Power & cable plan',   path: '/power/:id',             group: 'Analyze' },
-    { label: 'Pathway routing',      path: '/pathways/:id',          group: 'Analyze' },
-    { label: 'Flow view',            path: '/flow/:id',              group: 'Analyze' },
-    { label: 'AI assistant',         path: '/ai/:id',                group: 'Tools' },
-    { label: 'Commissioning',        path: '/commission/:id',        group: 'Deploy' },
-    { label: 'Work orders',          path: '/workorders/:id',        group: 'Deploy' },
-    { label: 'Change orders',        path: '/changeorders/:id',      group: 'Deploy' },
-    { label: 'Maintenance',          path: '/maintenance/:id',       group: 'Operate' },
+    { label: 'Workflow diagram',     path: '/flow/:id',              group: 'This project' },
   ];
 
-  // Global items always present.
+  // Global items — primary product surfaces.
   const global: { label: string; path: string; group: string }[] = [
-    { label: 'Projects',         path: '/projects', group: 'Navigate' },
-    { label: 'Sales pipeline',   path: '/crm',      group: 'CRM' },
-    { label: 'Device library',   path: '/devices',  group: 'Navigate' },
-    { label: 'Knowledge base',   path: '/kb',       group: 'Reference' },
-    { label: 'Help center',      path: '/help',     group: 'Reference' },
-    { label: 'Settings',         path: '/settings', group: 'Account' },
+    { label: 'Dashboard',        path: '/dashboard', group: 'Navigate' },
+    { label: 'Projects',         path: '/projects',  group: 'Navigate' },
+    { label: 'Sales pipeline',   path: '/crm',       group: 'Navigate' },
+    { label: 'Product catalog',  path: '/catalog',   group: 'Reference' },
+    { label: 'Help center',      path: '/help',      group: 'Account' },
+    { label: 'Settings',         path: '/settings',  group: 'Account' },
   ];
 
   const items = contextProjectId

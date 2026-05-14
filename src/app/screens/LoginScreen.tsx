@@ -17,13 +17,13 @@ export function LoginScreen() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/projects');
+    navigate('/dashboard');
   };
   const fillDemo = () => {
     setEmail(DEMO_EMAIL);
     setPassword(DEMO_PASSWORD);
     // Auto-submit a tick later so the field updates render first.
-    setTimeout(() => navigate('/projects'), 60);
+    setTimeout(() => navigate('/dashboard'), 60);
   };
 
   return (
@@ -91,13 +91,13 @@ export function LoginScreen() {
               <div className="relative flex justify-center text-[10px] uppercase tracking-wider"><span className="bg-background px-2 text-muted-foreground">or</span></div>
             </div>
 
-            <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/projects')}>
+            <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/dashboard')}>
               Continue with SSO
             </Button>
           </form>
 
           <p className="mt-8 text-xs text-muted-foreground">
-            No account? <button onClick={() => navigate('/projects')} className="text-primary hover:underline">Request access</button>
+            No account? <button onClick={() => navigate('/dashboard')} className="text-primary hover:underline">Request access</button>
           </p>
         </div>
       </div>

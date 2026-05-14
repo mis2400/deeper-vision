@@ -31,6 +31,8 @@ import { ChangeOrders } from './screens/ChangeOrders';
 import { KnowledgeBase } from './screens/KnowledgeBase';
 import { PipelineView } from './screens/PipelineView';
 import { AccountDetail } from './screens/AccountDetail';
+import { Dashboard } from './screens/Dashboard';
+import { ProductCatalog } from './screens/ProductCatalog';
 import { PdfExporter } from './components/PdfExporter';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { Toaster } from './components/ui/sonner';
@@ -42,9 +44,11 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginScreen />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/projects" element={<ProjectHub />} />
           <Route path="/crm" element={<PipelineView />} />
           <Route path="/account/:customerId" element={<AccountDetail />} />
+          <Route path="/catalog" element={<ProductCatalog />} />
           <Route path="/project/:projectId" element={<ProjectCenter />} />
           <Route path="/project/:projectId/canvas" element={<EngineeringCanvas />} />
           <Route path="/visionscan" element={<VisionScan />} />
