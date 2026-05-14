@@ -39,13 +39,16 @@ const CUSTOMERS: Customer[] = [
 ];
 
 // ── Projects ──────────────────────────────────────────────────────
+// Seeded projects span the full lifecycle so the demo has at least one
+// project in each major phase — useful for the ProjectHub filters and for
+// QA'ing phase-specific behavior.
 const PROJECTS: Project[] = [
-  { id: 'p1', name: 'Acme HQ — Austin',          customerId: 'c1', siteId: 's1', status: 'design',  lifecyclePhase: 'engineering',   team: 4, progress: 28,  updated: '2h ago',  createdAt: now - 1000*60*60*24*40, updatedAt: now - 1000*60*60*2 },
-  { id: 'p2', name: 'Mercy Hospital Tower B',    customerId: 'c2', siteId: 's2', status: 'review',  lifecyclePhase: 'proposal',      team: 6, progress: 62,  updated: '6h ago',  createdAt: now - 1000*60*60*24*80, updatedAt: now - 1000*60*60*6 },
-  { id: 'p3', name: 'Westfield Mall Renovation', customerId: 'c3', siteId: 's3', status: 'install', lifecyclePhase: 'deployment',    team: 9, progress: 81,  updated: '1d ago',  createdAt: now - 1000*60*60*24*120,updatedAt: now - 1000*60*60*24 },
-  { id: 'p4', name: 'Central Data Center',       customerId: 'c4', siteId: 's4', status: 'live',    lifecyclePhase: 'managed-service',team: 3, progress: 100, updated: '3d ago',  createdAt: now - 1000*60*60*24*220,updatedAt: now - 1000*60*60*24*3 },
-  { id: 'p5', name: 'Lincoln High School',       customerId: 'c5', siteId: 's5', status: 'design',  lifecyclePhase: 'engineering',   team: 3, progress: 14,  updated: '1d ago',  createdAt: now - 1000*60*60*24*30, updatedAt: now - 1000*60*60*24 },
-  { id: 'p6', name: 'Riverside Apartments',      customerId: 'c6', siteId: 's6', status: 'review',  lifecyclePhase: 'proposal',      team: 5, progress: 48,  updated: '4h ago',  createdAt: now - 1000*60*60*24*60, updatedAt: now - 1000*60*60*4 },
+  { id: 'p1', name: 'Acme HQ — Austin',          customerId: 'c1', siteId: 's1', status: 'design',  lifecyclePhase: 'engineering',     team: 4, progress: 36,  updated: '2h ago',  createdAt: now - 1000*60*60*24*40, updatedAt: now - 1000*60*60*2,  phaseStartedAt: now - 1000*60*60*24*5,  healthStatus: 'on_track', nextAction: 'Place remaining cameras + run pathway to IDF-1', priority: 'high',     assignedEngineerUserId: 'u-jordan' },
+  { id: 'p2', name: 'Mercy Hospital Tower B',    customerId: 'c2', siteId: 's2', status: 'review',  lifecyclePhase: 'proposal',         team: 6, progress: 50,  updated: '6h ago',  createdAt: now - 1000*60*60*24*80, updatedAt: now - 1000*60*60*6,  phaseStartedAt: now - 1000*60*60*24*2,  healthStatus: 'at_risk',  nextAction: 'Lock down exclusions before Friday review',         priority: 'critical', assignedSalesUserId: 'u-mei' },
+  { id: 'p3', name: 'Westfield Mall Renovation', customerId: 'c3', siteId: 's3', status: 'install', lifecyclePhase: 'deployment',       team: 9, progress: 71,  updated: '1d ago',  createdAt: now - 1000*60*60*24*120,updatedAt: now - 1000*60*60*24, phaseStartedAt: now - 1000*60*60*24*7,  healthStatus: 'on_track', nextAction: 'Confirm overnight pulls in the east wing',          priority: 'high',     assignedPMUserId: 'u-diego' },
+  { id: 'p4', name: 'Central Data Center',       customerId: 'c4', siteId: 's4', status: 'live',    lifecyclePhase: 'managed_service',  team: 3, progress: 100, updated: '3d ago',  createdAt: now - 1000*60*60*24*220,updatedAt: now - 1000*60*60*24*3,phaseStartedAt: now - 1000*60*60*24*180, healthStatus: 'complete', nextAction: 'Q3 firmware sweep this week',                      priority: 'normal' },
+  { id: 'p5', name: 'Lincoln High School',       customerId: 'c5', siteId: 's5', status: 'design',  lifecyclePhase: 'survey',           team: 3, progress: 21,  updated: '1d ago',  createdAt: now - 1000*60*60*24*30, updatedAt: now - 1000*60*60*24, phaseStartedAt: now - 1000*60*60*24*1,  healthStatus: 'on_track', nextAction: 'Upload remaining floorplan PDFs',                   priority: 'normal',   assignedSalesUserId: 'u-rita' },
+  { id: 'p6', name: 'Riverside Apartments',      customerId: 'c6', siteId: 's6', status: 'review',  lifecyclePhase: 'customer_review',  team: 5, progress: 57,  updated: '4h ago',  createdAt: now - 1000*60*60*24*60, updatedAt: now - 1000*60*60*4,  phaseStartedAt: now - 1000*60*60*24*1,  healthStatus: 'on_track', nextAction: 'Awaiting comments from BlackRock',                  priority: 'high',     assignedSalesUserId: 'u-tom' },
 ];
 
 // ── Sites / Buildings / Floors ────────────────────────────────────
@@ -115,6 +118,18 @@ const ESTIMATES: Estimate[] = PROJECTS.map((p) => ({
   id: `est-${p.id}`, projectId: p.id, lines: [], laborRate: 95, markup: 0.18,
 }));
 
+// ── Activity feed seed ────────────────────────────────────────────
+// A handful of recent events per active project so the command center
+// doesn't read as empty on first visit.
+const ACTIVITY: import('./types').ActivityItem[] = [
+  { id: 'a1', projectId: 'p1', type: 'device_added',  message: 'Placed CAM-103 multisensor in the atrium', userName: 'Jordan K.',  createdAt: now - 1000*60*60*4 },
+  { id: 'a2', projectId: 'p1', type: 'phase_changed', message: 'Phase advanced: survey → engineering',     userName: 'Jordan K.',  createdAt: now - 1000*60*60*24*5 },
+  { id: 'a3', projectId: 'p1', type: 'note_added',    message: 'Note on RD-1: confirm mullion blocking',   userName: 'Jordan K.',  createdAt: now - 1000*60*60*8 },
+  { id: 'a4', projectId: 'p2', type: 'phase_changed', message: 'Phase advanced: estimate → proposal',       userName: 'Mei L.',     createdAt: now - 1000*60*60*24*2 },
+  { id: 'a5', projectId: 'p3', type: 'commission_test_pass', message: 'CAM-WM-1 install verified', userName: 'Diego R.', createdAt: now - 1000*60*60*22 },
+  { id: 'a6', projectId: 'p6', type: 'customer_review_opened', message: 'BlackRock opened the proposal', userName: 'Customer',  createdAt: now - 1000*60*60*5 },
+];
+
 // ── Public seed function ──────────────────────────────────────────
 /** Returns the canonical initial state for the store. Called on first load
  *  and by the user-facing "Reset demo data" button. */
@@ -133,5 +148,6 @@ export function buildSeed() {
     pathways:  byId(PATHWAYS),
     idfs:      byId(IDFS),
     estimates: byId(ESTIMATES),
+    activity:  byId(ACTIVITY),
   };
 }

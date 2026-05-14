@@ -3,6 +3,9 @@ import { useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { Check, FileText, Calendar, MessageSquare, Download } from 'lucide-react';
+import { useProjectStore } from '../store/projectStore';
+import { PhaseGateBanner } from '../lifecycle/PhaseGate';
+import { PHASE_TIMELINE } from '../lifecycle/phases';
 
 interface DocRow { id: string; title: string; kind: string; updated: string; }
 interface Phase { id: string; name: string; date: string; status: 'done' | 'now' | 'next'; }
@@ -26,12 +29,26 @@ export function CustomerPortal() {
   const { projectId = 'p1' } = useParams();
   const [approved, setApproved] = useState(false);
 
+  // Soft gate: this screen represents customer review. If the project hasn't
+  // reached the proposal stage yet, surface a warning so internal users
+  // landing here know the proposal isn't actually ready.
+  const phase = useProjectStore((s) => s.projects[projectId]?.lifecyclePhase);
+  const idx = phase ? PHASE_TIMELINE.indexOf(phase) : -1;
+  const proposalIdx = PHASE_TIMELINE.indexOf('proposal');
+  const needsProposal = idx >= 0 && idx < proposalIdx;
+
   return (
     <AppShell
       crumbs={[{ label: 'Client portal' }]}
       title="Riverbend HQ — Security upgrade"
       subtitle="Owner view · everything you need to track this project"
     >
+      {needsProposal && (
+        <PhaseGateBanner
+          reason="Customer review is not ready — the proposal hasn't been generated yet. The customer will see placeholder content until the project advances past Proposal."
+          action={{ label: 'Open proposal', href: `/proposal/${projectId}` }}
+        />
+      )}
       <div className="max-w-[1100px] mx-auto px-6 py-6 grid grid-cols-[1fr_300px] gap-4">
         <div className="space-y-4">
           <div className="bg-card border border-border rounded-lg p-4">

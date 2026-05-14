@@ -9,9 +9,10 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   Customer, Project, Site, Building, Floor, Device, Door, Pathway, IDF, Estimate,
-  EstimateLine, LensCfg,
+  EstimateLine, LensCfg, ActivityItem, ActivityType, LifecyclePhase, HealthStatus,
 } from './types';
 import { buildSeed } from './seed';
+import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
 
 // ─────────────────────────── State shape ──────────────────────────
 interface ProjectState {
@@ -25,14 +26,27 @@ interface ProjectState {
   pathways:  Record<string, Pathway>;
   idfs:      Record<string, IDF>;
   estimates: Record<string, Estimate>;
+  activity:  Record<string, ActivityItem>;
 
   // ── Project actions ──
   updateProject: (id: string, patch: Partial<Project>) => void;
 
+  // ── Lifecycle actions ──
+  setProjectPhase:     (projectId: string, phase: LifecyclePhase, opts?: { userName?: string }) => void;
+  advanceProjectPhase: (projectId: string, opts?: { userName?: string }) => LifecyclePhase | null;
+  revertProjectPhase:  (projectId: string, opts?: { userName?: string }) => LifecyclePhase | null;
+  setNextAction:       (projectId: string, text: string) => void;
+  setProjectHealth:    (projectId: string, h: HealthStatus, opts?: { userName?: string }) => void;
+  completePhaseItem:   (projectId: string, phase: LifecyclePhase, itemId: string, opts?: { userName?: string }) => void;
+  uncompletePhaseItem: (projectId: string, phase: LifecyclePhase, itemId: string, opts?: { userName?: string }) => void;
+
+  // ── Activity feed ──
+  logActivity: (a: Omit<ActivityItem, 'id' | 'createdAt'> & { id?: string; createdAt?: number }) => void;
+
   // ── Device actions ──
-  addDevice:    (d: Device) => void;
-  updateDevice: (id: string, patch: Partial<Device>) => void;
-  removeDevice: (id: string) => void;
+  addDevice:    (d: Device, opts?: { userName?: string; log?: boolean }) => void;
+  updateDevice: (id: string, patch: Partial<Device>, opts?: { userName?: string; log?: boolean }) => void;
+  removeDevice: (id: string, opts?: { userName?: string; log?: boolean }) => void;
 
   // ── Door actions ──
   addDoor:    (d: Door) => void;
@@ -56,6 +70,10 @@ interface ProjectState {
   resetDemoData: () => void;
 }
 
+// Module-level counter so logActivity ids stay unique within a session
+// even when fired in rapid succession (Date.now collisions on fast tests).
+let _activityCounter = 0;
+
 // ─────────────────────────── Store ────────────────────────────────
 // Expose the store on window in dev for browser-console inspection. Never
 // reference this in app code — UI components must use the React hook so
@@ -67,7 +85,7 @@ declare global {
 
 export const useProjectStore = create<ProjectState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...buildSeed(),
 
       updateProject: (id, patch) =>
@@ -77,12 +95,125 @@ export const useProjectStore = create<ProjectState>()(
             : s.projects,
         })),
 
-      addDevice: (d) =>
-        set((s) => ({ devices: { ...s.devices, [d.id]: d } })),
-      updateDevice: (id, patch) =>
-        set((s) => (s.devices[id] ? { devices: { ...s.devices, [id]: { ...s.devices[id], ...patch } } } : s)),
-      removeDevice: (id) =>
-        set((s) => { const { [id]: _, ...rest } = s.devices; return { devices: rest }; }),
+      // ── Lifecycle ──
+      setProjectPhase: (projectId, phase, opts) => {
+        const prev = get().projects[projectId];
+        if (!prev) return;
+        const now = Date.now();
+        const completed = prev.lifecyclePhase !== phase ? { phaseCompletedAt: now } : {};
+        set((s) => ({
+          projects: { ...s.projects, [projectId]: {
+            ...prev,
+            ...completed,
+            lifecyclePhase: phase,
+            phaseStartedAt: now,
+            phaseUpdatedAt: now,
+            updatedAt: now,
+          } },
+        }));
+        if (prev.lifecyclePhase !== phase) {
+          get().logActivity({
+            projectId, type: 'phase_changed',
+            message: `Phase advanced: ${prev.lifecyclePhase} → ${phase}`,
+            userName: opts?.userName,
+          });
+        }
+      },
+      advanceProjectPhase: (projectId, opts) => {
+        const p = get().projects[projectId];
+        if (!p) return null;
+        const next = nextPhaseFn(p.lifecyclePhase);
+        if (!next) return null;
+        get().setProjectPhase(projectId, next, opts);
+        return next;
+      },
+      revertProjectPhase: (projectId, opts) => {
+        const p = get().projects[projectId];
+        if (!p) return null;
+        const prev = previousPhaseFn(p.lifecyclePhase);
+        if (!prev) return null;
+        get().setProjectPhase(projectId, prev, opts);
+        return prev;
+      },
+      setNextAction: (projectId, text) =>
+        set((s) => s.projects[projectId] ? {
+          projects: { ...s.projects, [projectId]: { ...s.projects[projectId], nextAction: text, phaseUpdatedAt: Date.now(), updatedAt: Date.now() } },
+        } : s),
+      setProjectHealth: (projectId, h, opts) => {
+        const prev = get().projects[projectId];
+        if (!prev) return;
+        set((s) => ({
+          projects: { ...s.projects, [projectId]: { ...prev, healthStatus: h, updatedAt: Date.now() } },
+        }));
+        if (prev.healthStatus !== h) {
+          get().logActivity({ projectId, type: 'health_changed', message: `Health: ${prev.healthStatus ?? 'unset'} → ${h}`, userName: opts?.userName });
+        }
+      },
+      completePhaseItem: (projectId, phase, itemId, opts) => {
+        const p = get().projects[projectId];
+        if (!p) return;
+        const items = { ...(p.phaseItems ?? {}) };
+        items[phase] = { ...(items[phase] ?? {}), [itemId]: true };
+        set((s) => ({
+          projects: { ...s.projects, [projectId]: { ...p, phaseItems: items, phaseUpdatedAt: Date.now(), updatedAt: Date.now() } },
+        }));
+        const label = PHASES[phase].requiredCompletionItems.find((i) => i.id === itemId)?.label ?? itemId;
+        get().logActivity({ projectId, type: 'phase_item_completed', message: `Completed: ${label}`, userName: opts?.userName });
+      },
+      uncompletePhaseItem: (projectId, phase, itemId, opts) => {
+        const p = get().projects[projectId];
+        if (!p?.phaseItems?.[phase]) return;
+        const phaseMap = { ...(p.phaseItems[phase] as Record<string, boolean>) };
+        delete phaseMap[itemId];
+        const items = { ...p.phaseItems, [phase]: phaseMap };
+        set((s) => ({
+          projects: { ...s.projects, [projectId]: { ...p, phaseItems: items, phaseUpdatedAt: Date.now(), updatedAt: Date.now() } },
+        }));
+        const label = PHASES[phase].requiredCompletionItems.find((i) => i.id === itemId)?.label ?? itemId;
+        get().logActivity({ projectId, type: 'phase_item_uncompleted', message: `Un-completed: ${label}`, userName: opts?.userName });
+      },
+
+      // ── Activity ──
+      logActivity: (a) => {
+        _activityCounter += 1;
+        const id = a.id ?? `act-${Date.now()}-${_activityCounter}`;
+        const item: ActivityItem = {
+          id,
+          projectId: a.projectId,
+          type: a.type,
+          message: a.message,
+          userName: a.userName,
+          createdAt: a.createdAt ?? Date.now(),
+          relatedEntityId: a.relatedEntityId,
+        };
+        set((s) => ({ activity: { ...s.activity, [id]: item } }));
+      },
+
+      addDevice: (d, opts) => {
+        set((s) => ({ devices: { ...s.devices, [d.id]: d } }));
+        if (opts?.log !== false) get().logActivity({ projectId: d.projectId, type: 'device_added', message: `Added ${d.label || d.id} (${d.type})`, userName: opts?.userName, relatedEntityId: d.id });
+      },
+      updateDevice: (id, patch, opts) => {
+        const prev = get().devices[id];
+        if (!prev) return;
+        set((s) => ({ devices: { ...s.devices, [id]: { ...prev, ...patch } } }));
+        // Only log meaningful movements to avoid spamming the feed during drag.
+        // Heuristic: log when x/y delta > 8 px OR when rot/fov/range changes by
+        // a meaningful chunk OR when notes change.
+        if (opts?.log === false) return;
+        const movedFar = patch.x !== undefined && Math.abs(patch.x - prev.x) > 8;
+        const notesChanged = patch.notes !== undefined && patch.notes !== prev.notes;
+        if (movedFar) {
+          get().logActivity({ projectId: prev.projectId, type: 'device_moved', message: `Moved ${id}`, userName: opts?.userName, relatedEntityId: id });
+        } else if (notesChanged) {
+          get().logActivity({ projectId: prev.projectId, type: 'note_added', message: `Note on ${id}: ${(patch.notes ?? '').slice(0, 80)}`, userName: opts?.userName, relatedEntityId: id });
+        }
+      },
+      removeDevice: (id, opts) => {
+        const prev = get().devices[id];
+        set((s) => { const { [id]: _, ...rest } = s.devices; return { devices: rest }; });
+        if (prev && opts?.log !== false) get().logActivity({ projectId: prev.projectId, type: 'device_removed', message: `Removed ${id}`, userName: opts?.userName, relatedEntityId: id });
+      },
 
       addDoor: (d) => set((s) => ({ doors: { ...s.doors, [d.id]: d } })),
       updateDoor: (id, patch) =>
@@ -126,6 +257,7 @@ export const useProjectStore = create<ProjectState>()(
         pathways:  s.pathways,
         idfs:      s.idfs,
         estimates: s.estimates,
+        activity:  s.activity,
       }),
     },
   ),
@@ -188,7 +320,21 @@ export const selectors = {
 
   estimateForProject: (s: ProjectState, projectId: string): Estimate | null =>
     Object.values(s.estimates).find((e) => e.projectId === projectId) ?? null,
+
+  /** Project activity feed, newest first. */
+  activityForProject: (s: ProjectState, projectId: string, limit = 50): ActivityItem[] =>
+    Object.values(s.activity)
+      .filter((a) => a.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit),
 };
+
+// ─────────────────────────── Migration helpers ────────────────────
+// In case localStorage carries a project whose lifecyclePhase value uses an
+// older string ("bom-review", "scheduled-walk", "customer-revision",
+// "managed-service") we transparently normalize it on every read via the
+// existing partialize roundtrip. For now we just ensure projects on hydration
+// have the seed defaults; a full migrate fn would live here when schema bumps.
 
 // ─────────────────────────── BOM derivation ───────────────────────
 // Live-compute estimate lines from the devices/doors/pathways/idfs on a

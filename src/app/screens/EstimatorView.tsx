@@ -8,8 +8,9 @@ import { useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { FileDown, ChevronRight } from 'lucide-react';
-import { useProjectStore, deriveBOM } from '../store/projectStore';
+import { useProjectStore, deriveBOM, selectors as sel } from '../store/projectStore';
 import type { EstimateLine } from '../store/types';
+import { PhaseGateBanner } from '../lifecycle/PhaseGate';
 
 /** Group every BOM line under a presentable section heading. */
 const SECTION_FOR: Record<EstimateLine['sourceKind'], string> = {
@@ -72,6 +73,14 @@ export function EstimatorView() {
       subtitle={`Live BOM derived from the engineering canvas · ${bom.lines.length} line items`}
       actions={<Button size="sm" variant="outline"><FileDown className="w-3.5 h-3.5 mr-1" />Export CSV</Button>}
     >
+      {/* Soft gate — surfaces when the user lands here before engineering
+          has anything to roll up. Doesn't block; just orients them. */}
+      {bom.lines.length === 0 && (
+        <PhaseGateBanner
+          reason="Estimate is available, but no devices have been engineered yet. The BOM will populate as you place hardware on the canvas."
+          action={{ label: 'Open canvas', href: `/project/${projectId}/canvas` }}
+        />
+      )}
       <div className="max-w-[1200px] mx-auto px-6 py-6 grid grid-cols-[1fr_300px] gap-4">
         <div className="space-y-3">
           {sections.length === 0 && (

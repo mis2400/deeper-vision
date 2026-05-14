@@ -5,6 +5,8 @@ import { Button } from '../components/Button';
 import { Check, X, Minus, FileDown } from 'lucide-react';
 import { useProjectStore, selectors as sel } from '../store/projectStore';
 import type { DeviceType } from '../store/types';
+import { PhaseGateBanner } from '../lifecycle/PhaseGate';
+import { PHASE_TIMELINE } from '../lifecycle/phases';
 
 type Result = 'pass' | 'fail' | 'na' | null;
 interface Test { id: string; label: string; }
@@ -110,6 +112,21 @@ export function Commissioning() {
       subtitle={`${devices.length} canvas objects to verify`}
       actions={<Button size="sm" variant="outline"><FileDown className="w-3.5 h-3.5 mr-1" />Export report</Button>}
     >
+      {(() => {
+        // Soft gate: commissioning is a deployment-phase activity. If the
+        // project hasn't been approved yet, surface a banner.
+        const phase = useProjectStore.getState().projects[projectId]?.lifecyclePhase;
+        if (!phase) return null;
+        const idx = PHASE_TIMELINE.indexOf(phase);
+        const approvedIdx = PHASE_TIMELINE.indexOf('approved');
+        if (idx >= 0 && idx < approvedIdx) {
+          return <PhaseGateBanner
+            reason="This project has not been approved yet. Commissioning runs after deployment kicks off."
+            action={{ label: 'Open command center', href: `/project/${projectId}` }}
+          />;
+        }
+        return null;
+      })()}
       <div className="max-w-[1200px] mx-auto px-6 py-6 grid grid-cols-[280px_1fr] gap-4">
         <div>
           <div className="bg-card border border-border rounded-lg p-3 mb-3">

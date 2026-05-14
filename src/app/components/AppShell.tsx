@@ -1,4 +1,4 @@
-import { ReactNode, useState, useEffect } from 'react';
+import { ReactNode, useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { BrandLogo } from './BrandLogo';
 import { Button } from './Button';
@@ -126,27 +126,61 @@ export function AppShell({
 
 function CommandPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [q, setQ] = useState('');
-  const items = [
-    { label: 'Projects', path: '/projects', group: 'Navigate' },
-    { label: 'Engineering canvas', path: '/project/p1/canvas', group: 'Navigate' },
-    { label: 'Device library', path: '/devices', group: 'Navigate' },
-    { label: 'VisionScan', path: '/visionscan', group: 'Navigate' },
-    { label: 'Estimator', path: '/estimate/p1', group: 'Navigate' },
-    { label: 'Proposal builder', path: '/proposal/p1', group: 'Navigate' },
-    { label: 'Permit & compliance', path: '/permit/p1', group: 'Navigate' },
-    { label: 'Threat simulator', path: '/threat/p1', group: 'Analyze' },
-    { label: 'Power & cable plan', path: '/power/p1', group: 'Analyze' },
-    { label: 'Pathway routing', path: '/pathways/p1', group: 'Analyze' },
-    { label: 'AI assistant', path: '/ai/p1', group: 'Tools' },
-    { label: 'Commissioning', path: '/commission/p1', group: 'Build' },
-    { label: 'Work orders', path: '/workorders/p1', group: 'Build' },
-    { label: 'Maintenance', path: '/maintenance/p1', group: 'Operate' },
-    { label: 'Customer portal', path: '/portal/p1', group: 'Operate' },
-    { label: 'Knowledge base', path: '/kb', group: 'Reference' },
-    { label: 'Help center', path: '/help', group: 'Reference' },
-    { label: 'Settings', path: '/settings', group: 'Account' },
+
+  // Detect current project context from the URL. When the user is on any
+  // /project/:id/... (or any project-scoped page like /estimate/:id), we
+  // substitute that real id into the command palette's project routes so
+  // we never navigate to a hardcoded 'p1' demo path that doesn't match the
+  // active project. When NOT in a project context we hide project-scoped
+  // entries entirely.
+  const contextProjectId = useMemo(() => {
+    const m = location.pathname.match(
+      /^\/(?:project|estimate|portal|live|sitewalk|commission|pathways|flow|threat|layers|power|proposal|permit|workorders|maintenance|changeorders|intake|calibrate|ai)\/([^/]+)/,
+    );
+    return m?.[1] ?? null;
+  }, [location.pathname]);
+
+  // Project-scoped items: only shown when a project is active. Each uses
+  // the literal `:id` placeholder which we substitute below.
+  const projectScoped: { label: string; path: string; group: string }[] = [
+    { label: 'Project overview',     path: '/project/:id',           group: 'This project' },
+    { label: 'Engineering canvas',   path: '/project/:id/canvas',    group: 'This project' },
+    { label: 'Site walk',            path: '/sitewalk/:id',          group: 'This project' },
+    { label: 'VisionScan',           path: '/visionscan',            group: 'This project' },
+    { label: 'Calibration',          path: '/calibrate/:id',         group: 'This project' },
+    { label: 'Estimator',            path: '/estimate/:id',          group: 'This project' },
+    { label: 'Proposal builder',     path: '/proposal/:id',          group: 'This project' },
+    { label: 'Customer portal',      path: '/portal/:id',            group: 'This project' },
+    { label: 'Permit & compliance',  path: '/permit/:id',            group: 'This project' },
+    { label: 'Threat simulator',     path: '/threat/:id',            group: 'Analyze' },
+    { label: 'Power & cable plan',   path: '/power/:id',             group: 'Analyze' },
+    { label: 'Pathway routing',      path: '/pathways/:id',          group: 'Analyze' },
+    { label: 'Flow view',            path: '/flow/:id',              group: 'Analyze' },
+    { label: 'AI assistant',         path: '/ai/:id',                group: 'Tools' },
+    { label: 'Commissioning',        path: '/commission/:id',        group: 'Deploy' },
+    { label: 'Work orders',          path: '/workorders/:id',        group: 'Deploy' },
+    { label: 'Change orders',        path: '/changeorders/:id',      group: 'Deploy' },
+    { label: 'Maintenance',          path: '/maintenance/:id',       group: 'Operate' },
   ];
+
+  // Global items always present.
+  const global: { label: string; path: string; group: string }[] = [
+    { label: 'Projects',        path: '/projects', group: 'Navigate' },
+    { label: 'Device library',  path: '/devices',  group: 'Navigate' },
+    { label: 'Knowledge base',  path: '/kb',       group: 'Reference' },
+    { label: 'Help center',     path: '/help',     group: 'Reference' },
+    { label: 'Settings',        path: '/settings', group: 'Account' },
+  ];
+
+  const items = contextProjectId
+    ? [
+        ...projectScoped.map((i) => ({ ...i, path: i.path.replaceAll(':id', contextProjectId) })),
+        ...global,
+      ]
+    : global;
+
   const filtered = q ? items.filter((i) => i.label.toLowerCase().includes(q.toLowerCase())) : items;
   const groups = Array.from(new Set(filtered.map((i) => i.group)));
 

@@ -2,20 +2,38 @@
 // Keep this file decoupled from React — pure types only.
 
 // ─────────────────────────── Lifecycle ────────────────────────────
+// Canonical phase enum. Snake_case matches the lifecycle config keys and
+// keeps URLs / activity messages readable. Every project carries exactly
+// one phase at a time; transitions are gated by the rules in
+// src/app/lifecycle/phases.ts.
 export type LifecyclePhase =
   | 'lead'
   | 'discovery'
-  | 'scheduled-walk'
+  | 'walk_scheduled'
   | 'survey'
   | 'engineering'
-  | 'bom-review'
+  | 'estimate'
   | 'proposal'
-  | 'customer-revision'
+  | 'customer_review'
   | 'approved'
   | 'deployment'
   | 'commissioning'
   | 'completed'
-  | 'managed-service';
+  | 'managed_service'
+  | 'support'
+  | 'archived';
+
+export type HealthStatus = 'on_track' | 'at_risk' | 'blocked' | 'complete';
+
+export type OwnerRole =
+  | 'sales'
+  | 'field'
+  | 'engineering'
+  | 'estimating'
+  | 'sales-or-estimating'
+  | 'customer'
+  | 'pm'
+  | 'service';
 
 // ─────────────────────────── CRM / Sales ──────────────────────────
 export interface Contact {
@@ -54,6 +72,62 @@ export interface Project {
   updated?: string;  // human label, e.g. "2h ago"
   createdAt: number; // ms epoch
   updatedAt: number;
+
+  // ── Lifecycle metadata ──
+  /** When the current phase began. */
+  phaseStartedAt?: number;
+  /** Last touch on phase data (item completion, role swap, next action edit). */
+  phaseUpdatedAt?: number;
+  /** Set when the phase officially completes (advance moves to next phase). */
+  phaseCompletedAt?: number;
+  /** Per-phase checklist completion state.
+   *  Shape: { [phaseId]: { [itemId]: true } } */
+  phaseItems?: Partial<Record<LifecyclePhase, Record<string, boolean>>>;
+
+  // ── Assignments ──
+  assignedSalesUserId?: string;
+  assignedEngineerUserId?: string;
+  assignedEstimatorUserId?: string;
+  assignedPMUserId?: string;
+
+  // ── Operational state ──
+  priority?: 'low' | 'normal' | 'high' | 'critical';
+  dueDate?: number;
+  /** Short imperative copy shown on the project card and command center
+   *  describing the next concrete step. Auto-filled when phase changes but
+   *  editable. */
+  nextAction?: string;
+  healthStatus?: HealthStatus;
+}
+
+// ─────────────────────────── Activity feed ────────────────────────
+// One log entry per meaningful change. Surfaced on the project command
+// center; later we may roll up across projects for a global feed.
+export type ActivityType =
+  | 'phase_changed'
+  | 'phase_item_completed'
+  | 'phase_item_uncompleted'
+  | 'device_added'
+  | 'device_moved'
+  | 'device_updated'
+  | 'device_duplicated'
+  | 'device_removed'
+  | 'estimate_viewed'
+  | 'proposal_generated'
+  | 'customer_review_opened'
+  | 'commission_test_pass'
+  | 'commission_test_fail'
+  | 'health_changed'
+  | 'note_added';
+
+export interface ActivityItem {
+  id: string;
+  projectId: string;
+  type: ActivityType;
+  message: string;
+  userName?: string;
+  createdAt: number;
+  relatedEntityId?: string;
 }
 
 export interface Site {

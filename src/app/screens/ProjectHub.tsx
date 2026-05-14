@@ -2,8 +2,10 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { Search, Plus, MapPin, Users, Calendar, ChevronRight, LayoutGrid, List as ListIcon, RotateCcw } from 'lucide-react';
+import { Search, Plus, MapPin, Users, Calendar, ChevronRight, LayoutGrid, List as ListIcon, RotateCcw, ArrowRight } from 'lucide-react';
 import { useProjectStore, selectors as sel } from '../store/projectStore';
+import { PHASES, quickActionFor, healthTone, progressPctFor } from '../lifecycle/phases';
+import type { LifecyclePhase } from '../store/types';
 
 interface Project {
   id: string;
@@ -15,6 +17,11 @@ interface Project {
   team: number;
   updated: string;
   progress: number;
+  /** New lifecycle fields surfaced on the card. */
+  phase: LifecyclePhase;
+  nextAction?: string;
+  health?: 'on_track' | 'at_risk' | 'blocked' | 'complete';
+  ownerName?: string;
 }
 
 const STATUS_META = {
@@ -27,7 +34,21 @@ const STATUS_META = {
 export function ProjectHub() {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
-  const [filter, setFilter] = useState<'all' | Project['status']>('all');
+  /** Filter by lifecycle bucket — coarse groupings that match the operating
+   *  team rather than 1-of-15 phase enums. 'blocked' filters by health. */
+  type Bucket = 'all' | 'sales' | 'survey' | 'engineering' | 'estimate' | 'proposal' | 'deployment' | 'service' | 'blocked';
+  const [filter, setFilter] = useState<Bucket>('all');
+  const BUCKET_PHASES: Record<Bucket, LifecyclePhase[]> = {
+    all: [],
+    sales:        ['lead', 'discovery', 'walk_scheduled'],
+    survey:       ['survey'],
+    engineering:  ['engineering'],
+    estimate:     ['estimate'],
+    proposal:     ['proposal', 'customer_review', 'approved'],
+    deployment:   ['deployment', 'commissioning'],
+    service:      ['completed', 'managed_service', 'support'],
+    blocked:      [],
+  };
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
   // Live project list from the store. Counts (devices/team/etc.) are derived
@@ -42,6 +63,13 @@ export function ProjectHub() {
     const customer = p.customerId ? storeCustomers[p.customerId] : undefined;
     const addr = customer?.addresses?.[0];
     const deviceCount = Object.values(storeDevices).filter((d) => d.projectId === p.id).length;
+    // Derive surface-level progress from the canonical phase ordering rather
+    // than the stored `progress` field — keeps the bar honest as users
+    // advance/revert phases without an explicit update.
+    const phaseProgress = progressPctFor(p.lifecyclePhase);
+    // Pick a single owner to display on the card. Priority: PM > Engineer >
+    // Sales > Estimator. The command center surfaces all four.
+    const owner = p.assignedPMUserId ?? p.assignedEngineerUserId ?? p.assignedSalesUserId ?? p.assignedEstimatorUserId;
     return {
       id: p.id,
       name: p.name,
@@ -51,14 +79,23 @@ export function ProjectHub() {
       devices: deviceCount,
       team: p.team ?? 0,
       updated: p.updated ?? '—',
-      progress: p.progress ?? 0,
+      progress: phaseProgress,
+      phase: p.lifecyclePhase,
+      nextAction: p.nextAction,
+      health: p.healthStatus,
+      ownerName: owner?.replace(/^u-/, ''),
     };
   }), [storeProjects, storeCustomers, storeDevices]);
 
-  const filtered = projects.filter((p) =>
-    (filter === 'all' || p.status === filter) &&
-    (!q || `${p.name} ${p.client} ${p.address}`.toLowerCase().includes(q.toLowerCase()))
-  );
+  const filtered = projects.filter((p) => {
+    if (filter === 'blocked') {
+      if (p.health !== 'blocked' && p.health !== 'at_risk') return false;
+    } else if (filter !== 'all') {
+      if (!BUCKET_PHASES[filter].includes(p.phase)) return false;
+    }
+    if (q && !`${p.name} ${p.client} ${p.address}`.toLowerCase().includes(q.toLowerCase())) return false;
+    return true;
+  });
 
   return (
     <AppShell
@@ -105,14 +142,14 @@ export function ProjectHub() {
             />
           </div>
 
-          <div className="flex items-center border border-border rounded-md p-0.5 bg-background">
-            {(['all', 'design', 'review', 'install', 'live'] as const).map((f) => (
+          <div className="flex items-center border border-border rounded-md p-0.5 bg-background overflow-x-auto">
+            {(['all', 'sales', 'survey', 'engineering', 'estimate', 'proposal', 'deployment', 'service', 'blocked'] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-2.5 py-1 rounded text-xs capitalize transition-colors ${filter === f ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`px-2.5 py-1 rounded text-xs capitalize transition-colors whitespace-nowrap ${filter === f ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'} ${f === 'blocked' && filter === f ? 'text-rose-400' : ''}`}
               >
-                {f === 'all' ? 'All' : STATUS_META[f].label}
+                {f}
               </button>
             ))}
           </div>
@@ -125,31 +162,60 @@ export function ProjectHub() {
 
         {view === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filtered.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => navigate(`/project/${p.id}/canvas`)}
-                className="text-left bg-card border border-border rounded-lg p-4 hover:border-border-strong transition-colors group"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${STATUS_META[p.status].tone}`}>{STATUS_META[p.status].label}</span>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+            {filtered.map((p) => {
+              const phaseCfg = PHASES[p.phase];
+              const qa = quickActionFor(p.phase, p.id);
+              const h = healthTone(p.health);
+              return (
+                <div key={p.id} className="bg-card border border-border rounded-lg p-4 hover:border-border-strong transition-colors group">
+                  {/* Card body — clicking anywhere except the action button
+                      opens the project command center. The action button
+                      jumps straight to the relevant phase tool. */}
+                  <div className="cursor-pointer" onClick={() => navigate(`/project/${p.id}`)}>
+                    <div className="flex items-start justify-between mb-3">
+                      <span className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${phaseCfg.tone.outline}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${phaseCfg.tone.dot}`} />
+                        {phaseCfg.label}
+                      </span>
+                      <span className={`text-[10px] uppercase tracking-wider ${h.cls}`}>{h.label}</span>
+                    </div>
+                    <h3 className="text-base font-medium leading-tight">{p.name}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">{p.client}</p>
+                    <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{p.address}</span>
+                    </p>
+
+                    {p.nextAction && (
+                      <div className="mt-3 px-2.5 py-2 rounded bg-secondary/30 border border-border/50">
+                        <div className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Next action</div>
+                        <div className="text-xs text-foreground leading-snug">{p.nextAction}</div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>{p.devices} devices</span>
+                      {p.ownerName && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{p.ownerName}</span>}
+                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{p.updated}</span>
+                    </div>
+                    <div className="mt-2.5 h-1 bg-secondary/60 rounded-full overflow-hidden">
+                      <div className="h-full bg-primary transition-all" style={{ width: `${p.progress}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Phase-aware primary action — opens the page that matches
+                      the current lifecycle step (canvas for engineering,
+                      estimate for estimate phase, portal for review, etc.) */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigate(qa.href); }}
+                    className="mt-3 w-full inline-flex items-center justify-center gap-1.5 text-xs px-3 py-2 rounded border border-primary/40 text-primary hover:bg-primary/10 transition-colors"
+                  >
+                    {qa.label}
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
                 </div>
-                <h3 className="text-base font-medium leading-tight">{p.name}</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">{p.client}</p>
-                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />{p.address}
-                </p>
-                <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>{p.devices} devices</span>
-                  <span className="flex items-center gap-1"><Users className="w-3 h-3" />{p.team}</span>
-                  <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{p.updated}</span>
-                </div>
-                <div className="mt-3 h-1 bg-secondary/60 rounded-full overflow-hidden">
-                  <div className="h-full bg-primary transition-all" style={{ width: `${p.progress}%` }} />
-                </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -167,12 +233,17 @@ export function ProjectHub() {
               </thead>
               <tbody>
                 {filtered.map((p) => (
-                  <tr key={p.id} onClick={() => navigate(`/project/${p.id}/canvas`)} className="border-t border-border cursor-pointer hover:bg-secondary/30">
+                  <tr key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="border-t border-border cursor-pointer hover:bg-secondary/30">
                     <td className="px-4 py-3">
                       <div className="font-medium">{p.name}</div>
                       <div className="text-xs text-muted-foreground">{p.client}</div>
                     </td>
-                    <td className="px-4 py-3"><span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${STATUS_META[p.status].tone}`}>{STATUS_META[p.status].label}</span></td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${PHASES[p.phase].tone.outline}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${PHASES[p.phase].tone.dot}`} />
+                        {PHASES[p.phase].label}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground">{p.devices}</td>
                     <td className="px-4 py-3 text-muted-foreground">{p.team}</td>
                     <td className="px-4 py-3 w-40">

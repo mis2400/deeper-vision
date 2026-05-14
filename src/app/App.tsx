@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
 import { LoginScreen } from './screens/LoginScreen';
 import { ProjectHub } from './screens/ProjectHub';
+import { ProjectCenter } from './screens/ProjectCenter';
 import { EngineeringCanvas } from './screens/EngineeringCanvas';
 import { VisionScan } from './screens/VisionScan';
 import { DeviceLibrary } from './screens/DeviceLibrary';
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginScreen />} />
           <Route path="/projects" element={<ProjectHub />} />
+          <Route path="/project/:projectId" element={<ProjectCenter />} />
           <Route path="/project/:projectId/canvas" element={<EngineeringCanvas />} />
           <Route path="/visionscan" element={<VisionScan />} />
           <Route path="/devices" element={<DeviceLibrary />} />
