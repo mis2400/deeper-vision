@@ -10,11 +10,22 @@ import { readFileSync } from 'node:fs'
 // stale Vercel cache. These tokens are baked into the bundle as JSON
 // string literals via `define` below.
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'))
+// Commit hash resolution: prefer Vercel's injected commit-SHA env var (set
+// during their build runner — git isn't available inside the container), then
+// fall back to a local `git rev-parse` for `npm run dev` / local builds.
+// 'unknown' is the last resort so the BuildStamp footer is honest about it.
 let commitHash = 'unknown'
-try {
-  commitHash = execSync('git rev-parse --short HEAD').toString().trim()
-} catch {
-  // Fall back silently if git isn't available (CI without checkout, etc.)
+const vercelSha = process.env.VERCEL_GIT_COMMIT_SHA
+  || process.env.COMMIT_REF
+  || process.env.GITHUB_SHA
+if (vercelSha && vercelSha.length >= 7) {
+  commitHash = vercelSha.slice(0, 8)
+} else {
+  try {
+    commitHash = execSync('git rev-parse --short=8 HEAD').toString().trim()
+  } catch {
+    // Fall back silently if git isn't available (CI without checkout, etc.)
+  }
 }
 const buildTime = new Date().toISOString()
 
