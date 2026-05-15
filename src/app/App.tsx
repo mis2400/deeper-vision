@@ -36,10 +36,24 @@ import { ProductCatalog } from './screens/ProductCatalog';
 import { PdfExporter } from './components/PdfExporter';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { Toaster } from './components/ui/sonner';
+import { useEffect } from 'react';
+import { useProjectStore } from './store/projectStore';
+
+function ThemeProvider() {
+  // Reads the persisted canvasTheme and mirrors it onto the <html>
+  // data-theme attribute so CSS variables resolve correctly. Runs once
+  // per change; never owns its own state.
+  const theme = useProjectStore((s) => s.canvasTheme);
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+  return null;
+}
 
 export default function App() {
   return (
     <BrowserRouter>
+      <ThemeProvider />
       <div id="app-root">
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />

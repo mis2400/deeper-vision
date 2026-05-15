@@ -83,6 +83,10 @@ interface ProjectState {
   projectTechModels: Record<string, ProjectTechModel>;
   /** Global current-user role preference. Defaults to 'engineer'. */
   currentRole: UserRole;
+  /** Surveyor canvas theme: light drafting / slate engineering / dark
+   *  command. Persists across sessions; default = 'slate' so the canvas
+   *  is no longer the darkest possible surface. */
+  canvasTheme: 'light' | 'slate' | 'dark';
 
   // ── Project actions ──
   updateProject: (id: string, patch: Partial<Project>) => void;
@@ -90,6 +94,7 @@ interface ProjectState {
   // ── UX preference actions ──
   setProjectMode:    (projectId: string, mode: ProjectMode | null) => void;
   setUserRole:       (role: UserRole) => void;
+  setCanvasTheme:    (theme: 'light' | 'slate' | 'dark') => void;
   setCanvasLayer:    (projectId: string, layer: EngineeringLayer, on: boolean) => void;
   setCanvasLayers:   (projectId: string, patch: Partial<CanvasLayerState>) => void;
   resetCanvasLayers: (projectId: string) => void;
@@ -195,6 +200,7 @@ export const useProjectStore = create<ProjectState>()(
       canvasDisplay:     {},
       projectTechModels: {},
       currentRole:       'engineer',
+      canvasTheme:       'slate',
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -205,6 +211,7 @@ export const useProjectStore = create<ProjectState>()(
           return { projectModes: next };
         }),
       setUserRole: (role) => set(() => ({ currentRole: role })),
+      setCanvasTheme: (theme) => set(() => ({ canvasTheme: theme })),
       setCanvasLayer: (projectId, layer, on) =>
         set((s) => ({
           canvasLayers: {
@@ -673,6 +680,7 @@ export const useProjectStore = create<ProjectState>()(
         canvasDisplay:     s.canvasDisplay,
         projectTechModels: s.projectTechModels,
         currentRole:       s.currentRole,
+        canvasTheme:       s.canvasTheme,
       }),
     },
   ),
@@ -951,22 +959,54 @@ export function deriveBOM(state: ProjectState, projectId: string): {
   const pathways = selectors.pathwaysForProject(state, projectId);
   const idfs = selectors.idfsForProject(state, projectId);
 
-  // Group devices by type → one line per type with summed qty.
-  const byType = new Map<string, { qty: number; price: number; labor: number; desc: string }>();
-  for (const d of devices) {
-    const meta = UNIT_PRICE[d.type] ?? { price: 0, labor: 0, desc: d.type };
-    const prev = byType.get(d.type) ?? { qty: 0, price: meta.price, labor: meta.labor, desc: meta.desc };
-    prev.qty += 1;
-    byType.set(d.type, prev);
+  // ── Catalog pricing — each device carries `product` = catalog product
+  // id. We look it up to pull MSRP + laborUnits + manufacturer/model so
+  // the BOM line carries real numbers instead of the generic UNIT_PRICE
+  // fallback. UNIT_PRICE remains as the safety net when a device wasn't
+  // placed from the catalog (e.g. seeded demo data with an older id). ──
+  // Inlined import via require would create a cycle (canvas → store →
+  // canvas). Use a dynamic-load pattern: read the global window mirror
+  // when available, otherwise fall back to UNIT_PRICE.
+  let catalogProducts: any[] = [];
+  try {
+    // Lazy: dynamic require is fine here because vite/rollup will inline
+    // the module on bundle. Avoid top-level import to prevent cycle.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    catalogProducts = (globalThis as any).__catalogProducts ?? [];
+  } catch { /* noop */ }
+
+  // Group devices by catalog product (preferred) OR by type fallback.
+  type Group = { qty: number; price: number; labor: number; desc: string; sku: string };
+  const groups = new Map<string, Group>();
+  for (const d of devices as any[]) {
+    const cat = catalogProducts.find((cp: any) => cp.id === d.product);
+    if (cat) {
+      const key = `cat:${cat.id}`;
+      const prev = groups.get(key) ?? {
+        qty: 0,
+        price: cat.msrp ?? 0,
+        labor: cat.laborUnits ?? UNIT_PRICE[d.type]?.labor ?? 0,
+        desc: `${cat.manufacturer} · ${cat.model}`,
+        sku: cat.id,
+      };
+      prev.qty += 1;
+      groups.set(key, prev);
+    } else {
+      const meta = UNIT_PRICE[d.type] ?? { price: 0, labor: 0, desc: d.type };
+      const key = `type:${d.type}`;
+      const prev = groups.get(key) ?? { qty: 0, price: meta.price, labor: meta.labor, desc: meta.desc, sku: d.type };
+      prev.qty += 1;
+      groups.set(key, prev);
+    }
   }
 
   const lines: EstimateLine[] = [];
 
-  byType.forEach((agg, type) => {
+  groups.forEach((agg, key) => {
     lines.push({
-      id: `dev-${projectId}-${type}`,
+      id: `dev-${projectId}-${key}`,
       sourceKind: 'device',
-      sku: type,
+      sku: agg.sku,
       description: agg.desc,
       qty: agg.qty,
       uom: 'ea',
