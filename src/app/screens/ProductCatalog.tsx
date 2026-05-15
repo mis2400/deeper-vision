@@ -9,6 +9,8 @@ import { AppShell } from '../components/AppShell';
 import { Search, X, Filter } from 'lucide-react';
 import { SAMPLE_PRODUCTS, type Product, type ProductCategory } from '../lib/productCatalog';
 import type { ProjectTechModel } from '../store/types';
+import { useProjectStore } from '../store/projectStore';
+import { useParams } from 'react-router';
 
 const CATEGORY_LABEL: Record<ProductCategory, string> = {
   camera: 'Cameras', reader: 'Readers', lock: 'Locks',
@@ -20,10 +22,16 @@ const CATEGORY_LABEL: Record<ProductCategory, string> = {
 };
 
 export function ProductCatalog() {
+  const { projectId } = useParams();
+  // Default the tech-model filter to the active project's tech model if
+  // available — opening the catalog in the context of a project should
+  // immediately mirror what the canvas's InsertDock is showing.
+  const projectTechModelsMap = useProjectStore((s) => s.projectTechModels);
+  const projectTechModel = projectId ? projectTechModelsMap[projectId] : undefined;
   const [q, setQ] = useState('');
   const [mfrFilter, setMfrFilter] = useState<string | 'all'>('all');
   const [catFilter, setCatFilter] = useState<ProductCategory | 'all'>('all');
-  const [techFilter, setTechFilter] = useState<ProjectTechModel | 'all'>('all');
+  const [techFilter, setTechFilter] = useState<ProjectTechModel | 'all'>(projectTechModel ?? 'all');
   const [ndaaOnly, setNdaaOnly] = useState(false);
 
   const manufacturers = useMemo(() => {
@@ -57,6 +65,17 @@ export function ProductCatalog() {
       subtitle={`${SAMPLE_PRODUCTS.length} products · ${manufacturers.length} manufacturers · sample data`}
     >
       <div className="max-w-[1400px] mx-auto px-6 py-6 space-y-4">
+
+        {/* ── Project context (when opened from a project URL) ── */}
+        {projectTechModel && (
+          <div className="bg-primary/8 border border-primary/30 rounded-lg px-4 py-2.5 text-[11.5px] text-primary/90 flex items-center gap-2">
+            <Filter className="w-3.5 h-3.5" />
+            Showing products for the active project's <strong className="mx-1">{projectTechModel === 'on_prem' ? 'on-prem' : projectTechModel}</strong> stack.
+            <button onClick={() => setTechFilter('all')} className="ml-auto text-[11px] underline opacity-80 hover:opacity-100">
+              Show all stacks
+            </button>
+          </div>
+        )}
 
         {/* ── Sample notice ───────────────────────────────────── */}
         <div className="bg-amber-500/8 border border-amber-500/30 rounded-lg px-4 py-2.5 text-[11.5px] text-amber-200/90 flex items-center gap-2">

@@ -961,6 +961,30 @@ export function deriveBOM(state: ProjectState, projectId: string): {
     });
   });
 
+  // Camera accessories — each device can carry an `accessories[]` array of
+  // accessory product-ids. We sum the count and a flat price for each
+  // (MSRPs live in the canvas-side ACCESSORIES catalog; here we use a
+  // simple flat 65 USD default so the BOM at least surfaces the line).
+  // When the accessory catalog migrates to the store, this can be tightened.
+  const accCounts = new Map<string, number>();
+  for (const dev of devices as any[]) {
+    for (const aid of (dev.accessories ?? []) as string[]) {
+      accCounts.set(aid, (accCounts.get(aid) ?? 0) + 1);
+    }
+  }
+  accCounts.forEach((qty, aid) => {
+    lines.push({
+      id: `acc-${projectId}-${aid}`,
+      sourceKind: 'manual',
+      sku: aid,
+      description: `Accessory · ${aid.replace(/^acc-/, '').replace(/-/g, ' ')}`,
+      qty,
+      uom: 'ea',
+      unitPrice: 65,
+      laborHours: 0.25 * qty,
+    });
+  });
+
   // Doors → one line each (so hardware can vary). Sum hardware unit prices.
   for (const door of doors) {
     const hwSum = door.hardware.reduce((acc, h) => {

@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
-import { useProjectStore, selectors as storeSelectors } from '../store/projectStore';
+import { useProjectStore, selectors as storeSelectors, deriveBOM } from '../store/projectStore';
 import type {
   EngineeringLayer, CanvasLayerState, CanvasDisplayPrefs, IconSize,
   LabelDensity, BaseMapMode,
@@ -19,7 +19,7 @@ import {
   ShieldCheck, Antenna, Volume2, Megaphone, Mic, Speaker, HardDrive, Database, Cloud, Monitor,
   Tv2, AppWindow, MonitorSmartphone, BatteryCharging, Zap, ShieldAlert, Sun, Thermometer, CloudFog,
   Droplets, Users2, Wind, Crosshair as CrosshairIcon, Calendar, ListChecks, Wrench, FileBarChart,
-  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy,
+  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink,
 } from 'lucide-react';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { canHost } from '../lib/compatibility';
@@ -57,23 +57,175 @@ import { toast } from 'sonner';
                               snap indicator appears at the snap target
 */
 
-type Tool = 'select' | 'pan' | 'measure' | 'text' | 'comment' | 'wall' | 'cable';
+// Text + comment tools were never wired to real handlers; removed from the
+// Tool union in the surveyor gap-closure pass per the rule "no dead controls."
+// If we add inline annotation later, re-introduce them with real handlers.
+type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable';
 
 interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
 
-type DeviceKind = 'camera' | 'access' | 'network' | 'intrusion' | 'audio' | 'storage' | 'display' | 'power' | 'sensor';
+type DeviceKind =
+  | 'camera' | 'access' | 'network' | 'intrusion' | 'audio' | 'storage' | 'display' | 'power' | 'sensor'
+  | 'infrastructure' | 'cyber' | 'fire' | 'building';
 type DeviceType =
   | 'cam.bullet' | 'cam.dome' | 'cam.ptz' | 'cam.multisensor' | 'cam.fisheye' | 'cam.thermal' | 'cam.lpr' | 'cam.body'
-  | 'acc.reader' | 'acc.strike' | 'acc.maglock' | 'acc.exit' | 'acc.turnstile' | 'acc.intercom' | 'acc.biometric'
+  | 'acc.reader' | 'acc.strike' | 'acc.maglock' | 'acc.exit' | 'acc.turnstile' | 'acc.intercom' | 'acc.biometric' | 'acc.panic-bar' | 'acc.dps'
   | 'net.switch'  | 'net.idf'    | 'net.ap' | 'net.firewall' | 'net.bridge'
   | 'int.motion' | 'int.glassbreak' | 'int.contact' | 'int.panic' | 'int.vibration' | 'int.keypad'
   | 'aud.speaker' | 'aud.mic' | 'aud.horn' | 'aud.amp' | 'aud.intercom'
   | 'sto.nvr' | 'sto.server' | 'sto.archive' | 'sto.cloud'
   | 'dis.monitor' | 'dis.wall' | 'dis.kiosk' | 'dis.signage'
   | 'pwr.ups' | 'pwr.poe' | 'pwr.surge' | 'pwr.solar'
-  | 'sen.temp' | 'sen.smoke' | 'sen.water' | 'sen.occupancy' | 'sen.gas' | 'sen.gunshot';
+  | 'sen.temp' | 'sen.smoke' | 'sen.water' | 'sen.occupancy' | 'sen.gas' | 'sen.gunshot'
+  // ── Infrastructure host objects ─────────────────────────────────────
+  // Doors are the canonical stacking target: a single door can host a
+  // reader, strike, panic bar, REX, DPS, intercom. The stack chip on the
+  // glyph reveals which accessories live on the door.
+  | 'inf.door-single' | 'inf.door-double' | 'inf.door-storefront' | 'inf.door-sliding'
+  | 'inf.window' | 'inf.wall-brick' | 'inf.wall-fire' | 'inf.wall-concrete'
+  | 'inf.gate-swing' | 'inf.gate-slide' | 'inf.elevator' | 'inf.mdf' | 'inf.rack'
+  // ── Cyber security ──────────────────────────────────────────────────
+  | 'cyb.endpoint' | 'cyb.siem' | 'cyb.firewall-ng' | 'cyb.vpn'
+  // ── Fire / life safety ──────────────────────────────────────────────
+  | 'fls.pull-station' | 'fls.fire-panel' | 'fls.strobe' | 'fls.sprinkler'
+  // ── Building systems ────────────────────────────────────────────────
+  | 'bld.hvac-controller' | 'bld.lighting-panel' | 'bld.bms-gateway';
 
-interface Product { id: string; type: DeviceType; mfr: string; model: string; sub: string; }
+/** Tech-model tag for a product. A product can fit multiple ecosystems; in
+ *  that case all matching tags are present. `'all'` is shorthand for a product
+ *  that is ecosystem-agnostic infrastructure (locks, cables, racks) and is
+ *  ALWAYS shown regardless of the active project tech model. */
+type TechModelTag = 'cloud' | 'on_prem' | 'hybrid' | 'all';
+
+interface Product {
+  id: string;
+  type: DeviceType;
+  mfr: string;
+  model: string;
+  sub: string;
+  /** Which tech-model ecosystems this SKU belongs to. Drives the
+   *  Cloud / On-prem / Hybrid filter pill at the top of the canvas. If
+   *  omitted, defaults are inferred from the manufacturer in productTechModels()
+   *  below; declare here when the manufacturer alone isn't sufficient (e.g.
+   *  a single mfr sells both cloud-native and on-prem lines). */
+  techModels?: TechModelTag[];
+  /** True if this product is a top-pick / preferred SKU within its tech
+   *  model. Drives the "Recommended" badge in the InsertDock. */
+  recommended?: boolean;
+  /** Manufacturer suggested retail price (USD). Used by the BOM rollup as
+   *  the unit-price default when no project-specific override exists. */
+  msrp?: number;
+  /** NDAA Section 889 compliance. */
+  ndaa?: boolean;
+  /** ONVIF profile (S, T, etc.). Used for cross-vendor VMS compatibility. */
+  onvif?: string;
+  /** Native resolution / megapixel summary for cameras. */
+  resolution?: string;
+  /** Compatible mount accessory product ids — referenced into ACCESSORIES.
+   *  When this product is selected, the inspector lists these as the
+   *  recommended pairings (wall mount, pole mount, corner adapter, etc.). */
+  mounts?: string[];
+  /** PoE class (e.g. "Class 3", "PoE++"). Drives PoE budget calculations
+   *  on switches and IDFs. */
+  poe?: string;
+  /** Power consumption in watts under normal load. Used by the PoE budget
+   *  and UPS sizing flags. */
+  powerW?: number;
+  /** Estimated bitrate per stream in Mbps at H.265 / 1080p / 15fps. Used
+   *  by the bandwidth/storage planner. */
+  bitrateMbps?: number;
+}
+
+/** Mount / accessory catalog — populated for the camera SKUs that have a
+ *  defined accessory family. Drives the "Recommended accessories" section
+ *  in the inspector. Keep this list small; expand as we sell more lines. */
+interface Accessory {
+  id: string;
+  mfr: string;
+  model: string;
+  kind: 'wall-mount' | 'pole-mount' | 'pendant-mount' | 'corner-mount' | 'parapet-mount' | 'junction-box' | 'mounting-plate' | 'sun-shield';
+  notes?: string;
+  msrp?: number;
+}
+const ACCESSORIES: Accessory[] = [
+  { id: 'acc-axis-t91',  mfr: 'Axis',   model: 'T91 wall arm',       kind: 'wall-mount',  msrp: 65 },
+  { id: 'acc-axis-t94',  mfr: 'Axis',   model: 'T94 pole adapter',   kind: 'pole-mount',  msrp: 95 },
+  { id: 'acc-axis-tg6',  mfr: 'Axis',   model: 'TG6 corner adapter', kind: 'corner-mount', msrp: 85 },
+  { id: 'acc-axis-tp01', mfr: 'Axis',   model: 'TP01 parapet mount', kind: 'parapet-mount', msrp: 110 },
+  { id: 'acc-han-mwd',   mfr: 'Hanwha', model: 'MWD wall mount',     kind: 'wall-mount',  msrp: 55 },
+  { id: 'acc-han-mpl',   mfr: 'Hanwha', model: 'MPL pole adapter',   kind: 'pole-mount',  msrp: 90 },
+  { id: 'acc-avi-pwa',   mfr: 'Avigilon', model: 'PWA wall mount',   kind: 'wall-mount',  msrp: 70 },
+  { id: 'acc-verkada-cb-wall', mfr: 'Verkada', model: 'CB wall mount', kind: 'wall-mount', msrp: 75 },
+  { id: 'acc-verkada-cb-pole', mfr: 'Verkada', model: 'CB pole mount', kind: 'pole-mount', msrp: 120 },
+  { id: 'acc-jb-4x4',    mfr: 'Universal', model: '4×4 weatherproof J-box', kind: 'junction-box', msrp: 25 },
+  { id: 'acc-pendant',   mfr: 'Universal', model: 'Pendant drop ceiling', kind: 'pendant-mount', msrp: 45 },
+];
+
+/** Accessory IDs that pair with the camera product types. The pairing is
+ *  by camera type so we don't have to enumerate every SKU; engineers see the
+ *  same accessory family for bullets across all bullet products. */
+function accessoriesForCameraType(t: DeviceType): Accessory[] {
+  if (!t.startsWith('cam.')) return [];
+  if (t === 'cam.fisheye') {
+    return ACCESSORIES.filter((a) => a.kind === 'pendant-mount' || a.kind === 'mounting-plate');
+  }
+  if (t === 'cam.ptz') {
+    return ACCESSORIES.filter((a) => a.kind === 'wall-mount' || a.kind === 'pole-mount' || a.kind === 'parapet-mount');
+  }
+  return ACCESSORIES.filter((a) => a.kind === 'wall-mount' || a.kind === 'corner-mount' || a.kind === 'junction-box');
+}
+
+/** Manufacturer → tech-model ecosystem map. Used to auto-tag every PRODUCTS
+ *  entry without writing techModels on each one. Manufacturers we sell only
+ *  in cloud or only on-prem are tagged accordingly; infrastructure (locks,
+ *  cables, racks) is 'all'. */
+const MANUFACTURER_TECH_MODEL: Record<string, TechModelTag[]> = {
+  // Cloud-native ecosystems
+  Verkada: ['cloud'], Rhombus: ['cloud'], Meraki: ['cloud'], 'Cisco Meraki': ['cloud'],
+  Brivo: ['cloud'], Openpath: ['cloud'], Alta: ['cloud'], 'Eagle Eye': ['cloud'],
+  Arcules: ['cloud'], Spot: ['cloud'], Ambient: ['cloud'],
+  // On-prem ecosystems
+  Axis: ['on_prem', 'hybrid'], Hanwha: ['on_prem', 'hybrid'], Avigilon: ['on_prem', 'hybrid'],
+  Bosch: ['on_prem', 'hybrid'], Genetec: ['on_prem', 'hybrid'], Milestone: ['on_prem', 'hybrid'],
+  FLIR: ['on_prem', 'hybrid'], Pelco: ['on_prem'], Honeywell: ['on_prem', 'hybrid'],
+  Vivotek: ['on_prem'], Dahua: ['on_prem'], Hikvision: ['on_prem'],
+  Lenel: ['on_prem'], 'S2 Security': ['on_prem'], AMAG: ['on_prem'], Software_House: ['on_prem'],
+  // Hybrid / dual ecosystems
+  Cisco: ['cloud', 'on_prem', 'hybrid'], HID: ['all'], 'Mercury Security': ['on_prem', 'hybrid'],
+  // Infrastructure — show regardless of stack
+  'Von Duprin': ['all'], Securitron: ['all'], Suprema: ['on_prem', 'hybrid'],
+  'Boon Edam': ['all'], '2N': ['all'], APC: ['all'], Fortinet: ['all'],
+  Ubiquiti: ['hybrid', 'on_prem'], Shure: ['all'], Dell: ['all'], LG: ['all'],
+  Elo: ['all'], BrightSign: ['all'], Ditek: ['all'], 'Goal Zero': ['all'],
+  Monnit: ['all'], 'System Sensor': ['all'], Aercus: ['all'], Density: ['all'],
+  MSA: ['all'], ShotSpotter: ['all'], STI: ['all'], DMP: ['all'], Optex: ['on_prem', 'hybrid'],
+  // Added in the surveyor gap-closure pass
+  'i-Pro': ['on_prem', 'hybrid'], Uniview: ['on_prem'], Avycon: ['on_prem'],
+  Vicon: ['on_prem'], 'Mobotix': ['on_prem'], 'Speco': ['on_prem'],
+  'Belden': ['all'], 'CommScope': ['all'], 'Middle Atlantic': ['all'],
+  'HPE Aruba': ['hybrid', 'on_prem'], 'Palo Alto': ['hybrid', 'on_prem'],
+  CrowdStrike: ['cloud'], Splunk: ['cloud', 'on_prem'], Cloudflare: ['cloud'],
+  Honeywell_Fire: ['all'], Simplex: ['all'], 'Notifier': ['all'],
+  Tridium: ['all'], Niagara: ['all'], Lutron: ['all'],
+  Aiphone: ['all'], HES: ['all'], 'Iris ID': ['all'],
+};
+
+/** Returns the effective tech-model tags for a product. Falls back to the
+ *  manufacturer map, and finally to ['all'] if neither is set. */
+function productTechModels(p: Product): TechModelTag[] {
+  if (p.techModels && p.techModels.length) return p.techModels;
+  return MANUFACTURER_TECH_MODEL[p.mfr] ?? ['all'];
+}
+
+/** Does this product belong to the active project tech model? */
+function productMatchesTechModel(p: Product, model: 'cloud' | 'on_prem' | 'hybrid'): boolean {
+  const tags = productTechModels(p);
+  if (tags.includes('all')) return true;
+  if (tags.includes(model)) return true;
+  // Hybrid sees both cloud and on-prem catalogs.
+  if (model === 'hybrid' && (tags.includes('cloud') || tags.includes('on_prem') || tags.includes('hybrid'))) return true;
+  return false;
+}
 /** Per-lens config for multisensor cameras. Stored as four named slots
  *  (a/b/c/d) so each can be selected, manipulated, and persisted independently
  *  on both the canvas and the inspector drawer. */
@@ -106,6 +258,16 @@ interface Device {
   notes?: string;
   /** Other device ids this one is linked to (pathway / failover / linked door). */
   linkedIds?: string[];
+  /** Per-object color override (hex). When set, replaces the category tone
+   *  for this device's glyph, cone, label, and badges. Selected from
+   *  DEVICE_COLOR_PALETTE so the canvas can't drift into visual chaos. */
+  color?: string;
+  /** Hardware stack — ordered list of child device ids physically mounted on
+   *  this host (door, gate, etc.). The host glyph shows a tiny stack-count
+   *  chip; clicking it opens a stack menu. */
+  stack?: string[];
+  /** Accessory product-ids attached to this device. */
+  accessories?: string[];
   /** Multisensor only — four independent lens configs. Present iff
    *  type === 'cam.multisensor'. Without this, the device falls back to the
    *  shared fov/range fields above. */
@@ -113,6 +275,28 @@ interface Device {
   /** Multisensor lens-mode persisted on the device so each multisensor can
    *  have its own linked/independent setting. */
   lensMode?: LensMode;
+}
+
+/** Constrained per-object color palette. Eight options — enough for
+ *  meaningful grouping, few enough that the canvas stays coherent. Reset
+ *  removes the override and the device returns to its category tone. */
+export const DEVICE_COLOR_PALETTE: { id: string; name: string; hex: string }[] = [
+  { id: 'reset',   name: 'Default',   hex: '' },
+  { id: 'blue',    name: 'Blueprint', hex: '#5292DC' },
+  { id: 'orange',  name: 'Loading',   hex: '#F08F3C' },
+  { id: 'amber',   name: 'Warning',   hex: '#E5A23A' },
+  { id: 'green',   name: 'Access',    hex: '#3FB950' },
+  { id: 'red',     name: 'Critical',  hex: '#E5484D' },
+  { id: 'violet',  name: 'Site A',    hex: '#A371F7' },
+  { id: 'cyan',    name: 'Pathway',   hex: '#22D3EE' },
+  { id: 'magenta', name: 'Custom',    hex: '#D946EF' },
+];
+
+/** Returns the effective tone for a device: per-object color override if
+ *  set, otherwise the category default. Used everywhere the canvas needs
+ *  a single color for a single device (glyph, cone, label, badge). */
+function deviceTone(d: Device): string {
+  return d.color || KIND_TONE[TYPE_KIND[d.type]];
 }
 
 /** Cardinal default lens layout — A=E, B=S, C=W, D=N (clockwise). 90° FOV per
@@ -161,6 +345,8 @@ const CATEGORIES: Array<{
     { id: 'acc.strike',     label: 'Electric strike' },
     { id: 'acc.maglock',    label: 'Maglock' },
     { id: 'acc.exit',       label: 'Request-to-exit' },
+    { id: 'acc.panic-bar',  label: 'Panic bar / exit device' },
+    { id: 'acc.dps',        label: 'Door position sensor (DPS)' },
     { id: 'acc.turnstile',  label: 'Turnstile / gate' },
     { id: 'acc.intercom',   label: 'Door intercom' },
   ]},
@@ -212,67 +398,323 @@ const CATEGORIES: Array<{
     { id: 'sen.gas',       label: 'Gas / CO' },
     { id: 'sen.gunshot',   label: 'Gunshot detection' },
   ]},
+  { id: 'infrastructure', label: 'Infrastructure', tone: '#9CA3AF', types: [
+    { id: 'inf.door-single',     label: 'Single door' },
+    { id: 'inf.door-double',     label: 'Double door' },
+    { id: 'inf.door-storefront', label: 'Storefront / glass' },
+    { id: 'inf.door-sliding',    label: 'Sliding door' },
+    { id: 'inf.gate-swing',      label: 'Swing gate' },
+    { id: 'inf.gate-slide',      label: 'Slide gate' },
+    { id: 'inf.elevator',        label: 'Elevator' },
+    { id: 'inf.window',          label: 'Window' },
+    { id: 'inf.wall-brick',      label: 'Brick wall' },
+    { id: 'inf.wall-fire',       label: 'Fire-rated wall' },
+    { id: 'inf.wall-concrete',   label: 'Concrete wall' },
+    { id: 'inf.rack',            label: 'Rack' },
+    { id: 'inf.mdf',             label: 'MDF / main closet' },
+  ]},
+  { id: 'cyber', label: 'Cyber security', tone: '#22D3EE', types: [
+    { id: 'cyb.endpoint',     label: 'Endpoint protection' },
+    { id: 'cyb.siem',         label: 'SIEM / log aggregation' },
+    { id: 'cyb.firewall-ng',  label: 'Next-gen firewall' },
+    { id: 'cyb.vpn',          label: 'Remote access / VPN' },
+  ]},
+  { id: 'fire', label: 'Fire / life safety', tone: '#F87171', types: [
+    { id: 'fls.pull-station', label: 'Manual pull station' },
+    { id: 'fls.fire-panel',   label: 'Fire alarm panel' },
+    { id: 'fls.strobe',       label: 'Notification strobe' },
+    { id: 'fls.sprinkler',    label: 'Sprinkler head' },
+  ]},
+  { id: 'building', label: 'Building systems', tone: '#94A3B8', types: [
+    { id: 'bld.hvac-controller',  label: 'HVAC controller' },
+    { id: 'bld.lighting-panel',   label: 'Lighting control panel' },
+    { id: 'bld.bms-gateway',      label: 'BMS gateway' },
+  ]},
 ];
 
+/** Top-level domain groups. The InsertDock first shows these groups; clicking
+ *  one drills into the categories within. Lets us match real-world engineering
+ *  language: Physical Security / Infrastructure / IT / AV / etc. */
+const TOP_LEVEL_GROUPS: Array<{
+  id: string;
+  label: string;
+  tone: string;
+  categories: DeviceKind[];
+  hint: string;
+}> = [
+  { id: 'physical', label: 'Physical security', tone: '#5292DC', hint: 'Cameras, access, intrusion',
+    categories: ['camera', 'access', 'intrusion'] },
+  { id: 'cyber', label: 'Cyber security', tone: '#22D3EE', hint: 'Endpoint, SIEM, NGFW, VPN',
+    categories: ['cyber'] },
+  { id: 'infrastructure', label: 'Infrastructure', tone: '#9CA3AF', hint: 'Doors, walls, gates, elevators, racks, MDF',
+    categories: ['infrastructure'] },
+  { id: 'it', label: 'IT / Network', tone: '#E5B23A', hint: 'Switches, IDFs, APs, firewalls',
+    categories: ['network', 'storage'] },
+  { id: 'av', label: 'Audio visual', tone: '#A371F7', hint: 'Speakers, mics, displays, signage',
+    categories: ['audio', 'display'] },
+  { id: 'fire', label: 'Fire / life safety', tone: '#F87171', hint: 'Pull stations, fire panels, strobes',
+    categories: ['fire'] },
+  { id: 'building', label: 'Building systems', tone: '#94A3B8', hint: 'HVAC, lighting, BMS',
+    categories: ['building'] },
+  { id: 'env', label: 'Environmental', tone: '#14B8A6', hint: 'Smoke, leak, gas, occupancy',
+    categories: ['sensor'] },
+  { id: 'power', label: 'Power', tone: '#8B5CF6', hint: 'UPS, PoE injectors, surge, solar',
+    categories: ['power'] },
+];
+
+function groupForKind(k: DeviceKind): string {
+  return TOP_LEVEL_GROUPS.find((g) => g.categories.includes(k))?.id ?? 'physical';
+}
+
+/** Cable / wire types supported by the cable tool. Each carries a per-foot
+ *  unit price so the BOM can roll up cable cost automatically. Drawn onto
+ *  the canvas in the cable tool. */
+export type CableTypeId =
+  | 'cat6' | 'cat6a' | 'fiber-mm' | 'fiber-sm' | 'fiber-osp' | 'composite'
+  | '18-2' | '18-4' | '22-6' | 'speaker' | 'fire-alarm' | 'coax' | 'conduit';
+
+interface CableTypeSpec { id: CableTypeId; label: string; pricePerFt: number; tone: string; note: string; }
+const CABLE_TYPES: CableTypeSpec[] = [
+  { id: 'cat6',       label: 'Cat6',       pricePerFt: 0.42, tone: '#5292DC', note: 'Standard IP camera / access' },
+  { id: 'cat6a',      label: 'Cat6A',      pricePerFt: 0.78, tone: '#5292DC', note: 'Higher bandwidth · PoE++' },
+  { id: 'fiber-mm',   label: 'Fiber MM',   pricePerFt: 1.65, tone: '#A371F7', note: 'Multimode · indoor distance' },
+  { id: 'fiber-sm',   label: 'Fiber SM',   pricePerFt: 1.85, tone: '#A371F7', note: 'Single-mode · outdoor / long-haul' },
+  { id: 'fiber-osp',  label: 'OSP fiber',  pricePerFt: 2.35, tone: '#A371F7', note: 'Outside-plant rated' },
+  { id: 'composite',  label: 'Composite',  pricePerFt: 1.40, tone: '#F08F3C', note: 'Power + data composite' },
+  { id: '18-2',       label: '18/2',       pricePerFt: 0.22, tone: '#E5B23A', note: 'Strike / lock low-voltage' },
+  { id: '18-4',       label: '18/4',       pricePerFt: 0.28, tone: '#E5B23A', note: 'Reader power + data' },
+  { id: '22-6',       label: '22/6',       pricePerFt: 0.32, tone: '#E5B23A', note: 'Access controller home run' },
+  { id: 'speaker',    label: 'Speaker',    pricePerFt: 0.30, tone: '#22D3EE', note: '70V or low-impedance speaker' },
+  { id: 'fire-alarm', label: 'Fire alarm', pricePerFt: 0.65, tone: '#F87171', note: 'FPL/FPLR/FPLP rated' },
+  { id: 'coax',       label: 'Coax',       pricePerFt: 0.55, tone: '#94A3B8', note: 'RG-59 / RG-6 legacy CCTV' },
+  { id: 'conduit',    label: 'Conduit only', pricePerFt: 4.80, tone: '#9CA3AF', note: 'Empty path · EMT or PVC' },
+];
+function cableSpec(id: CableTypeId): CableTypeSpec { return CABLE_TYPES.find((c) => c.id === id) ?? CABLE_TYPES[0]; }
+
 const PRODUCTS: Product[] = [
-  { id: 'p-axis-p1468',    type: 'cam.bullet',      mfr: 'Axis',     model: 'P1468-LE',  sub: '4MP · IR · IK10' },
-  { id: 'p-axis-p3265',    type: 'cam.dome',        mfr: 'Axis',     model: 'P3265-LV',  sub: '4MP indoor dome' },
-  { id: 'p-axis-q6315',    type: 'cam.ptz',         mfr: 'Axis',     model: 'Q6315-LE',  sub: '30× zoom · IR' },
-  { id: 'p-axis-p3827',    type: 'cam.multisensor', mfr: 'Axis',     model: 'P3827-PVE', sub: '4×4MP panoramic' },
-  { id: 'p-avi-h5-multi',  type: 'cam.multisensor', mfr: 'Avigilon', model: 'H5A Multi', sub: '4×8MP analytics' },
-  { id: 'p-han-pnm9320',   type: 'cam.multisensor', mfr: 'Hanwha',   model: 'PNM-9320',  sub: '4×5MP IR' },
-  { id: 'p-axis-m4327',    type: 'cam.fisheye',     mfr: 'Axis',     model: 'M4327-P',   sub: '6MP · 360°' },
-  { id: 'p-flir-fc',       type: 'cam.thermal',     mfr: 'FLIR',     model: 'FC-Series', sub: 'Thermal · 320×240' },
-  { id: 'p-hid-signo20',   type: 'acc.reader',      mfr: 'HID',      model: 'Signo 20',  sub: 'Mullion · OSDPv2' },
-  { id: 'p-hid-signo40',   type: 'acc.reader',      mfr: 'HID',      model: 'Signo 40',  sub: 'Wall · keypad' },
-  { id: 'p-vd-6210',       type: 'acc.strike',      mfr: 'Von Duprin', model: '6210',    sub: 'Fail-safe strike' },
-  { id: 'p-sec-m62',       type: 'acc.maglock',     mfr: 'Securitron', model: 'M62',     sub: '1200 lb maglock' },
-  { id: 'p-bosch-rex',     type: 'acc.exit',        mfr: 'Bosch',    model: 'REX-PIR',   sub: 'Passive infrared' },
-  { id: 'p-cis-9300-48',   type: 'net.switch',      mfr: 'Cisco',    model: 'C9300-48P', sub: '48-port PoE+' },
-  { id: 'p-cis-9300-24',   type: 'net.switch',      mfr: 'Cisco',    model: 'C9300-24P', sub: '24-port PoE+' },
-  { id: 'p-rack',          type: 'net.idf',         mfr: 'APC',      model: 'NetShelter','sub': '42U enclosure' as any } as any,
-  { id: 'p-cisco-ap',      type: 'net.ap',          mfr: 'Cisco',    model: 'C9166',     sub: 'Wi-Fi 6E AP' },
-  { id: 'p-axis-p1468-lpr',type: 'cam.lpr',         mfr: 'Axis',     model: 'P1468-LE-LPR', sub: 'Plate capture · 25m' },
-  { id: 'p-axis-w120',     type: 'cam.body',        mfr: 'Axis',     model: 'W120',      sub: 'Body-worn · 12hr' },
-  { id: 'p-suprema-bs3',   type: 'acc.biometric',   mfr: 'Suprema',  model: 'BioStation 3', sub: 'Face · fingerprint' },
-  { id: 'p-boon-360',      type: 'acc.turnstile',   mfr: 'Boon Edam',model: 'Speedlane 360', sub: 'Optical turnstile' },
-  { id: 'p-2n-ip-verso',   type: 'acc.intercom',    mfr: '2N',       model: 'IP Verso',  sub: 'SIP intercom · video' },
-  { id: 'p-bosch-tritech', type: 'int.motion',      mfr: 'Bosch',    model: 'TriTech ISC-PDL1', sub: 'Dual-tech motion' },
-  { id: 'p-bosch-glass',   type: 'int.glassbreak',  mfr: 'Bosch',    model: 'DS1108i',   sub: 'Acoustic glass-break' },
-  { id: 'p-honey-contact', type: 'int.contact',     mfr: 'Honeywell',model: '5816',      sub: 'Wireless door contact' },
-  { id: 'p-stid-panic',    type: 'int.panic',       mfr: 'STI',      model: 'SS-2400',   sub: 'Hold-up panic button' },
-  { id: 'p-optex-vib',     type: 'int.vibration',   mfr: 'Optex',    model: 'VXI-ST',    sub: 'Wall vibration sensor' },
-  { id: 'p-dmp-kp',        type: 'int.keypad',      mfr: 'DMP',      model: '7800',      sub: 'Touch alarm keypad' },
-  { id: 'p-fortinet-100f', type: 'net.firewall',    mfr: 'Fortinet', model: 'FortiGate 100F', sub: 'NGFW · 20 Gbps' },
-  { id: 'p-ubnt-bridge',   type: 'net.bridge',      mfr: 'Ubiquiti', model: 'airFiber 60', sub: 'PtP 60GHz bridge' },
-  { id: 'p-axis-c1410',    type: 'aud.speaker',     mfr: 'Axis',     model: 'C1410',     sub: 'Ceiling PoE speaker' },
-  { id: 'p-axis-c1310',    type: 'aud.horn',        mfr: 'Axis',     model: 'C1310-E',   sub: 'Horn · 116dB · IP66' },
-  { id: 'p-axis-c8033',    type: 'aud.amp',         mfr: 'Axis',     model: 'C8033',     sub: '2-channel net amp' },
-  { id: 'p-shure-mxa920',  type: 'aud.mic',         mfr: 'Shure',    model: 'MXA920',    sub: 'Ceiling array mic' },
-  { id: 'p-2n-indoor',     type: 'aud.intercom',    mfr: '2N',       model: 'Indoor Talk', sub: 'Answering unit' },
-  { id: 'p-axis-s1216',    type: 'sto.nvr',         mfr: 'Axis',     model: 'S1216',     sub: '16-ch NVR · 36 TB' },
-  { id: 'p-genetec-sv',    type: 'sto.server',      mfr: 'Genetec',  model: 'Streamvault 4000', sub: 'VMS appliance' },
-  { id: 'p-dell-r760',     type: 'sto.archive',     mfr: 'Dell',     model: 'PowerEdge R760', sub: '256 TB archive' },
-  { id: 'p-eagleeye-bridge',type:'sto.cloud',       mfr: 'Eagle Eye',model: 'CMVR 308',  sub: 'Cloud bridge · 8 ch' },
-  { id: 'p-dell-u2723',    type: 'dis.monitor',     mfr: 'Dell',     model: 'U2723QE',   sub: '27" 4K IPS' },
-  { id: 'p-lg-lsab',       type: 'dis.wall',        mfr: 'LG',       model: 'LSAB Series', sub: 'Direct-view LED wall' },
-  { id: 'p-elo-22ck',      type: 'dis.kiosk',       mfr: 'Elo',      model: 'I-Series 22"', sub: 'Visitor mgmt kiosk' },
-  { id: 'p-bright-xt5',    type: 'dis.signage',     mfr: 'BrightSign', model: 'XT5',     sub: '4K signage player' },
-  { id: 'p-apc-smt3000',   type: 'pwr.ups',         mfr: 'APC',      model: 'Smart-UPS 3000', sub: '3kVA · LCD' },
-  { id: 'p-axis-t8154',    type: 'pwr.poe',         mfr: 'Axis',     model: 'T8154',     sub: '60W PoE midspan' },
-  { id: 'p-ditek-mrj45',   type: 'pwr.surge',       mfr: 'Ditek',    model: 'MRJ45C6',   sub: 'Cat6 surge protect' },
-  { id: 'p-go-solar',      type: 'pwr.solar',       mfr: 'Goal Zero',model: 'Yeti 6000X',sub: 'Solar + 6kWh battery' },
-  { id: 'p-monnit-temp',   type: 'sen.temp',        mfr: 'Monnit',   model: 'ALTA Temp', sub: 'Wireless temp/humidity' },
-  { id: 'p-systemsensor',  type: 'sen.smoke',       mfr: 'System Sensor', model: 'i4 Photo', sub: 'Photoelectric smoke' },
-  { id: 'p-aercus-leak',   type: 'sen.water',       mfr: 'Aercus',   model: 'WS-2',      sub: 'Water leak puck' },
-  { id: 'p-densityio',     type: 'sen.occupancy',   mfr: 'Density',  model: 'Open Area', sub: 'Anonymous count' },
-  { id: 'p-msa-altair',    type: 'sen.gas',         mfr: 'MSA',      model: 'Altair 4XR', sub: 'Multi-gas detector' },
-  { id: 'p-shotspot-iq',   type: 'sen.gunshot',     mfr: 'ShotSpotter', model: 'Indoor IQ', sub: 'Acoustic gunshot' },
+  // ─── CAMERAS · bullet ─────────────────────────────────────────────────
+  { id: 'p-axis-p1468',     type: 'cam.bullet',      mfr: 'Axis',      model: 'P1468-LE',     sub: '4MP · IR · IK10', recommended: true,
+    msrp: 1095, ndaa: true,  onvif: 'S', resolution: '4MP · 2688×1512', poe: 'Class 3', powerW: 12, bitrateMbps: 5 },
+  { id: 'p-axis-p1465',     type: 'cam.bullet',      mfr: 'Axis',      model: 'P1465-LE',     sub: '2MP · IR · low-light',
+    msrp: 749, ndaa: true,  onvif: 'S', resolution: '2MP · 1920×1080', poe: 'Class 3', powerW: 10 },
+  { id: 'p-axis-q1798',     type: 'cam.bullet',      mfr: 'Axis',      model: 'Q1798-LE',     sub: '4K · forensic',
+    msrp: 2199, ndaa: true,  onvif: 'S', resolution: '4K · 3840×2160', poe: 'Class 4', powerW: 18, bitrateMbps: 12 },
+  { id: 'p-han-xnv9083',    type: 'cam.bullet',      mfr: 'Hanwha',    model: 'XNO-9083R',    sub: '4K bullet · AI',
+    msrp: 1499, ndaa: true,  onvif: 'T', resolution: '4K · 3840×2160', poe: 'Class 4', powerW: 14, bitrateMbps: 10 },
+  { id: 'p-avi-h5a-bullet', type: 'cam.bullet',      mfr: 'Avigilon',  model: 'H5A Bullet 6MP', sub: '6MP · video analytics',
+    msrp: 1850, ndaa: true,  onvif: 'T', resolution: '6MP · 3072×2048', poe: 'Class 4', powerW: 15, bitrateMbps: 8 },
+  { id: 'p-bosch-dh8',      type: 'cam.bullet',      mfr: 'Bosch',     model: 'DINION 8000i',  sub: '4K starlight bullet',
+    msrp: 1995, ndaa: true,  onvif: 'S', resolution: '4K · 3840×2160', poe: 'Class 4', powerW: 16 },
+  { id: 'p-pelco-sarix',    type: 'cam.bullet',      mfr: 'Pelco',     model: 'Sarix Pro 4',   sub: '4MP IR bullet',
+    msrp: 1199, ndaa: true,  onvif: 'S', resolution: '4MP · 2688×1520', poe: 'Class 3', powerW: 11 },
+  { id: 'p-verkada-cb52e',  type: 'cam.bullet',      mfr: 'Verkada',   model: 'CB52-E',       sub: 'Cloud · 4K · NDAA', recommended: true, techModels: ['cloud'],
+    msrp: 1599, ndaa: true,  onvif: 'S', resolution: '4K · 3840×2160', poe: 'Class 4', powerW: 14, bitrateMbps: 6 },
+  { id: 'p-verkada-cb62e',  type: 'cam.bullet',      mfr: 'Verkada',   model: 'CB62-E',       sub: 'Cloud · zoom bullet', techModels: ['cloud'],
+    msrp: 2199, ndaa: true,  onvif: 'S', resolution: '4K · 3840×2160', poe: 'Class 4', powerW: 16 },
+  { id: 'p-meraki-mv63',    type: 'cam.bullet',      mfr: 'Meraki',    model: 'MV63',         sub: 'Cloud · outdoor · 8MP', techModels: ['cloud'],
+    msrp: 1395, ndaa: true,  onvif: 'S', resolution: '8MP · 4K UHD', poe: 'Class 3', powerW: 12 },
+  { id: 'p-rhombus-r600',   type: 'cam.bullet',      mfr: 'Rhombus',   model: 'R600',         sub: 'Cloud · varifocal · NDAA', techModels: ['cloud'],
+    msrp: 1499, ndaa: true,  onvif: 'S', resolution: '8MP · 3840×2160', poe: 'Class 4', powerW: 14 },
+
+  // ─── CAMERAS · dome ──────────────────────────────────────────────────
+  { id: 'p-axis-p3265',     type: 'cam.dome',        mfr: 'Axis',      model: 'P3265-LV',     sub: '4MP indoor dome', recommended: true },
+  { id: 'p-axis-p3267',     type: 'cam.dome',        mfr: 'Axis',      model: 'P3267-LVE',    sub: '5MP outdoor IK10' },
+  { id: 'p-han-xnd9082',    type: 'cam.dome',        mfr: 'Hanwha',    model: 'XND-9082RF',   sub: '4K · AI · 60fps' },
+  { id: 'p-avi-h5a-dome',   type: 'cam.dome',        mfr: 'Avigilon',  model: 'H5A Dome 5MP', sub: '5MP analytics dome' },
+  { id: 'p-bosch-flexi8000',type: 'cam.dome',        mfr: 'Bosch',     model: 'FLEXIDOME 8000i', sub: '4K starlight dome' },
+  { id: 'p-vivo-fd9387',    type: 'cam.dome',        mfr: 'Vivotek',   model: 'FD9387-HTV',   sub: '5MP outdoor dome' },
+  { id: 'p-verkada-cd62e',  type: 'cam.dome',        mfr: 'Verkada',   model: 'CD62-E',       sub: 'Cloud · 4K dome', recommended: true, techModels: ['cloud'] },
+  { id: 'p-meraki-mv13',    type: 'cam.dome',        mfr: 'Meraki',    model: 'MV13',         sub: 'Cloud · indoor · 4K', techModels: ['cloud'] },
+  { id: 'p-rhombus-r400',   type: 'cam.dome',        mfr: 'Rhombus',   model: 'R400',         sub: 'Cloud · indoor dome', techModels: ['cloud'] },
+
+  // ─── CAMERAS · PTZ ───────────────────────────────────────────────────
+  { id: 'p-axis-q6315',     type: 'cam.ptz',         mfr: 'Axis',      model: 'Q6315-LE',     sub: '30× zoom · IR', recommended: true },
+  { id: 'p-axis-q6135',     type: 'cam.ptz',         mfr: 'Axis',      model: 'Q6135-LE',     sub: '32× HDTV PTZ' },
+  { id: 'p-han-xnp9250',    type: 'cam.ptz',         mfr: 'Hanwha',    model: 'XNP-9250R',    sub: '4K · 25× · IR' },
+  { id: 'p-avi-h5ptz',      type: 'cam.ptz',         mfr: 'Avigilon',  model: 'H5A PTZ',      sub: '45× · 4K · analytics' },
+  { id: 'p-bosch-mic9000',  type: 'cam.ptz',         mfr: 'Bosch',     model: 'MIC IP fusion 9000i', sub: 'Ruggedized PTZ + thermal' },
+  { id: 'p-verkada-cd72e',  type: 'cam.ptz',         mfr: 'Verkada',   model: 'CD72-E PTZ',   sub: 'Cloud PTZ · 4K', techModels: ['cloud'] },
+
+  // ─── CAMERAS · multisensor ───────────────────────────────────────────
+  { id: 'p-axis-p3827',     type: 'cam.multisensor', mfr: 'Axis',      model: 'P3827-PVE',    sub: '4×4MP panoramic', recommended: true },
+  { id: 'p-avi-h5-multi',   type: 'cam.multisensor', mfr: 'Avigilon',  model: 'H5A Multi',    sub: '4×8MP analytics' },
+  { id: 'p-han-pnm9320',    type: 'cam.multisensor', mfr: 'Hanwha',    model: 'PNM-9320',     sub: '4×5MP IR' },
+  { id: 'p-han-pnm12082',   type: 'cam.multisensor', mfr: 'Hanwha',    model: 'PNM-12082RVD', sub: '2×8MP panoramic AI' },
+  { id: 'p-bosch-mic80',    type: 'cam.multisensor', mfr: 'Bosch',     model: 'AUTODOME IP multi 7000i', sub: '4×4MP panoramic' },
+  { id: 'p-verkada-cd92',   type: 'cam.multisensor', mfr: 'Verkada',   model: 'CD92',         sub: 'Cloud · 4-lens panoramic', techModels: ['cloud'] },
+
+  // ─── CAMERAS · fisheye ───────────────────────────────────────────────
+  { id: 'p-axis-m4327',     type: 'cam.fisheye',     mfr: 'Axis',      model: 'M4327-P',      sub: '6MP · 360°', recommended: true },
+  { id: 'p-han-pnf9010',    type: 'cam.fisheye',     mfr: 'Hanwha',    model: 'PNF-9010R',    sub: '12MP fisheye' },
+  { id: 'p-vivo-fe9382',    type: 'cam.fisheye',     mfr: 'Vivotek',   model: 'FE9382-EHV',   sub: '5MP outdoor fisheye' },
+  { id: 'p-verkada-cf81e',  type: 'cam.fisheye',     mfr: 'Verkada',   model: 'CF81-E',       sub: 'Cloud fisheye · NDAA', techModels: ['cloud'] },
+
+  // ─── CAMERAS · thermal / LPR / body ──────────────────────────────────
+  { id: 'p-flir-fc',        type: 'cam.thermal',     mfr: 'FLIR',      model: 'FC-Series',    sub: 'Thermal · 320×240', recommended: true },
+  { id: 'p-flir-fh',        type: 'cam.thermal',     mfr: 'FLIR',      model: 'FH-Series ID', sub: 'Thermal + ID analytics' },
+  { id: 'p-axis-q1961',     type: 'cam.thermal',     mfr: 'Axis',      model: 'Q1961-TE',     sub: 'Thermal · 640×480' },
+  { id: 'p-axis-p1468-lpr', type: 'cam.lpr',         mfr: 'Axis',      model: 'P1468-LE-LPR', sub: 'Plate capture · 25m', recommended: true },
+  { id: 'p-bosch-lpr',      type: 'cam.lpr',         mfr: 'Bosch',     model: 'DINION 5100i IR', sub: 'AI LPR + classification' },
+  { id: 'p-axis-w120',      type: 'cam.body',        mfr: 'Axis',      model: 'W120',         sub: 'Body-worn · 12hr', recommended: true },
+
+  // ─── ACCESS · readers / biometric ────────────────────────────────────
+  { id: 'p-hid-signo20',    type: 'acc.reader',      mfr: 'HID',       model: 'Signo 20',     sub: 'Mullion · OSDPv2', recommended: true },
+  { id: 'p-hid-signo40',    type: 'acc.reader',      mfr: 'HID',       model: 'Signo 40',     sub: 'Wall · keypad' },
+  { id: 'p-hid-signo20k',   type: 'acc.reader',      mfr: 'HID',       model: 'Signo 20K',    sub: 'Mullion · keypad' },
+  { id: 'p-alta-r3',        type: 'acc.reader',      mfr: 'Alta',      model: 'Reader R3',    sub: 'Cloud · mobile · NFC/BLE', techModels: ['cloud'] },
+  { id: 'p-brivo-acr1255',  type: 'acc.reader',      mfr: 'Brivo',     model: 'ACR1255',      sub: 'Cloud-managed reader', techModels: ['cloud'] },
+  { id: 'p-verkada-ad34',   type: 'acc.reader',      mfr: 'Verkada',   model: 'AD34',         sub: 'Cloud · mobile · keypad', techModels: ['cloud'] },
+  { id: 'p-suprema-bs3',    type: 'acc.biometric',   mfr: 'Suprema',   model: 'BioStation 3', sub: 'Face · fingerprint' },
+  { id: 'p-iris-id',        type: 'acc.biometric',   mfr: 'Iris ID',   model: 'iCAM 7S',      sub: 'Iris recognition' },
+
+  // ─── ACCESS · strikes / locks / exit ─────────────────────────────────
+  { id: 'p-vd-6210',        type: 'acc.strike',      mfr: 'Von Duprin', model: '6210',        sub: 'Fail-safe strike', recommended: true },
+  { id: 'p-hes-9600',       type: 'acc.strike',      mfr: 'HES',       model: '9600',         sub: 'Surface mount strike' },
+  { id: 'p-sec-m62',        type: 'acc.maglock',     mfr: 'Securitron', model: 'M62',         sub: '1200 lb maglock', recommended: true },
+  { id: 'p-sec-m38',        type: 'acc.maglock',     mfr: 'Securitron', model: 'M38',         sub: '600 lb · single door' },
+  { id: 'p-bosch-rex',      type: 'acc.exit',        mfr: 'Bosch',     model: 'REX-PIR',      sub: 'Passive infrared', recommended: true },
+  { id: 'p-stid-rex',       type: 'acc.exit',        mfr: 'STI',       model: 'SS-2000',      sub: 'Push-button REX' },
+  { id: 'p-boon-360',       type: 'acc.turnstile',   mfr: 'Boon Edam', model: 'Speedlane 360', sub: 'Optical turnstile' },
+  { id: 'p-2n-ip-verso',    type: 'acc.intercom',    mfr: '2N',        model: 'IP Verso',     sub: 'SIP intercom · video', recommended: true },
+  { id: 'p-aiphone-ix',     type: 'acc.intercom',    mfr: 'Aiphone',   model: 'IX-DV',        sub: 'IP video intercom' },
+
+  // ─── NETWORK · switches / racks / APs ────────────────────────────────
+  { id: 'p-cis-9300-48',    type: 'net.switch',      mfr: 'Cisco',     model: 'C9300-48P',    sub: '48-port PoE+', recommended: true },
+  { id: 'p-cis-9300-24',    type: 'net.switch',      mfr: 'Cisco',     model: 'C9300-24P',    sub: '24-port PoE+' },
+  { id: 'p-meraki-ms355',   type: 'net.switch',      mfr: 'Meraki',    model: 'MS355-48X',    sub: 'Cloud-managed PoE++', techModels: ['cloud'] },
+  { id: 'p-aruba-2930',     type: 'net.switch',      mfr: 'HPE Aruba', model: '2930F 48-port', sub: 'PoE+ access switch' },
+  { id: 'p-rack',           type: 'net.idf',         mfr: 'APC',       model: 'NetShelter SX', sub: '42U enclosure' },
+  { id: 'p-rack-24',        type: 'net.idf',         mfr: 'Middle Atlantic', model: 'WMRK-24', sub: '24U wall-mount IDF' },
+  { id: 'p-cisco-ap',       type: 'net.ap',          mfr: 'Cisco',     model: 'C9166',        sub: 'Wi-Fi 6E AP' },
+  { id: 'p-meraki-mr57',    type: 'net.ap',          mfr: 'Meraki',    model: 'MR57',         sub: 'Wi-Fi 6E · cloud', techModels: ['cloud'] },
+  { id: 'p-fortinet-100f',  type: 'net.firewall',    mfr: 'Fortinet',  model: 'FortiGate 100F', sub: 'NGFW · 20 Gbps' },
+  { id: 'p-pa-1410',        type: 'net.firewall',    mfr: 'Palo Alto', model: 'PA-1410',      sub: 'NGFW + threat prevention' },
+  { id: 'p-ubnt-bridge',    type: 'net.bridge',      mfr: 'Ubiquiti',  model: 'airFiber 60',  sub: 'PtP 60GHz bridge' },
+
+  // ─── INTRUSION ───────────────────────────────────────────────────────
+  { id: 'p-bosch-tritech',  type: 'int.motion',      mfr: 'Bosch',     model: 'TriTech ISC-PDL1', sub: 'Dual-tech motion', recommended: true },
+  { id: 'p-optex-redwall',  type: 'int.motion',      mfr: 'Optex',     model: 'Redwall LRX',  sub: 'Long-range outdoor PIR' },
+  { id: 'p-bosch-glass',    type: 'int.glassbreak',  mfr: 'Bosch',     model: 'DS1108i',      sub: 'Acoustic glass-break', recommended: true },
+  { id: 'p-honey-contact',  type: 'int.contact',     mfr: 'Honeywell', model: '5816',         sub: 'Wireless door contact', recommended: true },
+  { id: 'p-stid-panic',     type: 'int.panic',       mfr: 'STI',       model: 'SS-2400',      sub: 'Hold-up panic button' },
+  { id: 'p-optex-vib',      type: 'int.vibration',   mfr: 'Optex',     model: 'VXI-ST',       sub: 'Wall vibration sensor' },
+  { id: 'p-dmp-kp',         type: 'int.keypad',      mfr: 'DMP',       model: '7800',         sub: 'Touch alarm keypad' },
+
+  // ─── AUDIO ───────────────────────────────────────────────────────────
+  { id: 'p-axis-c1410',     type: 'aud.speaker',     mfr: 'Axis',      model: 'C1410',        sub: 'Ceiling PoE speaker', recommended: true },
+  { id: 'p-axis-c1310',     type: 'aud.horn',        mfr: 'Axis',      model: 'C1310-E',      sub: 'Horn · 116dB · IP66' },
+  { id: 'p-axis-c8033',     type: 'aud.amp',         mfr: 'Axis',     model: 'C8033',         sub: '2-channel net amp' },
+  { id: 'p-shure-mxa920',   type: 'aud.mic',         mfr: 'Shure',     model: 'MXA920',       sub: 'Ceiling array mic' },
+  { id: 'p-2n-indoor',      type: 'aud.intercom',    mfr: '2N',        model: 'Indoor Talk',  sub: 'Answering unit' },
+
+  // ─── STORAGE ─────────────────────────────────────────────────────────
+  { id: 'p-axis-s1216',     type: 'sto.nvr',         mfr: 'Axis',      model: 'S1216',        sub: '16-ch NVR · 36 TB' },
+  { id: 'p-han-wrn1610',    type: 'sto.nvr',         mfr: 'Hanwha',    model: 'WRN-1610S',    sub: '16-ch · WiseNet AI' },
+  { id: 'p-genetec-sv',     type: 'sto.server',      mfr: 'Genetec',   model: 'Streamvault 4000', sub: 'VMS appliance', recommended: true },
+  { id: 'p-milestone-srv',  type: 'sto.server',      mfr: 'Milestone', model: 'XProtect SRV',  sub: 'XProtect VMS host' },
+  { id: 'p-dell-r760',      type: 'sto.archive',     mfr: 'Dell',      model: 'PowerEdge R760', sub: '256 TB archive' },
+  { id: 'p-eagleeye-bridge',type:'sto.cloud',        mfr: 'Eagle Eye', model: 'CMVR 308',     sub: 'Cloud bridge · 8 ch', recommended: true, techModels: ['cloud'] },
+  { id: 'p-arcules-bridge', type: 'sto.cloud',       mfr: 'Arcules',   model: 'Cloud Bridge', sub: 'Hybrid cloud gateway', techModels: ['cloud'] },
+
+  // ─── DISPLAY ─────────────────────────────────────────────────────────
+  { id: 'p-dell-u2723',     type: 'dis.monitor',     mfr: 'Dell',      model: 'U2723QE',      sub: '27" 4K IPS' },
+  { id: 'p-lg-lsab',        type: 'dis.wall',        mfr: 'LG',        model: 'LSAB Series',  sub: 'Direct-view LED wall' },
+  { id: 'p-elo-22ck',       type: 'dis.kiosk',       mfr: 'Elo',       model: 'I-Series 22"', sub: 'Visitor mgmt kiosk' },
+  { id: 'p-bright-xt5',     type: 'dis.signage',     mfr: 'BrightSign',model: 'XT5',          sub: '4K signage player' },
+
+  // ─── POWER ───────────────────────────────────────────────────────────
+  { id: 'p-apc-smt3000',    type: 'pwr.ups',         mfr: 'APC',       model: 'Smart-UPS 3000', sub: '3kVA · LCD', recommended: true },
+  { id: 'p-apc-smt1500',    type: 'pwr.ups',         mfr: 'APC',       model: 'Smart-UPS 1500', sub: '1.5kVA · LCD' },
+  { id: 'p-axis-t8154',     type: 'pwr.poe',         mfr: 'Axis',      model: 'T8154',        sub: '60W PoE midspan' },
+  { id: 'p-ditek-mrj45',    type: 'pwr.surge',       mfr: 'Ditek',     model: 'MRJ45C6',      sub: 'Cat6 surge protect' },
+  { id: 'p-go-solar',       type: 'pwr.solar',       mfr: 'Goal Zero', model: 'Yeti 6000X',   sub: 'Solar + 6kWh battery' },
+
+  // ─── SENSORS ─────────────────────────────────────────────────────────
+  { id: 'p-monnit-temp',    type: 'sen.temp',        mfr: 'Monnit',    model: 'ALTA Temp',    sub: 'Wireless temp/humidity' },
+  { id: 'p-systemsensor',   type: 'sen.smoke',       mfr: 'System Sensor', model: 'i4 Photo', sub: 'Photoelectric smoke' },
+  { id: 'p-aercus-leak',    type: 'sen.water',       mfr: 'Aercus',    model: 'WS-2',         sub: 'Water leak puck' },
+  { id: 'p-densityio',      type: 'sen.occupancy',   mfr: 'Density',   model: 'Open Area',    sub: 'Anonymous count' },
+  { id: 'p-msa-altair',     type: 'sen.gas',         mfr: 'MSA',       model: 'Altair 4XR',   sub: 'Multi-gas detector' },
+  { id: 'p-shotspot-iq',    type: 'sen.gunshot',     mfr: 'ShotSpotter', model: 'Indoor IQ',  sub: 'Acoustic gunshot' },
+
+  // ─── Additional manufacturer coverage (gap-closure pass) ────────────
+  { id: 'p-ipro-wv-x86600', type: 'cam.bullet',      mfr: 'i-Pro',     model: 'WV-X86600-NV2L', sub: 'AI bullet · NDAA',
+    msrp: 1875, ndaa: true, onvif: 'S', resolution: '5MP', poe: 'Class 4', powerW: 14 },
+  { id: 'p-ipro-wv-s2536l', type: 'cam.dome',        mfr: 'i-Pro',     model: 'WV-S2536LN',    sub: '2MP dome · NDAA',
+    msrp: 945, ndaa: true, onvif: 'S', resolution: '2MP', poe: 'Class 3', powerW: 10 },
+  { id: 'p-uniview-ipc',    type: 'cam.bullet',      mfr: 'Uniview',   model: 'IPC2128SR3-DPF40-F', sub: '8MP bullet',
+    msrp: 549, ndaa: false, onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 11 },
+  { id: 'p-uniview-dome',   type: 'cam.dome',        mfr: 'Uniview',   model: 'IPC3535ER3-DPF28M', sub: '5MP dome',
+    msrp: 449, ndaa: false, onvif: 'S', resolution: '5MP', poe: 'Class 3', powerW: 9 },
+  { id: 'p-hik-bullet',     type: 'cam.bullet',      mfr: 'Hikvision', model: 'DS-2CD2685G2-IZS', sub: '8MP AcuSense',
+    msrp: 599, ndaa: false, onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 12 },
+  { id: 'p-hik-dome',       type: 'cam.dome',        mfr: 'Hikvision', model: 'DS-2CD2785G2-IZS', sub: '8MP turret',
+    msrp: 649, ndaa: false, onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 12 },
+  { id: 'p-dahua-bullet',   type: 'cam.bullet',      mfr: 'Dahua',     model: 'IPC-HFW5849T1-ASE', sub: '8MP Pro',
+    msrp: 595, ndaa: false, onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 12 },
+  { id: 'p-dahua-dome',     type: 'cam.dome',        mfr: 'Dahua',     model: 'IPC-HDBW5849R-ASE', sub: '8MP turret',
+    msrp: 625, ndaa: false, onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 12 },
+  { id: 'p-avycon-bullet',  type: 'cam.bullet',      mfr: 'Avycon',    model: 'AVC-NSB81F36',  sub: '8MP NDAA bullet',
+    msrp: 525, ndaa: true,  onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 11 },
+  { id: 'p-avycon-dome',    type: 'cam.dome',        mfr: 'Avycon',    model: 'AVC-NSD81F28',  sub: '8MP NDAA dome',
+    msrp: 540, ndaa: true,  onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 11 },
+  { id: 'p-vicon-cruiser',  type: 'cam.ptz',         mfr: 'Vicon',     model: 'V9360W-12X',    sub: '12× PTZ',
+    msrp: 1995, ndaa: true,  onvif: 'S', resolution: '2MP', poe: 'Class 4', powerW: 22 },
+  { id: 'p-mobotix-m73',    type: 'cam.multisensor', mfr: 'Mobotix',   model: 'M73 Modular',   sub: 'Dual-sensor modular',
+    msrp: 3895, ndaa: true,  onvif: 'S', resolution: '4K+4K', poe: 'Class 4', powerW: 16 },
+  { id: 'p-speco-bullet',   type: 'cam.bullet',      mfr: 'Speco',     model: 'O8B6M',         sub: '8MP IR bullet',
+    msrp: 495, ndaa: true,  onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 10 },
+
+  // Ubiquiti UniFi cameras — cloud-managed, popular in MDU / education
+  { id: 'p-ubnt-aiprolite',type: 'cam.bullet',      mfr: 'Ubiquiti',  model: 'AI Pro Lite',   sub: 'UniFi · 8MP',
+    msrp: 549, ndaa: true,  onvif: 'S', resolution: '8MP', poe: 'Class 3', powerW: 11, techModels: ['hybrid', 'cloud'] },
+  { id: 'p-ubnt-aibullet', type: 'cam.bullet',      mfr: 'Ubiquiti',  model: 'AI Bullet',      sub: 'UniFi · 5MP',
+    msrp: 449, ndaa: true,  onvif: 'S', resolution: '5MP', poe: 'Class 3', powerW: 9, techModels: ['hybrid', 'cloud'] },
+  { id: 'p-ubnt-g5dome',   type: 'cam.dome',        mfr: 'Ubiquiti',  model: 'G5 Dome',        sub: 'UniFi · 5MP dome',
+    msrp: 349, ndaa: true,  onvif: 'S', resolution: '5MP', poe: 'Class 3', powerW: 9, techModels: ['hybrid', 'cloud'] },
+  { id: 'p-ubnt-g5ptz',    type: 'cam.ptz',         mfr: 'Ubiquiti',  model: 'AI PTZ',          sub: 'UniFi PTZ · 22×',
+    msrp: 1499, ndaa: true,  onvif: 'S', resolution: '8MP', poe: 'Class 4', powerW: 20, techModels: ['hybrid', 'cloud'] },
+
+  // ─── Cyber security ─────────────────────────────────────────────────
+  { id: 'p-crowdstrike',    type: 'cyb.endpoint',     mfr: 'CrowdStrike', model: 'Falcon Insight', sub: 'Cloud EDR · per-endpoint',
+    techModels: ['cloud'] },
+  { id: 'p-splunk-cloud',   type: 'cyb.siem',         mfr: 'Splunk',    model: 'Cloud SIEM',     sub: 'Hosted SIEM · per-GB',
+    techModels: ['cloud'] },
+  { id: 'p-pa-1410-ng',     type: 'cyb.firewall-ng',  mfr: 'Palo Alto', model: 'PA-1410',        sub: 'NGFW + IPS',
+    msrp: 8995 },
+  { id: 'p-cloudflare-vpn', type: 'cyb.vpn',          mfr: 'Cloudflare', model: 'WARP for Teams', sub: 'ZTNA · cloud',
+    techModels: ['cloud'] },
+
+  // ─── Fire / life safety ─────────────────────────────────────────────
+  { id: 'p-honey-pull',    type: 'fls.pull-station', mfr: 'Honeywell', model: 'BG-12',         sub: 'Manual pull station',
+    msrp: 35 },
+  { id: 'p-notif-3030',    type: 'fls.fire-panel',   mfr: 'Notifier',  model: 'NFS2-3030',     sub: '90-pt addressable',
+    msrp: 3850 },
+  { id: 'p-simplex-strobe', type: 'fls.strobe',       mfr: 'Simplex',   model: '4906-9151',     sub: 'Strobe · 75cd',
+    msrp: 89 },
+  { id: 'p-vict-spr',      type: 'fls.sprinkler',    mfr: 'Victaulic', model: 'V3801',         sub: 'Concealed sprinkler',
+    msrp: 28 },
+
+  // ─── Building systems ───────────────────────────────────────────────
+  { id: 'p-tridium-jace',  type: 'bld.bms-gateway',     mfr: 'Tridium',  model: 'JACE 8000',     sub: 'Niagara BMS gateway',
+    msrp: 2495 },
+  { id: 'p-niagara-pcd',   type: 'bld.hvac-controller', mfr: 'Niagara',  model: 'PCD-VAV',       sub: 'VAV terminal controller',
+    msrp: 695 },
+  { id: 'p-lutron-qsm',    type: 'bld.lighting-panel', mfr: 'Lutron',   model: 'QSM-3PCE',      sub: 'Lighting hub · QS',
+    msrp: 1295 },
+
+  // ─── Racks / MDF placeable infrastructure ───────────────────────────
+  { id: 'p-rack-42u-floor', type: 'inf.rack',         mfr: 'APC',      model: 'NetShelter SX 42U', sub: 'Floor rack',
+    msrp: 1495 },
+  { id: 'p-rack-12u-wall',  type: 'inf.rack',         mfr: 'Middle Atlantic', model: 'WMRK-12', sub: '12U wall rack',
+    msrp: 545 },
+  { id: 'p-mdf-room',       type: 'inf.mdf',          mfr: 'Universal', model: 'MDF closet',     sub: 'Main equipment room',
+    msrp: 0 },
 ];
 
 const TYPE_KIND: Record<DeviceType, DeviceKind> = {
   'cam.bullet': 'camera', 'cam.dome': 'camera', 'cam.ptz': 'camera', 'cam.multisensor': 'camera', 'cam.fisheye': 'camera', 'cam.thermal': 'camera', 'cam.lpr': 'camera', 'cam.body': 'camera',
-  'acc.reader': 'access', 'acc.strike': 'access', 'acc.maglock': 'access', 'acc.exit': 'access', 'acc.turnstile': 'access', 'acc.intercom': 'access', 'acc.biometric': 'access',
+  'acc.reader': 'access', 'acc.strike': 'access', 'acc.maglock': 'access', 'acc.exit': 'access', 'acc.turnstile': 'access', 'acc.intercom': 'access', 'acc.biometric': 'access', 'acc.panic-bar': 'access', 'acc.dps': 'access',
   'net.switch': 'network', 'net.idf': 'network', 'net.ap': 'network', 'net.firewall': 'network', 'net.bridge': 'network',
   'int.motion': 'intrusion', 'int.glassbreak': 'intrusion', 'int.contact': 'intrusion', 'int.panic': 'intrusion', 'int.vibration': 'intrusion', 'int.keypad': 'intrusion',
   'aud.speaker': 'audio', 'aud.mic': 'audio', 'aud.horn': 'audio', 'aud.amp': 'audio', 'aud.intercom': 'audio',
@@ -280,13 +722,39 @@ const TYPE_KIND: Record<DeviceType, DeviceKind> = {
   'dis.monitor': 'display', 'dis.wall': 'display', 'dis.kiosk': 'display', 'dis.signage': 'display',
   'pwr.ups': 'power', 'pwr.poe': 'power', 'pwr.surge': 'power', 'pwr.solar': 'power',
   'sen.temp': 'sensor', 'sen.smoke': 'sensor', 'sen.water': 'sensor', 'sen.occupancy': 'sensor', 'sen.gas': 'sensor', 'sen.gunshot': 'sensor',
+  'inf.door-single': 'infrastructure', 'inf.door-double': 'infrastructure', 'inf.door-storefront': 'infrastructure', 'inf.door-sliding': 'infrastructure',
+  'inf.window': 'infrastructure', 'inf.wall-brick': 'infrastructure', 'inf.wall-fire': 'infrastructure', 'inf.wall-concrete': 'infrastructure',
+  'inf.gate-swing': 'infrastructure', 'inf.gate-slide': 'infrastructure', 'inf.elevator': 'infrastructure',
+  'inf.mdf': 'infrastructure', 'inf.rack': 'infrastructure',
+  'cyb.endpoint': 'cyber', 'cyb.siem': 'cyber', 'cyb.firewall-ng': 'cyber', 'cyb.vpn': 'cyber',
+  'fls.pull-station': 'fire', 'fls.fire-panel': 'fire', 'fls.strobe': 'fire', 'fls.sprinkler': 'fire',
+  'bld.hvac-controller': 'building', 'bld.lighting-panel': 'building', 'bld.bms-gateway': 'building',
 };
 
 const KIND_TONE: Record<DeviceKind, string> = {
   camera: '#F08F3C', access: '#3FB950', network: '#E5B23A',
   intrusion: '#E5484D', audio: '#A371F7', storage: '#1F6FEB',
   display: '#00B5D8', power: '#8B5CF6', sensor: '#14B8A6',
+  infrastructure: '#9CA3AF',
+  cyber: '#22D3EE', fire: '#F87171', building: '#94A3B8',
 };
+
+/** Hosts that can host a hardware stack (reader/strike/REX/DPS/panic-bar).
+ *  Doors and gates are the canonical hosts. Used by canHost and by the stack
+ *  count chip rendering. */
+const STACKABLE_HOST_TYPES = new Set<DeviceType>([
+  'inf.door-single', 'inf.door-double', 'inf.door-storefront', 'inf.door-sliding',
+  'inf.gate-swing', 'inf.gate-slide', 'inf.elevator',
+]);
+/** Accessory types that mount on a stackable host. Order is rendering
+ *  preference inside the stack popover. */
+const STACK_ACCESSORY_TYPES = new Set<DeviceType>([
+  'acc.reader', 'acc.biometric', 'acc.strike', 'acc.maglock',
+  'acc.exit', 'acc.panic-bar', 'acc.dps', 'acc.intercom',
+  'int.contact',
+]);
+function isStackableHost(t: DeviceType) { return STACKABLE_HOST_TYPES.has(t); }
+function isStackAccessory(t: DeviceType) { return STACK_ACCESSORY_TYPES.has(t); }
 
 const SEED_DEVICES: Device[] = [
   { id: 'CAM-101', type: 'cam.bullet',      label: 'Lobby NE',   product: 'p-axis-p1468',   x: 260, y: 220, rot:  35 },
@@ -432,7 +900,7 @@ export function EngineeringCanvas() {
   const [cableDraw, setCableDraw] = useState<{
     points: { x: number; y: number }[];
     cursor: { x: number; y: number } | null;
-    cableType: 'cat6a' | 'cat6' | 'fiber-sm' | 'fiber-mm' | 'composite' | 'coax' | 'power';
+    cableType: CableTypeId;
   }>({ points: [], cursor: null, cableType: 'cat6a' });
   const addPathway = useProjectStore((s) => s.addPathway);
   const removePathway = useProjectStore((s) => s.removePathway);
@@ -474,6 +942,49 @@ export function EngineeringCanvas() {
   // "Intelligence" pill to surface flagged issues.
   const [intelOpen, setIntelOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  // Fullscreen mode — uses the Fullscreen API to expand the canvas to fill
+  // the entire monitor. Distinct from focusMode (which is an in-app immersion
+  // toggle that hides chrome but stays inside the window). The two compose:
+  // hitting Fullscreen also flips on focusMode so the user gets a true
+  // floorplan-only experience. Escape exits cleanly.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const enterFullscreen = useCallback(async () => {
+    const el = rootRef.current as any;
+    if (!el) return;
+    try {
+      if (el.requestFullscreen)            await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+      else if (el.msRequestFullscreen)     await el.msRequestFullscreen();
+      setFocusMode(true);
+    } catch {
+      // Some browsers throw if a previous request hasn't finished. Treat
+      // the failure as a no-op; focusMode still gives an immersive view.
+      setFocusMode(true);
+    }
+  }, []);
+  const exitFullscreen = useCallback(async () => {
+    try {
+      const doc = document as any;
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (doc.webkitFullscreenElement) await doc.webkitExitFullscreen();
+      else if (doc.msFullscreenElement)     await doc.msExitFullscreen();
+    } catch { /* noop */ }
+    setFocusMode(false);
+  }, []);
+  useEffect(() => {
+    const handler = () => {
+      const fs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).msFullscreenElement);
+      setIsFullscreen(fs);
+      if (!fs) setFocusMode(false);
+    };
+    document.addEventListener('fullscreenchange', handler);
+    document.addEventListener('webkitfullscreenchange', handler as any);
+    return () => {
+      document.removeEventListener('fullscreenchange', handler);
+      document.removeEventListener('webkitfullscreenchange', handler as any);
+    };
+  }, []);
 
   // Canvas engineering layers — toggleable overlays. Pulled from the
   // store so they persist per project. Replaces the previous ad-hoc
@@ -603,6 +1114,38 @@ export function EngineeringCanvas() {
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
   const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
+  // Auto-position the stick-figure target at the end of the cone whenever
+  // a single-lens camera is freshly selected. The user can drag from there.
+  // Multisensor cameras have four cones — auto-positioning is skipped (the
+  // existing Target action remains the explicit affordance for those).
+  const lastAutoSelRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selId) {
+      setTargetSim((t) => t.open ? { open: false, x: 0, y: 0 } : t);
+      lastAutoSelRef.current = null;
+      return;
+    }
+    if (lastAutoSelRef.current === selId) return;
+    lastAutoSelRef.current = selId;
+    const dev = (Object.values(useProjectStore.getState().devices) as any[]).find((x) => x.id === selId) as Device | undefined;
+    if (!dev) return;
+    const isSingleLensCamera = TYPE_KIND[dev.type] === 'camera' && dev.type !== 'cam.multisensor' && dev.type !== 'cam.fisheye';
+    if (!isSingleLensCamera) {
+      // Multisensor / fisheye / non-cameras don't auto-place a stick figure.
+      setTargetSim((t) => t.open ? { open: false, x: 0, y: 0 } : t);
+      return;
+    }
+    // Place the figure at the *useful* cone distance — by default the cone
+    // extends to the device's DORI range; we drop the subject at the
+    // observe-band sweet spot (~60% out) so the readout starts in a
+    // meaningful regime instead of right at the camera.
+    const rotRad = (dev.rot * Math.PI) / 180;
+    const rangeFt = dev.range ?? (dev.type === 'cam.ptz' ? 44 : dev.type === 'cam.bullet' ? 50 : 30);
+    const reachPx = Math.round(rangeFt * 3.83 * 0.65);
+    const tx = dev.x + Math.cos(rotRad) * reachPx;
+    const ty = dev.y + Math.sin(rotRad) * reachPx;
+    setTargetSim({ open: true, x: tx, y: ty });
+  }, [selId]);
   /** Which lens (or 'all') the user is currently editing on the selected
    *  multisensor. Persisted as UI state per session — not on the device, so
    *  switching cameras keeps the user's last-used lens focus. */
@@ -620,6 +1163,10 @@ export function EngineeringCanvas() {
   const [openType, setOpenType] = useState<DeviceType | null>(null);
   const [mfrFilter, setMfrFilter] = useState<string | null>(null);
   const [productQuery, setProductQuery] = useState('');
+  // Top-level group filter — Physical security / Infrastructure / IT / AV /
+  // Environmental / Power. Null = show all. Drives the category list in the
+  // InsertDock so engineers can move at the right level of abstraction.
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
 
   // Drag from library
   const [drag, setDrag] = useState<{ product: Product; x: number; y: number } | null>(null);
@@ -730,15 +1277,15 @@ export function EngineeringCanvas() {
       const cy = (e.clientY - r.top) / zoom;
       let best: { id: string; type: DeviceType; cx: number; cy: number; d: number } | null = null;
       for (const dev of devices) {
-        const isHost = dev.type === 'acc.door' || dev.type === 'acc.gate' || dev.type === 'acc.exit'
-          || dev.type === 'net.idf' || dev.type === 'net.mdf';
+        const isHost = isStackableHost(dev.type)
+          || dev.type === 'net.idf' || dev.type === 'net.mdf'
+          || dev.type === 'inf.rack' || dev.type === 'inf.mdf';
         if (!isHost) continue;
         const d = Math.hypot(dev.x - cx, dev.y - cy);
         if (d < HOST_RANGE && (!best || d < best.d)) best = { id: dev.id, type: dev.type, cx: dev.x, cy: dev.y, d };
       }
       if (!best) { setHoverHost(null); return; }
-      const hostKind: 'door' | 'idf' =
-        (best.type === 'acc.door' || best.type === 'acc.gate' || best.type === 'acc.exit') ? 'door' : 'idf';
+      const hostKind: 'door' | 'idf' = isStackableHost(best.type) ? 'door' : 'idf';
       const compat = canHost(hostKind, drag.product.type);
       setHoverHost({
         id: best.id, cx: best.cx, cy: best.cy,
@@ -776,13 +1323,23 @@ export function EngineeringCanvas() {
         const id = `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
         // Offset the new device just outside the host so both glyphs are
         // visible. 22px adjacent to the host center reads as "attached".
+        // When attaching to a stackable host (door / gate / elevator), the
+        // child device becomes part of the host's `stack[]` — drawn as a tiny
+        // count chip on the host glyph and listed in the inspector. The
+        // older `linkedIds` channel is still populated so any existing
+        // consumer (BOM, AI) keeps working.
+        const isStackDrop = isStackableHost(host.type) && isStackAccessory(drag.product.type);
         const newDevice: Device = {
           id, type: drag.product.type, label: drag.product.model, product: drag.product.id,
           x: host.x + 22, y: host.y, rot: 0,
           linkedIds: [host.id],
         };
         setDevices((ds) => ds.map((d) => d.id === host.id
-          ? { ...d, linkedIds: [...(d.linkedIds ?? []), id] }
+          ? {
+              ...d,
+              linkedIds: [...(d.linkedIds ?? []), id],
+              stack: isStackDrop ? [...(d.stack ?? []), id] : d.stack,
+            }
           : d).concat(newDevice));
         setSelId(id);
         toast.success(`Attached ${drag.product.model} to ${host.id}`, {
@@ -864,7 +1421,7 @@ export function EngineeringCanvas() {
       crumbs={[{ label: 'Projects', to: '/projects' }, { label: 'Riverbend HQ', to: `/project/${projectId}` }, { label: 'Canvas' }]}
       fullBleed
     >
-      <div className="h-full flex flex-col bg-[#0B1220] text-slate-100 relative">
+      <div ref={rootRef} className="h-full flex flex-col bg-[#0B1220] text-slate-100 relative">
         {/* Motion keyframes — used by the selection pill, spotlight ring,
             and lens chips. The easing is the same throughout (cubic-bezier
             0.22, 1, 0.36, 1 — a calm decelerate) so motion feels like one
@@ -882,10 +1439,17 @@ export function EngineeringCanvas() {
             from { opacity: 0; transform: translateY(2px); }
             to   { opacity: 1; transform: translateY(0); }
           }
+          /* Subtle hover lift on every canvas device. Affects the entire
+             device group: glyph, halo, and lens dot rise together. Selected
+             devices don't double-up the transform (they already have the
+             spotlight) — handled via the .dv-device:not(.dv-selected) rule. */
+          .dv-device { transform: translate(0,0); transform-origin: center; }
+          .dv-device:hover:not(.dv-selected) { transform: translate(0,-1px); filter: drop-shadow(0 4px 12px rgba(0,0,0,0.45)); }
           @media (prefers-reduced-motion: reduce) {
             @keyframes pill-in { from { opacity: 1; transform: translateX(-50%); } to { opacity: 1; transform: translateX(-50%); } }
             @keyframes soft-fade-in { from { opacity: 1; } to { opacity: 1; } }
             @keyframes lens-chip-in { from { opacity: 1; } to { opacity: 1; } }
+            .dv-device:hover:not(.dv-selected) { transform: none; filter: none; }
           }
         `}</style>
         {/* Focus mode = immersive canvas. Hide the top toolbar entirely so the
@@ -900,16 +1464,36 @@ export function EngineeringCanvas() {
             onSetup={() => setOnboarded(false)}
             techModel={techModel}
             setTechModel={(m) => setProjectTechModel(projectId, m)}
+            isFullscreen={isFullscreen}
+            onEnterFullscreen={enterFullscreen}
+            onExitFullscreen={exitFullscreen}
+            onEnterFocus={() => setFocusMode(true)}
+            onPopOut={() => {
+              // Opens the canvas in a new window. The persist middleware
+              // shares zustand state across windows via localStorage, so
+              // the popped-out canvas reflects the same project / floor.
+              // The user can drag the new window to a second monitor.
+              const url = `/project/${projectId}/canvas?popout=1`;
+              const w = window.open(url, `dv-canvas-${projectId}`, 'width=1400,height=900');
+              if (!w) {
+                toast.error('Pop-out blocked', { description: 'Allow pop-ups for this site to use a separate canvas window.', duration: 6000 });
+              }
+            }}
           />
         )}
         {focusMode && (
           <button
-            onClick={() => setFocusMode(false)}
+            onClick={() => {
+              setFocusMode(false);
+              // If we're in browser fullscreen as well, drop both at once
+              // so a single click returns the user to the normal canvas.
+              if (isFullscreen) exitFullscreen();
+            }}
             className="absolute top-3 left-3 z-50 px-2.5 py-1.5 rounded-md bg-[#0F1722]/85 border border-white/10 text-[10px] uppercase tracking-[0.18em] text-slate-300 hover:text-white hover:border-white/25 backdrop-blur-xl flex items-center gap-1.5"
             title="Exit immersive mode"
           >
             <ChevronLeft className="w-3 h-3" />
-            Exit immersive
+            {isFullscreen ? 'Exit fullscreen' : 'Exit immersive'}
           </button>
         )}
 
@@ -924,6 +1508,9 @@ export function EngineeringCanvas() {
               onStartDrag={(p, e) => setDrag({ product: p, x: e.clientX, y: e.clientY })}
               layersOpen={layersOpen}
               onToggleLayers={() => setLayersOpen((o) => !o)}
+              techModel={techModel}
+              openGroup={openGroup}
+              setOpenGroup={setOpenGroup}
             />
           )}
           {!focusMode && navSection !== 'devices' && (
@@ -1079,6 +1666,11 @@ export function EngineeringCanvas() {
             )}
 
             {/* Target simulation overlay */}
+            {/* When a camera is selected, the stick-figure target is the
+                signature affordance. We auto-position it at the end of the
+                cone the first time a camera is focused (handled via the
+                useEffect below). The DORI overlay updates live as the user
+                drags the figure. */}
             {sel && targetSim.open && (
               <TargetSimOverlay
                 d={sel}
@@ -1095,14 +1687,27 @@ export function EngineeringCanvas() {
             {/* Floating quick-tools capsule (bottom-center) */}
             <QuickTools tool={tool} setTool={setTool} showWall={planSource === 'blank'} />
 
+            {/* Cable type picker — appears next to the QuickTools strip when
+                the cable tool is active. Lets the engineer pick the cable
+                type BEFORE drawing the route. The selected type lands on the
+                Pathway record so BOM and pathway routing both pick it up. */}
+            {tool === 'cable' && (
+              <CableTypePicker
+                value={cableDraw.cableType}
+                onChange={(t) => setCableDraw((c) => ({ ...c, cableType: t }))}
+              />
+            )}
+
             {/* Zoom dock (bottom-left) */}
             <ZoomDock zoom={zoom} setZoom={setZoom} />
 
             {/* Minimap (bottom-right) */}
             <MiniMap devices={devices} />
 
-            {/* North arrow (top-right corner of canvas surface). A small
-                quiet compass — always visible, every map mode. */}
+            {/* North indicator — assumes canvas-up = north. This is an
+                indicator, not an interactive compass. Site orientation can't
+                be edited from here yet; the tooltip is explicit about that
+                so users don't expect to drag it. */}
             <div className="absolute top-16 right-3 z-20 pointer-events-none select-none">
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center"
@@ -1112,7 +1717,7 @@ export function EngineeringCanvas() {
                   border: '1px solid rgba(255,255,255,0.10)',
                   boxShadow: '0 6px 16px -8px rgba(0,0,0,0.5)',
                 }}
-                title="North"
+                title="North indicator only · canvas-up = North"
               >
                 <svg viewBox="-12 -12 24 24" width="22" height="22">
                   <path d="M 0 -8 L 3 5 L 0 2 L -3 5 Z" fill="#E2E8F0" />
@@ -1121,32 +1726,46 @@ export function EngineeringCanvas() {
               </div>
             </div>
 
-            {/* Scale bar (bottom-center of canvas, above the QuickTools).
-                The 20px = 1ft constant is the same one deriveBOM uses, so
-                this reads against the canvas geometry truthfully. Adapts
-                to the current zoom — at zoom=1 a 100ft bar is 2000px on
-                the raw canvas; we render the bar in screen pixels so
-                "100ft" stays a constant on-screen size at zoom=1. */}
-            <div
-              className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none flex items-center gap-1.5"
-              style={{
-                background: 'rgba(13,20,36,0.78)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.10)',
-                borderRadius: '6px',
-                padding: '6px 10px',
-                boxShadow: '0 6px 16px -8px rgba(0,0,0,0.5)',
-              }}
-            >
-              <span className="text-[10px] text-muted-foreground tabular-nums">0</span>
-              <svg width={zoom * 100} height={10} className="inline-block">
-                <line x1={0} y1={5} x2={zoom * 100} y2={5} stroke="#E2E8F0" strokeWidth="1.2" />
-                <line x1={0} y1={1} x2={0} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
-                <line x1={zoom * 100} y1={1} x2={zoom * 100} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
-                <line x1={zoom * 50} y1={3} x2={zoom * 50} y2={7} stroke="#E2E8F0" strokeWidth="0.8" opacity="0.6" />
-              </svg>
-              <span className="text-[10px] text-muted-foreground tabular-nums">5 ft</span>
-            </div>
+            {/* Scale bar — honest about calibration. The default
+                "20 px = 1 ft" canvas constant is a starter scale, not a
+                measurement. If the user hasn't run the /calibrate workflow
+                we say so. Once the floor's `scalePxToFt` is set by a real
+                two-point calibration, this bar reads the calibrated value. */}
+            {(() => {
+              const fid = currentFloorId;
+              const floorRec = fid ? useProjectStore.getState().floors[fid] : undefined;
+              const isCalibrated = !!(floorRec && (floorRec as any).scalePxToFt && (floorRec as any).scalePxToFt !== 0.05);
+              const ftPerPx = isCalibrated ? (floorRec as any).scalePxToFt : (1 / 20);
+              const ft = Math.round(zoom * 100 * ftPerPx * 10) / 10;
+              return (
+                <div
+                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none flex items-center gap-1.5"
+                  style={{
+                    background: 'rgba(13,20,36,0.78)',
+                    backdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    boxShadow: '0 6px 16px -8px rgba(0,0,0,0.5)',
+                  }}
+                  title={isCalibrated
+                    ? 'Calibrated scale — derived from the floor record'
+                    : 'Default scale only — run /calibrate for an exact measurement.'}
+                >
+                  <span className="text-[10px] text-muted-foreground tabular-nums">0</span>
+                  <svg width={zoom * 100} height={10} className="inline-block">
+                    <line x1={0} y1={5} x2={zoom * 100} y2={5} stroke="#E2E8F0" strokeWidth="1.2" />
+                    <line x1={0} y1={1} x2={0} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
+                    <line x1={zoom * 100} y1={1} x2={zoom * 100} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
+                    <line x1={zoom * 50} y1={3} x2={zoom * 50} y2={7} stroke="#E2E8F0" strokeWidth="0.8" opacity="0.6" />
+                  </svg>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">{ft} ft</span>
+                  {!isCalibrated && (
+                    <span className="text-[9px] uppercase tracking-[0.10em] text-amber-300/80 ml-1">Default scale</span>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Build stamp (bottom-left, just above ZoomDock). Discreet so it
                 never competes with controls but verifiable so the user can
@@ -1289,6 +1908,11 @@ function TopBar(props: {
   onScan: () => void; onSetup: () => void;
   techModel: 'cloud' | 'on_prem' | 'hybrid';
   setTechModel: (m: 'cloud' | 'on_prem' | 'hybrid') => void;
+  isFullscreen: boolean;
+  onEnterFullscreen: () => void;
+  onExitFullscreen: () => void;
+  onEnterFocus: () => void;
+  onPopOut: () => void;
 }) {
   return (
     <div className="h-14 shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-4 pr-3 gap-4 text-sm relative z-30">
@@ -1343,16 +1967,43 @@ function TopBar(props: {
 
       <div className="flex-1" />
 
-      {/* Right — collab + AI. Undo/Redo buttons removed in the lockdown
-          pass: there's no action history subsystem behind them yet, and
-          per the absolute rule "if a button doesn't work, hide it." */}
+      {/* Right — view + AI. Undo/Redo + Share removed in the lockdown pass:
+          there's no action history subsystem behind them yet, and the
+          absolute rule is "if a button doesn't work, hide it." */}
       <div className="flex items-center -space-x-1.5">
         <Avatar initials="JS" tone="#2F81F7" />
         <Avatar initials="MK" tone="#A371F7" />
         <Avatar initials="RT" tone="#3FB950" />
       </div>
-      <button className="inline-flex items-center gap-1.5 text-xs px-3 h-8 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground">
-        <Share2 className="w-3.5 h-3.5" />Share
+      {/* Focus + Fullscreen — paired view modes. Focus hides the in-app
+          chrome (left nav + insert dock). Fullscreen uses the browser's
+          Fullscreen API to fill the monitor. Together they give an
+          honest "canvas-only" experience for site walks and reviews. */}
+      <button
+        onClick={props.onEnterFocus}
+        title="Focus mode — hide chrome (canvas only)"
+        className="inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <EyeOff className="w-3.5 h-3.5" />Focus
+      </button>
+      <button
+        onClick={props.isFullscreen ? props.onExitFullscreen : props.onEnterFullscreen}
+        title={props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen monitor'}
+        className={`inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border transition-colors ${props.isFullscreen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
+      >
+        <Maximize2 className="w-3.5 h-3.5" />{props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+      </button>
+      {/* Pop-out — open the engineering canvas in its own browser window.
+          Useful for two-monitor setups: keep CRM / project hub on the main
+          display, drag the canvas window to the second. State is persisted
+          (zustand persist), so the popped-out window shares the same
+          project. */}
+      <button
+        onClick={props.onPopOut}
+        title="Open canvas in a new window (second-monitor use)"
+        className="inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ExternalLink className="w-3.5 h-3.5" />Pop out
       </button>
       <button onClick={props.onScan} className="inline-flex items-center gap-1.5 text-xs px-3.5 h-8 rounded-lg bg-primary text-primary-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_1px_2px_rgba(0,0,0,0.4)] hover:opacity-90">
         <Sparkles className="w-3.5 h-3.5" />Run vision scan
@@ -1435,8 +2086,11 @@ const NAV_ITEMS: Array<{ id: 'overview' | 'devices' | 'recording' | 'accessories
 ];
 
 function LeftNavRail({ section, setSection }: { section: string; setSection: (s: any) => void }) {
+  // Narrowed from 88px → 56px in the chrome-reduction pass. Icon-only with a
+  // tooltip on hover; labels still appear when the user pauses. Saves 32px
+  // of horizontal canvas real estate without losing nav clarity.
   return (
-    <div className="w-[88px] shrink-0 border-r border-border bg-card flex flex-col py-3">
+    <div className="w-[56px] shrink-0 border-r border-border bg-card flex flex-col py-2.5">
       {NAV_ITEMS.map((it) => {
         const active = section === it.id;
         const Icon = it.icon;
@@ -1444,10 +2098,10 @@ function LeftNavRail({ section, setSection }: { section: string; setSection: (s:
           <button
             key={it.id}
             onClick={() => setSection(it.id)}
-            className={`relative mx-2 mb-1 py-2.5 rounded-lg flex flex-col items-center gap-1 transition-colors ${active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
+            title={it.label}
+            className={`relative mx-1.5 mb-1 py-2.5 rounded-lg flex items-center justify-center transition-colors ${active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
           >
-            <Icon className="w-4 h-4" strokeWidth={1.8} />
-            <span className="text-[10px] leading-tight text-center px-1">{it.label}</span>
+            <Icon className="w-[18px] h-[18px]" strokeWidth={1.7} />
             {active && <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-primary" />}
           </button>
         );
@@ -1461,30 +2115,65 @@ function LeftNavRail({ section, setSection }: { section: string; setSection: (s:
    ═══════════════════════════════════════════════════════════════════════ */
 
 function MapsPanel() {
+  // SITE_BUILDINGS is the seed. The user can add new buildings and floors
+  // through this panel; both flows mutate local state so the additions show
+  // up immediately. (When the full site/building/floor store is wired up,
+  // this state moves there. For now the panel is self-contained but real.)
+  const [buildings, setBuildings] = useState<SiteBuilding[]>(SITE_BUILDINGS);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['bld-a', 'bld-c']));
   const [activeFloor, setActiveFloor] = useState<string>('a-g');
+  const [addBuildingOpen, setAddBuildingOpen] = useState(false);
+  const [addFloorTo, setAddFloorTo] = useState<string | null>(null);
   const toggle = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const totalFloors = SITE_BUILDINGS.reduce((n, b) => n + b.floors.length, 0);
+  const totalFloors = buildings.reduce((n, b) => n + b.floors.length, 0);
   const sourceIcon = (s: SiteFloor['source']) => s === 'blueprint' ? FileText : s === 'satellite' ? MapIcon : PencilLine;
   const sourceLabel = (s: SiteFloor['source']) => s === 'blueprint' ? 'Blueprint' : s === 'satellite' ? 'Satellite' : 'Sketch';
+
+  const handleAddBuilding = (name: string, address: string) => {
+    const id = `bld-${Date.now().toString(36).slice(-5)}`;
+    const groundId = `${id}-g`;
+    const newBuilding: SiteBuilding = {
+      id, name, address,
+      floors: [{ id: groundId, name: 'Ground floor', deviceCount: 0, updated: 'just now', source: 'blank' as any }],
+    };
+    setBuildings((bs) => [...bs, newBuilding]);
+    setExpanded((s) => { const n = new Set(s); n.add(id); return n; });
+    setActiveFloor(groundId);
+    toast.success(`Added building · ${name}`, { description: 'Default ground floor created. Open the floor to start placing devices.', duration: 4500 });
+  };
+
+  const handleAddFloor = (buildingId: string, name: string, source: SiteFloor['source']) => {
+    const fid = `${buildingId}-f${Date.now().toString(36).slice(-4)}`;
+    setBuildings((bs) => bs.map((b) =>
+      b.id === buildingId
+        ? { ...b, floors: [...b.floors, { id: fid, name, deviceCount: 0, updated: 'just now', source }] }
+        : b
+    ));
+    setActiveFloor(fid);
+    toast.success(`Added floor · ${name}`, { duration: 3500 });
+  };
+
   return (
     <div className="w-[360px] shrink-0 border-r border-border bg-card flex flex-col">
       <div className="px-4 pt-4 pb-3 border-b border-border">
         <div className="text-[13px] font-semibold tracking-tight">Maps</div>
-        <div className="text-[11px] text-muted-foreground mt-0.5">{SITE_BUILDINGS.length} buildings · {totalFloors} floor maps</div>
+        <div className="text-[11px] text-muted-foreground mt-0.5">{buildings.length} buildings · {totalFloors} floor maps</div>
       </div>
 
       <div className="px-3 py-2 border-b border-border flex items-center gap-2">
-        <button className="flex-1 inline-flex items-center justify-center gap-1.5 text-[11px] h-7 rounded-lg bg-primary text-primary-foreground">
+        <button
+          onClick={() => setAddBuildingOpen(true)}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 text-[11px] h-7 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+        >
           <Plus className="w-3 h-3" /> Add building
         </button>
-        <button className="inline-flex items-center justify-center gap-1.5 text-[11px] h-7 px-2 rounded-lg border border-border hover:bg-secondary">
-          <Upload className="w-3 h-3" /> Import
-        </button>
+        {/* Import button removed in the lockdown pass — no real importer
+            backend is wired up yet, and the rule is "if a button doesn't
+            work, hide it." Re-add when DWG / PDF / image ingestion is real. */}
       </div>
 
       <div className="flex-1 overflow-auto">
-        {SITE_BUILDINGS.map((b) => {
+        {buildings.map((b) => {
           const open = expanded.has(b.id);
           const buildingDevices = b.floors.reduce((n, f) => n + f.deviceCount, 0);
           return (
@@ -1531,12 +2220,14 @@ function MapsPanel() {
                           </div>
                           <div className="text-[10px] text-muted-foreground truncate">{sourceLabel(f.source)} · {f.deviceCount} devices · {f.updated}</div>
                         </div>
-                        <MoreHorizontal className="w-3.5 h-3.5 text-muted-foreground opacity-0 hover:opacity-100" />
                       </button>
                     );
                   })}
                   <div className="pl-9 pr-3 pt-1">
-                    <button className="text-[10.5px] text-primary hover:underline inline-flex items-center gap-1">
+                    <button
+                      onClick={() => setAddFloorTo(b.id)}
+                      className="text-[10.5px] text-primary hover:underline inline-flex items-center gap-1"
+                    >
                       <Plus className="w-3 h-3" /> Add floor map to {b.name.split(' — ')[0]}
                     </button>
                   </div>
@@ -1549,6 +2240,139 @@ function MapsPanel() {
 
       <div className="px-4 py-2 border-t border-border text-[10px] text-muted-foreground flex items-center gap-1.5 bg-secondary/20">
         <MapIcon className="w-3 h-3" /> Click a floor to load it onto the canvas
+      </div>
+
+      {addBuildingOpen && (
+        <AddBuildingDialog
+          onClose={() => setAddBuildingOpen(false)}
+          onSubmit={(name, address) => { handleAddBuilding(name, address); setAddBuildingOpen(false); }}
+        />
+      )}
+      {addFloorTo && (
+        <AddFloorDialog
+          buildingName={buildings.find((b) => b.id === addFloorTo)?.name ?? 'Building'}
+          onClose={() => setAddFloorTo(null)}
+          onSubmit={(name, source) => { handleAddFloor(addFloorTo, name, source); setAddFloorTo(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Modal for collecting building name + address. Lives inside MapsPanel; not
+ *  exported because no one else uses it. Light validation: name required. */
+function AddBuildingDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (name: string, address: string) => void }) {
+  const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
+  const valid = name.trim().length > 1;
+  return (
+    <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[400px] bg-card border border-border rounded-xl shadow-2xl">
+        <div className="px-5 pt-5 pb-3 border-b border-border">
+          <div className="text-[14px] font-medium tracking-tight">Add building</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">A building hosts one or more floor maps. You can add floors after.</div>
+        </div>
+        <div className="px-5 py-4 space-y-3.5">
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Building name</span>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Building D — Annex"
+              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 h-9 text-[13px] focus:outline-none focus:border-primary/60"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Address (optional)</span>
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="600 Industrial Way"
+              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 h-9 text-[13px] focus:outline-none focus:border-primary/60"
+            />
+          </label>
+        </div>
+        <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-[12px] px-3 h-8 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground">
+            Cancel
+          </button>
+          <button
+            onClick={() => valid && onSubmit(name.trim(), address.trim())}
+            disabled={!valid}
+            className={`text-[12px] px-3 h-8 rounded-md transition-opacity ${valid ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-muted-foreground cursor-not-allowed'}`}
+          >
+            Add building
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Modal for adding a floor to an existing building. Captures the floor name
+ *  and the source (blueprint upload, satellite trace, hand sketch, or blank).
+ *  Source picker is symbolic for now; the floor lands with that label and a
+ *  zero device-count, ready to be opened on the canvas. */
+function AddFloorDialog({ buildingName, onClose, onSubmit }: {
+  buildingName: string;
+  onClose: () => void;
+  onSubmit: (name: string, source: SiteFloor['source']) => void;
+}) {
+  const [name, setName] = useState('');
+  const [source, setSource] = useState<SiteFloor['source']>('blueprint');
+  const valid = name.trim().length > 0;
+  const SOURCES: { id: SiteFloor['source']; label: string; hint: string }[] = [
+    { id: 'blueprint',  label: 'Blueprint',  hint: 'Upload a DWG / PDF / image' },
+    { id: 'satellite',  label: 'Satellite',  hint: 'Trace from an aerial photo' },
+    { id: 'sketch',     label: 'Sketch',     hint: 'Hand-draw a layout on canvas' },
+  ];
+  return (
+    <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[420px] bg-card border border-border rounded-xl shadow-2xl">
+        <div className="px-5 pt-5 pb-3 border-b border-border">
+          <div className="text-[14px] font-medium tracking-tight">Add floor map</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Adds a floor to <span className="text-slate-200">{buildingName}</span>.</div>
+        </div>
+        <div className="px-5 py-4 space-y-3.5">
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Floor name</span>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Level 4"
+              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 h-9 text-[13px] focus:outline-none focus:border-primary/60"
+            />
+          </label>
+          <div>
+            <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Source</span>
+            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+              {SOURCES.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setSource(s.id)}
+                  className={`text-left p-2 rounded-md border transition-colors ${source === s.id ? 'border-primary/60 bg-primary/8' : 'border-border hover:bg-secondary/30'}`}
+                >
+                  <div className="text-[12px] font-medium">{s.label}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5 leading-snug">{s.hint}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-[12px] px-3 h-8 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground">
+            Cancel
+          </button>
+          <button
+            onClick={() => valid && onSubmit(name.trim(), source)}
+            disabled={!valid}
+            className={`text-[12px] px-3 h-8 rounded-md transition-opacity ${valid ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-muted-foreground cursor-not-allowed'}`}
+          >
+            Add floor
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1676,18 +2500,14 @@ function SectionPanel({ section, devices, projectId }: { section: string; device
   if (section === 'reports') {
     return (
       <Wrapper title="Reports" sub="Auto-generated from the canvas">
-        <RowLink icon={FileBarChart} label="Bill of materials" sub={`${devices.length} line items · $${(devices.length * 1280).toLocaleString()} est.`} tone="#1F6FEB" />
-        <RowLink icon={Activity}     label="Coverage heatmap" sub="By floor · highlight gaps" tone="#3FB950" />
-        <RowLink icon={BarChart3}    label="Bandwidth & storage" sub="Per stream · 30 day retention" tone="#F08F3C" />
-        <RowLink icon={DollarSign}   label="Cost summary" sub="Hardware + labor estimate" tone="#E5B23A" />
-        <RowLink icon={ListChecks}   label="Compliance checklist" sub="NDAA · SOC2 · GDPR" tone="#A371F7" />
-        <RowLink icon={Clock}        label="Install schedule" sub="Phased rollout (3 weeks)" tone="#14B8A6" />
-        <RowLink icon={ShieldCheck}  label="Security posture" sub="Score 86/100 · 3 findings" tone="#E5484D" />
-        <div className="p-3">
-          <button className="w-full inline-flex items-center justify-center gap-1.5 text-xs h-9 rounded-lg bg-primary text-primary-foreground">
-            <FileText className="w-3.5 h-3.5" /> Export full report (PDF)
-          </button>
-        </div>
+        <ReportExportRow icon={FileBarChart} label="Engineering packet" sub="Cover · device schedule · BOM · cable schedule · findings" tone="#1F6FEB" kind="engineering" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={Sparkles}     label="Customer presentation" sub="Cover · system overview · investment · timeline" tone="#A371F7" kind="customer" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={FileText}     label="Camera schedule" sub={`${devices.filter((d) => TYPE_KIND[d.type] === 'camera').length} cameras · location · model · IR`} tone="#F08F3C" kind="camera-schedule" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={DoorOpen}     label="Door schedule" sub={`${devices.filter((d) => isStackableHost(d.type)).length} openings · hardware stack`} tone="#3FB950" kind="door-schedule" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={Cable}        label="Cable / pathway schedule" sub="Runs · cable type · length · termination" tone="#22D3EE" kind="cable-schedule" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={DollarSign}   label="Bill of materials" sub={`${devices.length} line items · live unit prices`} tone="#E5B23A" kind="bom" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={ListChecks}   label="Compliance checklist" sub="NDAA · ONVIF · ADA · fire egress" tone="#A371F7" kind="compliance" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={ShieldCheck}  label="Commissioning report" sub="Per-device install / firmware / signal / sign-off" tone="#E5484D" kind="commissioning" devices={devices} projectId={projectId} />
       </Wrapper>
     );
   }
@@ -1725,29 +2545,65 @@ function InsertDock(props: {
   onStartDrag: (p: Product, e: React.PointerEvent) => void;
   layersOpen: boolean;
   onToggleLayers: () => void;
+  /** Active project tech model. Filters the library to the matching ecosystem;
+   *  off-ecosystem SKUs are still discoverable via search but greyed out and
+   *  flagged with a "Outside stack" badge. */
+  techModel: 'cloud' | 'on_prem' | 'hybrid';
+  openGroup: string | null;
+  setOpenGroup: (g: string | null) => void;
 }) {
   const cat = CATEGORIES.find((c) => c.id === props.openCat);
+  /** Two-pass filter:
+   *   1. In-stack products (productMatchesTechModel === true) for the active
+   *      project. These show first.
+   *   2. Out-of-stack products only if the user searches for them by name —
+   *      they appear at the bottom with a quiet "Outside stack" badge. This
+   *      makes the tech-model selection visibly affect the library without
+   *      hiding parts of the catalog that a search would expect to find. */
+  const POOL = useMemo(() => PRODUCTS.filter((p) => p.type === props.openType), [props.openType]);
+  const matched = useMemo(() => POOL.filter((p) => productMatchesTechModel(p, props.techModel)), [POOL, props.techModel]);
+  const offstack = useMemo(() => POOL.filter((p) => !productMatchesTechModel(p, props.techModel)), [POOL, props.techModel]);
+
   const products = useMemo(() => {
     if (!props.openType) return [];
-    return PRODUCTS
-      .filter((p) => p.type === props.openType)
-      .filter((p) => !props.mfrFilter || p.mfr === props.mfrFilter)
-      .filter((p) => !props.query || `${p.mfr} ${p.model} ${p.sub}`.toLowerCase().includes(props.query.toLowerCase()));
-  }, [props.openType, props.mfrFilter, props.query]);
+    const q = props.query.toLowerCase().trim();
+    const matchesQuery = (p: Product) => !q || `${p.mfr} ${p.model} ${p.sub}`.toLowerCase().includes(q);
+    const matchesMfr   = (p: Product) => !props.mfrFilter || p.mfr === props.mfrFilter;
+    const list = matched.filter(matchesQuery).filter(matchesMfr);
+    // Offstack products only appear when the user is actively searching;
+    // otherwise the library reads as cleanly filtered.
+    if (q) return [...list, ...offstack.filter(matchesQuery).filter(matchesMfr)];
+    return list;
+  }, [props.openType, matched, offstack, props.mfrFilter, props.query]);
 
   const manufacturers = useMemo(() => {
     if (!props.openType) return [];
-    return Array.from(new Set(PRODUCTS.filter((p) => p.type === props.openType).map((p) => p.mfr)));
-  }, [props.openType]);
+    // Only show manufacturer chips for in-stack SKUs.
+    return Array.from(new Set(matched.map((p) => p.mfr)));
+  }, [props.openType, matched]);
+
+  /** Drives the row badge: "Recommended" / "In stack" / "Outside stack". */
+  function badgeFor(p: Product): { label: string; tone: string; bg: string } | null {
+    if (!productMatchesTechModel(p, props.techModel)) {
+      return { label: 'Outside stack', tone: '#94A3B8', bg: 'rgba(148,163,184,0.12)' };
+    }
+    if (p.recommended) {
+      return { label: 'Recommended', tone: '#34D399', bg: 'rgba(52,211,153,0.14)' };
+    }
+    return null;
+  }
 
   const activeCat = CATEGORIES.find((c) => c.id === props.openCat) ?? null;
   return (
     <div className="shrink-0 flex bg-background relative">
-      <div className="w-[360px] border-r border-border flex flex-col bg-card">
+      {/* InsertDock narrowed from 360px → 320px in the chrome-reduction
+          pass. Header padding tightened to give the canvas back another
+          ~52px of horizontal space. */}
+      <div className="w-[320px] border-r border-border flex flex-col bg-card">
         {/* Header — editorial. The device-library title sits as a calm
             headline; the count below is supporting metadata. When drilled
             into a category, the category becomes the headline. */}
-        <div className="px-5 pt-5 pb-4 border-b border-border/70 flex items-start justify-between gap-3">
+        <div className="px-4 pt-4 pb-3 border-b border-border/70 flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             {activeCat ? (
               <>
@@ -1766,14 +2622,24 @@ function InsertDock(props: {
                   </div>
                   <div className="min-w-0">
                     <div className="text-[15px] font-medium tracking-tight truncate leading-tight">{activeCat.label}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">{PRODUCTS.filter((p) => TYPE_KIND[p.type] === activeCat.id).length} products · {activeCat.types.length} types</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {PRODUCTS.filter((p) => TYPE_KIND[p.type] === activeCat.id && productMatchesTechModel(p, props.techModel)).length} in stack
+                      <span className="mx-1.5 opacity-40">·</span>
+                      {PRODUCTS.filter((p) => TYPE_KIND[p.type] === activeCat.id).length} total
+                      <span className="mx-1.5 opacity-40">·</span>
+                      {activeCat.types.length} types
+                    </div>
                   </div>
                 </div>
               </>
             ) : (
               <>
                 <div className="text-[15px] font-medium tracking-tight leading-tight">Device library</div>
-                <div className="text-[11.5px] text-muted-foreground mt-1">{PRODUCTS.length} products across {CATEGORIES.length} categories</div>
+                <div className="text-[11.5px] text-muted-foreground mt-1">
+                  {PRODUCTS.filter((p) => productMatchesTechModel(p, props.techModel)).length} in {props.techModel === 'on_prem' ? 'on-prem' : props.techModel} stack
+                  <span className="mx-1.5 opacity-40">·</span>
+                  {PRODUCTS.length} total · {CATEGORIES.length} categories
+                </div>
               </>
             )}
           </div>
@@ -1787,7 +2653,7 @@ function InsertDock(props: {
         </div>
 
         {/* Search — calmer materials. Same affordance, gentler chrome. */}
-        <div className="px-5 py-3 border-b border-border/70">
+        <div className="px-4 py-2.5 border-b border-border/70 space-y-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
             <input
@@ -1797,6 +2663,39 @@ function InsertDock(props: {
               className="w-full bg-input-background border border-input-border rounded-md pl-8 pr-3 h-9 text-[12px] focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/15 placeholder:text-muted-foreground/50"
             />
           </div>
+          {/* Top-level group nav — Physical security / Infrastructure / IT /
+              AV / Environmental / Power. Wraps the category list so engineers
+              can scope by domain first. Only shown when no category is open
+              (drilling into a category already implies the group). */}
+          {!activeCat && (
+            <div className="flex flex-wrap gap-1">
+              <button
+                onClick={() => props.setOpenGroup(null)}
+                className={`text-[10.5px] px-2 py-1 rounded transition-colors ${
+                  props.openGroup === null
+                    ? 'bg-primary/15 text-primary border border-primary/30'
+                    : 'border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                }`}
+              >
+                All
+              </button>
+              {TOP_LEVEL_GROUPS.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => props.setOpenGroup(g.id)}
+                  title={g.hint}
+                  className={`text-[10.5px] px-2 py-1 rounded transition-colors ${
+                    props.openGroup === g.id
+                      ? 'border'
+                      : 'border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                  }`}
+                  style={props.openGroup === g.id ? { background: `${g.tone}1f`, color: g.tone, borderColor: `${g.tone}55` } : undefined}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* LEVEL 1 — Categories as a vertical list, not a 2-col grid. Each
@@ -1805,13 +2704,18 @@ function InsertDock(props: {
             not a tile dashboard. */}
         {!activeCat && (
           <div className="flex-1 overflow-auto py-1.5">
-            {CATEGORIES.map((c) => {
+            {CATEGORIES.filter((c) => {
+              if (!props.openGroup) return true;
+              const group = TOP_LEVEL_GROUPS.find((g) => g.id === props.openGroup);
+              return group ? group.categories.includes(c.id) : true;
+            }).map((c) => {
+              const inStack = PRODUCTS.filter((p) => TYPE_KIND[p.type] === c.id && productMatchesTechModel(p, props.techModel)).length;
               const productCount = PRODUCTS.filter((p) => TYPE_KIND[p.type] === c.id).length;
               return (
                 <button
                   key={c.id}
                   onClick={() => { props.setOpenCat(c.id); props.setOpenType(null); }}
-                  className="w-full text-left px-5 py-3 flex items-center gap-3 hover:bg-secondary/30 transition-colors duration-150 group"
+                  className="w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-secondary/30 transition-colors duration-150 group"
                 >
                   <div
                     className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-150 group-hover:scale-[1.03]"
@@ -1825,7 +2729,10 @@ function InsertDock(props: {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[13.5px] font-medium tracking-tight leading-tight text-slate-100">{c.label}</div>
-                    <div className="text-[11.5px] text-muted-foreground mt-0.5">{c.types.length} types · {productCount} products</div>
+                    <div className="text-[11.5px] text-muted-foreground mt-0.5">
+                      {c.types.length} types · <span className={inStack === 0 ? 'text-amber-400/80' : ''}>{inStack} in stack</span>
+                      {inStack !== productCount && <span className="opacity-50"> · {productCount} total</span>}
+                    </div>
                   </div>
                   <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
                 </button>
@@ -1837,45 +2744,69 @@ function InsertDock(props: {
         {/* LEVEL 2 — Types within the chosen category. Each type is its
             own section: heading + a small grid of product rows. Sentence
             case throughout; the colored accent is reserved for the
-            single hairline strip beside the heading. */}
+            single hairline strip beside the heading. Stack filter applied:
+            in-stack SKUs first, then out-of-stack only if user is searching. */}
         {activeCat && (
           <div className="flex-1 overflow-auto py-1.5">
             {activeCat.types.map((t) => {
-              const items = PRODUCTS.filter((p) => p.type === t.id && (!props.query || `${p.mfr} ${p.model} ${p.sub}`.toLowerCase().includes(props.query.toLowerCase())));
-              if (props.query && items.length === 0) return null;
+              const q = props.query.toLowerCase().trim();
+              const matchesQuery = (p: Product) => !q || `${p.mfr} ${p.model} ${p.sub}`.toLowerCase().includes(q);
+              const inStackItems  = PRODUCTS.filter((p) => p.type === t.id && productMatchesTechModel(p, props.techModel) && matchesQuery(p));
+              const offStackItems = q ? PRODUCTS.filter((p) => p.type === t.id && !productMatchesTechModel(p, props.techModel) && matchesQuery(p)) : [];
+              const items = [...inStackItems, ...offStackItems];
+              if (items.length === 0) return null;
               return (
                 <div key={t.id} className="mb-2">
-                  <div className="px-5 pt-3 pb-2 flex items-center gap-2.5">
+                  <div className="px-4 pt-2.5 pb-1.5 flex items-center gap-2.5">
                     <span className="w-[2px] h-3.5 rounded-full" style={{ background: activeCat.tone }} />
                     <span className="text-[12px] font-medium text-slate-200 tracking-tight">{t.label}</span>
                     <span className="text-[10.5px] text-muted-foreground/70 ml-auto">{items.length}</span>
                   </div>
-                  {items.map((p) => (
-                    <button
-                      key={p.id}
-                      onPointerDown={(e) => { e.preventDefault(); props.onStartDrag(p, e); }}
-                      className="w-full text-left px-5 py-2.5 hover:bg-secondary/40 cursor-grab active:cursor-grabbing flex items-center gap-3 transition-colors duration-150 group"
-                    >
-                      <div
-                        className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-[1.03]"
-                        style={{
-                          background: `${activeCat.tone}10`,
-                          color: activeCat.tone,
-                          transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
-                        }}
+                  {items.map((p) => {
+                    const badge = badgeFor(p);
+                    const outOfStack = badge?.label === 'Outside stack';
+                    return (
+                      <button
+                        key={p.id}
+                        onPointerDown={(e) => { e.preventDefault(); props.onStartDrag(p, e); }}
+                        className={`w-full text-left px-4 py-2 hover:bg-secondary/40 cursor-grab active:cursor-grabbing flex items-center gap-2.5 transition-colors duration-150 group ${outOfStack ? 'opacity-55 hover:opacity-100' : ''}`}
                       >
-                        <DeviceGlyph type={p.type} size={22} tone={activeCat.tone} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[12.5px] truncate leading-tight">
-                          <span className="font-medium text-slate-100">{p.mfr}</span>
-                          <span className="text-muted-foreground ml-1.5">{p.model}</span>
+                        <div
+                          className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-[1.03]"
+                          style={{
+                            background: `${activeCat.tone}10`,
+                            color: activeCat.tone,
+                            transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                          }}
+                        >
+                          <DeviceGlyph type={p.type} size={22} tone={activeCat.tone} />
                         </div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{p.sub}</div>
-                      </div>
-                      <GripVertical className="w-3.5 h-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
-                    </button>
-                  ))}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[12.5px] truncate leading-tight flex items-center gap-2">
+                            <span className="font-medium text-slate-100">{p.mfr}</span>
+                            <span className="text-muted-foreground">{p.model}</span>
+                            {badge && (
+                              <span
+                                className="ml-auto text-[9.5px] uppercase tracking-[0.06em] px-1.5 py-[1px] rounded font-medium"
+                                style={{ background: badge.bg, color: badge.tone }}
+                                title={
+                                  badge.label === 'Recommended'
+                                    ? 'Recommended SKU for this stack — most projects ship this'
+                                    : badge.label === 'Outside stack'
+                                    ? `This SKU lives outside the active ${props.techModel === 'on_prem' ? 'on-prem' : props.techModel} stack. Drop it on the canvas and it will be flagged.`
+                                    : undefined
+                                }
+                              >
+                                {badge.label}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{p.sub}</div>
+                        </div>
+                        <GripVertical className="w-3.5 h-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+                      </button>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -1883,7 +2814,7 @@ function InsertDock(props: {
         )}
 
         {/* Hint footer — quieter, single line, restrained icon. */}
-        <div className="px-5 py-2.5 border-t border-border/70 text-[11px] text-muted-foreground/70 flex items-center gap-1.5">
+        <div className="px-4 py-2 border-t border-border/70 text-[11px] text-muted-foreground/70 flex items-center gap-1.5">
           {activeCat ? <><GripVertical className="w-3 h-3" />Drag a product onto the canvas</> : <><MousePointer2 className="w-3 h-3" />Pick a category to browse</>}
         </div>
       </div>
@@ -2591,7 +3522,9 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         {/* Devices — real top-down hardware silhouettes with drag-to-move */}
         {renderedDevices.map((d) => {
           const multi = selIds.has(d.id);
-          const tone = KIND_TONE[TYPE_KIND[d.type]];
+          // Per-object color override — when set, drives glyph, label, and
+          // cone tone for this device only. Falls back to category color.
+          const tone = deviceTone(d);
           const isSel = selId === d.id;
           // Selected-device spotlight: when SOMETHING is selected, every other
           // device fades back so the focused one reads clearly. The glyph dims
@@ -2602,8 +3535,8 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           return (
             <g
               key={d.id}
-              className="cursor-move"
-              style={{ opacity: spotlightDim, transition: 'opacity 160ms ease' }}
+              className={`cursor-move dv-device ${isSel ? 'dv-selected' : ''}`}
+              style={{ opacity: spotlightDim, transition: 'opacity 160ms ease, transform 200ms cubic-bezier(0.22,1,0.36,1)' }}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -3380,7 +4313,10 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
   const y2 = d.y + Math.sin(a2) * r;
   const large = half > 90 ? 1 : 0;
   const gradId = d.type === 'cam.ptz' ? 'fov-grad-ptz' : 'fov-grad';
-  const edge = d.type === 'cam.ptz' ? '#7CC2FF' : '#FFD24D';
+  // Cone edge follows the per-object color if set, otherwise the default
+  // PTZ / non-PTZ pair. Keeps the picker's promise: "color the cable, color
+  // the cone, color the label."
+  const edge = d.color || (d.type === 'cam.ptz' ? '#7CC2FF' : '#FFD24D');
   // Rotate gradient so its origin aligns with the lens and decays outward
   const path = `M ${d.x} ${d.y} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
   return (
@@ -3494,7 +4430,8 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, color, onU
 function RotationRing({ d, onRotate, svgRef, zoom, overrideColor }: { d: Device; onRotate: (r: number) => void; svgRef: React.RefObject<SVGSVGElement>; zoom: number; overrideColor?: string }) {
   // overrideColor lets a multisensor's active-lens color drive the ring's
   // visuals when the ring is editing a single lens (e.g. cyan for Lens A).
-  const tone = overrideColor ?? KIND_TONE[TYPE_KIND[d.type]];
+  // Otherwise we use the per-object color (if assigned) before the category.
+  const tone = overrideColor ?? deviceTone(d);
   const R = 34;
   const rad = (d.rot * Math.PI) / 180;
   const handleX = d.x + Math.cos(rad) * R;
@@ -3554,7 +4491,7 @@ const DEVICE_ICON: Record<DeviceType, any> = {
   'cam.bullet': Video, 'cam.dome': Aperture, 'cam.ptz': ScanEye, 'cam.multisensor': Grid3x3,
   'cam.fisheye': Disc, 'cam.thermal': Flame, 'cam.lpr': Car, 'cam.body': UserSquare2,
   'acc.reader': ScanFace, 'acc.biometric': Fingerprint, 'acc.strike': KeyRound, 'acc.maglock': Lock,
-  'acc.exit': DoorOpen, 'acc.turnstile': GitBranch, 'acc.intercom': Phone,
+  'acc.exit': DoorOpen, 'acc.turnstile': GitBranch, 'acc.intercom': Phone, 'acc.panic-bar': KeyRound, 'acc.dps': DoorOpen,
   'int.motion': Radar, 'int.glassbreak': AlertTriangle, 'int.contact': DoorOpen, 'int.panic': BellRing,
   'int.vibration': Vibrate, 'int.keypad': Hash,
   'net.switch': Cable, 'net.idf': Server, 'net.ap': Wifi, 'net.firewall': ShieldCheck, 'net.bridge': Antenna,
@@ -3564,6 +4501,15 @@ const DEVICE_ICON: Record<DeviceType, any> = {
   'pwr.ups': BatteryCharging, 'pwr.poe': Zap, 'pwr.surge': ShieldAlert, 'pwr.solar': Sun,
   'sen.temp': Thermometer, 'sen.smoke': CloudFog, 'sen.water': Droplets, 'sen.occupancy': Users2,
   'sen.gas': Wind, 'sen.gunshot': CrosshairIcon,
+  // Infrastructure — reused glyphs at small sizes; custom SVG renders for canvas in HardwareGlyph.
+  'inf.door-single': DoorOpen, 'inf.door-double': DoorOpen,
+  'inf.door-storefront': DoorOpen, 'inf.door-sliding': DoorOpen,
+  'inf.window': AppWindow, 'inf.wall-brick': WallIcon, 'inf.wall-fire': Flame, 'inf.wall-concrete': WallIcon,
+  'inf.gate-swing': GitBranch, 'inf.gate-slide': GitBranch, 'inf.elevator': Server,
+  'inf.mdf': Server, 'inf.rack': Server,
+  'cyb.endpoint': ShieldCheck, 'cyb.siem': BarChart3, 'cyb.firewall-ng': ShieldCheck, 'cyb.vpn': Lock,
+  'fls.pull-station': BellRing, 'fls.fire-panel': AlertTriangle, 'fls.strobe': Sun, 'fls.sprinkler': Droplets,
+  'bld.hvac-controller': Wind, 'bld.lighting-panel': Sun, 'bld.bms-gateway': Server,
 };
 
 // Modern device chip — used in InsertDock cards, layer rows, drag ghost, etc.
@@ -3733,7 +4679,131 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
             <circle cx={0} cy={1} r={1} fill={ink} stroke="none" />
           </g>
         )}
+        {kind === 'infrastructure' && d.type === 'inf.door-single' && (
+          <g>
+            {/* jamb */}
+            <line x1={-11} y1={-9} x2={-11} y2={9} strokeWidth={2} />
+            {/* swing arc */}
+            <path d="M -11 9 A 18 18 0 0 1 7 -9" strokeDasharray="2 1.5" strokeWidth={0.8} />
+            {/* door panel */}
+            <line x1={-11} y1={9} x2={7} y2={-9} strokeWidth={1.6} />
+            <circle cx={5} cy={-6} r={0.9} fill={ink} stroke="none" />
+          </g>
+        )}
+        {kind === 'infrastructure' && d.type === 'inf.door-double' && (
+          <g>
+            <line x1={-12} y1={-9} x2={-12} y2={9} strokeWidth={2} />
+            <line x1={12} y1={-9} x2={12} y2={9} strokeWidth={2} />
+            <path d="M -12 9 A 14 14 0 0 1 0 -3" strokeDasharray="2 1.5" strokeWidth={0.8} />
+            <path d="M 12 9 A 14 14 0 0 0 0 -3" strokeDasharray="2 1.5" strokeWidth={0.8} />
+            <line x1={-12} y1={9} x2={0} y2={-3} strokeWidth={1.4} />
+            <line x1={12} y1={9} x2={0} y2={-3} strokeWidth={1.4} />
+          </g>
+        )}
+        {kind === 'infrastructure' && d.type === 'inf.door-storefront' && (
+          <g>
+            <rect x={-13} y={-8} width={26} height={16} strokeWidth={1.4} />
+            <line x1={0} y1={-8} x2={0} y2={8} strokeWidth={2.2} />
+            {[-9, 5].map((x) => <rect key={x} x={x} y={-5} width={4} height={10} strokeWidth={0.6} />)}
+          </g>
+        )}
+        {kind === 'infrastructure' && d.type === 'inf.door-sliding' && (
+          <g>
+            <line x1={-12} y1={-2} x2={12} y2={-2} strokeWidth={2} />
+            <line x1={-12} y1={2} x2={0} y2={2} strokeWidth={2} />
+            <line x1={0} y1={6} x2={12} y2={6} strokeWidth={2} />
+            <path d="M 0 0 L 3 2 L 0 4" strokeWidth={1} />
+          </g>
+        )}
+        {kind === 'infrastructure' && (d.type === 'inf.gate-swing' || d.type === 'inf.gate-slide') && (
+          <g>
+            <line x1={-12} y1={0} x2={12} y2={0} strokeWidth={2.2} />
+            {[-9, -5, -1, 3, 7].map((x) => <line key={x} x1={x} y1={-6} x2={x} y2={6} strokeWidth={0.7} />)}
+            {d.type === 'inf.gate-swing' && <path d="M -12 0 A 14 14 0 0 1 0 -10" strokeDasharray="2 1.5" strokeWidth={0.8} />}
+          </g>
+        )}
+        {kind === 'infrastructure' && d.type === 'inf.elevator' && (
+          <g>
+            <rect x={-9} y={-10} width={18} height={20} rx={1} />
+            <line x1={0} y1={-10} x2={0} y2={10} strokeWidth={2} />
+            <path d="M -3 -4 L 0 -7 L 3 -4 M -3 4 L 0 7 L 3 4" strokeWidth={0.8} />
+          </g>
+        )}
+        {kind === 'infrastructure' && d.type === 'inf.window' && (
+          <g>
+            <rect x={-12} y={-5} width={24} height={10} strokeWidth={1.4} />
+            <line x1={-12} y1={0} x2={12} y2={0} strokeWidth={0.6} />
+            <line x1={0} y1={-5} x2={0} y2={5} strokeWidth={0.6} />
+          </g>
+        )}
+        {kind === 'infrastructure' && (d.type === 'inf.rack' || d.type === 'inf.mdf') && (
+          <g>
+            <rect x={-8} y={-11} width={16} height={22} rx={1} strokeWidth={1.4} />
+            {[-7, -3, 1, 5, 9].map((y) => <line key={y} x1={-7} y1={y} x2={7} y2={y} strokeWidth={0.6} />)}
+            {d.type === 'inf.mdf' && (
+              <text x={0} y={3} textAnchor="middle" fontSize={6} fill={ink} stroke="none">MDF</text>
+            )}
+          </g>
+        )}
+        {kind === 'cyber' && (
+          <g>
+            <path d="M -9 -6 L 0 -10 L 9 -6 L 9 4 L 0 10 L -9 4 Z" strokeWidth={1.4} />
+            <path d="M -3 0 L -1 2 L 4 -3" strokeWidth={1.6} />
+          </g>
+        )}
+        {kind === 'fire' && (
+          <g>
+            <path d="M 0 -10 L 6 -2 L 4 -2 L 8 6 L -8 6 L -4 -2 L -6 -2 Z" strokeWidth={1.4} />
+          </g>
+        )}
+        {kind === 'building' && (
+          <g>
+            <rect x={-8} y={-9} width={16} height={18} strokeWidth={1.4} />
+            {[-6, -2, 2, 6].map((x) => [-6, -2, 2].map((y) => (
+              <rect key={`${x}-${y}`} x={x - 0.6} y={y - 0.6} width={1.2} height={1.2} fill={ink} stroke="none" />
+            )))}
+          </g>
+        )}
+        {kind === 'infrastructure' && (d.type === 'inf.wall-brick' || d.type === 'inf.wall-fire' || d.type === 'inf.wall-concrete') && (
+          <g>
+            <rect x={-12} y={-3.5} width={24} height={7} strokeWidth={1.2} />
+            {d.type === 'inf.wall-brick' && (
+              <>
+                <line x1={-6} y1={-3.5} x2={-6} y2={3.5} strokeWidth={0.5} />
+                <line x1={0} y1={-3.5} x2={0} y2={3.5} strokeWidth={0.5} />
+                <line x1={6} y1={-3.5} x2={6} y2={3.5} strokeWidth={0.5} />
+                <line x1={-9} y1={0} x2={9} y2={0} strokeWidth={0.5} />
+              </>
+            )}
+            {d.type === 'inf.wall-fire' && (
+              <g>
+                <path d="M -3 -1 L 0 -4 L 3 -1 L 1 1 L 3 3 L 0 5 L -3 3 L -1 1 Z" strokeWidth={0.9} />
+              </g>
+            )}
+            {d.type === 'inf.wall-concrete' && (
+              <>
+                <circle cx={-7} cy={0} r={1} strokeWidth={0.5} />
+                <circle cx={0} cy={0} r={1} strokeWidth={0.5} />
+                <circle cx={7} cy={0} r={1} strokeWidth={0.5} />
+              </>
+            )}
+          </g>
+        )}
       </g>
+
+      {/* Stack-count chip — visible only on stackable hosts that have at
+          least one accessory in their stack. Drawn at top-right of the
+          glyph so it never collides with the lens (cameras) or jamb (doors).
+          Click handling is owned by the surface picker; the chip itself is
+          render-only. */}
+      {isStackableHost(d.type) && (d.stack?.length ?? 0) > 0 && (
+        <g transform="translate(12, -12)" pointerEvents="none">
+          <circle r={6.5} fill="#1F2738" stroke={tone} strokeWidth={0.9} />
+          <text textAnchor="middle" dominantBaseline="central" fontSize={7.5} fill={tone} fontWeight={600}>
+            {d.stack!.length}
+          </text>
+        </g>
+      )}
 
       {/* Selection ring */}
       {selected && <circle r={15} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 2" />}
@@ -3743,11 +4813,12 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
 
 const KIND_INITIAL: Record<DeviceKind, string> = {
   camera: 'C', access: 'A', network: 'N', intrusion: '!',
-  audio: '♪', storage: 'R', display: '▢', power: '⚡', sensor: '°',
+  audio: '♪', storage: 'R', display: '▢', power: '⚡', sensor: '°', infrastructure: '◰',
+  cyber: '⌬', fire: '!', building: '◧',
 };
 
 function IsoDeviceBadge({ d }: { d: Device }) {
-  const tone = KIND_TONE[TYPE_KIND[d.type]];
+  const tone = deviceTone(d);
   const Icon = DEVICE_ICON[d.type];
   return (
     <div style={{ width: 56, position: 'relative', textAlign: 'center', userSelect: 'none', fontFamily: 'inherit' }}>
@@ -3894,6 +4965,7 @@ function DeviceGlyphPaths({ type, tone }: { type: DeviceType; tone: string }) {
 const KIND_ICON: Record<DeviceKind, any> = {
   camera: Video, access: ScanFace, network: Cable, intrusion: Radar,
   audio: Volume2, storage: HardDrive, display: Monitor, power: BatteryCharging, sensor: Thermometer,
+  infrastructure: DoorOpen, cyber: ShieldCheck, fire: Flame, building: Server,
 };
 
 function CategoryGlyph({ kind, active }: { kind: DeviceKind; active?: boolean }) {
@@ -4042,13 +5114,17 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
   const kind = TYPE_KIND[d.type];
-  const tone = KIND_TONE[kind];
+  // Per-object color override beats the category tone. SelectionPill dot
+  // and primary-action backgrounds use this so the chosen color shows up
+  // immediately when the user picks one.
+  const tone = deviceTone(d);
   const isCam = kind === 'camera';
   const isMultisensor = d.type === 'cam.multisensor';
-  const isDoor = d.type === 'acc.exit' || d.type === 'acc.door' || d.type === 'acc.gate';
+  const isDoor = isStackableHost(d.type);
   const isReader = d.type === 'acc.reader' || d.type === 'acc.biometric';
   const isIDF = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'net.switch';
   const isPathway = kind === 'network' && !isIDF && !isReader;
+  const [colorOpen, setColorOpen] = useState(false);
 
   // Build toolbar actions per device kind. Each kind exposes at most 5
   // primary actions; the rest fall into the "More" overflow popover. The
@@ -4223,8 +5299,124 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
 
         {/* Actions */}
         {primaryActions.map((a) => <ToolbarButton key={a.id} a={a} tone={tone} />)}
+        {/* Per-object color picker — small swatch button that opens a tiny
+            palette popover. Selecting a color writes d.color through the
+            store; "Default" clears the override and the device returns to
+            its category tone. */}
+        <ColorPickerButton
+          currentHex={d.color}
+          onPick={(hex) => onUpdate({ color: hex || undefined })}
+          tone={tone}
+        />
         {overflowActions.length > 0 && <MoreButton items={overflowActions} tone={tone} />}
       </div>
+
+      {/* Stack popover — opens when the user clicks the stack chip on a
+          stackable host (door, gate, elevator). Lists the accessories
+          currently mounted. Currently a read-only summary; full inline
+          add-from-popover wires through Insert dock drag. */}
+      {isStackableHost(d.type) && (d.stack?.length ?? 0) > 0 && (
+        <div
+          className="mt-1.5 text-[10.5px] rounded-md overflow-hidden"
+          style={{
+            background: 'rgba(22,30,46,0.94)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(18px)',
+          }}
+        >
+          <div className="px-2.5 py-1.5 border-b border-white/8 text-slate-300 uppercase tracking-[0.10em] text-[9px] font-medium">
+            Stack · {d.stack!.length}
+          </div>
+          {/* Names rendered by the parent via stackResolver — fall back to
+              raw ids when not provided. */}
+          {d.stack!.map((id) => (
+            <div key={id} className="px-2.5 py-1 text-slate-200 font-mono border-b border-white/5 last:border-b-0">
+              {id}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Compact swatch button used inside the SelectionPill. Click reveals a
+ *  9-swatch palette; clicking "Default" clears the override and returns
+ *  the device to its category color. */
+function ColorPickerButton({ currentHex, onPick, tone }: { currentHex?: string; onPick: (hex: string) => void; tone: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const swatchTone = currentHex || tone;
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Object color"
+        className="px-2.5 inline-flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 h-full border-r border-white/8"
+      >
+        <span
+          className="w-3.5 h-3.5 rounded-sm border border-white/15"
+          style={{ background: swatchTone }}
+        />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-1.5 z-40 w-[176px] rounded-md overflow-hidden p-2"
+          style={{
+            background: 'rgba(22,30,46,0.96)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(18px)',
+            boxShadow: '0 16px 32px -16px rgba(0,0,0,0.6)',
+          }}
+        >
+          <div className="text-[9.5px] uppercase tracking-[0.10em] text-slate-400 px-1 pb-1.5">Object color</div>
+          <div className="grid grid-cols-5 gap-1">
+            {DEVICE_COLOR_PALETTE.map((c) => {
+              const isCurrent = (currentHex || '') === c.hex;
+              if (c.id === 'reset') {
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => { onPick(''); setOpen(false); }}
+                    title="Use category color"
+                    className={`w-7 h-7 rounded border flex items-center justify-center text-[9px] tracking-tight transition-colors ${
+                      isCurrent || !currentHex
+                        ? 'border-primary/60 text-primary bg-primary/10'
+                        : 'border-white/15 text-slate-400 hover:text-slate-200 hover:border-white/30'
+                    }`}
+                  >
+                    Auto
+                  </button>
+                );
+              }
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => { onPick(c.hex); setOpen(false); }}
+                  title={c.name}
+                  className="w-7 h-7 rounded border transition-colors flex items-center justify-center"
+                  style={{
+                    background: c.hex,
+                    borderColor: isCurrent ? '#FFFFFF' : 'rgba(255,255,255,0.18)',
+                  }}
+                >
+                  {isCurrent && <Check className="w-3 h-3 text-white drop-shadow" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4344,6 +5536,145 @@ function DrawerSection({ title, children }: { title: string; children: React.Rea
       <div className="text-[13px] font-medium text-slate-200 mb-3 tracking-tight">{title}</div>
       {children}
     </div>
+  );
+}
+
+/** Accessories section in the camera inspector. Lists compatible mounts /
+ *  junction boxes for the camera type, allows toggling them on/off — each
+ *  selection persists on the device's `accessories[]` and rolls up into
+ *  the BOM. */
+function AccessoriesSection({ cameraType, selected, onToggle }: {
+  cameraType: DeviceType;
+  selected: string[];
+  onToggle: (id: string) => void;
+}) {
+  const options = accessoriesForCameraType(cameraType);
+  if (options.length === 0) return null;
+  const totalAdded = selected.reduce((sum, id) => sum + (ACCESSORIES.find((a) => a.id === id)?.msrp ?? 0), 0);
+  return (
+    <DrawerSection title="Compatible accessories">
+      <div className="space-y-1">
+        {options.map((a) => {
+          const isOn = selected.includes(a.id);
+          return (
+            <button
+              key={a.id}
+              onClick={() => onToggle(a.id)}
+              className={`w-full text-left px-2.5 py-2 rounded-md border transition-colors flex items-center gap-2.5 ${
+                isOn ? 'border-primary/40 bg-primary/8' : 'border-white/10 hover:border-white/25 hover:bg-white/5'
+              }`}
+            >
+              <span
+                className={`w-3 h-3 rounded-sm shrink-0 flex items-center justify-center ${isOn ? 'bg-primary' : 'border border-white/30'}`}
+              >
+                {isOn && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] text-slate-100 truncate">
+                  {a.mfr} · {a.model}
+                </div>
+                <div className="text-[10.5px] text-muted-foreground truncate">{a.kind.replace('-', ' ')}</div>
+              </div>
+              <span className="text-[11px] tabular-nums text-slate-300">${a.msrp ?? '—'}</span>
+            </button>
+          );
+        })}
+      </div>
+      {selected.length > 0 && (
+        <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+          <span className="text-muted-foreground">{selected.length} added · rolls up into BOM</span>
+          <span className="tabular-nums text-slate-100 font-medium">+${totalAdded}</span>
+        </div>
+      )}
+    </DrawerSection>
+  );
+}
+
+/** AI Optimize section in the camera inspector drawer. The Overview /
+ *  Prosecution tabs are real now — each renders a different set of metrics
+ *  and recommendations targeted at that goal. */
+function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
+  const [mode, setMode] = useState<'overview' | 'prosecution'>('overview');
+  const PX_PER_FT = 3.83;
+  const rangeFt = d.range ?? (d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30);
+  const fovDeg  = d.fov ?? (d.type === 'cam.ptz' ? 36 : d.type === 'cam.fisheye' ? 360 : 70);
+  // px/m at half range — a fair "general usefulness" metric.
+  const sensorPx = 1920;
+  const halfFovRad = (fovDeg * Math.PI / 180) / 2;
+  const midDistM = (rangeFt * 0.5) * 0.3048;
+  const fovWidthM = Math.max(0.01, 2 * midDistM * Math.tan(halfFovRad));
+  const pxPerM = sensorPx / fovWidthM;
+
+  return (
+    <>
+      <DrawerSection title="Optimize">
+        <div className="flex gap-1 mb-3">
+          <button
+            onClick={() => setMode('overview')}
+            className="flex-1 py-1.5 rounded text-[11px]"
+            style={mode === 'overview'
+              ? { background: `${tone}1A`, color: '#F8FAFC', boxShadow: `inset 0 0 0 1px ${tone}55` }
+              : { color: '#94A3B8', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setMode('prosecution')}
+            className="flex-1 py-1.5 rounded text-[11px]"
+            style={mode === 'prosecution'
+              ? { background: `${tone}1A`, color: '#F8FAFC', boxShadow: `inset 0 0 0 1px ${tone}55` }
+              : { color: '#94A3B8', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            Prosecution
+          </button>
+        </div>
+        {mode === 'overview' ? (
+          <>
+            <Row label="Range"      value={`${rangeFt} ft`} />
+            <Row label="HFOV"       value={`${fovDeg}°`} />
+            <Row label="Coverage"   value={`${Math.round((Math.PI * Math.pow(rangeFt, 2) * (fovDeg / 360)))} sq ft`} />
+            <Row label="Mount AFF"  value={`${d.mountFt ?? 10} ft`} />
+            <Row label="IR"         value={d.ir ? 'Enabled' : 'No IR'} tone={d.ir ? '#34D399' : undefined} />
+            <Row label="NDAA"       value={d.ndaa ? 'Compliant' : '—'} tone={d.ndaa ? '#34D399' : undefined} />
+          </>
+        ) : (
+          <>
+            <Row label="px/m @ midrange" value={pxPerM.toFixed(0)} />
+            <Row label="Identification"  value={pxPerM >= 250 ? 'Yes' : pxPerM >= 125 ? 'Marginal' : 'No'} tone={pxPerM >= 250 ? '#34D399' : pxPerM >= 125 ? '#FACC15' : '#F87171'} />
+            <Row label="Recognition"     value={pxPerM >= 125 ? 'Yes' : 'No'} tone={pxPerM >= 125 ? '#34D399' : '#F87171'} />
+            <Row label="License plate"   value={d.type === 'cam.lpr' ? 'LPR sensor · yes' : (pxPerM >= 320 ? 'Yes (≤4m)' : 'Marginal')} tone={d.type === 'cam.lpr' ? '#34D399' : (pxPerM >= 320 ? '#34D399' : '#FACC15')} />
+            <Row label="Forensic export" value={pxPerM >= 250 ? 'Court-ready' : 'Best-effort'} tone={pxPerM >= 250 ? '#34D399' : '#FACC15'} />
+            <Row label="Distance @ ID grade" value={`${Math.round((sensorPx / (250 / 0.3048 * 2 * Math.tan(halfFovRad))) * 3.28)} ft`} />
+          </>
+        )}
+      </DrawerSection>
+      <DrawerSection title={mode === 'overview' ? 'Coverage suggestions' : 'Forensic suggestions'}>
+        {(mode === 'overview'
+          ? [
+            'Rotate ±12° to remove blind spot at corner',
+            'Drop mount height to 8 ft for tighter face area',
+            'Move 4 ft toward entry to widen coverage of approach',
+            'Enable IR for 24/7 starlight performance',
+          ]
+          : [
+            'Step focal to 6.0 mm to push ID-grade pixels at door',
+            'Add a second camera at 30° offset for face cross-shot',
+            'Switch to 4K sensor (currently 1080p) for plate at 30 ft',
+            'Lower mount to 7 ft for prosecution-grade face capture',
+          ]
+        ).map((s, i) => (
+          <button key={i} className="w-full text-left text-[11.5px] text-slate-200 px-2 py-1.5 mb-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5">
+            <Sparkles className="w-3 h-3 inline mr-1.5" style={{ color: tone }} />{s}
+          </button>
+        ))}
+      </DrawerSection>
+      <DrawerSection title="Analytics">
+        <Row label="Face recognition" value="Enabled" tone="#34D399" />
+        <Row label="LPR" value={d.type === 'cam.lpr' ? 'On (sensor)' : '—'} tone={d.type === 'cam.lpr' ? '#34D399' : undefined} />
+        <Row label="Object detection" value="People · Vehicle" />
+        <Row label="Edge GPU" value="74% load" tone="#FACC15" />
+      </DrawerSection>
+    </>
   );
 }
 
@@ -4662,30 +5993,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         )}
 
         {bodyShows(tab, 'ai') && (
-          <>
-            <DrawerSection title="Optimize">
-              <div className="flex gap-1 mb-3">
-                <button className="flex-1 py-1.5 rounded text-[11px] text-slate-300 hover:bg-white/5 border border-white/10">Overview</button>
-                <button className="flex-1 py-1.5 rounded text-[11px]" style={{ background: `${tone}1A`, color: '#F8FAFC', boxShadow: `inset 0 0 0 1px ${tone}55` }}>Prosecution</button>
-              </div>
-              {[
-                'Rotate −12° to remove blind spot at SW corner',
-                'Step focal to 6.0 mm for prosecution at door',
-                'Move 4 ft east to clear column occlusion',
-                'Enable IR cut filter (low-light confidence +18%)',
-              ].map((s, i) => (
-                <button key={i} className="w-full text-left text-[11.5px] text-slate-200 px-2 py-1.5 mb-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5">
-                  <Sparkles className="w-3 h-3 inline mr-1.5" style={{ color: tone }} />{s}
-                </button>
-              ))}
-            </DrawerSection>
-            <DrawerSection title="Analytics">
-              <Row label="Face recognition" value="Enabled" tone="#34D399" />
-              <Row label="LPR" value="—" />
-              <Row label="Object detection" value="People · Vehicle" />
-              <Row label="Edge GPU" value="74% load" tone="#FACC15" />
-            </DrawerSection>
-          </>
+          <AiOptimizeSection d={d} tone={tone} />
         )}
 
         {bodyShows(tab, 'network') && (
@@ -4725,11 +6033,24 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           <>
             <DrawerSection title="Mount">
               <Row label="Type" value="Ceiling pendant" />
-              <Row label="Height" value="9' 0'' AFF" />
+              <Row label="Height" value={`${d.mountFt ?? 9}' AFF`} />
               <Row label="Tilt" value="−14°" />
               <Row label="Pan" value={`${d.rot}°`} />
               <Row label="Surface" value="ACT — needs T-bar adapter" tone="#FACC15" />
             </DrawerSection>
+            {/* Compatible accessories — wall / pole / corner / parapet mount
+                + junction box, picked from ACCESSORIES by camera type. The
+                user toggles each row on/off; selections persist on the
+                device as `accessories[]` and are summed into the BOM. */}
+            <AccessoriesSection
+              cameraType={d.type}
+              selected={d.accessories ?? []}
+              onToggle={(id) => {
+                const cur = d.accessories ?? [];
+                const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+                onUpdate({ accessories: next });
+              }}
+            />
           </>
         )}
 
@@ -4822,7 +6143,7 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
   // DORI thresholds (px per m on subject) are the EN-50132-7 / IEC 62676
   // standard. We render those next to the live px/m calculation so the user
   // sees, at distance X, which threshold the camera achieves.
-  const tone = KIND_TONE[TYPE_KIND[d.type]];
+  const tone = deviceTone(d);
   const dx = pos.x - d.x;
   const dy = pos.y - d.y;
   const dist = Math.hypot(dx, dy);
@@ -4966,6 +6287,56 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
             </div>
           </div>
 
+          {/* Forensic / prosecution-grade readouts — license plate, IR, and
+              low-light confidence. These are heuristics from the camera spec
+              and the standing distance, not an actual video feed: but they
+              telegraph the right design intent ("would this hold up in
+              court") that the user asked for. */}
+          <div className="px-3 py-2.5 border-b border-white/5">
+            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-1.5">Forensic quality</div>
+            {(() => {
+              // Plate detection wants ~80 px on a 520mm plate (US standard).
+              const platePx = Math.round(pxPerM * 0.52);
+              const plateReady = platePx >= 80;
+              const isLPR = d.type === 'cam.lpr';
+              // Identification grade (per IEC) needs ~250 px/m on the face.
+              const idGrade = pxPerM >= 250 ? 'Excellent' : pxPerM >= 125 ? 'Adequate' : pxPerM >= 63 ? 'Marginal' : 'Insufficient';
+              // IR / low-light usefulness scaled by distance vs IR range
+              // (assume 30m typical IR LED). Drops linearly past that.
+              const irRange = d.ir ? 30 : 0;
+              const irPct = irRange > 0
+                ? Math.max(0, Math.min(100, Math.round((1 - distM / irRange) * 100)))
+                : 0;
+              const lowLightTone = idGrade === 'Excellent' ? '#34D399' : idGrade === 'Adequate' ? '#7CC2FF' : idGrade === 'Marginal' ? '#FACC15' : '#F87171';
+              return (
+                <div className="space-y-1.5 text-[10.5px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Identification</span>
+                    <span className="tabular-nums" style={{ color: lowLightTone }}>{idGrade}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">License plate</span>
+                    <span className="tabular-nums" style={{ color: plateReady ? '#34D399' : '#F87171' }}>
+                      {platePx} px {plateReady ? '✓' : (isLPR ? '· LPR sensor' : '· need ≥80')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">IR effective</span>
+                    <span className="tabular-nums" style={{ color: irRange === 0 ? '#64748B' : irPct > 60 ? '#34D399' : irPct > 25 ? '#FACC15' : '#F87171' }}>
+                      {irRange === 0 ? 'No IR' : `${irPct}% @ ${distFt.toFixed(0)}ft`}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Prosecution-ready</span>
+                    <span className="tabular-nums" style={{ color: pxPerM >= 250 && plateReady ? '#34D399' : pxPerM >= 125 ? '#FACC15' : '#F87171' }}>
+                      {pxPerM >= 250 && plateReady ? 'Yes' : pxPerM >= 125 ? 'Partial' : 'No'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Operating conditions */}
           <div className="px-3 py-2.5">
             <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-1.5">Operating conditions</div>
@@ -4978,7 +6349,7 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
           </div>
 
           <div className="px-3 py-1.5 border-t border-white/5 text-[9px] text-slate-500 leading-relaxed">
-            Computed from camera FOV + range. No video feed simulated.
+            Computed from camera FOV + range. Drag the stick figure to test other distances.
           </div>
         </div>
       </div>
@@ -5059,18 +6430,27 @@ function CoverageModeSwitch({ mode, setMode }: { mode: CoverageMode; setMode: (m
 
 interface IntelIssue {
   id: string;
-  kind: 'overlap' | 'blindspot' | 'poe' | 'low-light' | 'nec';
+  kind: 'overlap' | 'blindspot' | 'poe' | 'low-light' | 'nec' | 'storage' | 'ada' | 'permit' | 'compliance' | 'cabling';
   severity: 'info' | 'warn' | 'high';
   x: number;
   y: number;
   label: string;
   detail: string;
+  /** Optional suggestion the AI assistant prints below the headline. */
+  suggestion?: string;
 }
 
+/** Real-time engineering intelligence — pulls signals from the canvas state
+ *  and surfaces actionable findings. This is the substrate that drives both
+ *  the on-canvas chips AND the embedded AI Assistant panel. */
 function computeIntelIssues(devices: Device[]): IntelIssue[] {
   const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera');
+  const access = devices.filter((d) => TYPE_KIND[d.type] === 'access');
+  const idfs = devices.filter((d) => d.type === 'net.idf' || d.type === 'net.switch');
+  const maglocks = devices.filter((d) => d.type === 'acc.maglock');
   const out: IntelIssue[] = [];
-  // Overlap heuristic: two cameras within 80px
+
+  // ── 1. Coverage overlap (two cameras within 80px) ──
   for (let i = 0; i < cams.length; i++) {
     for (let j = i + 1; j < cams.length; j++) {
       const a = cams[i], b = cams[j];
@@ -5085,24 +6465,80 @@ function computeIntelIssues(devices: Device[]): IntelIssue[] {
           y: (a.y + b.y) / 2,
           label: 'Coverage overlap',
           detail: `${a.id} ↔ ${b.id} · ${Math.round((1 - dist / 110) * 100)}% redundant`,
+          suggestion: 'Re-aim one camera or drop the second — overlap rarely buys redundancy worth the PoE budget.',
         });
       }
     }
   }
-  // PoE pressure: too many cameras (>6) ⇒ flag the centroid
-  if (cams.length >= 6) {
+
+  // ── 2. PoE budget pressure ──
+  // Average PoE-class draw 12W per camera. If we exceed 360W (most 48-port
+  // PoE+ switches' budget), warn. If we exceed 720W (PoE++), error.
+  if (cams.length > 0 && idfs.length === 0) {
+    out.push({
+      id: 'poe-no-idf',
+      kind: 'poe',
+      severity: 'warn',
+      x: cams[0].x, y: cams[0].y - 24,
+      label: 'No IDF placed',
+      detail: `${cams.length} camera${cams.length === 1 ? '' : 's'} on canvas with no IDF/MDF — switch needed.`,
+      suggestion: 'Drop an IDF / network rack from the Network category, then re-home each camera to its closest IDF.',
+    });
+  } else if (cams.length >= 6) {
     const cx = cams.reduce((s, c) => s + c.x, 0) / cams.length;
     const cy = cams.reduce((s, c) => s + c.y, 0) / cams.length;
+    const estW = cams.length * 12;
     out.push({
       id: 'poe-load',
       kind: 'poe',
-      severity: cams.length >= 10 ? 'high' : 'warn',
+      severity: estW > 720 ? 'high' : estW > 360 ? 'warn' : 'info',
       x: cx, y: cy,
       label: 'PoE budget',
-      detail: `${cams.length} cameras · est. ${(cams.length * 8).toFixed(0)}W on IDF-1`,
+      detail: `${cams.length} cameras · est. ${estW}W (${estW > 720 ? 'requires PoE++' : estW > 360 ? 'within PoE+ budget' : 'comfortable'}).`,
+      suggestion: estW > 720
+        ? 'Spread across two PoE++ switches, or move PTZ/multisensor loads to PoE injectors.'
+        : 'Stay within ~80% of the switch budget. Reserve headroom for IR LEDs and heater elements outdoors.',
     });
   }
-  // Blind spot: any LPR or thermal pointing away from device cluster gets a info flag
+
+  // ── 3. NVR storage estimate ──
+  // 6 Mbps avg bitrate * 24h * 30 days * cameras / 8000 = TB needed
+  if (cams.length >= 4) {
+    const tb = Math.round((cams.length * 6 * 86400 * 30) / 8e9 * 10) / 10;
+    const nvrs = devices.filter((d) => d.type === 'sto.nvr' || d.type === 'sto.server' || d.type === 'sto.cloud').length;
+    if (nvrs === 0) {
+      out.push({
+        id: 'storage-missing',
+        kind: 'storage',
+        severity: 'warn',
+        x: cams[0].x + 60, y: cams[0].y + 60,
+        label: 'No NVR placed',
+        detail: `${cams.length} cameras · ~${tb} TB for 30-day retention.`,
+        suggestion: 'Drop a Recording & Storage device. NVRs ship in 16-, 32-, 64-channel SKUs.',
+      });
+    }
+  }
+
+  // ── 4. Maglock → REX compliance ──
+  for (const m of maglocks) {
+    const hasRex = access.some((a) =>
+      (a.type === 'acc.exit' || a.type === 'acc.dps' || a.type === 'acc.panic-bar')
+      && Math.hypot(a.x - m.x, a.y - m.y) < 70,
+    );
+    if (!hasRex) {
+      out.push({
+        id: `code-rex-${m.id}`,
+        kind: 'compliance',
+        severity: 'high',
+        x: m.x, y: m.y + 22,
+        label: 'Maglock without REX',
+        detail: `${m.id} requires a REX (request-to-exit) for fire-egress compliance.`,
+        suggestion: 'Drop a REX or panic bar adjacent to this maglock — required by IBC 1010.1.9.7.',
+      });
+    }
+  }
+
+  // ── 5. Blind spot heuristic on bullet cameras aimed away from cluster ──
   cams.forEach((c) => {
     if (c.type === 'cam.bullet' && Math.abs(c.rot) > 150) {
       out.push({
@@ -5111,10 +6547,66 @@ function computeIntelIssues(devices: Device[]): IntelIssue[] {
         severity: 'info',
         x: c.x - 22, y: c.y - 18,
         label: 'Possible blind spot',
-        detail: `${c.id} aimed away from entry path`,
+        detail: `${c.id} aimed away from entry path.`,
+        suggestion: 'Confirm this camera covers an actual approach. Re-aim toward the door / sidewalk if not.',
       });
     }
   });
+
+  // ── 6. Cable distance over Cat6 spec (~90m / 295ft) ──
+  // Rough heuristic: any camera further than 600px from the nearest IDF.
+  if (idfs.length > 0) {
+    for (const c of cams) {
+      let minPx = Infinity;
+      for (const i of idfs) minPx = Math.min(minPx, Math.hypot(c.x - i.x, c.y - i.y));
+      if (minPx > 600) {
+        out.push({
+          id: `cab-${c.id}`,
+          kind: 'cabling',
+          severity: 'warn',
+          x: c.x + 18, y: c.y - 18,
+          label: 'Cable run exceeds 90m',
+          detail: `${c.id} is ~${Math.round(minPx / 3.83)} ft from nearest IDF.`,
+          suggestion: 'Add a midspan PoE injector at 70m, switch to fiber, or place a closer IDF.',
+        });
+      }
+    }
+  }
+
+  // ── 7. ADA reach on readers ──
+  // Readers labeled with z-axis height above 48" don't get one yet (no schema
+  // for height). Instead flag readers with no linked door — a different ADA
+  // signal (path-of-travel) but useful: "where does this go?"
+  for (const r of access.filter((d) => d.type === 'acc.reader')) {
+    if (!r.linkedIds?.length) {
+      out.push({
+        id: `ada-${r.id}`,
+        kind: 'ada',
+        severity: 'info',
+        x: r.x, y: r.y + 22,
+        label: 'Reader unlinked',
+        detail: `${r.id} is not linked to a door — confirm mount height ≤ 48\".`,
+        suggestion: 'Drag this reader onto a door, or open Inspector → Link to specify the host.',
+      });
+    }
+  }
+
+  // ── 8. Pole-mount permit hint (when an LPR or PTZ has been placed near
+  //     the canvas edge — proxy for "perimeter" / "outdoors") ──
+  for (const c of cams) {
+    if ((c.type === 'cam.ptz' || c.type === 'cam.lpr') && (c.x < 80 || c.x > 720 || c.y < 80 || c.y > 520)) {
+      out.push({
+        id: `permit-${c.id}`,
+        kind: 'permit',
+        severity: 'info',
+        x: c.x, y: c.y + 28,
+        label: 'Pole mount likely',
+        detail: `${c.id} placed at perimeter — pole / parapet mount may require a building permit.`,
+        suggestion: 'Confirm with local AHJ before bidding. Pasadena / LA County typically require it for >10ft poles.',
+      });
+    }
+  }
+
   return out;
 }
 
@@ -5125,7 +6617,21 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
     issues.forEach((i) => { by[i.severity] = (by[i.severity] ?? 0) + 1; });
     return by;
   }, [issues]);
-  const toneFor = (k: IntelIssue['kind']) => k === 'overlap' ? '#F59E0B' : k === 'blindspot' ? '#FB7185' : k === 'poe' ? '#7CC2FF' : k === 'low-light' ? '#A78BFA' : '#34D399';
+  /** Active "AI Assistant" side-panel state. The pill in the top-right both
+   *  toggles inline canvas chips (compact mode, default) and opens the
+   *  full assistant panel for an expanded engineering review. */
+  const [panelOpen, setPanelOpen] = useState(false);
+  const toneFor = (k: IntelIssue['kind']) =>
+    k === 'overlap' ? '#F59E0B'
+    : k === 'blindspot' ? '#FB7185'
+    : k === 'poe' ? '#7CC2FF'
+    : k === 'low-light' ? '#A78BFA'
+    : k === 'storage' ? '#3FB950'
+    : k === 'ada' ? '#A78BFA'
+    : k === 'permit' ? '#E5B23A'
+    : k === 'compliance' ? '#E5484D'
+    : k === 'cabling' ? '#22D3EE'
+    : '#34D399';
   const sevDot = (s: IntelIssue['severity']) => s === 'high' ? '#F87171' : s === 'warn' ? '#FACC15' : '#7CC2FF';
   return (
     <>
@@ -5155,10 +6661,12 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
         </div>
       ))}
 
-      {/* top-right intelligence summary */}
-      <div className="absolute top-3 right-3 z-20 pointer-events-auto select-none">
+      {/* top-right intelligence summary — two stacked pills: a compact
+          chip toggle (left of label), and the AI Assistant open/close. */}
+      <div className="absolute top-3 right-3 z-20 pointer-events-auto select-none flex items-center gap-1.5">
         <button
           onClick={() => setOpen(!open)}
+          title="Toggle on-canvas intelligence chips"
           className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px]"
           style={{
             background: 'rgba(8,12,20,0.78)',
@@ -5169,14 +6677,107 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
           }}
         >
           <Activity className="w-3.5 h-3.5 text-sky-300" />
-          <span className="uppercase tracking-[0.18em] text-[9px] text-slate-400">Intelligence</span>
-          {summary.high ? <span className="tabular-nums text-rose-300">{summary.high}</span> : null}
-          {summary.warn ? <span className="tabular-nums text-amber-300">{summary.warn}</span> : null}
-          {summary.info ? <span className="tabular-nums text-sky-300">{summary.info}</span> : null}
-          {!issues.length && <span className="tabular-nums text-emerald-300">clear</span>}
+          <span className="uppercase tracking-[0.18em] text-[9px] text-slate-400">Chips</span>
           {open ? <Eye className="w-3 h-3 text-slate-400" /> : <EyeOff className="w-3 h-3 text-slate-500" />}
         </button>
+        <button
+          onClick={() => setPanelOpen(!panelOpen)}
+          title="Open AI engineering assistant"
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px]"
+          style={{
+            background: panelOpen ? 'rgba(82,146,220,0.18)' : 'rgba(8,12,20,0.78)',
+            backdropFilter: 'blur(14px)',
+            border: panelOpen ? '1px solid rgba(82,146,220,0.5)' : '1px solid rgba(255,255,255,0.08)',
+            color: '#E2E8F0',
+            boxShadow: '0 10px 24px -10px rgba(0,0,0,0.7)',
+          }}
+        >
+          <Sparkles className="w-3.5 h-3.5" style={{ color: panelOpen ? '#A6C8F0' : '#A6C8F0' }} />
+          <span className="uppercase tracking-[0.18em] text-[9px] text-slate-300">Assistant</span>
+          {summary.high ? <span className="tabular-nums text-rose-300">{summary.high}</span> : null}
+          {summary.warn ? <span className="tabular-nums text-amber-300">{summary.warn}</span> : null}
+          {!summary.high && !summary.warn && !issues.length && <span className="tabular-nums text-emerald-300">clear</span>}
+        </button>
       </div>
+
+      {/* AI Assistant side panel — embedded on the right of the canvas.
+          Lists every issue with severity, location, and suggestion.
+          Clicking a row scrolls the canvas viewport to that issue's
+          coordinates. Not a chatbot — this is an engineering review
+          that updates the moment the canvas changes. */}
+      {panelOpen && (
+        <div
+          className="absolute top-3 right-3 mt-12 z-30 w-[320px] max-h-[calc(100vh-180px)] overflow-hidden flex flex-col rounded-xl"
+          style={{
+            background: 'rgba(18,24,38,0.96)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(82,146,220,0.30)',
+            boxShadow: '0 22px 48px -16px rgba(0,0,0,0.75), 0 0 0 1px rgba(82,146,220,0.08)',
+          }}
+        >
+          <div className="px-3.5 py-2.5 border-b border-white/8 flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-sky-300" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[12.5px] font-medium text-slate-100 tracking-tight">Engineering assistant</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                Live findings from your canvas · {issues.length || 'none'}
+              </div>
+            </div>
+            <button onClick={() => setPanelOpen(false)} className="text-slate-400 hover:text-slate-100">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="overflow-auto flex-1">
+            {issues.length === 0 ? (
+              <div className="px-4 py-8 text-center text-[11.5px] text-emerald-300/80">
+                <Check className="w-4 h-4 mx-auto mb-2 text-emerald-300" />
+                No issues detected. The design passes basic engineering checks.
+              </div>
+            ) : (
+              issues
+                .slice()
+                .sort((a, b) => {
+                  const order = { high: 0, warn: 1, info: 2 } as const;
+                  return order[a.severity] - order[b.severity];
+                })
+                .map((iss) => (
+                  <div
+                    key={iss.id}
+                    className="px-3.5 py-2.5 border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span
+                        className="mt-1 w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ background: sevDot(iss.severity), boxShadow: `0 0 6px ${sevDot(iss.severity)}80` }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[12px] font-medium text-slate-100 tracking-tight">{iss.label}</span>
+                          <span
+                            className="text-[9px] uppercase tracking-[0.10em] px-1 rounded"
+                            style={{ background: `${toneFor(iss.kind)}1f`, color: toneFor(iss.kind) }}
+                          >
+                            {iss.kind}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-300/90 mt-0.5 leading-snug">{iss.detail}</div>
+                        {iss.suggestion && (
+                          <div className="text-[10.5px] text-slate-400 mt-1.5 leading-snug border-l-2 border-sky-400/30 pl-2 italic">
+                            {iss.suggestion}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+            )}
+          </div>
+          <div className="px-3.5 py-2 border-t border-white/8 text-[9.5px] text-slate-500 leading-relaxed flex items-center gap-1">
+            <Activity className="w-3 h-3" />
+            Updates as you edit the canvas. Heuristics, not legal advice.
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -5224,6 +6825,36 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 /* ═══════════════════════════════════════════════════════════════════════
    QUICK TOOLS CAPSULE  ·  ZOOM DOCK  ·  MINIMAP  ·  STATUS BAR
    ═══════════════════════════════════════════════════════════════════════ */
+
+/** Picker that floats above the canvas QuickTools strip while the cable
+ *  tool is active. Click a cable type to set it for the in-progress run.
+ *  The selected type drives the line stroke + appears in the pathway record. */
+function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t: CableTypeId) => void }) {
+  return (
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-[68px] z-20 select-none">
+      <div className="bg-card/95 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)] px-1.5 py-1.5 flex items-center gap-1 max-w-[680px] overflow-x-auto">
+        <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1.5 shrink-0">Cable</span>
+        {CABLE_TYPES.map((c) => {
+          const active = c.id === value;
+          return (
+            <button
+              key={c.id}
+              onClick={() => onChange(c.id)}
+              title={`${c.label} — ${c.note} · $${c.pricePerFt.toFixed(2)}/ft`}
+              className={`shrink-0 px-2 h-7 rounded-md text-[11px] transition-colors flex items-center gap-1.5 ${
+                active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
+              }`}
+              style={active ? { boxShadow: `inset 0 0 0 1px ${c.tone}55` } : undefined}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ background: c.tone }} />
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool) => void; showWall: boolean }) {
   // Every tool here MUST have a working canvas behavior. Text and comment
@@ -5305,7 +6936,7 @@ function MiniMap({ devices }: { devices: Device[] }) {
 }
 
 function StatusBar({ tool, zoom, counts, units }: { tool: Tool; zoom: number; counts: Record<DeviceKind, number>; units: 'ft' | 'm' }) {
-  const toolLabel = tool === 'select' ? 'Select' : tool === 'pan' ? 'Pan' : tool === 'measure' ? 'Measure' : tool === 'text' ? 'Text' : tool === 'wall' ? 'Wall' : 'Comment';
+  const toolLabel = tool === 'select' ? 'Select' : tool === 'pan' ? 'Pan' : tool === 'measure' ? 'Measure' : tool === 'wall' ? 'Wall' : tool === 'cable' ? 'Cable' : 'Tool';
   return (
     <div className="absolute left-1/2 -translate-x-1/2 top-4 z-20 inline-flex items-center gap-2 px-3 h-7 rounded-full bg-card/80 backdrop-blur-md border border-border/70 text-[11px] text-muted-foreground shadow-[0_6px_18px_-10px_rgba(0,0,0,0.5)]">
       <span className="inline-flex items-center gap-1.5 text-primary"><span className="w-1.5 h-1.5 rounded-full bg-primary" />{toolLabel}</span>
@@ -5314,5 +6945,262 @@ function StatusBar({ tool, zoom, counts, units }: { tool: Tool; zoom: number; co
       <span className="w-px h-3 bg-border/70" />
       <span className="tabular-nums">{counts.camera} <span style={{ color: '#2F81F7' }}>●</span> &nbsp;{counts.access} <span style={{ color: '#3FB950' }}>●</span> &nbsp;{counts.network} <span style={{ color: '#D29922' }}>●</span></span>
     </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   REPORT EXPORT — premium PDFs generated live from canvas state
+   ═══════════════════════════════════════════════════════════════════════
+   Each report type is a discrete generator that pulls the right slice of
+   project data and writes it to a jsPDF document with consistent branding,
+   typography, and section structure. The user clicks once; the file
+   downloads. */
+
+type ReportKind =
+  | 'engineering' | 'customer' | 'camera-schedule' | 'door-schedule'
+  | 'cable-schedule' | 'bom' | 'compliance' | 'commissioning';
+
+function ReportExportRow({
+  icon: Icon, label, sub, tone, kind, devices, projectId,
+}: { icon: any; label: string; sub: string; tone: string; kind: ReportKind; devices: Device[]; projectId: string }) {
+  const [busy, setBusy] = useState(false);
+  const handleExport = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+      drawReport(doc, kind, devices, projectId);
+      doc.save(`${projectId}-${kind}-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success(`Exported · ${label}`, { duration: 3000 });
+    } catch (e) {
+      console.error(e);
+      toast.error('Export failed', { description: 'See console for details.', duration: 5000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      onClick={handleExport}
+      disabled={busy}
+      className="w-full text-left px-3 py-2.5 hover:bg-secondary/40 border-b border-border/50 flex items-center gap-3 disabled:opacity-60"
+    >
+      <div
+        className="w-8 h-8 rounded-full bg-background border border-border flex items-center justify-center shrink-0"
+        style={{ boxShadow: `inset 0 0 0 1.5px ${tone}`, color: tone }}
+      >
+        <Icon className="w-4 h-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[12.5px] truncate">{label}</div>
+        <div className="text-[10.5px] text-muted-foreground truncate">{sub}</div>
+      </div>
+      <span className="text-[10.5px] font-medium text-primary">{busy ? 'Exporting…' : 'PDF'}</span>
+    </button>
+  );
+}
+
+/** Top-level report router. Each branch composes its own pages using
+ *  shared helpers (drawCover, drawTable, drawHeader). */
+function drawReport(doc: any, kind: ReportKind, devices: Device[], projectId: string) {
+  drawCover(doc, kind, projectId);
+  doc.addPage();
+  switch (kind) {
+    case 'engineering':       return drawEngineeringPacket(doc, devices, projectId);
+    case 'customer':          return drawCustomerPresentation(doc, devices, projectId);
+    case 'camera-schedule':   return drawCameraSchedule(doc, devices);
+    case 'door-schedule':     return drawDoorSchedule(doc, devices);
+    case 'cable-schedule':    return drawCableSchedule(doc, projectId);
+    case 'bom':               return drawBOMReport(doc, projectId);
+    case 'compliance':        return drawComplianceReport(doc, devices);
+    case 'commissioning':     return drawCommissioningReport(doc, devices);
+  }
+}
+
+const REPORT_TITLE: Record<ReportKind, string> = {
+  'engineering': 'Engineering packet',
+  'customer': 'Customer presentation',
+  'camera-schedule': 'Camera schedule',
+  'door-schedule': 'Door schedule',
+  'cable-schedule': 'Cable & pathway schedule',
+  'bom': 'Bill of materials',
+  'compliance': 'Compliance checklist',
+  'commissioning': 'Commissioning report',
+};
+
+function drawCover(doc: any, kind: ReportKind, projectId: string) {
+  // Premium cover page: brand bar + project meta + date + revision.
+  doc.setFillColor(22, 30, 46); doc.rect(0, 0, 612, 792, 'F');
+  doc.setFillColor(82, 146, 220); doc.rect(0, 0, 612, 6, 'F');
+  doc.setTextColor(232, 237, 244);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(34);
+  doc.text(REPORT_TITLE[kind], 56, 240);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(13);
+  doc.setTextColor(168, 178, 200);
+  doc.text(`Project · ${projectId}`, 56, 268);
+  doc.setFontSize(11);
+  doc.text(`Generated · ${new Date().toLocaleString()}`, 56, 286);
+  doc.text('Deeper Vision · Engineering OS for physical security', 56, 304);
+  // Footer brand
+  doc.setFontSize(9); doc.setTextColor(120, 134, 162);
+  doc.text('DEEPER VISION · CONFIDENTIAL', 56, 760);
+  doc.text('Page 1', 540, 760);
+}
+
+function drawHeader(doc: any, title: string, page: number) {
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.setTextColor(120, 134, 162);
+  doc.text('Deeper Vision · ' + title, 56, 40);
+  doc.text(`Page ${page}`, 540, 40);
+  doc.setDrawColor(82, 146, 220); doc.setLineWidth(0.5);
+  doc.line(56, 48, 556, 48);
+}
+
+function drawTable(doc: any, startY: number, headers: string[], rows: (string | number)[][], colW: number[]): number {
+  // Header row
+  doc.setFillColor(240, 244, 250); doc.rect(56, startY, 500, 18, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+  doc.setTextColor(50, 64, 90);
+  let x = 60;
+  headers.forEach((h, i) => { doc.text(h, x, startY + 12); x += colW[i]; });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.setTextColor(36, 46, 66);
+  let y = startY + 32;
+  for (const row of rows) {
+    if (y > 740) { doc.addPage(); drawHeader(doc, 'continued', (doc.internal.getNumberOfPages())); y = 80; }
+    x = 60;
+    row.forEach((cell, i) => {
+      const str = String(cell ?? '');
+      doc.text(str.length > 32 ? str.slice(0, 30) + '…' : str, x, y);
+      x += colW[i];
+    });
+    y += 16;
+  }
+  doc.setDrawColor(220, 226, 236); doc.line(56, y - 8, 556, y - 8);
+  return y;
+}
+
+function drawEngineeringPacket(doc: any, devices: Device[], projectId: string) {
+  drawHeader(doc, 'Engineering packet', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(22, 30, 46);
+  doc.text('Project summary', 56, 76);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(60, 74, 102);
+  const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera').length;
+  const access = devices.filter((d) => TYPE_KIND[d.type] === 'access').length;
+  const idfs = devices.filter((d) => d.type === 'net.idf' || d.type === 'net.switch').length;
+  doc.text(`Project ID: ${projectId}`, 56, 96);
+  doc.text(`Cameras: ${cams}  ·  Access devices: ${access}  ·  Network: ${idfs}`, 56, 112);
+  doc.text(`Total devices: ${devices.length}`, 56, 128);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+  doc.text('Device schedule', 56, 160);
+  drawTable(doc, 168,
+    ['ID', 'Type', 'Label', 'Product'],
+    devices.slice(0, 60).map((d) => [d.id, d.type, d.label ?? '—', d.product ?? '—']),
+    [80, 110, 150, 160],
+  );
+}
+
+function drawCustomerPresentation(doc: any, devices: Device[], projectId: string) {
+  drawHeader(doc, 'Customer presentation', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(22, 30, 46);
+  doc.text('System overview', 56, 86);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(60, 74, 102);
+  doc.text(`This proposal covers the design and installation of ${devices.length} security devices`, 56, 110);
+  doc.text(`across the ${projectId} site. The system is engineered for 24/7 operation,`, 56, 126);
+  doc.text(`30-day video retention, and code-compliant access control on every opening.`, 56, 142);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text('What you get', 56, 180);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+  [
+    `${devices.filter((d) => TYPE_KIND[d.type] === 'camera').length} cameras across exterior and interior coverage`,
+    `${devices.filter((d) => TYPE_KIND[d.type] === 'access').length} access points with credential, REX, and DPS hardware`,
+    `Network infrastructure rated for the device count plus 30 % growth headroom`,
+    `Full commissioning, training, and a 1-year warranty on installation labor`,
+  ].forEach((line, i) => doc.text('•  ' + line, 64, 200 + i * 18));
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text('Investment summary', 56, 304);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+  const estTotal = Math.round(devices.length * 1480 * 1.18);
+  doc.text(`Indicative total: $${estTotal.toLocaleString()}`, 56, 326);
+  doc.setFontSize(9); doc.setTextColor(120, 134, 162);
+  doc.text('Final pricing depends on cable run lengths, mounting hardware, and labor schedule. See BOM for detail.', 56, 346);
+}
+
+function drawCameraSchedule(doc: any, devices: Device[]) {
+  drawHeader(doc, 'Camera schedule', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('Camera schedule', 56, 76);
+  const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera');
+  drawTable(doc, 100,
+    ['ID', 'Type', 'Location', 'Product', 'IR'],
+    cams.map((c) => [c.id, c.type.replace('cam.', ''), c.label ?? '—', c.product ?? '—', c.ir ? 'Yes' : 'No']),
+    [70, 80, 130, 160, 60],
+  );
+}
+
+function drawDoorSchedule(doc: any, devices: Device[]) {
+  drawHeader(doc, 'Door schedule', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('Door / opening schedule', 56, 76);
+  const doors = devices.filter((d) => isStackableHost(d.type));
+  drawTable(doc, 100,
+    ['ID', 'Type', 'Label', 'Stack count', 'Hardware'],
+    doors.map((d) => [d.id, d.type.replace('inf.', ''), d.label ?? '—', String(d.stack?.length ?? 0),
+      (d.stack ?? []).map((id) => devices.find((x) => x.id === id)?.type ?? id).join(', ').slice(0, 36) || '—']),
+    [70, 100, 110, 80, 140],
+  );
+}
+
+function drawCableSchedule(doc: any, projectId: string) {
+  drawHeader(doc, 'Cable & pathway schedule', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('Cable & pathway schedule', 56, 76);
+  // Read pathways live from the store
+  const pathways = (Object.values(useProjectStore.getState().pathways) as any[]).filter((p) => p.projectId === projectId);
+  drawTable(doc, 100,
+    ['ID', 'Type', 'Cable', 'Count', 'Length ft'],
+    pathways.map((p) => [p.id, p.type ?? '—', p.cableType ?? '—', String(p.cableCount ?? 1), String(p.lengthFt ?? 0)]),
+    [80, 80, 100, 60, 80],
+  );
+}
+
+function drawBOMReport(doc: any, projectId: string) {
+  drawHeader(doc, 'Bill of materials', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('Bill of materials', 56, 76);
+  const state = useProjectStore.getState();
+  const bom = deriveBOM(state, projectId);
+  drawTable(doc, 100,
+    ['SKU', 'Description', 'Qty', 'Unit', 'Unit $', 'Ext $'],
+    bom.lines.map((l: any) => [l.sku ?? '—', l.description, l.qty, l.uom ?? 'ea', l.unitPrice, Math.round(l.qty * l.unitPrice)]),
+    [80, 220, 40, 50, 60, 70],
+  );
+}
+
+function drawComplianceReport(doc: any, devices: Device[]) {
+  drawHeader(doc, 'Compliance checklist', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('Compliance checklist', 56, 76);
+  const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera');
+  const ndaaPct = cams.length ? Math.round((cams.filter((c) => c.ndaa).length / cams.length) * 100) : 100;
+  const issues = computeIntelIssues(devices).filter((i) => i.severity === 'high' || i.kind === 'compliance' || i.kind === 'ada');
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(60, 74, 102);
+  doc.text(`NDAA · ${ndaaPct}% of cameras compliant`, 56, 110);
+  doc.text(`Fire egress · ${issues.filter((i) => i.kind === 'compliance').length} open issue${issues.filter((i) => i.kind === 'compliance').length === 1 ? '' : 's'}`, 56, 130);
+  doc.text(`ADA reach · ${issues.filter((i) => i.kind === 'ada').length} open issue${issues.filter((i) => i.kind === 'ada').length === 1 ? '' : 's'}`, 56, 150);
+  drawTable(doc, 180,
+    ['Severity', 'Kind', 'Label', 'Detail'],
+    issues.map((i) => [i.severity, i.kind, i.label, i.detail]),
+    [70, 90, 130, 220],
+  );
+}
+
+function drawCommissioningReport(doc: any, devices: Device[]) {
+  drawHeader(doc, 'Commissioning report', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('Commissioning report', 56, 76);
+  drawTable(doc, 100,
+    ['ID', 'Type', 'Install', 'Firmware', 'Network', 'Signal', 'Signed off'],
+    devices.map((d: any) => {
+      const c = d.commissioning ?? {};
+      return [d.id, d.type, c.install ?? '—', c.firmware ?? '—', c.network ?? '—', c.signal ?? '—', c.signedOff ? 'Yes' : 'No'];
+    }),
+    [70, 100, 60, 70, 60, 60, 80],
   );
 }

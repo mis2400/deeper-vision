@@ -448,8 +448,24 @@ export interface Device {
   lensMode?: LensMode;
   // Free-form:
   notes?: string;
+  /** Per-object color override (hex). When set, this color drives the device
+   *  glyph tone, the cone tone, and the label tone — overriding the default
+   *  category color. Used for visually grouping infrastructure by site
+   *  function (e.g. all loading-dock cameras orange, all perimeter blue).
+   *  Constrained to the DEVICE_COLOR_PALETTE for visual coherence. */
+  color?: string;
   /** Other entity ids this device is linked to (pathway endpoint, parent IDF, etc.). */
   linkedIds?: string[];
+  /** Hardware stack — ordered list of accessory device-ids that are physically
+   *  mounted on this host (door, gate, infrastructure object). The host
+   *  renders a small stack-count chip; the inspector lists each accessory.
+   *  When the host moves, the stack moves with it. Mirrored to each
+   *  accessory's linkedIds so the relationship is queryable from either end. */
+  stack?: string[];
+  /** Accessory product-ids tied to this device — mounts, junction boxes,
+   *  poles, etc. Drives the camera inspector "Accessories" section and the
+   *  BOM auto-rollup of mount hardware. */
+  accessories?: string[];
   /** Commissioning state per phase — present once commissioning starts. */
   commissioning?: {
     install?: 'pending' | 'pass' | 'fail';

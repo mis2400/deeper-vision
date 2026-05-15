@@ -3,61 +3,66 @@
 :root {
   --font-size: 14px;
 
-  /* DEEPER VISION — architectural-grade palette. Pulled toward navy and
-     warm slate; pure black removed because it reads as cyberpunk rather
-     than infrastructure. Each elevation step is intentional, with hair-
-     line separation rather than glow. */
-  --background: #111826;
-  --foreground: #E7ECF3;
+  /* DEEPER VISION — architectural infrastructure palette.
+     Lifted one stop from the prior dark-navy palette: closer to a Norman
+     Foster drafting room than a cyberpunk HUD. The base is a warm slate
+     (less saturated than pure navy), elevations carry a softer step, and
+     accent blue is calmed to a draughtsman ink so it never reads as neon.
+     Pure black is forbidden across the system; the lowest stop is #161E2E. */
+  --background: #161E2E;
+  --foreground: #E8EDF4;
 
-  /* Card surfaces — single, intentional elevation step above the canvas. */
-  --card: #1B2336;
-  --card-foreground: #EBF0F8;
+  /* Card surfaces — single, intentional elevation step above the canvas.
+     A whisper of warmth (more grey, less indigo) so panels feel like
+     bristol board on a draughting table. */
+  --card: #1F2738;
+  --card-foreground: #EEF1F7;
 
   /* Popovers & Modals */
-  --popover: #1B2336;
-  --popover-foreground: #EBF0F8;
+  --popover: #232C3F;
+  --popover-foreground: #EEF1F7;
 
-  /* Primary — single accent. Reserved for active engineering states
-     only. Slightly muted compared to a pure neon — feels like blueprint
-     ink rather than HUD glow. */
-  --primary: #4A95E8;
+  /* Primary — draughtsman ink. Pulled from neon-blue toward blueprint
+     ink so it reads as a printed mark, not a glow. */
+  --primary: #5292DC;
   --primary-foreground: #FFFFFF;
 
-  /* Secondary — slate, one step warmer than the card. */
-  --secondary: #243049;
-  --secondary-foreground: #E7ECF3;
+  /* Secondary — warm slate, one step warmer than the card. */
+  --secondary: #2A3346;
+  --secondary-foreground: #E8EDF4;
 
-  /* Muted — engineering label tone. Slate gray. */
-  --muted: #2F3A52;
-  --muted-foreground: #98A4BA;
+  /* Muted — engineering label tone. Slate gray, more legible at small
+     sizes than the prior cooler grey. */
+  --muted: #313B52;
+  --muted-foreground: #9BA8BF;
 
-  /* Accent - same blueprint blue (single accent doctrine) */
-  --accent: #2F81F7;
+  /* Accent — same blueprint ink as primary (single-accent doctrine) */
+  --accent: #5292DC;
   --accent-foreground: #FFFFFF;
 
-  /* Destructive - Critical Red */
-  --destructive: #EF4444;
+  /* Destructive — Critical, but slightly desaturated so warnings don't
+     dominate the field. */
+  --destructive: #E5484D;
   --destructive-foreground: #FFFFFF;
 
-  /* Success - Emerald */
-  --success: #10B981;
+  /* Success — Emerald, calmed */
+  --success: #2EA66B;
   --success-foreground: #FFFFFF;
 
-  /* Warning - Amber */
-  --warning: #F59E0B;
+  /* Warning — Amber */
+  --warning: #E5A23A;
   --warning-foreground: #FFFFFF;
 
-  /* Borders — hairline draftsman pencil. Lower contrast so panel
-     boundaries divide without competing for attention. */
-  --border: #2C374C;
-  --border-strong: #3D4A65;
+  /* Borders — hairline draughtsman pencil. Slightly warmer than navy so
+     panels don't read as electronic. */
+  --border: #2F3A52;
+  --border-strong: #41506B;
 
   /* Inputs */
   --input: transparent;
-  --input-background: #151D2D;
-  --input-border: #3D4A65;
-  --switch-background: #3D4A65;
+  --input-background: #1A2233;
+  --input-border: #3B475F;
+  --switch-background: #3B475F;
 
   /* Typography */
   --font-weight-medium: 500;
@@ -98,16 +103,17 @@
   --sidebar-border: rgba(148, 163, 184, 0.1);
   --sidebar-ring: #3B82F6;
 
-  /* Canvas — architectural drawing paper. A touch deeper than the body
-     so floating panels feel like material resting on the plan, not
-     painted onto a neon sky. */
-  --canvas-background: #0D1424;
-  --canvas-grid: rgba(151, 165, 188, 0.045);
-  --canvas-axis: rgba(151, 165, 188, 0.14);
+  /* Canvas — architectural drawing paper. Slightly deeper than the body
+     so floating panels feel like material resting on the plan. Pulled
+     back from cyan-navy toward a warm graphite slate; reads as ink on
+     blueprint paper rather than a neon HUD. */
+  --canvas-background: #131B2D;
+  --canvas-grid: rgba(168, 178, 200, 0.05);
+  --canvas-axis: rgba(168, 178, 200, 0.15);
 
   /* Floating panels */
-  --panel-background: #1B2336;
-  --panel-border: #3D4A65;
+  --panel-background: #1F2738;
+  --panel-border: #41506B;
 
   /* Typography tokens */
   --text-2xl: 1.5rem;

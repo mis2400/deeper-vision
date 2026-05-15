@@ -46,10 +46,14 @@ const DEVICE_TO_DOOR_HW: Record<string, DoorHardware> = {
   'acc.maglock':   'maglock',
   'acc.rex':       'rex',
   'acc.exit':      'panic',      // crash bar / exit device
+  'acc.panic-bar': 'panic',
   'acc.biometric': 'reader',
+  'acc.intercom':  'intercom',
+  'acc.dps':       'contact',    // door position sensor reads as contact
   'aud.intercom':  'intercom',
   'sen.contact':   'contact',
   'sen.panic':     'panic',
+  'int.contact':   'contact',
 };
 
 /** Devices that belong inside an IDF / MDF / network cabinet. */
@@ -71,8 +75,15 @@ const FLOORPLAN_DEVICES: ReadonlySet<string> = new Set<string>([
  *  the candidate can be attached. Host can be a door assembly type, an IDF,
  *  or 'floor' / 'wall' / 'ceiling' for "place on the map". */
 export function canHost(hostType: DeviceType | 'door' | 'idf' | 'floor', candidateType: DeviceType): CompatResult {
-  // Door assemblies
-  if (hostType === 'door' || hostType === 'acc.door' || hostType === 'acc.gate' || hostType === 'acc.exit') {
+  // Door assemblies (now includes the new infrastructure door / gate types
+  // — they all accept the same access-control hardware stack).
+  if (
+    hostType === 'door' || hostType === 'acc.door' || hostType === 'acc.gate' || hostType === 'acc.exit'
+    || hostType === 'inf.door-single' || hostType === 'inf.door-double'
+    || hostType === 'inf.door-storefront' || hostType === 'inf.door-sliding'
+    || hostType === 'inf.gate-swing' || hostType === 'inf.gate-slide'
+    || hostType === 'inf.elevator'
+  ) {
     const isCamera = FLOORPLAN_DEVICES.has(candidateType) && candidateType.startsWith('cam');
     if (isCamera) {
       return {
@@ -110,8 +121,12 @@ export function canHost(hostType: DeviceType | 'door' | 'idf' | 'floor', candida
     return ok;
   }
 
-  // IDF / MDF / network cabinet
-  if (hostType === 'idf' || hostType === 'net.idf' || hostType === 'net.mdf') {
+  // IDF / MDF / network cabinet (now includes the new infrastructure rack
+  // and MDF types — they all accept the same network/storage stack).
+  if (
+    hostType === 'idf' || hostType === 'net.idf' || hostType === 'net.mdf'
+    || hostType === 'inf.rack' || hostType === 'inf.mdf'
+  ) {
     if (IDF_HOSTED.has(candidateType)) return ok;
     if (FLOORPLAN_DEVICES.has(candidateType)) {
       return {
