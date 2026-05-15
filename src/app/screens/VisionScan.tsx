@@ -4,6 +4,9 @@ import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { Sparkles, ScanLine, AlertTriangle, Check, ArrowRight, Camera, Play, Pause, Footprints, Layers as LayersIcon, FileText } from 'lucide-react';
+import { useProjectStore, selectors as storeSelectors } from '../store/projectStore';
+import type { Wall as StoreWall, FloorBackground } from '../store/types';
+import { toast } from 'sonner';
 
 interface Finding { id: string; severity: 'high' | 'med' | 'low'; title: string; detail: string; recommend: string; x: number; y: number; }
 
@@ -16,6 +19,103 @@ const FINDINGS: Finding[] = [
 ];
 
 type ScanStep = 'walk' | 'review' | 'findings';
+
+/** Generated VisionScan geometry — the same wall segments the Review step
+ *  shows. Co-located so the SVG render and the import handler can never
+ *  drift apart. Coordinates are mapped onto the project canvas's working
+ *  area (~80–720 × 80–520) so devices and walls share the same space. */
+const VISIONSCAN_WALLS: StoreWall[] = (() => {
+  // Source rectangle in the Review SVG: 120,120 → 680,480 (560×360)
+  // Project canvas working area: 100,100 → 700,500 (600×400)
+  // Map: x' = 100 + (x - 120) * 600/560,  y' = 100 + (y - 120) * 400/360
+  const mx = (x: number) => 100 + (x - 120) * (600 / 560);
+  const my = (y: number) => 100 + (y - 120) * (400 / 360);
+  const segs: { x1: number; y1: number; x2: number; y2: number }[] = [
+    // Outer rectangle
+    { x1: 120, y1: 120, x2: 680, y2: 120 },
+    { x1: 680, y1: 120, x2: 680, y2: 480 },
+    { x1: 680, y1: 480, x2: 120, y2: 480 },
+    { x1: 120, y1: 480, x2: 120, y2: 120 },
+    // Internal partitions
+    { x1: 380, y1: 120, x2: 380, y2: 480 },
+    { x1: 120, y1: 280, x2: 380, y2: 280 },
+    { x1: 380, y1: 320, x2: 680, y2: 320 },
+  ];
+  return segs.map((s, i) => ({
+    id: `vs-wall-${i + 1}`,
+    x1: mx(s.x1), y1: my(s.y1),
+    x2: mx(s.x2), y2: my(s.y2),
+  }));
+})();
+
+/** Rasterizes the same VisionScan wall geometry into a PNG data URL so the
+ *  floor's background image carries the generated plan even when the user
+ *  later starts editing walls. Returns the FloorBackground record ready
+ *  for setFloorBackground. */
+function generateVisionScanBackground(): FloorBackground {
+  const W = 800; const H = 600;
+  const cnv = document.createElement('canvas');
+  cnv.width = W; cnv.height = H;
+  const ctx = cnv.getContext('2d')!;
+  ctx.fillStyle = '#F2F4F8'; ctx.fillRect(0, 0, W, H);
+  // Hatched fill to evoke a drafting sheet
+  ctx.strokeStyle = '#D8DEE8'; ctx.lineWidth = 0.5;
+  for (let i = 0; i < W + H; i += 12) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(0, i); ctx.stroke();
+  }
+  // Walls
+  ctx.strokeStyle = '#1F2738'; ctx.lineWidth = 4; ctx.lineCap = 'square';
+  for (const w of VISIONSCAN_WALLS) {
+    ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+  }
+  // Room labels
+  ctx.fillStyle = '#475569'; ctx.font = '14px Inter, system-ui, sans-serif';
+  ctx.fillText('Lobby', 180, 180);
+  ctx.fillText('Open office', 440, 180);
+  ctx.fillText('Conf A', 180, 380);
+  ctx.fillText('Storage', 440, 400);
+  return {
+    dataUrl: cnv.toDataURL('image/png'),
+    fileName: 'visionscan-floorplan.png',
+    origin: 'visionscan',
+    x: 0, y: 0,
+    scale: 1,
+    rotation: 0,
+    opacity: 0.78,
+    naturalWidth: W,
+    naturalHeight: H,
+  };
+}
+
+/** Writes the generated VisionScan geometry to the active floor. */
+async function handleVisionScanImport(projectId: string): Promise<void> {
+  const state = useProjectStore.getState();
+  let floorId = storeSelectors.firstFloorOfProject(state, projectId)?.id ?? '';
+  if (!floorId) {
+    // No floor on this project yet — create one so the import has a home.
+    const newId = `flr-${Date.now().toString(36).slice(-5)}`;
+    state.addFloor({
+      id: newId,
+      projectId,
+      buildingId: `bld-${projectId}`,
+      name: 'Ground floor',
+      level: 0,
+      source: 'sketch',
+      scalePxToFt: 1 / 20, // canvas default until /calibrate
+      walls: [],
+    });
+    floorId = newId;
+  }
+  state.setFloorWalls(floorId, VISIONSCAN_WALLS);
+  state.setFloorBackground(floorId, generateVisionScanBackground());
+  // Imply a sketch-origin scale until calibration; keep the default
+  // canvas constant (20 px/ft).
+  state.updateFloor(floorId, { source: 'sketch', scalePxToFt: 1 / 20 });
+  toast.success('VisionScan plan imported', {
+    description: `${VISIONSCAN_WALLS.length} walls + generated background added to the floor.`,
+    duration: 5000,
+  });
+}
 
 export function VisionScan() {
   const { projectId = 'p1' } = useParams();
@@ -206,7 +306,18 @@ export function VisionScan() {
                   Back to walk
                 </Button>
                 <span className="text-[11px] text-muted-foreground ml-auto">4 rooms · 8 walls · 1 entry detected</span>
-                <Button size="sm" onClick={() => { nav(`/project/${projectId}/canvas`); }}>
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    // Write the generated geometry into the active floor:
+                    // walls go in via setFloorWalls; a rasterized background
+                    // image of the same geometry is laid down via
+                    // setFloorBackground so the user sees their generated
+                    // plan immediately. Then navigate to /project/:id/canvas.
+                    await handleVisionScanImport(projectId);
+                    nav(`/project/${projectId}/canvas`);
+                  }}
+                >
                   Import to canvas <ArrowRight className="w-3.5 h-3.5 ml-1" />
                 </Button>
               </div>

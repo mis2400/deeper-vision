@@ -378,6 +378,7 @@ export interface Building {
 
 export interface Floor {
   id: string;
+  projectId?: string;
   buildingId: string;
   name: string;
   level: number;     // 0 = ground, 1 = level 2, -1 = basement
@@ -391,6 +392,36 @@ export interface Floor {
    *  is initialized. Optional. */
   corners?: { x: number; y: number }[];
   rooms?: { id: string; name: string; corners: { x: number; y: number }[] }[];
+  /** Imported floorplan background. Set when the user runs Import Floorplan
+   *  (PNG / JPG / PDF first page) or when VisionScan imports a generated
+   *  plan. The data URL is held inline so the file survives a refresh
+   *  without a backend object store. Large files are downscaled before
+   *  storage to keep localStorage manageable. */
+  background?: FloorBackground;
+}
+
+export interface FloorBackground {
+  /** Data URL — image/png or image/jpeg, downscaled to max 2048px on long
+   *  edge so localStorage stays under a few MB. */
+  dataUrl: string;
+  /** Original filename (for re-export and the inspector). */
+  fileName: string;
+  /** Source: user-imported file vs VisionScan-generated synthetic. */
+  origin: 'pdf' | 'png' | 'jpg' | 'visionscan';
+  /** Top-left canvas-px position of the image. */
+  x: number;
+  y: number;
+  /** Display scale (1 = native pixels). */
+  scale: number;
+  /** Rotation in degrees, CW. */
+  rotation: number;
+  /** 0–1 opacity. */
+  opacity: number;
+  /** Native image pixel dimensions. */
+  naturalWidth: number;
+  naturalHeight: number;
+  /** Locked = no accidental drag. */
+  locked?: boolean;
 }
 
 export interface Wall {

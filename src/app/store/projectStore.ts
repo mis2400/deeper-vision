@@ -157,6 +157,15 @@ interface ProjectState {
 
   // ── Floor / walls ──
   updateFloor: (id: string, patch: Partial<Floor>) => void;
+  /** Add a floor (used by Add Floor Map and VisionScan import). The
+   *  buildingId is required so the canvas's site/building/floor selector
+   *  can pick it up. */
+  addFloor: (floor: Floor) => void;
+  /** Bulk-replace walls on a floor (used by VisionScan import which writes
+   *  a generated set of walls). */
+  setFloorWalls: (floorId: string, walls: Floor['walls']) => void;
+  /** Set or clear the floor background (imported PNG/JPG/PDF or generated). */
+  setFloorBackground: (floorId: string, bg: Floor['background'] | null) => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -572,6 +581,11 @@ export const useProjectStore = create<ProjectState>()(
 
       updateFloor: (id, patch) =>
         set((s) => (s.floors[id] ? { floors: { ...s.floors, [id]: { ...s.floors[id], ...patch } } } : s)),
+      addFloor: (floor) => set((s) => ({ floors: { ...s.floors, [floor.id]: floor } })),
+      setFloorWalls: (floorId, walls) =>
+        set((s) => (s.floors[floorId] ? { floors: { ...s.floors, [floorId]: { ...s.floors[floorId], walls } } } : s)),
+      setFloorBackground: (floorId, bg) =>
+        set((s) => (s.floors[floorId] ? { floors: { ...s.floors, [floorId]: { ...s.floors[floorId], background: bg ?? undefined } } } : s)),
 
       resetDemoData: () => set(() => ({ ...buildSeed() })),
     }),

@@ -822,6 +822,12 @@ export function EngineeringCanvas() {
   const currentFloorId = useProjectStore((s) =>
     storeSelectors.firstFloorOfProject(s, projectId ?? 'p1')?.id ?? '',
   );
+  // Imported floorplan background — when set, it renders beneath devices
+  // on the active floor. Driven by the Import Floorplan dialog and by
+  // VisionScan's "Import to canvas" handoff.
+  const floorBackground = useProjectStore((s) =>
+    currentFloorId ? s.floors[currentFloorId]?.background : undefined,
+  );
 
   // Devices in scope for this canvas: project + current floor. Memoized so
   // we don't re-allocate on every parent render.
@@ -883,6 +889,15 @@ export function EngineeringCanvas() {
   const [walls, setWalls] = useState<Wall[]>([]);
   const [wallStart, setWallStart] = useState<{ x: number; y: number } | null>(null);
   const [wallCursor, setWallCursor] = useState<{ x: number; y: number } | null>(null);
+  // Walls persisted on the active floor record (written by VisionScan import
+  // and by the wall tool's commit path). We merge with the local
+  // in-progress walls so freshly-drawn segments appear immediately even
+  // before they're serialized to the store.
+  const storeFloorWalls = useProjectStore((s) => (currentFloorId ? s.floors[currentFloorId]?.walls : undefined));
+  const allWalls = useMemo<Wall[]>(() => {
+    const a = (storeFloorWalls ?? []) as unknown as Wall[];
+    return [...a, ...walls];
+  }, [storeFloorWalls, walls]);
 
   // Measure tool — two-click distance measurement. First click sets a
   // start point; second click freezes the measurement. ESC clears.
@@ -1546,7 +1561,7 @@ export function EngineeringCanvas() {
               hoverByPresence={hoverByPresence}
               planSource={planSource}
               siteAddress={siteAddress}
-              walls={walls}
+              walls={allWalls}
               wallStart={wallStart}
               wallCursor={wallCursor}
               onPick={(id) => { setSelId(id); }}
@@ -1563,6 +1578,11 @@ export function EngineeringCanvas() {
               onDragEnd={onDragEnd}
               hoveredLens={hoveredLens}
               hoverHost={hoverHost}
+              floorBackground={floorBackground}
+              onUpdateBackground={(patch) => {
+                if (!currentFloorId || !floorBackground) return;
+                useProjectStore.getState().setFloorBackground(currentFloorId, { ...floorBackground, ...patch });
+              }}
               onBlank={() => setSelId(null)}
               snap={snap}
               dragging={!!drag}
@@ -1695,6 +1715,18 @@ export function EngineeringCanvas() {
               <CableTypePicker
                 value={cableDraw.cableType}
                 onChange={(t) => setCableDraw((c) => ({ ...c, cableType: t }))}
+              />
+            )}
+
+            {/* Imported floorplan controls — opacity, scale, rotation, lock,
+                remove. Appears top-left whenever the active floor has an
+                imported background image. Persists everything through the
+                store. */}
+            {floorBackground && currentFloorId && (
+              <FloorplanBackgroundControls
+                bg={floorBackground}
+                onPatch={(patch) => useProjectStore.getState().setFloorBackground(currentFloorId, { ...floorBackground, ...patch })}
+                onRemove={() => useProjectStore.getState().setFloorBackground(currentFloorId, null)}
               />
             )}
 
@@ -2124,6 +2156,7 @@ function MapsPanel() {
   const [activeFloor, setActiveFloor] = useState<string>('a-g');
   const [addBuildingOpen, setAddBuildingOpen] = useState(false);
   const [addFloorTo, setAddFloorTo] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const toggle = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const totalFloors = buildings.reduce((n, b) => n + b.floors.length, 0);
   const sourceIcon = (s: SiteFloor['source']) => s === 'blueprint' ? FileText : s === 'satellite' ? MapIcon : PencilLine;
@@ -2167,9 +2200,13 @@ function MapsPanel() {
         >
           <Plus className="w-3 h-3" /> Add building
         </button>
-        {/* Import button removed in the lockdown pass — no real importer
-            backend is wired up yet, and the rule is "if a button doesn't
-            work, hide it." Re-add when DWG / PDF / image ingestion is real. */}
+        <button
+          onClick={() => setImportOpen(true)}
+          className="inline-flex items-center justify-center gap-1.5 text-[11px] h-7 px-2.5 rounded-lg border border-border hover:bg-secondary/30 transition-colors"
+          title="Import a PNG, JPG, or PDF floorplan onto the active floor"
+        >
+          <Upload className="w-3 h-3" /> Import
+        </button>
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -2253,6 +2290,12 @@ function MapsPanel() {
           buildingName={buildings.find((b) => b.id === addFloorTo)?.name ?? 'Building'}
           onClose={() => setAddFloorTo(null)}
           onSubmit={(name, source) => { handleAddFloor(addFloorTo, name, source); setAddFloorTo(null); }}
+        />
+      )}
+      {importOpen && (
+        <ImportFloorplanDialog
+          onClose={() => setImportOpen(false)}
+          onImported={() => setImportOpen(false)}
         />
       )}
     </div>
@@ -2371,6 +2414,112 @@ function AddFloorDialog({ buildingName, onClose, onSubmit }: {
             className={`text-[12px] px-3 h-8 rounded-md transition-opacity ${valid ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-muted-foreground cursor-not-allowed'}`}
           >
             Add floor
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Modal that takes a PNG / JPG / PDF and turns it into a Floor.background.
+ *  PNG / JPG are read directly via FileReader + downscaled. PDF first page
+ *  is rendered with pdfjs-dist. DWG / DXF are surfaced as disabled options
+ *  with the honest message that a backend parser is required. */
+function ImportFloorplanDialog({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const { projectId = 'p1' } = useParams();
+  const setFloorBackground = useProjectStore((s) => s.setFloorBackground);
+  const floorId = useProjectStore((s) => storeSelectors.firstFloorOfProject(s, projectId)?.id ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handlePick = () => inputRef.current?.click();
+
+  const handleFile = async (file: File) => {
+    if (!floorId) {
+      setError('No floor selected. Add a building first.');
+      return;
+    }
+    setBusy(true); setError(null); setNote(null);
+    try {
+      const { importFloorplanFile } = await import('../lib/floorplanImport');
+      const { background, note: n } = await importFloorplanFile(file);
+      setFloorBackground(floorId, background);
+      toast.success(`Imported ${file.name}`, {
+        description: n ?? 'Visible as the active floor background. Adjust opacity / scale / rotation from the canvas.',
+        duration: 5000,
+      });
+      setNote(n ?? null);
+      onImported();
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message ?? 'Import failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[440px] bg-card border border-border rounded-xl shadow-2xl">
+        <div className="px-5 pt-5 pb-3 border-b border-border">
+          <div className="text-[14px] font-medium tracking-tight">Import floorplan</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Loads a plan onto the active floor as a draggable, scalable, rotatable background.</div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/png,image/jpeg,application/pdf,.png,.jpg,.jpeg,.pdf"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+          />
+
+          <button
+            onClick={handlePick}
+            disabled={busy}
+            className="w-full px-3 py-4 rounded-lg border-2 border-dashed border-border hover:border-primary/60 hover:bg-primary/4 transition-colors text-left"
+          >
+            <div className="flex items-center gap-3">
+              <Upload className="w-4 h-4 text-primary" />
+              <div>
+                <div className="text-[12.5px] font-medium">{busy ? 'Processing…' : 'Pick a file'}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">PNG, JPG, or PDF (first page)</div>
+              </div>
+            </div>
+          </button>
+
+          {/* Supported / disabled list — honest about DWG / DXF */}
+          <div className="grid grid-cols-3 gap-2 text-[10.5px]">
+            <div className="p-2 rounded border border-emerald-500/30 bg-emerald-500/5 text-emerald-300/90">
+              PNG · supported
+            </div>
+            <div className="p-2 rounded border border-emerald-500/30 bg-emerald-500/5 text-emerald-300/90">
+              JPG · supported
+            </div>
+            <div className="p-2 rounded border border-emerald-500/30 bg-emerald-500/5 text-emerald-300/90">
+              PDF · first page
+            </div>
+            <div className="col-span-3 p-2 rounded border border-border/60 bg-secondary/20 text-muted-foreground/80">
+              <strong className="opacity-70">DWG / DXF</strong> — disabled. Requires a backend parser; not available in-browser.
+            </div>
+          </div>
+
+          {note && (
+            <div className="px-3 py-2 rounded border border-amber-500/30 bg-amber-500/5 text-[11.5px] text-amber-200/90">
+              {note}
+            </div>
+          )}
+          {error && (
+            <div className="px-3 py-2 rounded border border-red-500/40 bg-red-500/5 text-[11.5px] text-red-300">
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-[12px] px-3 h-8 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground">
+            Close
           </button>
         </div>
       </div>
@@ -3319,6 +3468,12 @@ interface SurfaceProps {
     reason?: string;
     hint?: string;
   } | null;
+  /** Imported floorplan background for the active floor. When set, drawn
+   *  beneath all canvas content so devices appear on top of the plan. */
+  floorBackground?: import('../store/types').FloorBackground;
+  /** Patch the background's positional fields (drag / scale / rotate /
+   *  opacity / locked). */
+  onUpdateBackground?: (patch: Partial<import('../store/types').FloorBackground>) => void;
 }
 
 const ICON_SCALE: Record<IconSize, number> = { compact: 0.75, standard: 1, large: 1.35 };
@@ -3337,7 +3492,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost }, ref
+  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -3493,6 +3648,26 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       <g transform={`scale(${zoom})`}>
         {/* The plan — clearly delineated as the building */}
         <FloorPlan source={planSource} siteAddress={siteAddress} />
+
+        {/* Imported floorplan background — rendered beneath devices/walls so
+            the user can trace over it. Transforms apply scale + rotation
+            around the image center; opacity is per-floor. */}
+        {floorBackground && (
+          <g
+            transform={`translate(${floorBackground.x}, ${floorBackground.y}) rotate(${floorBackground.rotation}, ${floorBackground.naturalWidth * floorBackground.scale / 2}, ${floorBackground.naturalHeight * floorBackground.scale / 2}) scale(${floorBackground.scale})`}
+            opacity={floorBackground.opacity}
+            pointerEvents="none"
+          >
+            <image
+              href={floorBackground.dataUrl}
+              x={0}
+              y={0}
+              width={floorBackground.naturalWidth}
+              height={floorBackground.naturalHeight}
+              preserveAspectRatio="xMidYMid meet"
+            />
+          </g>
+        )}
 
         {/* User-drawn walls */}
         {walls.map((w) => (
@@ -7202,5 +7377,109 @@ function drawCommissioningReport(doc: any, devices: Device[]) {
       return [d.id, d.type, c.install ?? '—', c.firmware ?? '—', c.network ?? '—', c.signal ?? '—', c.signedOff ? 'Yes' : 'No'];
     }),
     [70, 100, 60, 70, 60, 60, 80],
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FLOORPLAN BACKGROUND CONTROLS  ·  imported PNG / JPG / PDF tools
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function FloorplanBackgroundControls({
+  bg, onPatch, onRemove,
+}: {
+  bg: NonNullable<import('../store/types').FloorBackground>;
+  onPatch: (patch: Partial<import('../store/types').FloorBackground>) => void;
+  onRemove: () => void;
+}) {
+  // Floats top-left of the canvas. Stays compact so it doesn't block the
+  // imported plan beneath it. Each slider writes through to the store so
+  // changes survive refresh and propagate to the popped-out window.
+  return (
+    <div
+      className="absolute top-16 left-3 z-20 select-none w-[240px]"
+      style={{
+        background: 'rgba(13,20,36,0.86)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        borderRadius: '8px',
+        boxShadow: '0 12px 28px -12px rgba(0,0,0,0.55)',
+      }}
+    >
+      <div className="px-3 py-2 border-b border-white/8 flex items-center gap-2">
+        <ImageIcon className="w-3.5 h-3.5 text-primary" />
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] font-medium tracking-tight text-slate-100 truncate" title={bg.fileName}>
+            {bg.fileName}
+          </div>
+          <div className="text-[9.5px] text-slate-400 uppercase tracking-wider mt-0.5">
+            {bg.origin === 'visionscan' ? 'VisionScan' : bg.origin.toUpperCase()} · {bg.naturalWidth}×{bg.naturalHeight}
+          </div>
+        </div>
+        <button
+          onClick={() => onPatch({ locked: !bg.locked })}
+          title={bg.locked ? 'Locked' : 'Unlocked'}
+          className="text-slate-400 hover:text-slate-100"
+        >
+          {bg.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+        </button>
+        <button
+          onClick={onRemove}
+          title="Remove background"
+          className="text-slate-400 hover:text-rose-300"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="px-3 py-2.5 space-y-2.5">
+        <SliderInline
+          label="Opacity"
+          value={Math.round(bg.opacity * 100)}
+          min={5} max={100} step={1} unit="%"
+          onChange={(v) => onPatch({ opacity: v / 100 })}
+        />
+        <SliderInline
+          label="Scale"
+          value={Math.round(bg.scale * 100)}
+          min={10} max={400} step={1} unit="%"
+          onChange={(v) => onPatch({ scale: v / 100 })}
+        />
+        <SliderInline
+          label="Rotation"
+          value={bg.rotation}
+          min={-180} max={180} step={1} unit="°"
+          onChange={(v) => onPatch({ rotation: v })}
+        />
+        <div className="flex items-center gap-1.5 pt-1">
+          <button
+            onClick={() => onPatch({ x: 0, y: 0, scale: 1, rotation: 0, opacity: 0.85 })}
+            className="flex-1 text-[10.5px] py-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-slate-300"
+          >
+            Reset transform
+          </button>
+        </div>
+        <div className="text-[9.5px] text-slate-500 leading-snug pt-1 border-t border-white/8">
+          Imported plan persists on the floor record. Calibrate scale from the canvas to lock real-world feet.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SliderInline({ label, value, min, max, step = 1, unit, onChange }: {
+  label: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="text-[10px] text-slate-400 uppercase tracking-wider">{label}</span>
+        <span className="text-[11px] tabular-nums font-medium text-slate-100">{value}{unit}</span>
+      </div>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full cursor-pointer"
+        style={{ accentColor: '#5292DC' }}
+      />
+    </div>
   );
 }
