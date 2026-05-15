@@ -154,7 +154,7 @@ export function Dashboard() {
                 <div key={a.id} className="px-3 py-2 border-b border-border/40 last:border-b-0 flex items-start gap-2 text-sm">
                   <span className="w-1.5 h-1.5 rounded-full mt-1.5 bg-primary/70 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-slate-100">{a.message}</div>
+                    <div className="truncate text-foreground">{a.message}</div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">
                       {a.userName ?? 'System'} · {timeAgo(a.createdAt)}
                     </div>
@@ -186,7 +186,7 @@ export function Dashboard() {
                 <div key={t.id} className="px-3 py-2 border-b border-border/40 last:border-b-0 flex items-start gap-2.5">
                   <span className="text-[10px] uppercase tracking-tight text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded mt-0.5 shrink-0">{t.type}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-slate-100 truncate">{t.summary}</div>
+                    <div className="text-sm text-foreground truncate">{t.summary}</div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">
                       {customersMap[t.customerId]?.companyName ?? '—'} · {t.userName ?? 'You'} · {timeAgo(t.occurredAt)}
                     </div>
@@ -222,7 +222,7 @@ export function Dashboard() {
                       >
                         <div className="flex items-center gap-2">
                           <span className={`w-1.5 h-1.5 rounded-full ${cfg.tone.dot}`} />
-                          <span className="text-sm text-slate-100 truncate flex-1">{p.name}</span>
+                          <span className="text-sm text-foreground truncate flex-1">{p.name}</span>
                           <span className={`text-[10px] ${h.cls}`}>{h.label}</span>
                         </div>
                         <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
@@ -260,11 +260,11 @@ export function Dashboard() {
               if (entries.length === 0) return <Empty>No assignments yet.</Empty>;
               return entries.map(([userId, w]) => (
                 <div key={userId} className="px-3 py-2 border-b border-border/40 last:border-b-0 flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-secondary border border-border flex items-center justify-center text-[11px] text-slate-100 font-medium shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-secondary border border-border flex items-center justify-center text-[11px] text-foreground font-medium shrink-0">
                     {userId.replace(/^u-/, '').slice(0, 2).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm text-slate-100 capitalize">{userId.replace(/^u-/, '')}</div>
+                    <div className="text-sm text-foreground capitalize">{userId.replace(/^u-/, '')}</div>
                     <div className="text-[11px] text-muted-foreground">{w.projects} project{w.projects === 1 ? '' : 's'} · {w.tasks} open task{w.tasks === 1 ? '' : 's'}</div>
                   </div>
                 </div>
@@ -296,7 +296,7 @@ export function Dashboard() {
             ].map((i) => (
               <div key={i.vendor} className="bg-card border border-border rounded-lg p-3">
                 <div className="flex items-center justify-between mb-1">
-                  <div className="text-[12.5px] font-medium text-slate-100">{i.vendor}</div>
+                  <div className="text-[12.5px] font-medium text-foreground">{i.vendor}</div>
                   <span className="text-[10px] text-muted-foreground/70 inline-flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
                     Not connected
@@ -338,7 +338,7 @@ function Section({ icon, title, hint, children }: { icon: React.ReactNode; title
   return (
     <section>
       <div className="flex items-baseline gap-2 mb-2.5">
-        <div className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-100 tracking-tight">
+        <div className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground tracking-tight">
           <span className="text-muted-foreground">{icon}</span>
           {title}
         </div>
@@ -350,7 +350,7 @@ function Section({ icon, title, hint, children }: { icon: React.ReactNode; title
 }
 
 function StatCard({ label, value, hint, tone, onClick }: { label: string; value: string; hint?: string; tone?: 'neutral' | 'amber' | 'green' | 'muted'; onClick?: () => void }) {
-  const toneCls = tone === 'amber' ? 'text-amber-400' : tone === 'green' ? 'text-emerald-400' : tone === 'muted' ? 'text-muted-foreground/70' : 'text-slate-100';
+  const toneCls = tone === 'amber' ? 'text-amber-400' : tone === 'green' ? 'text-emerald-400' : tone === 'muted' ? 'text-muted-foreground/70' : 'text-foreground';
   const interactive = !!onClick;
   return (
     <button
@@ -369,7 +369,7 @@ function Card({ title, cta, children }: { title: string; cta?: { label: string; 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
       <div className="px-4 py-2.5 border-b border-border/70 flex items-center justify-between">
-        <div className="text-[12.5px] font-medium text-slate-100 tracking-tight">{title}</div>
+        <div className="text-[12.5px] font-medium text-foreground tracking-tight">{title}</div>
         {cta && (
           <button onClick={cta.onClick} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
             {cta.label}<ChevronRight className="w-3 h-3" />
@@ -387,7 +387,7 @@ function TaskRow({ task, customerName, onOpen }: { task: Task; customerName?: st
     <button onClick={onOpen} className="w-full text-left px-3 py-2 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors flex items-start gap-2">
       <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="text-sm text-slate-100 truncate">{task.title}</div>
+        <div className="text-sm text-foreground truncate">{task.title}</div>
         <div className="text-[11px] text-muted-foreground mt-0.5 inline-flex items-center gap-1.5">
           {customerName && <span className="truncate max-w-[140px]">{customerName}</span>}
           {task.dueDate && (

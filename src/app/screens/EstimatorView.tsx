@@ -135,7 +135,7 @@ export function EstimatorView() {
         <div className="space-y-3">
           <div className="bg-card border border-border rounded-lg p-4 sticky top-4">
             <div className="flex items-center justify-between mb-3">
-              <div className="text-[11.5px] font-medium text-slate-200 tracking-tight">Totals</div>
+              <div className="text-[11.5px] font-medium text-foreground tracking-tight">Totals</div>
               {state.currentRole === 'customer' && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 inline-flex items-center gap-1">
                   Customer view

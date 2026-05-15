@@ -1569,7 +1569,7 @@ export function EngineeringCanvas() {
                 title="North indicator only · canvas-up = North"
               >
                 <svg viewBox="-12 -12 24 24" width="22" height="22">
-                  <path d="M 0 -8 L 3 5 L 0 2 L -3 5 Z" fill="#E2E8F0" />
+                  <path d="M 0 -8 L 3 5 L 0 2 L -3 5 Z" fill="var(--foreground)" />
                   <text y="-9" textAnchor="middle" fill="rgba(226,232,240,0.55)" fontSize="6" fontFamily="ui-sans-serif">N</text>
                 </svg>
               </div>
@@ -2217,7 +2217,7 @@ function AddFloorDialog({ buildingName, onClose, onSubmit }: {
       <div onClick={(e) => e.stopPropagation()} className="w-[420px] bg-card border border-border rounded-xl shadow-2xl">
         <div className="px-5 pt-5 pb-3 border-b border-border">
           <div className="text-[14px] font-medium tracking-tight">Add floor map</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Adds a floor to <span className="text-slate-200">{buildingName}</span>.</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Adds a floor to <span className="text-foreground">{buildingName}</span>.</div>
         </div>
         <div className="px-5 py-4 space-y-3.5">
           <label className="block">
@@ -2719,7 +2719,7 @@ function InsertDock(props: {
                     <CategoryGlyph kind={c.id} active />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13.5px] font-medium tracking-tight leading-tight text-slate-100">{c.label}</div>
+                    <div className="text-[13.5px] font-medium tracking-tight leading-tight text-foreground">{c.label}</div>
                     <div className="text-[11.5px] text-muted-foreground mt-0.5">
                       {c.types.length} types · <span className={inStack === 0 ? 'text-amber-400/80' : ''}>{inStack} in stack</span>
                       {inStack !== productCount && <span className="opacity-50"> · {productCount} total</span>}
@@ -2750,7 +2750,7 @@ function InsertDock(props: {
                 <div key={t.id} className="mb-2">
                   <div className="px-4 pt-2.5 pb-1.5 flex items-center gap-2.5">
                     <span className="w-[2px] h-3.5 rounded-full" style={{ background: activeCat.tone }} />
-                    <span className="text-[12px] font-medium text-slate-200 tracking-tight">{t.label}</span>
+                    <span className="text-[12px] font-medium text-foreground tracking-tight">{t.label}</span>
                     <span className="text-[10.5px] text-muted-foreground/70 ml-auto">{items.length}</span>
                   </div>
                   {items.map((p) => {
@@ -2774,7 +2774,7 @@ function InsertDock(props: {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-[12.5px] truncate leading-tight flex items-center gap-2">
-                            <span className="font-medium text-slate-100">{p.mfr}</span>
+                            <span className="font-medium text-foreground">{p.mfr}</span>
                             <span className="text-muted-foreground">{p.model}</span>
                             {badge && (
                               <span
@@ -3778,7 +3778,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           <g pointerEvents="none" transform={`translate(${movingDev.x + 18}, ${movingDev.y - 32})`}>
             <rect x={0} y={-12} width={108} height={36} rx={4} fill="var(--panel-background)" fillOpacity="0.92" stroke="rgba(124,194,255,0.45)" strokeWidth="0.7" />
             <text x={6} y={0} fontSize="8" fontFamily="ui-monospace, monospace" fill="#94A3B8" letterSpacing="0.6">X · Y · NEAR</text>
-            <text x={6} y={11} fontSize="10" fontFamily="ui-monospace, monospace" fill="#E2E8F0" fontWeight="700">
+            <text x={6} y={11} fontSize="10" fontFamily="ui-monospace, monospace" fill="var(--foreground)" fontWeight="700">
               {(movingDev.x / 20).toFixed(1)} · {(movingDev.y / 20).toFixed(1)} ft
             </text>
             <text x={6} y={21} fontSize="9" fontFamily="ui-monospace, monospace" fill="#7CC2FF">
@@ -3943,10 +3943,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             session. */}
         {layers.presence && presence.map((p) => (
           <g key={p.id} style={{ transition: 'transform 80ms linear' }} transform={`translate(${p.x}, ${p.y})`} pointerEvents="none">
-            <path d="M 0 0 L 14 5 L 6 7 L 4 14 Z" fill={p.tone} stroke="#0D1117" strokeWidth="1" />
+            <path d="M 0 0 L 14 5 L 6 7 L 4 14 Z" fill={p.tone} stroke="var(--canvas-background)" strokeWidth="1" />
             <g transform="translate(14, 14)">
               <rect rx="3" ry="3" x="0" y="0" width={p.name.length * 6.2 + 12} height="16" fill={p.tone} />
-              <text x="6" y="12" fill="#0D1117" fontSize="10" fontWeight="600">{p.name}</text>
+              <text x="6" y="12" fill="var(--canvas-background)" fontSize="10" fontWeight="600">{p.name}</text>
             </g>
           </g>
         ))}
@@ -4042,7 +4042,7 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
           <text x="324" y="320" textAnchor="middle" stroke="#0D1424" strokeWidth="3" paintOrder="stroke">7th St</text>
         </g>
         <g transform="translate(96, 100)">
-          <rect width="220" height="26" rx="13" fill="#0D1117" fillOpacity="0.78" stroke="#30363D" />
+          <rect width="220" height="26" rx="13" fill="var(--canvas-background)" fillOpacity="0.78" stroke="#30363D" />
           <circle cx="14" cy="13" r="3.5" fill="#2F81F7" />
           <text x="26" y="17" fill="var(--foreground)" fontSize="11">{siteAddress || 'No address set'}</text>
         </g>
@@ -4093,17 +4093,17 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
           href="https://images.unsplash.com/photo-1569163139394-de4798aa62b6?w=1200&q=70"
           x="80" y="80" width="640" height="480" preserveAspectRatio="xMidYMid slice"
         />
-        <rect x="80" y="80" width="640" height="480" fill="#0D1117" opacity="0.28" />
+        <rect x="80" y="80" width="640" height="480" fill="var(--canvas-background)" opacity="0.28" />
         {/* Parcel outline */}
         <rect x="80" y="80" width="640" height="480" fill="none" stroke="#2F81F7" strokeWidth="2" strokeDasharray="8 6" />
         {/* Building footprint over the satellite */}
         <g>
-          <rect x="220" y="200" width="360" height="240" fill="#0D1117" fillOpacity="0.55" stroke="#E6EDF3" strokeWidth="2" />
+          <rect x="220" y="200" width="360" height="240" fill="var(--canvas-background)" fillOpacity="0.55" stroke="#E6EDF3" strokeWidth="2" />
           <text x="400" y="328" textAnchor="middle" fill="var(--foreground)" fontSize="12">Building footprint</text>
         </g>
         {/* Address chip */}
         <g transform="translate(96, 100)">
-          <rect width="220" height="26" rx="13" fill="#0D1117" fillOpacity="0.7" stroke="#30363D" />
+          <rect width="220" height="26" rx="13" fill="var(--canvas-background)" fillOpacity="0.7" stroke="#30363D" />
           <circle cx="14" cy="13" r="3.5" fill="#2F81F7" />
           <text x="26" y="17" fill="var(--foreground)" fontSize="11">{siteAddress || 'No address set'}</text>
         </g>
@@ -4239,7 +4239,7 @@ function FovCone({
           {telemetry && (
             <g transform="translate(0, 16)">
               <rect x={-26} y={-6} width={52} height={12} rx={2} fill="var(--panel-background)" fillOpacity="0.85" stroke={color} strokeWidth="0.5" opacity="0.85" />
-              <text textAnchor="middle" y={2.5} fontSize="8" fill="#E2E8F0" fontFamily="ui-monospace, monospace">{telemetry}</text>
+              <text textAnchor="middle" y={2.5} fontSize="8" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{telemetry}</text>
             </g>
           )}
         </g>
@@ -4426,7 +4426,7 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, color, onU
       {/* Range (tip) handle — drag along cone axis to extend/shorten reach. */}
       <g onPointerDown={onTipDown} style={{ cursor: 'ew-resize' }}>
         <circle cx={tipX} cy={tipY} r={7} fill={color} opacity="0.2" />
-        <circle cx={tipX} cy={tipY} r={3.5} fill={color} stroke="#0B131F" strokeWidth="1" />
+        <circle cx={tipX} cy={tipY} r={3.5} fill={color} stroke="var(--canvas-background)" strokeWidth="1" />
         <g transform={`translate(${tipX}, ${tipY - 14})`} pointerEvents="none">
           <rect x={-20} y={-7} width={40} height={13} rx={2} fill="var(--panel-background)" fillOpacity="0.92" stroke={color} strokeWidth="0.6" />
           <text textAnchor="middle" y={2.5} fontSize="9" fontWeight="600" fill={color} fontFamily="ui-monospace, monospace">{Math.round(rangeFt)} ft</text>
@@ -4435,11 +4435,11 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, color, onU
       {/* Edge (FOV) handles — drag to widen/narrow the lens aperture. */}
       <g onPointerDown={onEdgeDown} style={{ cursor: 'crosshair' }}>
         <circle cx={e1X} cy={e1Y} r={6} fill={color} opacity="0.2" />
-        <circle cx={e1X} cy={e1Y} r={3} fill={color} stroke="#0B131F" strokeWidth="0.7" />
+        <circle cx={e1X} cy={e1Y} r={3} fill={color} stroke="var(--canvas-background)" strokeWidth="0.7" />
       </g>
       <g onPointerDown={onEdgeDown} style={{ cursor: 'crosshair' }}>
         <circle cx={e2X} cy={e2Y} r={6} fill={color} opacity="0.2" />
-        <circle cx={e2X} cy={e2Y} r={3} fill={color} stroke="#0B131F" strokeWidth="0.7" />
+        <circle cx={e2X} cy={e2Y} r={3} fill={color} stroke="var(--canvas-background)" strokeWidth="0.7" />
       </g>
     </g>
   );
@@ -4490,12 +4490,12 @@ function RotationRing({ d, onRotate, svgRef, zoom, overrideColor }: { d: Device;
       {/* heading badge above the device */}
       <g transform={`translate(${d.x}, ${d.y - R - 10})`}>
         <rect x={-16} y={-7} width={32} height={14} rx={3} fill="var(--panel-background)" fillOpacity="0.85" stroke={tone} strokeWidth="0.6" />
-        <text x={0} y={3} textAnchor="middle" fill="#E2E8F0" fontSize="10" fontWeight="700" fontFamily="ui-monospace, monospace">{d.rot}°</text>
+        <text x={0} y={3} textAnchor="middle" fill="var(--foreground)" fontSize="10" fontWeight="700" fontFamily="ui-monospace, monospace">{d.rot}°</text>
       </g>
       {/* drag handle on the ring */}
       <g pointerEvents="auto" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} style={{ cursor: 'grab' }}>
         <circle cx={handleX} cy={handleY} r={6} fill={tone} opacity="0.2" />
-        <circle cx={handleX} cy={handleY} r={3.5} fill={tone} stroke="#0B131F" strokeWidth="1" />
+        <circle cx={handleX} cy={handleY} r={3.5} fill={tone} stroke="var(--canvas-background)" strokeWidth="1" />
       </g>
     </g>
   );
@@ -4869,36 +4869,36 @@ function DeviceGlyphPaths({ type, tone }: { type: DeviceType; tone: string }) {
     case 'cam.bullet':
       return (
         <g transform={`scale(${s})`}>
-          <rect x="-10" y="-5" width="20" height="10" rx="2" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <circle cx="8" cy="0" r="3.5" fill="#0D1117" />
+          <rect x="-10" y="-5" width="20" height="10" rx="2" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <circle cx="8" cy="0" r="3.5" fill="var(--canvas-background)" />
           <circle cx="8" cy="0" r="1.6" fill={tone} />
-          <rect x="-11" y="-2" width="3" height="4" fill="#0D1117" />
+          <rect x="-11" y="-2" width="3" height="4" fill="var(--canvas-background)" />
         </g>
       );
     case 'cam.dome':
       return (
         <g transform={`scale(${s})`}>
-          <circle r="10" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <circle r="6" fill="#0D1117" />
+          <circle r="10" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <circle r="6" fill="var(--canvas-background)" />
           <circle r="3" fill={tone} />
         </g>
       );
     case 'cam.ptz':
       return (
         <g transform={`scale(${s})`}>
-          <circle r="11" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <path d="M -7 -2 A 7 7 0 0 1 7 -2" fill="none" stroke="#0D1117" strokeWidth="1.5" />
-          <circle r="3.5" fill="#0D1117" />
-          <polygon points="7,-4 11,-2 7,0" fill="#0D1117" />
+          <circle r="11" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <path d="M -7 -2 A 7 7 0 0 1 7 -2" fill="none" stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <circle r="3.5" fill="var(--canvas-background)" />
+          <polygon points="7,-4 11,-2 7,0" fill="var(--canvas-background)" />
         </g>
       );
     case 'cam.multisensor':
       return (
         <g transform={`scale(${s})`}>
-          <circle r="12" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
+          <circle r="12" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
           {[[-5,-5],[5,-5],[-5,5],[5,5]].map(([x,y],i) => (
             <g key={i}>
-              <circle cx={x} cy={y} r="3" fill="#0D1117" />
+              <circle cx={x} cy={y} r="3" fill="var(--canvas-background)" />
               <circle cx={x} cy={y} r="1.4" fill={tone} />
             </g>
           ))}
@@ -4907,74 +4907,74 @@ function DeviceGlyphPaths({ type, tone }: { type: DeviceType; tone: string }) {
     case 'cam.fisheye':
       return (
         <g transform={`scale(${s})`}>
-          <circle r="11" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <circle r="7" fill="#0D1117" />
+          <circle r="11" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <circle r="7" fill="var(--canvas-background)" />
           <circle r="3" fill={tone} />
-          <line x1="-11" y1="0" x2="11" y2="0" stroke="#0D1117" strokeWidth="0.8" />
-          <line x1="0" y1="-11" x2="0" y2="11" stroke="#0D1117" strokeWidth="0.8" />
+          <line x1="-11" y1="0" x2="11" y2="0" stroke="var(--canvas-background)" strokeWidth="0.8" />
+          <line x1="0" y1="-11" x2="0" y2="11" stroke="var(--canvas-background)" strokeWidth="0.8" />
         </g>
       );
     case 'cam.thermal':
       return (
         <g transform={`scale(${s})`}>
-          <rect x="-10" y="-6" width="20" height="12" rx="2" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <rect x="-7" y="-3" width="14" height="6" fill="#0D1117" />
+          <rect x="-10" y="-6" width="20" height="12" rx="2" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <rect x="-7" y="-3" width="14" height="6" fill="var(--canvas-background)" />
           <text x="0" y="2" textAnchor="middle" fill={tone} fontSize="6" fontWeight="700">TH</text>
         </g>
       );
     case 'acc.reader':
       return (
         <g transform={`scale(${s})`}>
-          <rect x="-4" y="-11" width="8" height="22" rx="1.5" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <circle cx="0" cy="-7" r="1.6" fill="#0D1117" />
-          <rect x="-2.5" y="-3" width="5" height="9" rx="0.5" fill="#0D1117" />
+          <rect x="-4" y="-11" width="8" height="22" rx="1.5" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <circle cx="0" cy="-7" r="1.6" fill="var(--canvas-background)" />
+          <rect x="-2.5" y="-3" width="5" height="9" rx="0.5" fill="var(--canvas-background)" />
         </g>
       );
     case 'acc.strike':
       return (
         <g transform={`scale(${s})`}>
-          <rect x="-10" y="-4" width="20" height="8" rx="1.5" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <rect x="-3" y="-2" width="6" height="4" fill="#0D1117" />
+          <rect x="-10" y="-4" width="20" height="8" rx="1.5" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <rect x="-3" y="-2" width="6" height="4" fill="var(--canvas-background)" />
           <rect x="-3" y="-1" width="6" height="2" fill={tone} />
         </g>
       );
     case 'acc.maglock':
       return (
         <g transform={`scale(${s})`}>
-          <rect x="-12" y="-3" width="24" height="6" rx="1" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <rect x="-10" y="-1.5" width="3" height="3" fill="#0D1117" />
-          <rect x="7" y="-1.5" width="3" height="3" fill="#0D1117" />
+          <rect x="-12" y="-3" width="24" height="6" rx="1" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <rect x="-10" y="-1.5" width="3" height="3" fill="var(--canvas-background)" />
+          <rect x="7" y="-1.5" width="3" height="3" fill="var(--canvas-background)" />
         </g>
       );
     case 'acc.exit':
       return (
         <g transform={`scale(${s})`}>
-          <circle r="9" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <circle r="5" fill="#0D1117" />
+          <circle r="9" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <circle r="5" fill="var(--canvas-background)" />
           <path d="M -2 0 L 0 -2 L 2 0 L 0 2 Z" fill={tone} />
         </g>
       );
     case 'net.switch':
       return (
         <g transform={`scale(${s})`}>
-          <rect x="-12" y="-5" width="24" height="10" rx="1.5" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          {[-8,-4,0,4,8].map((x,i) => <rect key={i} x={x-1} y={-1.5} width="2" height="3" fill="#0D1117" />)}
+          <rect x="-12" y="-5" width="24" height="10" rx="1.5" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          {[-8,-4,0,4,8].map((x,i) => <rect key={i} x={x-1} y={-1.5} width="2" height="3" fill="var(--canvas-background)" />)}
         </g>
       );
     case 'net.idf':
       return (
         <g transform={`scale(${s})`}>
-          <rect x="-9" y="-12" width="18" height="24" rx="1.5" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          {[-8,-4,0,4,8].map((y,i) => <rect key={i} x={-6} y={y-1} width="12" height="2" fill="#0D1117" />)}
+          <rect x="-9" y="-12" width="18" height="24" rx="1.5" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          {[-8,-4,0,4,8].map((y,i) => <rect key={i} x={-6} y={y-1} width="12" height="2" fill="var(--canvas-background)" />)}
         </g>
       );
     case 'net.ap':
       return (
         <g transform={`scale(${s})`}>
-          <circle r="11" fill={tone} stroke="#0D1117" strokeWidth="1.5" />
-          <circle r="7" fill="none" stroke="#0D1117" strokeWidth="1.2" />
-          <circle r="3.5" fill="none" stroke="#0D1117" strokeWidth="1.2" />
-          <circle r="1.5" fill="#0D1117" />
+          <circle r="11" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
+          <circle r="7" fill="none" stroke="var(--canvas-background)" strokeWidth="1.2" />
+          <circle r="3.5" fill="none" stroke="var(--canvas-background)" strokeWidth="1.2" />
+          <circle r="1.5" fill="var(--canvas-background)" />
         </g>
       );
   }
@@ -5308,10 +5308,10 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
           <CommitInput
             value={d.id}
             onCommit={(v) => onUpdate({ id: v })}
-            className="bg-transparent w-[82px] focus:outline-none text-[11.5px] font-medium tracking-tight text-slate-100"
+            className="bg-transparent w-[82px] focus:outline-none text-[11.5px] font-medium tracking-tight text-foreground"
           />
           {product && (
-            <span className="text-[10px] text-slate-400 tracking-tight whitespace-nowrap">{product.mfr}</span>
+            <span className="text-[10px] text-muted-foreground tracking-tight whitespace-nowrap">{product.mfr}</span>
           )}
         </div>
 
@@ -5342,13 +5342,13 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
             backdropFilter: 'blur(18px)',
           }}
         >
-          <div className="px-2.5 py-1.5 border-b border-white/8 text-slate-300 uppercase tracking-[0.10em] text-[9px] font-medium">
+          <div className="px-2.5 py-1.5 border-b border-white/8 text-muted-foreground uppercase tracking-[0.10em] text-[9px] font-medium">
             Stack · {d.stack!.length}
           </div>
           {/* Names rendered by the parent via stackResolver — fall back to
               raw ids when not provided. */}
           {d.stack!.map((id) => (
-            <div key={id} className="px-2.5 py-1 text-slate-200 font-mono border-b border-white/5 last:border-b-0">
+            <div key={id} className="px-2.5 py-1 text-foreground font-mono border-b border-white/5 last:border-b-0">
               {id}
             </div>
           ))}
@@ -5380,7 +5380,7 @@ function ColorPickerButton({ currentHex, onPick, tone }: { currentHex?: string; 
       <button
         onClick={() => setOpen((v) => !v)}
         title="Object color"
-        className="px-2.5 inline-flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 h-full border-r border-white/8"
+        className="px-2.5 inline-flex items-center gap-1.5 text-muted-foreground hover:text-white hover:bg-white/[0.05] transition-colors duration-150 h-full border-r border-white/8"
       >
         <span
           className="w-3.5 h-3.5 rounded-sm border border-white/15"
@@ -5397,7 +5397,7 @@ function ColorPickerButton({ currentHex, onPick, tone }: { currentHex?: string; 
             boxShadow: '0 16px 32px -16px rgba(0,0,0,0.6)',
           }}
         >
-          <div className="text-[9.5px] uppercase tracking-[0.10em] text-slate-400 px-1 pb-1.5">Object color</div>
+          <div className="text-[9.5px] uppercase tracking-[0.10em] text-muted-foreground px-1 pb-1.5">Object color</div>
           <div className="grid grid-cols-5 gap-1">
             {DEVICE_COLOR_PALETTE.map((c) => {
               const isCurrent = (currentHex || '') === c.hex;
@@ -5410,7 +5410,7 @@ function ColorPickerButton({ currentHex, onPick, tone }: { currentHex?: string; 
                     className={`w-7 h-7 rounded border flex items-center justify-center text-[9px] tracking-tight transition-colors ${
                       isCurrent || !currentHex
                         ? 'border-primary/60 text-primary bg-primary/10'
-                        : 'border-white/15 text-slate-400 hover:text-slate-200 hover:border-white/30'
+                        : 'border-white/15 text-muted-foreground hover:text-foreground hover:border-white/30'
                     }`}
                   >
                     Auto
@@ -5463,7 +5463,7 @@ function MoreButton({ items, tone }: { items: ToolbarAction[]; tone: string }) {
       <button
         onClick={() => setOpen((v) => !v)}
         title="More"
-        className="px-3 inline-flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150"
+        className="px-3 inline-flex items-center gap-1.5 text-muted-foreground hover:text-white hover:bg-white/[0.05] transition-colors duration-150"
       >
         <MoreHorizontal className="w-3.5 h-3.5" />
         <span className="text-[11px] font-medium tracking-tight">More</span>
@@ -5484,7 +5484,7 @@ function MoreButton({ items, tone }: { items: ToolbarAction[]; tone: string }) {
               <button
                 key={a.id}
                 onClick={() => { a.onClick(); setOpen(false); }}
-                className={`w-full text-left px-3 py-2 flex items-center gap-2 text-xs hover:bg-white/5 transition-colors ${a.danger ? 'text-rose-300 hover:text-rose-200' : 'text-slate-200'}`}
+                className={`w-full text-left px-3 py-2 flex items-center gap-2 text-xs hover:bg-white/5 transition-colors ${a.danger ? 'text-rose-300 hover:text-rose-200' : 'text-foreground'}`}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
                 <span>{a.label}</span>
@@ -5542,7 +5542,7 @@ function labelForKind(k: DeviceKind): string {
 function Row({ label, value, tone }: { label: string; value: any; tone?: string }) {
   return (
     <div className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-b-0">
-      <span className="text-[11.5px] text-slate-400">{label}</span>
+      <span className="text-[11.5px] text-muted-foreground">{label}</span>
       <span className="text-[12.5px] tabular-nums font-medium" style={{ color: tone || '#E7EDF6' }}>{value}</span>
     </div>
   );
@@ -5551,7 +5551,7 @@ function Row({ label, value, tone }: { label: string; value: any; tone?: string 
 function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-6">
-      <div className="text-[13px] font-medium text-slate-200 mb-3 tracking-tight">{title}</div>
+      <div className="text-[13px] font-medium text-foreground mb-3 tracking-tight">{title}</div>
       {children}
     </div>
   );
@@ -5570,8 +5570,8 @@ function ProductOverviewSection({ d }: { d: Device }) {
   const Row2 = ({ label, value, tone }: { label: string; value: any; tone?: string }) =>
     value == null || value === '' ? null : (
       <div className="flex items-center justify-between text-[12px] py-1 border-b border-white/5 last:border-b-0">
-        <span className="text-slate-400">{label}</span>
-        <span className="tabular-nums text-slate-100" style={{ color: tone }}>{value}</span>
+        <span className="text-muted-foreground">{label}</span>
+        <span className="tabular-nums text-foreground" style={{ color: tone }}>{value}</span>
       </div>
     );
   return (
@@ -5605,7 +5605,7 @@ function ProductOverviewSection({ d }: { d: Device }) {
           {cat.storageGbPerDay && <Row2 label="Storage / day" value={`${cat.storageGbPerDay} GB`} />}
           {cat.warrantyYears && <Row2 label="Warranty" value={`${cat.warrantyYears} yrs`} />}
           {cat.notes && (
-            <div className="mt-2 pt-2 border-t border-white/8 text-[11px] text-slate-400 leading-snug">
+            <div className="mt-2 pt-2 border-t border-white/8 text-[11px] text-muted-foreground leading-snug">
               {cat.notes}
             </div>
           )}
@@ -5617,7 +5617,7 @@ function ProductOverviewSection({ d }: { d: Device }) {
           <Row2 label="MSRP" value={cat.msrp != null ? `$${cat.msrp.toLocaleString()}` : '—'} />
           {cat.dealerCost && <Row2 label="Dealer cost" value={`$${cat.dealerCost.toLocaleString()}`} />}
           {cat.laborUnits && <Row2 label="Labor units" value={`${cat.laborUnits} hr`} />}
-          <div className="text-[10px] text-slate-500 mt-1">Sample MSRP — verify with distributor.</div>
+          <div className="text-[10px] text-muted-foreground mt-1">Sample MSRP — verify with distributor.</div>
         </DrawerSection>
       )}
 
@@ -5625,7 +5625,7 @@ function ProductOverviewSection({ d }: { d: Device }) {
         <DrawerSection title="Compatible VMS">
           <div className="flex flex-wrap gap-1">
             {cat.compatibleVMS.map((v) => (
-              <span key={v} className="text-[10.5px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-200">{v}</span>
+              <span key={v} className="text-[10.5px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-foreground">{v}</span>
             ))}
           </div>
         </DrawerSection>
@@ -5666,12 +5666,12 @@ function AccessoriesSection({ cameraType, selected, onToggle }: {
                 {isOn && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
               </span>
               <div className="flex-1 min-w-0">
-                <div className="text-[12px] text-slate-100 truncate">
+                <div className="text-[12px] text-foreground truncate">
                   {a.mfr} · {a.model}
                 </div>
                 <div className="text-[10.5px] text-muted-foreground truncate">{a.kind.replace('-', ' ')}</div>
               </div>
-              <span className="text-[11px] tabular-nums text-slate-300">${a.msrp ?? '—'}</span>
+              <span className="text-[11px] tabular-nums text-muted-foreground">${a.msrp ?? '—'}</span>
             </button>
           );
         })}
@@ -5679,7 +5679,7 @@ function AccessoriesSection({ cameraType, selected, onToggle }: {
       {selected.length > 0 && (
         <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
           <span className="text-muted-foreground">{selected.length} added · rolls up into BOM</span>
-          <span className="tabular-nums text-slate-100 font-medium">+${totalAdded}</span>
+          <span className="tabular-nums text-foreground font-medium">+${totalAdded}</span>
         </div>
       )}
     </DrawerSection>
@@ -5759,7 +5759,7 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
             'Lower mount to 7 ft for prosecution-grade face capture',
           ]
         ).map((s, i) => (
-          <button key={i} className="w-full text-left text-[11.5px] text-slate-200 px-2 py-1.5 mb-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5">
+          <button key={i} className="w-full text-left text-[11.5px] text-foreground px-2 py-1.5 mb-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5">
             <Sparkles className="w-3 h-3 inline mr-1.5" style={{ color: tone }} />{s}
           </button>
         ))}
@@ -5778,8 +5778,8 @@ function Slider({ label, value, min, max, step = 1, unit, onChange, tone }: { la
   return (
     <div className="mb-3.5">
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11.5px] text-slate-400">{label}</span>
-        <span className="text-[12.5px] tabular-nums font-medium text-slate-100">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
+        <span className="text-[11.5px] text-muted-foreground">{label}</span>
+        <span className="text-[12.5px] tabular-nums font-medium text-foreground">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
       </div>
       <input
         type="range" min={min} max={max} step={step} value={value}
@@ -5885,16 +5885,16 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5">
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tone, boxShadow: `0 0 6px ${tone}66` }} />
-              <span className="text-[11px] text-slate-400 tracking-tight">{labelForKind(kind)}</span>
+              <span className="text-[11px] text-muted-foreground tracking-tight">{labelForKind(kind)}</span>
             </div>
             <div className="text-[18px] font-medium text-slate-50 tracking-tight truncate leading-tight">{d.id}</div>
             {product && (
-              <div className="text-[11.5px] text-slate-400 mt-1 truncate">{product.mfr} · {product.model}</div>
+              <div className="text-[11.5px] text-muted-foreground mt-1 truncate">{product.mfr} · {product.model}</div>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-white/[0.05] text-slate-500 hover:text-slate-200 transition-colors duration-150"
+            className="p-1.5 rounded-md hover:bg-white/[0.05] text-muted-foreground hover:text-foreground transition-colors duration-150"
             title="Close inspector"
           >
             <X className="w-4 h-4" />
@@ -6001,8 +6001,8 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
               ].map((row) => (
                 <div key={row.k} className="flex items-center gap-2 py-1">
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: row.c, boxShadow: `0 0 6px ${row.c}` }} />
-                  <span className="flex-1 text-[11.5px] text-slate-300">{row.k}</span>
-                  <span className="text-[12px] tabular-nums text-slate-200">{row.d} ft</span>
+                  <span className="flex-1 text-[11.5px] text-muted-foreground">{row.k}</span>
+                  <span className="text-[12px] tabular-nums text-foreground">{row.d} ft</span>
                 </div>
               ))}
             </DrawerSection>
@@ -6064,7 +6064,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                       className="text-left px-3 py-2 rounded-md border border-white/[0.08] hover:border-white/[0.18] hover:bg-white/[0.04] transition-colors duration-150"
                       style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
                     >
-                      <div className="text-[12px] font-medium text-slate-100 tracking-tight">{p.label}</div>
+                      <div className="text-[12px] font-medium text-foreground tracking-tight">{p.label}</div>
                       <div className="text-[10.5px] text-muted-foreground/80 mt-0.5">{p.hint}</div>
                     </button>
                   ))}
@@ -6174,8 +6174,8 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
               ].map((l) => (
                 <div key={l.id} className="flex items-center gap-2 py-1.5 border-b border-white/5">
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: l.tone, boxShadow: `0 0 6px ${l.tone}` }} />
-                  <span className="text-[11.5px] text-slate-200">{l.id}</span>
-                  <span className="ml-auto text-[10px] uppercase tracking-[0.12em] text-slate-500">{l.k}</span>
+                  <span className="text-[11.5px] text-foreground">{l.id}</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{l.k}</span>
                 </div>
               ))}
             </DrawerSection>
@@ -6190,7 +6190,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                 value={d.notes ?? ''}
                 onChange={(e) => onUpdate({ notes: e.target.value })}
                 placeholder="Engineering notes — mount blocking, aim direction, GC coordination, etc."
-                className="w-full h-24 text-[11.5px] text-slate-200 bg-white/5 border border-white/10 rounded p-2 focus:outline-none focus:border-white/25 resize-none"
+                className="w-full h-24 text-[11.5px] text-foreground bg-white/5 border border-white/10 rounded p-2 focus:outline-none focus:border-white/25 resize-none"
               />
             </DrawerSection>
             <DrawerSection title="Media">
@@ -6303,23 +6303,23 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
           {/* Header */}
           <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
             <ScanFace className="w-3.5 h-3.5" style={{ color: tone }} />
-            <span className="text-[10px] uppercase tracking-[0.18em] text-slate-200">Coverage check</span>
+            <span className="text-[10px] uppercase tracking-[0.18em] text-foreground">Coverage check</span>
             <span className="text-[9px] uppercase tracking-[0.16em] text-amber-300/70 px-1.5 py-0.5 rounded border border-amber-300/30 ml-auto">Simulated</span>
-            <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X className="w-3.5 h-3.5" /></button>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>
           </div>
 
           {/* In-FOV chip + distance */}
           <div className="px-3 py-2.5 border-b border-white/5 grid grid-cols-3 gap-3">
             <div>
-              <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500">Distance</div>
-              <div className="text-base font-medium tabular-nums text-slate-100">{distFt.toFixed(1)} <span className="text-[10px] text-slate-500">ft</span></div>
+              <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Distance</div>
+              <div className="text-base font-medium tabular-nums text-foreground">{distFt.toFixed(1)} <span className="text-[10px] text-muted-foreground">ft</span></div>
             </div>
             <div>
-              <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500">Off-axis</div>
-              <div className="text-base font-medium tabular-nums text-slate-100">{aimDelta.toFixed(0)}<span className="text-[10px] text-slate-500">°</span></div>
+              <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Off-axis</div>
+              <div className="text-base font-medium tabular-nums text-foreground">{aimDelta.toFixed(0)}<span className="text-[10px] text-muted-foreground">°</span></div>
             </div>
             <div>
-              <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500">In FOV</div>
+              <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">In FOV</div>
               <div className="text-[12px] font-medium uppercase tracking-wider tabular-nums" style={{ color: inFOV ? '#34D399' : '#F87171' }}>
                 {inFOV ? 'YES' : (!inHalfFov ? 'Off-axis' : 'Past range')}
               </div>
@@ -6328,10 +6328,10 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
 
           {/* DORI ladder — which band is achieved at the current distance */}
           <div className="px-3 py-2.5 border-b border-white/5">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-2 flex items-center gap-2">
+            <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground mb-2 flex items-center gap-2">
               <span>DORI band</span>
               <span className="flex-1 h-px bg-white/5" />
-              <span className="tabular-nums text-slate-400">{pxPerM.toFixed(0)} px/m</span>
+              <span className="tabular-nums text-muted-foreground">{pxPerM.toFixed(0)} px/m</span>
             </div>
             {DORI.map((b) => {
               const hit = pxPerM >= b.min;
@@ -6339,8 +6339,8 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
               return (
                 <div key={b.id} className={`flex items-center gap-2 py-1 ${hit ? '' : 'opacity-40'}`}>
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: b.tone, boxShadow: hit ? `0 0 6px ${b.tone}` : 'none' }} />
-                  <span className={`flex-1 text-[11.5px] ${isTop ? 'text-slate-100 font-medium' : 'text-slate-300'}`}>{b.label}</span>
-                  <span className="text-[10px] tabular-nums text-slate-500">≥{b.min} px/m</span>
+                  <span className={`flex-1 text-[11.5px] ${isTop ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{b.label}</span>
+                  <span className="text-[10px] tabular-nums text-muted-foreground">≥{b.min} px/m</span>
                   {hit && <Check className="w-3 h-3 ml-1" style={{ color: b.tone }} />}
                 </div>
               );
@@ -6352,19 +6352,19 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
 
           {/* Pixels on subject */}
           <div className="px-3 py-2.5 border-b border-white/5">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-1.5">Pixels on subject</div>
+            <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Pixels on subject</div>
             <div className="grid grid-cols-3 gap-2 text-center">
               <div>
-                <div className="text-[14px] font-medium tabular-nums text-slate-100">{facePx}</div>
-                <div className="text-[9px] uppercase tracking-wide text-slate-500">Face px</div>
+                <div className="text-[14px] font-medium tabular-nums text-foreground">{facePx}</div>
+                <div className="text-[9px] uppercase tracking-wide text-muted-foreground">Face px</div>
               </div>
               <div>
-                <div className="text-[14px] font-medium tabular-nums text-slate-100">{bodyPx}</div>
-                <div className="text-[9px] uppercase tracking-wide text-slate-500">Body px</div>
+                <div className="text-[14px] font-medium tabular-nums text-foreground">{bodyPx}</div>
+                <div className="text-[9px] uppercase tracking-wide text-muted-foreground">Body px</div>
               </div>
               <div>
-                <div className="text-[14px] font-medium tabular-nums text-slate-100">{heightPx}</div>
-                <div className="text-[9px] uppercase tracking-wide text-slate-500">Height px</div>
+                <div className="text-[14px] font-medium tabular-nums text-foreground">{heightPx}</div>
+                <div className="text-[9px] uppercase tracking-wide text-muted-foreground">Height px</div>
               </div>
             </div>
           </div>
@@ -6375,7 +6375,7 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
               telegraph the right design intent ("would this hold up in
               court") that the user asked for. */}
           <div className="px-3 py-2.5 border-b border-white/5">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-1.5">Forensic quality</div>
+            <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Forensic quality</div>
             {(() => {
               // Plate detection wants ~80 px on a 520mm plate (US standard).
               const platePx = Math.round(pxPerM * 0.52);
@@ -6393,23 +6393,23 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
               return (
                 <div className="space-y-1.5 text-[10.5px]">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Identification</span>
+                    <span className="text-muted-foreground">Identification</span>
                     <span className="tabular-nums" style={{ color: lowLightTone }}>{idGrade}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">License plate</span>
+                    <span className="text-muted-foreground">License plate</span>
                     <span className="tabular-nums" style={{ color: plateReady ? '#34D399' : '#F87171' }}>
                       {platePx} px {plateReady ? '✓' : (isLPR ? '· LPR sensor' : '· need ≥80')}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">IR effective</span>
+                    <span className="text-muted-foreground">IR effective</span>
                     <span className="tabular-nums" style={{ color: irRange === 0 ? '#64748B' : irPct > 60 ? '#34D399' : irPct > 25 ? '#FACC15' : '#F87171' }}>
                       {irRange === 0 ? 'No IR' : `${irPct}% @ ${distFt.toFixed(0)}ft`}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Prosecution-ready</span>
+                    <span className="text-muted-foreground">Prosecution-ready</span>
                     <span className="tabular-nums" style={{ color: pxPerM >= 250 && plateReady ? '#34D399' : pxPerM >= 125 ? '#FACC15' : '#F87171' }}>
                       {pxPerM >= 250 && plateReady ? 'Yes' : pxPerM >= 125 ? 'Partial' : 'No'}
                     </span>
@@ -6421,16 +6421,16 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
 
           {/* Operating conditions */}
           <div className="px-3 py-2.5">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-slate-500 mb-1.5">Operating conditions</div>
+            <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Operating conditions</div>
             <div className="grid grid-cols-2 gap-1 text-[10.5px]">
-              <div className="flex items-center justify-between"><span className="text-slate-500">Sensor</span><span className="tabular-nums text-slate-300">1920px</span></div>
-              <div className="flex items-center justify-between"><span className="text-slate-500">HFOV</span><span className="tabular-nums text-slate-300">{fovDeg}°</span></div>
-              <div className="flex items-center justify-between"><span className="text-slate-500">Width@dist</span><span className="tabular-nums text-slate-300">{fovWidthM.toFixed(1)} m</span></div>
-              <div className="flex items-center justify-between"><span className="text-slate-500">px/ft</span><span className="tabular-nums text-slate-300">{pxPerFt.toFixed(1)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Sensor</span><span className="tabular-nums text-muted-foreground">1920px</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">HFOV</span><span className="tabular-nums text-muted-foreground">{fovDeg}°</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Width@dist</span><span className="tabular-nums text-muted-foreground">{fovWidthM.toFixed(1)} m</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">px/ft</span><span className="tabular-nums text-muted-foreground">{pxPerFt.toFixed(1)}</span></div>
             </div>
           </div>
 
-          <div className="px-3 py-1.5 border-t border-white/5 text-[9px] text-slate-500 leading-relaxed">
+          <div className="px-3 py-1.5 border-t border-white/5 text-[9px] text-muted-foreground leading-relaxed">
             Computed from camera FOV + range. Drag the stick figure to test other distances.
           </div>
         </div>
@@ -6486,7 +6486,7 @@ function CoverageModeSwitch({ mode, setMode }: { mode: CoverageMode; setMode: (m
           boxShadow: '0 10px 24px -10px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06)',
         }}
       >
-        <div className="px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-slate-500 border-r border-white/8 mr-1">Coverage</div>
+        <div className="px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-muted-foreground border-r border-white/8 mr-1">Coverage</div>
         {modes.map((m) => {
           const active = mode === m.id;
           return (
@@ -6737,8 +6737,8 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
           >
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: sevDot(iss.severity), animation: 'glow-breathe 2.4s ease-in-out infinite' }} />
             <span className="font-medium tracking-wide">{iss.label}</span>
-            <span className="text-slate-400">·</span>
-            <span className="text-slate-400">{iss.detail}</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-muted-foreground">{iss.detail}</span>
           </div>
         </div>
       ))}
@@ -6759,8 +6759,8 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
           }}
         >
           <Activity className="w-3.5 h-3.5 text-sky-300" />
-          <span className="uppercase tracking-[0.18em] text-[9px] text-slate-400">Chips</span>
-          {open ? <Eye className="w-3 h-3 text-slate-400" /> : <EyeOff className="w-3 h-3 text-slate-500" />}
+          <span className="uppercase tracking-[0.18em] text-[9px] text-muted-foreground">Chips</span>
+          {open ? <Eye className="w-3 h-3 text-muted-foreground" /> : <EyeOff className="w-3 h-3 text-muted-foreground" />}
         </button>
         <button
           onClick={() => setPanelOpen(!panelOpen)}
@@ -6775,7 +6775,7 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
           }}
         >
           <Sparkles className="w-3.5 h-3.5" style={{ color: panelOpen ? '#A6C8F0' : '#A6C8F0' }} />
-          <span className="uppercase tracking-[0.18em] text-[9px] text-slate-300">Assistant</span>
+          <span className="uppercase tracking-[0.18em] text-[9px] text-muted-foreground">Assistant</span>
           {summary.high ? <span className="tabular-nums text-rose-300">{summary.high}</span> : null}
           {summary.warn ? <span className="tabular-nums text-amber-300">{summary.warn}</span> : null}
           {!summary.high && !summary.warn && !issues.length && <span className="tabular-nums text-emerald-300">clear</span>}
@@ -6800,12 +6800,12 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
           <div className="px-3.5 py-2.5 border-b border-white/8 flex items-center gap-2">
             <Sparkles className="w-3.5 h-3.5 text-sky-300" />
             <div className="flex-1 min-w-0">
-              <div className="text-[12.5px] font-medium text-slate-100 tracking-tight">Engineering assistant</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">
+              <div className="text-[12.5px] font-medium text-foreground tracking-tight">Engineering assistant</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">
                 Live findings from your canvas · {issues.length || 'none'}
               </div>
             </div>
-            <button onClick={() => setPanelOpen(false)} className="text-slate-400 hover:text-slate-100">
+            <button onClick={() => setPanelOpen(false)} className="text-muted-foreground hover:text-foreground">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -6834,7 +6834,7 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[12px] font-medium text-slate-100 tracking-tight">{iss.label}</span>
+                          <span className="text-[12px] font-medium text-foreground tracking-tight">{iss.label}</span>
                           <span
                             className="text-[9px] uppercase tracking-[0.10em] px-1 rounded"
                             style={{ background: `${toneFor(iss.kind)}1f`, color: toneFor(iss.kind) }}
@@ -6842,9 +6842,9 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
                             {iss.kind}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-300/90 mt-0.5 leading-snug">{iss.detail}</div>
+                        <div className="text-[11px] text-muted-foreground/90 mt-0.5 leading-snug">{iss.detail}</div>
                         {iss.suggestion && (
-                          <div className="text-[10.5px] text-slate-400 mt-1.5 leading-snug border-l-2 border-sky-400/30 pl-2 italic">
+                          <div className="text-[10.5px] text-muted-foreground mt-1.5 leading-snug border-l-2 border-sky-400/30 pl-2 italic">
                             {iss.suggestion}
                           </div>
                         )}
@@ -6854,7 +6854,7 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
                 ))
             )}
           </div>
-          <div className="px-3.5 py-2 border-t border-white/8 text-[9.5px] text-slate-500 leading-relaxed flex items-center gap-1">
+          <div className="px-3.5 py-2 border-t border-white/8 text-[9.5px] text-muted-foreground leading-relaxed flex items-center gap-1">
             <Activity className="w-3 h-3" />
             Updates as you edit the canvas. Heuristics, not legal advice.
           </div>
@@ -6870,7 +6870,7 @@ function HudChip({ children, onClick, active, title }: { children: any; onClick:
       onClick={onClick}
       title={title}
       className={`px-2 inline-flex items-center gap-1 border-r border-white/8 transition-colors ${
-        active ? 'bg-white/10 text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'
+        active ? 'bg-white/10 text-white' : 'text-muted-foreground hover:text-white hover:bg-white/5'
       }`}
     >
       {children}
@@ -7315,24 +7315,24 @@ function FloorplanBackgroundControls({
       <div className="px-3 py-2 border-b border-white/8 flex items-center gap-2">
         <ImageIcon className="w-3.5 h-3.5 text-primary" />
         <div className="flex-1 min-w-0">
-          <div className="text-[11px] font-medium tracking-tight text-slate-100 truncate" title={bg.fileName}>
+          <div className="text-[11px] font-medium tracking-tight text-foreground truncate" title={bg.fileName}>
             {bg.fileName}
           </div>
-          <div className="text-[9.5px] text-slate-400 uppercase tracking-wider mt-0.5">
+          <div className="text-[9.5px] text-muted-foreground uppercase tracking-wider mt-0.5">
             {bg.origin === 'visionscan' ? 'VisionScan' : bg.origin.toUpperCase()} · {bg.naturalWidth}×{bg.naturalHeight}
           </div>
         </div>
         <button
           onClick={() => onPatch({ locked: !bg.locked })}
           title={bg.locked ? 'Locked' : 'Unlocked'}
-          className="text-slate-400 hover:text-slate-100"
+          className="text-muted-foreground hover:text-foreground"
         >
           {bg.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
         </button>
         <button
           onClick={onRemove}
           title="Remove background"
-          className="text-slate-400 hover:text-rose-300"
+          className="text-muted-foreground hover:text-rose-300"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -7359,12 +7359,12 @@ function FloorplanBackgroundControls({
         <div className="flex items-center gap-1.5 pt-1">
           <button
             onClick={() => onPatch({ x: 0, y: 0, scale: 1, rotation: 0, opacity: 0.85 })}
-            className="flex-1 text-[10.5px] py-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-slate-300"
+            className="flex-1 text-[10.5px] py-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground"
           >
             Reset transform
           </button>
         </div>
-        <div className="text-[9.5px] text-slate-500 leading-snug pt-1 border-t border-white/8">
+        <div className="text-[9.5px] text-muted-foreground leading-snug pt-1 border-t border-white/8">
           Imported plan persists on the floor record. Calibrate scale from the canvas to lock real-world feet.
         </div>
       </div>
@@ -7378,8 +7378,8 @@ function SliderInline({ label, value, min, max, step = 1, unit, onChange }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-0.5">
-        <span className="text-[10px] text-slate-400 uppercase tracking-wider">{label}</span>
-        <span className="text-[11px] tabular-nums font-medium text-slate-100">{value}{unit}</span>
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</span>
+        <span className="text-[11px] tabular-nums font-medium text-foreground">{value}{unit}</span>
       </div>
       <input
         type="range" min={min} max={max} step={step} value={value}

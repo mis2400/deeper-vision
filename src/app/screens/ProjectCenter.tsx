@@ -274,7 +274,7 @@ export function ProjectCenter() {
           {/* ── Right: activity feed + health controls ─────────────── */}
           <div className="space-y-5">
             <div className="bg-card border border-border rounded-lg p-4">
-              <div className="text-[11.5px] font-medium text-slate-200 mb-2 tracking-tight">Health</div>
+              <div className="text-[11.5px] font-medium text-foreground mb-2 tracking-tight">Health</div>
               <div className="flex gap-1 mb-3">
                 {(['on_track', 'at_risk', 'blocked', 'complete'] as const).map((opt) => {
                   const active = (project.healthStatus ?? 'on_track') === opt;
@@ -291,7 +291,7 @@ export function ProjectCenter() {
                 })}
               </div>
 
-              <div className="text-[11.5px] font-medium text-slate-200 mt-5 mb-2 tracking-tight">Owners</div>
+              <div className="text-[11.5px] font-medium text-foreground mt-5 mb-2 tracking-tight">Owners</div>
               <OwnerRow icon={<Sparkles className="w-3 h-3" />}     label="Sales"      value={project.assignedSalesUserId} />
               <OwnerRow icon={<Activity className="w-3 h-3" />}     label="Engineer"   value={project.assignedEngineerUserId} />
               <OwnerRow icon={<Activity className="w-3 h-3" />}     label="Estimator"  value={project.assignedEstimatorUserId} />
@@ -299,7 +299,7 @@ export function ProjectCenter() {
 
               {project.dueDate && (
                 <>
-                  <div className="text-[11.5px] font-medium text-slate-200 mt-5 mb-1 tracking-tight">Due</div>
+                  <div className="text-[11.5px] font-medium text-foreground mt-5 mb-1 tracking-tight">Due</div>
                   <div className="text-sm">{new Date(project.dueDate).toLocaleDateString()}</div>
                 </>
               )}

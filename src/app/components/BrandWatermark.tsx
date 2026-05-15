@@ -18,7 +18,7 @@ export function BrandWatermark({ fixed = false }: { fixed?: boolean }) {
       >
         <BrandLogo variant="mono" theme="dark" height={16} />
       </button>
-      <div className="pointer-events-none absolute bottom-full right-0 mb-1.5 px-2 py-0.5 rounded bg-black/80 border border-white/10 text-[9px] tracking-[0.18em] uppercase text-slate-300 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="pointer-events-none absolute bottom-full right-0 mb-1.5 px-2 py-0.5 rounded bg-black/80 border border-white/10 text-[9px] tracking-[0.18em] uppercase text-muted-foreground whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
         Shortcuts · ?
       </div>
     </div>
