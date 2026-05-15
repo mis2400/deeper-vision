@@ -1,6 +1,8 @@
 {
-  "buildCommand": null,
+  "framework": null,
+  "buildCommand": "echo skip-build-using-prebuilt-dist",
   "outputDirectory": "dist",
+  "installCommand": "echo skip-install",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
