@@ -710,6 +710,21 @@ const PRODUCTS: Product[] = [
     msrp: 545 },
   { id: 'p-mdf-room',       type: 'inf.mdf',          mfr: 'Universal', model: 'MDF closet',     sub: 'Main equipment room',
     msrp: 0 },
+
+  // ─── Infrastructure placeables — doors / walls / gates / elevator /
+  //     window. Generic SKUs so the engineer can drop a unit on the canvas
+  //     and edit the spec inline. Pricing is install-side, not hardware. ──
+  { id: 'p-door-single',     type: 'inf.door-single',     mfr: 'Generic', model: 'Single door',    sub: 'Standard 36" leaf',         msrp: 0 },
+  { id: 'p-door-double',     type: 'inf.door-double',     mfr: 'Generic', model: 'Double door',    sub: 'Pair · 72" total',           msrp: 0 },
+  { id: 'p-door-storefront', type: 'inf.door-storefront', mfr: 'Generic', model: 'Storefront door',sub: 'Glass / aluminum frame',     msrp: 0 },
+  { id: 'p-door-sliding',    type: 'inf.door-sliding',    mfr: 'Generic', model: 'Sliding door',   sub: 'Auto / manual slide',        msrp: 0 },
+  { id: 'p-window',          type: 'inf.window',          mfr: 'Generic', model: 'Window',         sub: 'Generic opening',            msrp: 0 },
+  { id: 'p-wall-brick',      type: 'inf.wall-brick',      mfr: 'Generic', model: 'Brick wall',     sub: 'CMU / brick · solid',        msrp: 0 },
+  { id: 'p-wall-fire',       type: 'inf.wall-fire',       mfr: 'Generic', model: 'Fire-rated wall',sub: '1-hr / 2-hr rated',          msrp: 0 },
+  { id: 'p-wall-concrete',   type: 'inf.wall-concrete',   mfr: 'Generic', model: 'Concrete wall',  sub: 'Poured concrete',            msrp: 0 },
+  { id: 'p-gate-swing',      type: 'inf.gate-swing',      mfr: 'Generic', model: 'Swing gate',     sub: 'Perimeter swing',            msrp: 0 },
+  { id: 'p-gate-slide',      type: 'inf.gate-slide',      mfr: 'Generic', model: 'Slide gate',     sub: 'Perimeter slide',            msrp: 0 },
+  { id: 'p-elevator',        type: 'inf.elevator',        mfr: 'Generic', model: 'Elevator',       sub: 'Lift / cab',                 msrp: 0 },
 ];
 
 const TYPE_KIND: Record<DeviceType, DeviceKind> = {
