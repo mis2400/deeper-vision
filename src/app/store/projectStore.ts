@@ -720,7 +720,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'deeperVisionStore',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -761,6 +761,15 @@ export const useProjectStore = create<ProjectState>()(
           persisted.opportunities ??= {};
           persisted.touches       ??= {};
           persisted.tasks         ??= {};
+        }
+        if (version < 3) {
+          // v2 → v3: the surveyor UX hard-reset moves the default theme away
+          // from Dark Command. Existing users whose persisted theme was
+          // 'dark' get pushed to 'slate' once so the redesign actually lands;
+          // they can flip back via the overflow menu if they want.
+          if (persisted.canvasTheme === 'dark') {
+            persisted.canvasTheme = 'slate';
+          }
         }
         return persisted;
       },

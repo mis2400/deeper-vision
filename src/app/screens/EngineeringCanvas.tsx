@@ -785,10 +785,17 @@ export function EngineeringCanvas() {
   const [viewMode, setViewMode] = useState<'default' | 'field' | 'canvas'>('default');
   const focusMode = viewMode === 'canvas';
   // Insert dock can be collapsed to a 48px icon rail at any time so the
-  // device library never blocks the plan. Collapsed state persists across
-  // sessions because that's how engineers actually work.
+  // device library never blocks the plan. Collapsed by default so the
+  // canvas owns the screen on first load — engineers click the floating
+  // Add FAB (or any dock icon) to pull the library back in. Their last
+  // choice persists across sessions.
   const [dockCollapsed, setDockCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem('canvas:dock:collapsed') === '1'; } catch { return false; }
+    try {
+      const raw = localStorage.getItem('canvas:dock:collapsed');
+      // null = first visit → collapsed default; explicit '0' = user has
+      // pinned the dock open and wants it that way next time.
+      return raw === null ? true : raw === '1';
+    } catch { return true; }
   });
   useEffect(() => {
     try { localStorage.setItem('canvas:dock:collapsed', dockCollapsed ? '1' : '0'); } catch {}
@@ -970,15 +977,25 @@ export function EngineeringCanvas() {
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
   const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
-  // Auto-position the stick-figure target at the end of the cone whenever
-  // a single-lens camera is freshly selected. The user can drag from there.
-  // Multisensor cameras have four cones — auto-positioning is skipped (the
-  // existing Target action remains the explicit affordance for those).
+  // Stick-figure target placement. v3 (Surveyor UX hard reset): the target
+  // and FOV overlay no longer auto-pop on plain selection — the user spec
+  // calls clicking-an-object a "compact pill only" moment. The target only
+  // appears once the engineer opens the drawer's Coverage tab (or hits the
+  // Coverage chip in the SelectionPill's Expand menu), so the canvas stays
+  // calm by default. Selection alone never paints the stick figure.
   const lastAutoSelRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selId) {
       setTargetSim((t) => t.open ? { open: false, x: 0, y: 0 } : t);
       lastAutoSelRef.current = null;
+      return;
+    }
+    const coverageActive = editOpen && tabGroupOf(editTab) === 'lens';
+    if (!coverageActive) {
+      // Switched selection or left Coverage — drop the figure so the canvas
+      // is clean again.
+      setTargetSim((t) => t.open ? { open: false, x: 0, y: 0 } : t);
+      if (!coverageActive) lastAutoSelRef.current = null;
       return;
     }
     if (lastAutoSelRef.current === selId) return;
@@ -1001,7 +1018,7 @@ export function EngineeringCanvas() {
     const tx = dev.x + Math.cos(rotRad) * reachPx;
     const ty = dev.y + Math.sin(rotRad) * reachPx;
     setTargetSim({ open: true, x: tx, y: ty });
-  }, [selId]);
+  }, [selId, editOpen, editTab]);
   /** Which lens (or 'all') the user is currently editing on the selected
    *  multisensor. Persisted as UI state per session — not on the device, so
    *  switching cameras keeps the user's last-used lens focus. */
@@ -1343,6 +1360,8 @@ export function EngineeringCanvas() {
             setViewMode={setViewMode}
             onOpenScanBuild={() => setScanBuildOpen(true)}
             compact={viewMode === 'field'}
+            intelOpen={intelOpen}
+            setIntelOpen={setIntelOpen}
             onPopOut={() => {
               // Opens the canvas in a new window. The persist middleware
               // shares zustand state across windows via localStorage, so
@@ -1384,6 +1403,7 @@ export function EngineeringCanvas() {
               layersOpen={layersOpen}
               onToggleLayers={() => setLayersOpen((o) => !o)}
               techModel={techModel}
+              setTechModel={(m) => setProjectTechModel(projectId, m)}
               openGroup={openGroup}
               setOpenGroup={setOpenGroup}
               collapsed={dockCollapsed}
@@ -1574,6 +1594,25 @@ export function EngineeringCanvas() {
 
             {/* Floating quick-tools capsule (bottom-center) */}
             <QuickTools tool={tool} setTool={setTool} showWall={planSource === 'blank'} />
+
+            {/* Floating Add FAB — the canvas-side entry into the device
+                library. When the dock is collapsed (the new default) this
+                is the obvious place to click to plot a device. When the
+                dock is already open it stays out of the way. */}
+            {viewMode !== 'canvas' && (dockCollapsed || viewMode === 'field') && (
+              <button
+                onClick={() => {
+                  if (viewMode === 'field') setViewMode('default');
+                  setDockCollapsed(false);
+                  setNavSection('devices');
+                }}
+                data-track="canvas-add-fab"
+                title="Add device · open library"
+                className="absolute z-30 bottom-20 right-5 h-12 w-12 rounded-full flex items-center justify-center text-white bg-primary hover:bg-primary/90 transition-colors shadow-[0_2px_4px_-1px_rgba(0,0,0,0.18),0_12px_28px_-12px_rgba(0,0,0,0.45)] focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <Plus className="w-5 h-5" strokeWidth={2.2} />
+              </button>
+            )}
 
             {/* Cable type picker — appears next to the QuickTools strip when
                 the cable tool is active. Lets the engineer pick the cable
@@ -1839,124 +1878,56 @@ function TopBar(props: {
   /** Compact = render only the essentials. Used in Field view so the bar
    *  is a thin operations strip rather than a full chrome row. */
   compact?: boolean;
+  intelOpen: boolean;
+  setIntelOpen: (b: boolean) => void;
   onPopOut: () => void;
 }) {
-  // Canvas theme picker — three visual languages for the surveyor.
-  // Lifted into the top bar so it's discoverable without opening Settings.
   const canvasTheme = useProjectStore((s) => s.canvasTheme);
   const setCanvasTheme = useProjectStore((s) => s.setCanvasTheme);
   const compact = !!props.compact;
+  // Overflow menu — collects secondary controls (theme, presence, intel,
+  // pop-out, plan source) so the bar reads as a quiet operations strip.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoreOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onEsc);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onEsc); };
+  }, [moreOpen]);
   return (
     <div
-      className={`shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-4 pr-3 gap-3 text-sm relative z-30 ${compact ? 'h-11' : 'h-14'}`}
+      className={`shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-3 pr-2 gap-2 text-sm relative z-30 ${compact ? 'h-11' : 'h-12'}`}
     >
-      {/* Left — project identity */}
-      <div className="flex items-center gap-3 min-w-0">
-        {!compact && (
-          <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
-            <Layers className="w-4 h-4" />
-          </div>
-        )}
-        <div className="leading-tight min-w-0">
-          {!compact && <div className="text-[11px] text-muted-foreground">Riverbend HQ</div>}
-          <div className="flex items-center gap-1.5">
-            <Dropdown label={FLOORS[props.floor]} options={FLOORS} onPick={(i) => props.setFloor(i)} />
-            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-400/10">
-              <span className="w-1 h-1 rounded-full bg-emerald-400" />Live
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="h-6 w-px bg-border/70" />
-
-      {/* Middle — workspace controls */}
-      <div className="flex items-center gap-0.5">
-        <SegButton active={props.snap} onClick={() => props.setSnap(!props.snap)} icon={Magnet} label="Snap" hint="S" />
-        <SegButton active={false} onClick={() => props.setUnits(props.units === 'ft' ? 'm' : 'ft')} icon={Ruler} label={props.units === 'ft' ? 'ft' : 'm'} hint="U" />
-        {!compact && (
-          <SegButton active={false} onClick={props.onSetup} icon={FileText} label="Plan source" />
-        )}
-        {/* Scan / Build Floorplan — the obvious entry point for capturing
-            the site geometry. Prominent on the TopBar so the user never
-            has to hunt for it. */}
+      {/* Left — floor + scan/build. Tighter than the previous bar; the project
+          title is in the breadcrumb above, so we don't duplicate it here. */}
+      <div className="flex items-center gap-2 min-w-0">
+        <Dropdown label={FLOORS[props.floor]} options={FLOORS} onPick={(i) => props.setFloor(i)} />
         <button
           onClick={props.onOpenScanBuild}
           title="Scan / Build Floorplan — camera, upload, satellite, or sketch"
-          className="ml-1.5 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
           data-track="topbar-scan-build"
         >
           <ScanLine className="w-3.5 h-3.5" />Scan / Build
         </button>
+      </div>
 
-        {/* Canvas theme picker — Light Drafting / Slate Engineering /
-            Dark Command. Lives in the top bar so engineers can switch
-            mid-session for daylight reviews vs night ops. Hidden in
-            compact (Field) view; theme stays whatever was last picked. */}
-        {!compact && (
-          <div className="ml-1.5 flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
-            <span className="inline-flex items-center px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground border-r border-border">Theme</span>
-            {(['light', 'slate', 'dark'] as const).map((t) => {
-              const active = canvasTheme === t;
-              const label = t === 'light' ? 'Drafting' : t === 'slate' ? 'Slate' : 'Dark';
-              return (
-                <button
-                  key={t}
-                  onClick={() => setCanvasTheme(t)}
-                  className={`px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                  title={t === 'light' ? 'Light Drafting — off-white drafting paper' : t === 'slate' ? 'Slate Engineering — balanced default' : 'Dark Command — night-ops / projector contexts'}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      <div className="h-5 w-px bg-border/60" />
 
-        {/* Tech-model selector — gates which manufacturer ecosystem the
-            library / drawer suggests. Persistent per project. Hidden in
-            compact (Field) view; tech-model rarely changes mid-survey. */}
-        {!compact && (
-          <div className="ml-1.5 flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
-            <span className="inline-flex items-center px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground border-r border-border">Stack</span>
-            {(['cloud', 'on_prem', 'hybrid'] as const).map((m) => {
-              const active = props.techModel === m;
-              const label = m === 'cloud' ? 'Cloud' : m === 'on_prem' ? 'On-prem' : 'Hybrid';
-              return (
-                <button
-                  key={m}
-                  onClick={() => props.setTechModel(m)}
-                  className={`px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                  title={
-                    m === 'cloud' ? 'Cloud-first ecosystem — Verkada / Rhombus / Meraki / Brivo / Openpath' :
-                    m === 'on_prem' ? 'On-prem ecosystem — Axis / Hanwha / Avigilon / Bosch / Genetec' :
-                    'Hybrid — show all manufacturers; compatibility flagged'
-                  }
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      {/* Middle — the two settings an engineer actually touches mid-survey */}
+      <div className="flex items-center gap-0.5">
+        <SegButton active={props.snap} onClick={() => props.setSnap(!props.snap)} icon={Magnet} label="Snap" hint="S" />
+        <SegButton active={false} onClick={() => props.setUnits(props.units === 'ft' ? 'm' : 'ft')} icon={Ruler} label={props.units === 'ft' ? 'ft' : 'm'} hint="U" />
       </div>
 
       <div className="flex-1" />
 
-      {/* Right — view + AI. Undo/Redo + Share removed in the lockdown pass:
-          there's no action history subsystem behind them yet, and the
-          absolute rule is "if a button doesn't work, hide it." */}
-      {!compact && (
-        <div className="flex items-center -space-x-1.5">
-          <Avatar initials="JS" tone="#2F81F7" />
-          <Avatar initials="MK" tone="#A371F7" />
-          <Avatar initials="RT" tone="#3FB950" />
-        </div>
-      )}
-      {/* View-mode picker — three serious survey modes. Default keeps full
-          chrome. Field hides the side rails so the canvas is the hero.
-          Canvas drops everything to a floating overlay so the floorplan
-          owns the screen for site walks. */}
+      {/* Right — view picker, fullscreen, more menu, AI. */}
       <div className="flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
         {([
           { id: 'default' as const, label: 'Default', icon: Columns3, hint: 'Default — full chrome (rails + dock)' },
@@ -1971,9 +1942,9 @@ function TopBar(props: {
               onClick={() => props.setViewMode(m.id)}
               title={m.hint}
               data-track={`topbar-view-${m.id}`}
-              className={`inline-flex items-center gap-1.5 px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+              className={`inline-flex items-center gap-1 px-2 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
             >
-              <Icon className="w-3.5 h-3.5" />{m.label}
+              <Icon className="w-3.5 h-3.5" />{!compact && m.label}
             </button>
           );
         })}
@@ -1981,28 +1952,116 @@ function TopBar(props: {
       <button
         onClick={props.isFullscreen ? props.onExitFullscreen : props.onEnterFullscreen}
         title={props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen monitor'}
-        className={`inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border transition-colors ${props.isFullscreen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
+        className={`inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-colors ${props.isFullscreen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
       >
-        <Maximize2 className="w-3.5 h-3.5" />{compact ? '' : props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        <Maximize2 className="w-3.5 h-3.5" />
       </button>
-      {/* Pop-out — open the engineering canvas in its own browser window.
-          Hidden in compact (Field) mode; rarely used mid-survey. */}
+
+      {/* Overflow menu — secondary controls (theme picker, intelligence,
+          pop-out, plan source, presence). Keeps the visible bar quiet
+          while the engineer still has one click away from anything they
+          might need. */}
+      <div className="relative" ref={moreRef}>
+        <button
+          onClick={() => setMoreOpen((v) => !v)}
+          title="More options"
+          data-track="topbar-more"
+          className={`inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-colors ${moreOpen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+        {moreOpen && (
+          <div
+            className="absolute right-0 top-9 z-40 w-[260px] rounded-xl overflow-hidden"
+            style={{
+              background: 'var(--panel-background)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid var(--border)',
+              boxShadow: '0 22px 48px -16px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.04)',
+            }}
+          >
+            {/* Theme picker */}
+            <div className="px-3 pt-3 pb-2 border-b border-border/60">
+              <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Theme</div>
+              <div className="flex items-stretch border border-border/60 rounded-md overflow-hidden">
+                {(['light', 'slate', 'dark'] as const).map((t) => {
+                  const active = canvasTheme === t;
+                  const label = t === 'light' ? 'Drafting' : t === 'slate' ? 'Slate' : 'Dark';
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => setCanvasTheme(t)}
+                      className={`flex-1 text-[11px] py-1.5 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                      data-track={`topbar-more-theme-${t}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Intelligence toggle */}
+            <button
+              onClick={() => { props.setIntelOpen(!props.intelOpen); }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors"
+              data-track="topbar-more-intel"
+            >
+              <Activity className="w-3.5 h-3.5 text-sky-400" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px]">AI Intelligence</div>
+                <div className="text-[10.5px] text-muted-foreground">{props.intelOpen ? 'Chips + assistant visible' : 'Off — canvas stays calm'}</div>
+              </div>
+              <span className={`text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded ${props.intelOpen ? 'bg-primary/15 text-primary' : 'bg-secondary/40 text-muted-foreground'}`}>
+                {props.intelOpen ? 'On' : 'Off'}
+              </span>
+            </button>
+
+            {/* Plan source */}
+            <button
+              onClick={() => { setMoreOpen(false); props.onSetup(); }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors"
+              data-track="topbar-more-plan"
+            >
+              <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[12px]">Plan source</span>
+            </button>
+
+            {/* Pop-out */}
+            <button
+              onClick={() => { setMoreOpen(false); props.onPopOut(); }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors"
+              data-track="topbar-more-popout"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[12px]">Open in new window</span>
+            </button>
+
+            {/* Run vision scan (lives here in compact mode) */}
+            {compact && (
+              <button
+                onClick={() => { setMoreOpen(false); props.onScan(); }}
+                className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors border-t border-border/60"
+                data-track="topbar-more-scan"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+                <span className="text-[12px]">Run vision scan</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {!compact && (
         <button
-          onClick={props.onPopOut}
-          title="Open canvas in a new window (second-monitor use)"
-          className="inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+          onClick={props.onScan}
+          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 h-8 rounded-lg bg-primary text-primary-foreground hover:opacity-90"
+          title="Run vision scan"
+          data-track="topbar-run-scan"
         >
-          <ExternalLink className="w-3.5 h-3.5" />Pop out
+          <Sparkles className="w-3.5 h-3.5" />Run scan
         </button>
       )}
-      <button
-        onClick={props.onScan}
-        className={`inline-flex items-center gap-1.5 text-xs ${compact ? 'px-2.5' : 'px-3.5'} h-8 rounded-lg bg-primary text-primary-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_1px_2px_rgba(0,0,0,0.4)] hover:opacity-90`}
-        title="Run vision scan"
-      >
-        <Sparkles className="w-3.5 h-3.5" />{compact ? 'Scan' : 'Run vision scan'}
-      </button>
     </div>
   );
 }
@@ -2790,6 +2849,7 @@ function InsertDock(props: {
    *  off-ecosystem SKUs are still discoverable via search but greyed out and
    *  flagged with a "Outside stack" badge. */
   techModel: 'cloud' | 'on_prem' | 'hybrid';
+  setTechModel?: (m: 'cloud' | 'on_prem' | 'hybrid') => void;
   openGroup: string | null;
   setOpenGroup: (g: string | null) => void;
   /** When true, collapse the 320px dock to a 48px icon rail. The user can
@@ -3011,6 +3071,50 @@ function InsertDock(props: {
             </div>
           )}
         </div>
+
+        {/* Stack picker — Cloud / On-prem / Hybrid lives here (not the
+            TopBar) because it directly filters the product list below.
+            Live counts in the helper line prove the filter is doing
+            something — picking Cloud should visibly shrink the library. */}
+        {props.setTechModel && (() => {
+          const total = PRODUCTS.length;
+          const inStack = PRODUCTS.filter((p) => productMatchesTechModel(p, props.techModel)).length;
+          const hidden = total - inStack;
+          const recommended = PRODUCTS.filter((p) => productMatchesTechModel(p, props.techModel) && (p as any).recommended).length;
+          return (
+            <div className="px-4 py-2.5 border-b border-border/70">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">Tech stack</span>
+                <span className="text-[10.5px] tabular-nums text-muted-foreground">
+                  <span className="text-foreground">{inStack}</span> in · <span className="text-amber-400">{hidden}</span> hidden
+                </span>
+              </div>
+              <div className="flex items-stretch border border-border/70 rounded-md overflow-hidden">
+                {([
+                  { id: 'cloud' as const,  label: 'Cloud',   hint: 'Verkada · Rhombus · Meraki · Eagle Eye · Brivo · Alta' },
+                  { id: 'on_prem' as const, label: 'On-prem', hint: 'Axis · Hanwha · Avigilon · Bosch · Genetec · Milestone' },
+                  { id: 'hybrid' as const,  label: 'Hybrid',  hint: 'Show both ecosystems; compatibility flagged' },
+                ]).map((m) => {
+                  const active = props.techModel === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => props.setTechModel && props.setTechModel(m.id)}
+                      title={m.hint}
+                      data-track={`dock-stack-${m.id}`}
+                      className={`flex-1 text-[10.5px] py-1 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1.5">
+                {recommended} recommended in this stack. Off-stack SKUs surface only when you search for them.
+              </div>
+            </div>
+          );
+        })()}
 
         {/* LEVEL 1 — Categories as a vertical list, not a 2-col grid. Each
             row is generous (py-3), single-column, sentence-case, with a
@@ -7263,6 +7367,11 @@ function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]
    *  toggles inline canvas chips (compact mode, default) and opens the
    *  full assistant panel for an expanded engineering review. */
   const [panelOpen, setPanelOpen] = useState(false);
+  // Surveyor UX hard reset: the Chips + Assistant pills are no longer
+  // permanently visible — the default canvas state must be calm. The
+  // top-bar overflow exposes an "Intelligence" toggle which flips `open`
+  // to true; only then do the pills (and on-canvas chips) appear.
+  if (!open) return null;
   const toneFor = (k: IntelIssue['kind']) =>
     k === 'overlap' ? '#F59E0B'
     : k === 'blindspot' ? '#FB7185'
