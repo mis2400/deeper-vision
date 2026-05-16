@@ -1195,17 +1195,24 @@ export function EngineeringCanvas() {
       setSelIds(new Set(ids));
       if (ids[0]) setSelId(ids[0]);
     };
+    const onPathwayPick = (e: Event) => {
+      const id = (e as CustomEvent<{ pathwayId: string }>).detail.pathwayId;
+      setSelPathwayId(id);
+      setSelId(null);
+    };
     svg.addEventListener('dv-wheel-zoom', onWheelZoom as any);
     svg.addEventListener('dv-stack-attach', onStackAttach as any);
     svg.addEventListener('dv-shift-pick', onShiftPick as any);
     svg.addEventListener('dv-bundle-open', onBundleOpen as any);
     svg.addEventListener('dv-marquee-pick', onMarqueePick as any);
+    svg.addEventListener('dv-pathway-pick', onPathwayPick as any);
     return () => {
       svg.removeEventListener('dv-wheel-zoom', onWheelZoom as any);
       svg.removeEventListener('dv-stack-attach', onStackAttach as any);
       svg.removeEventListener('dv-shift-pick', onShiftPick as any);
       svg.removeEventListener('dv-bundle-open', onBundleOpen as any);
       svg.removeEventListener('dv-marquee-pick', onMarqueePick as any);
+      svg.removeEventListener('dv-pathway-pick', onPathwayPick as any);
     };
   }, [devices, setDevices]);
 
@@ -1218,6 +1225,14 @@ export function EngineeringCanvas() {
   // a marquee selection; pointerUp commits every device whose centre
   // falls inside the rect into `selIds`.
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  // Selected pathway (cable run / conduit / J-hook / tray etc.) drives
+  // the right-side PathwayDrawer. Set when the user clicks a pathway
+  // line on canvas. Null when nothing pathway-related is selected.
+  const [selPathwayId, setSelPathwayId] = useState<string | null>(null);
+  // Standalone conduit / pathway draw state — armed by the Cabling tray.
+  // Carries the chosen kind + (for conduit) trade size so the cable
+  // tool's commit handler writes the right fields onto the new pathway.
+  const [drawPathwayKind, setDrawPathwayKind] = useState<{ kind: 'conduit' | 'tray' | 'jhook' | 'sleeve' | 'raceway' | 'duct'; conduitType?: 'EMT' | 'PVC' | 'FMC' | 'LFMC' | 'raceway' | 'tray'; conduitSize?: string } | null>(null);
 
   // `sel` is what the SelectionPill anchors to. During a drag, swap in
   // the lagged position so the pill rides with the device's visual mass
@@ -1403,12 +1418,45 @@ export function EngineeringCanvas() {
       const y = snap ? Math.round(rawY / 20) * 20 : rawY;
       const kind = TYPE_KIND[drag.product.type];
       const prefix = kind === 'camera' ? 'CAM' : kind === 'access' ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR') : 'NW';
-      const id = `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
+      // Cable accessory? The product id of a cable-tray accessory
+      // starts with `cabacc-`; we surface a friendlier prefix and
+      // try to auto-attach to the nearest pathway within 60 plan
+      // units so the user gets immediate context.
+      const isCableAcc = String(drag.product.id ?? '').startsWith('cabacc-');
+      const accKind = isCableAcc ? (String(drag.product.id).split('-')[1] as any) : undefined;
+      const id = isCableAcc
+        ? `${(accKind ?? 'ACC').toString().toUpperCase()}-${100 + devices.filter((d) => (d as any).accessoryKind).length + 1}`
+        : `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
+      // Find nearest pathway midpoint within 60 units for cable accessories.
+      let attachedPathwayId: string | undefined;
+      if (isCableAcc) {
+        const allP = (Object.values(useProjectStore.getState().pathways) as any[]).filter((p) => p.projectId === (projectId ?? 'p1'));
+        let best: { id: string; d: number } | null = null;
+        for (const p of allP) {
+          const pts = p.points ?? [];
+          if (pts.length < 2) continue;
+          // Distance from the drop point to the polyline midpoint.
+          const mid = { x: (pts[0].x + pts[pts.length - 1].x) / 2, y: (pts[0].y + pts[pts.length - 1].y) / 2 };
+          const d = Math.hypot(mid.x - x, mid.y - y);
+          if (d < 60 && (!best || d < best.d)) best = { id: p.id, d };
+        }
+        if (best) {
+          attachedPathwayId = best.id;
+          // Increment the pathway's accessory tally so BOM rolls it up.
+          const ap = (useProjectStore.getState().pathways as any)[best.id];
+          if (ap) {
+            const next = { ...(ap.accessories ?? {}), [accKind ?? 'jack']: (ap.accessories?.[accKind ?? 'jack'] ?? 0) + 1 };
+            useProjectStore.getState().updatePathway(best.id, { accessories: next } as any);
+          }
+          toast.success(`Attached · ${drag.product.model} → ${best.id}`, { duration: 3500 });
+        }
+      }
       const newDevice: Device = {
         id, type: drag.product.type,
         label: drag.product.model, product: drag.product.id,
         x, y, rot: 0,
-      };
+        ...(isCableAcc ? { accessoryKind: accKind, attachedPathwayId } : {}),
+      } as Device;
       setDevices((ds) => [...ds, newDevice]);
       setSelId(id);
       setDrag(null); setHoverHost(null);
@@ -1734,6 +1782,18 @@ export function EngineeringCanvas() {
                 setLensMode={setLensModeForSel}
               />
             )}
+            {/* PathwayDrawer — opens when a pathway (cable bundle run /
+                standalone conduit / J-hook / tray) is clicked on canvas.
+                Side panel, not a modal, so the user can edit cable type,
+                conduit assignment, terminations, ports, and accessories
+                in the standard right-side editing flow. */}
+            {selPathwayId && (
+              <PathwayDrawer
+                pathwayId={selPathwayId}
+                onClose={() => setSelPathwayId(null)}
+                onOpenBundle={(bid) => { setSelPathwayId(null); setBundleInspectorId(bid); }}
+              />
+            )}
 
             {/* Target simulation overlay */}
             {/* When a camera is selected, the stick-figure target is the
@@ -1795,6 +1855,18 @@ export function EngineeringCanvas() {
               >
                 <Plus className="w-3.5 h-3.5" /> Devices
               </button>
+            )}
+
+            {/* Select-by menu — always available compact picker that lets
+                the user multi-select by floor or by type without
+                shift-clicking each device. Sits at the top-left of the
+                canvas where the user can reach it before they have a
+                bundle to act on. */}
+            {viewMode !== 'canvas' && (
+              <SelectByMenu
+                devices={devices.filter((d) => !hiddenIds.has(d.id))}
+                onPick={(ids) => { setSelIds(new Set(ids)); setSelId(ids[0] ?? null); }}
+              />
             )}
 
             {/* Group toolbar — appears when 2+ devices are selected via
@@ -5347,6 +5419,11 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               new CustomEvent('dv-bundle-open', { detail: { bundleId: bid }, bubbles: true }),
             );
           }}
+          onPickPathway={(pid) => {
+            (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(
+              new CustomEvent('dv-pathway-pick', { detail: { pathwayId: pid }, bubbles: true }),
+            );
+          }}
         />
 
         {/* Cable draw — vertices already committed render as a solid
@@ -7851,6 +7928,343 @@ function Slider({ label, value, min, max, step = 1, unit, onChange, tone }: { la
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   PATHWAY DRAWER — opens when a cable / conduit / J-hook / tray
+   pathway is clicked on the canvas. Mirrors the EditDrawer style so
+   the surveyor reads as one product. Body branches by `pathwayKind`:
+   cable variant exposes route / type / source / dest / lengths /
+   conduit assignment / terminations / ports / accessories / suggestions /
+   BOM; conduit variant exposes type / size / cables inside / fill /
+   pull boxes / bends / firestop / suggestions / BOM.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
+  pathwayId: string;
+  onClose: () => void;
+  onOpenBundle: (bundleId: string) => void;
+}) {
+  const pathways = useProjectStore((s) => s.pathways);
+  const devices  = useProjectStore((s) => s.devices);
+  const updatePathway = useProjectStore((s) => s.updatePathway);
+  const removePathway = useProjectStore((s) => s.removePathway);
+  const p = (pathways as any)[pathwayId];
+  // Sub-tab state: General / Route / Conduit / Terminations / Accessories / Suggestions / BOM / Notes
+  type Sub = 'general' | 'route' | 'conduit' | 'terms' | 'acc' | 'sugg' | 'bom' | 'notes';
+  const [sub, setSub] = useState<Sub>('general');
+  if (!p) {
+    return (
+      <div className="absolute top-0 right-0 bottom-0 z-40 w-[420px] bg-card border-l border-border p-4">
+        <div className="text-[12px] text-muted-foreground">Pathway not found.</div>
+        <button onClick={onClose} className="mt-3 text-[11px] px-3 h-7 rounded-md border border-border">Close</button>
+      </div>
+    );
+  }
+  const isCable = !p.pathwayKind || p.pathwayKind === 'cable';
+  const isConduit = p.pathwayKind === 'conduit' || p.pathwayKind === 'tray' || p.pathwayKind === 'jhook' || p.pathwayKind === 'sleeve' || p.pathwayKind === 'raceway' || p.pathwayKind === 'duct';
+  const cableType = String(p.cableType ?? 'cat6a');
+  const src = p.sourceId ? (devices as any)[p.sourceId] : undefined;
+  const tgt = p.targetId ? (devices as any)[p.targetId] : (p.destinationId ? (devices as any)[p.destinationId] : undefined);
+  // Cable accessories that have auto-attached to this pathway.
+  const attached = useMemo(() =>
+    Object.values(devices as any).filter((d: any) => d?.attachedPathwayId === pathwayId),
+  [devices, pathwayId]);
+  // Cable runs inside a conduit pathway. Today we report runs that
+  // declare this id as their assigned conduit (extended type) OR
+  // share spatial proximity. Honest minimum: same `attachedPathwayId`.
+  const cablesInside = useMemo(() => {
+    if (!isConduit) return [] as any[];
+    return Object.values(pathways as any).filter((x: any) => x.id !== pathwayId && x.attachedPathwayId === pathwayId);
+  }, [pathways, pathwayId, isConduit]);
+  const fill = isConduit ? computeBundleFill(cablesInside.length || 0, String(cablesInside[0]?.cableType ?? 'cat6a'), p.conduitSize) : null;
+  // Cable distance assist: > 295 ft on copper Ethernet is over spec
+  const lenFt = Math.round(p.lengthFt ?? 0);
+  const overDistance = isCable && !cableType.includes('fiber') && lenFt > 295;
+
+  const SUB_TABS: { id: Sub; label: string; icon: any }[] = isCable
+    ? [
+        { id: 'general',   label: 'General',      icon: ListChecks },
+        { id: 'route',     label: 'Route',        icon: PencilLine },
+        { id: 'conduit',   label: 'Conduit',      icon: PencilRuler },
+        { id: 'terms',     label: 'Ports',        icon: NetworkIcon },
+        { id: 'acc',       label: 'Accessories',  icon: PencilRuler },
+        { id: 'sugg',      label: 'Suggestions',  icon: Sparkles },
+        { id: 'bom',       label: 'BOM',          icon: DollarSign },
+        { id: 'notes',     label: 'Notes',        icon: FileText },
+      ]
+    : [
+        { id: 'general',   label: 'General',      icon: ListChecks },
+        { id: 'conduit',   label: 'Type / Size',  icon: PencilRuler },
+        { id: 'terms',     label: 'Cables',       icon: Cable },
+        { id: 'route',     label: 'Pull boxes',   icon: PencilLine },
+        { id: 'sugg',      label: 'Suggestions',  icon: Sparkles },
+        { id: 'bom',       label: 'BOM',          icon: DollarSign },
+        { id: 'notes',     label: 'Notes',        icon: FileText },
+      ];
+
+  return (
+    <div
+      className="absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 translate-x-0"
+      style={{
+        width: 420,
+        background: 'var(--drawer-background)',
+        color: 'var(--drawer-foreground)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        borderLeft: '1px solid var(--border)',
+        boxShadow: '-16px 0 40px -16px rgba(0,0,0,0.35)',
+      }}
+    >
+      <div className="px-5 pt-5 pb-3 border-b border-white/[0.05] flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: isConduit ? '#A371F71F' : '#22D3EE1F', color: isConduit ? '#A371F7' : '#22D3EE', boxShadow: 'inset 0 0 0 1px ' + (isConduit ? '#A371F755' : '#22D3EE55') }}>
+          {isConduit ? <PencilRuler className="w-5 h-5" /> : <Cable className="w-5 h-5" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[14px] font-semibold tracking-tight">{p.id}</div>
+          <div className="text-[11px] text-muted-foreground">
+            {isConduit
+              ? `${p.conduitType ?? p.pathwayKind?.toUpperCase()}${p.conduitSize ? ' ' + p.conduitSize : ''} · ${Math.round(p.lengthFt ?? 0)} ft`
+              : `${cableType.toUpperCase()} · ${Math.round(p.lengthFt ?? 0)} ft${src ? ` · ${src.id ?? p.sourceId} →` : ''} ${tgt?.id ?? p.targetId ?? p.destinationId ?? '—'}`}
+          </div>
+          {p.bundleId && (
+            <button onClick={() => onOpenBundle(p.bundleId)} data-track="pathway-open-bundle" className="mt-1 text-[10.5px] text-primary hover:underline">
+              In bundle {p.bundleId} → open bundle inspector
+            </button>
+          )}
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40"><X className="w-4 h-4" /></button>
+      </div>
+
+      <div className="px-3 py-2 border-b border-white/[0.05] grid grid-cols-4 gap-1">
+        {SUB_TABS.map((t) => {
+          const active = sub === t.id;
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setSub(t.id)}
+              data-track={`pathway-tab-${t.id}`}
+              className={`flex flex-col items-center justify-center gap-1 py-1.5 rounded-md text-[10.5px] tracking-tight transition-colors ${active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+            >
+              <Icon className="w-3.5 h-3.5" />{t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="overflow-auto p-3 space-y-3" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+        {sub === 'general' && (
+          <DrawerSection title={isConduit ? 'Conduit summary' : 'Cable summary'}>
+            <Row label="ID"           value={p.id} />
+            <Row label={isConduit ? 'Type' : 'Cable type'} value={isConduit ? (p.conduitType ?? p.pathwayKind?.toUpperCase() ?? 'EMT') : cableType.toUpperCase()} />
+            {isConduit && p.conduitSize && <Row label="Trade size" value={p.conduitSize} />}
+            <Row label="Length"       value={`${lenFt} ft`} />
+            {src && <Row label="Source"      value={src.id ?? p.sourceId} />}
+            {(tgt || p.targetId) && <Row label="Destination" value={tgt?.id ?? p.targetId} />}
+            {p.bundleId && <Row label="Bundle"      value={p.bundleId} />}
+            {p.patchPort && <Row label="Patch port"  value={`PP-01 · ${String(p.patchPort).padStart(2, '0')}`} />}
+            {p.switchPort && <Row label="Switch port" value={`SW-01 · ${String(p.switchPort).padStart(2, '0')}`} />}
+          </DrawerSection>
+        )}
+
+        {isCable && sub === 'route' && (
+          <DrawerSection title="Route">
+            <Row label="Vertices" value={String((p.points ?? []).length)} />
+            <Row label="Route length" value={`${lenFt} ft (incl. 10% slack + service loop)`} />
+            <Row label="Source"     value={src?.id ?? p.sourceId ?? '—'} />
+            <Row label="Destination" value={tgt?.id ?? p.targetId ?? '—'} />
+            {overDistance && <FindingRow severity="warn" text={`Run is ${lenFt} ft — exceeds 295 ft copper Ethernet limit. Switch to fiber or add an intermediate switch.`} />}
+          </DrawerSection>
+        )}
+
+        {sub === 'conduit' && (
+          isCable ? (
+            <DrawerSection title="Conduit assignment">
+              <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5">Conduit type</div>
+              <div className="flex flex-wrap gap-1 mb-3">
+                {(['none','EMT','PVC','FMC','LFMC','tray'] as const).map((t) => {
+                  const active = (p.conduitType ?? 'none') === t;
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => updatePathway(pathwayId, { conduitType: t === 'none' ? undefined : t, conduitSize: t === 'none' ? undefined : p.conduitSize } as any)}
+                      data-track={`pathwaydrawer-conduit-${t}`}
+                      className={`text-[11px] px-2 py-1 rounded border transition-colors ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
+                    >{t === 'none' ? 'None' : t}</button>
+                  );
+                })}
+              </div>
+              {p.conduitType && (
+                <>
+                  <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5">Trade size</div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {EMT_SIZES.map((e) => {
+                      const active = p.conduitSize === e.size;
+                      return (
+                        <button
+                          key={e.size}
+                          onClick={() => updatePathway(pathwayId, { conduitSize: e.size } as any)}
+                          data-track={`pathwaydrawer-size-${e.size.replace(/\W/g,'')}`}
+                          className={`text-[11px] py-1 rounded border transition-colors ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
+                        >{e.size}</button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </DrawerSection>
+          ) : (
+            <DrawerSection title="Conduit type & size">
+              <Row label="Type" value={p.conduitType ?? p.pathwayKind?.toUpperCase() ?? '—'} />
+              <Row label="Trade size" value={p.conduitSize ?? '—'} />
+              <Row label="Internal area" value={p.conduitSize ? `${EMT_SIZES.find((e) => e.size === p.conduitSize)?.areaIn2.toFixed(3) ?? '—'} in²` : '—'} />
+              <Row label="Length" value={`${lenFt} ft`} />
+            </DrawerSection>
+          )
+        )}
+
+        {sub === 'terms' && (
+          isCable ? (
+            <>
+              <DrawerSection title="Terminations">
+                {attached.length === 0 ? (
+                  <div className="text-[11.5px] text-muted-foreground italic">No terminations placed. Drop a jack, coupler, or patch panel from the bottom Cabling tray near this run to attach it.</div>
+                ) : (
+                  <div className="space-y-1">
+                    {attached.map((a: any) => (
+                      <Row key={a.id} label={`${a.accessoryKind ?? 'Accessory'} · ${a.id}`} value="attached" tone="#4FB87E" />
+                    ))}
+                  </div>
+                )}
+              </DrawerSection>
+              <DrawerSection title="Ports">
+                <Row label="Patch panel port" value={p.patchPort ? `PP-01 · ${String(p.patchPort).padStart(2, '0')}` : '—'} />
+                <Row label="Switch port"      value={p.switchPort ? `SW-01 · ${String(p.switchPort).padStart(2, '0')}` : '—'} />
+              </DrawerSection>
+            </>
+          ) : (
+            <DrawerSection title={`Cables inside · ${cablesInside.length}`}>
+              {cablesInside.length === 0 ? (
+                <div className="text-[11.5px] text-muted-foreground italic">No cables routed through this conduit yet. Drop a cable run near it or use Run-to-IDF with "Existing conduit".</div>
+              ) : (
+                <div className="space-y-1">
+                  {cablesInside.map((c: any) => (
+                    <Row key={c.id} label={c.id} value={String(c.cableType ?? 'cat6').toUpperCase()} />
+                  ))}
+                </div>
+              )}
+              {fill && p.conduitSize && (
+                <div className="mt-2">
+                  <Row label="Fill" value={`${fill.fillPct.toFixed(1)}% (${(fill.rule * 100).toFixed(0)}% rule)`} tone={fill.passes ? '#4FB87E' : '#E5A23A'} />
+                  {fill.recommended && !fill.passes && (
+                    <button
+                      onClick={() => updatePathway(pathwayId, { conduitSize: fill.recommended } as any)}
+                      data-track="pathwaydrawer-apply-recommendation"
+                      className="mt-2 text-[11.5px] font-medium px-3 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                    >
+                      Apply recommended {fill.recommended}
+                    </button>
+                  )}
+                </div>
+              )}
+            </DrawerSection>
+          )
+        )}
+
+        {sub === 'acc' && (
+          <DrawerSection title="Accessories">
+            <div className="text-[11.5px] text-muted-foreground italic mb-2">
+              {isCable ? 'Cable accessories for this run. Tally rolls up into BOM.' : 'Conduit accessories for this run.'}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(isCable
+                ? ['jack','coupler','patchcord','label','firestop','sleeve','pullbox'] as const
+                : ['pullbox','jbox','coupler','firestop','sleeve','tray'] as const
+              ).map((kind) => {
+                const count = (p.accessories?.[kind as any] ?? 0);
+                return (
+                  <div key={kind} className="rounded-md border border-border bg-background px-2.5 py-2 flex items-center justify-between text-[11.5px]">
+                    <span className="font-medium tracking-tight capitalize">{kind}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => updatePathway(pathwayId, { accessories: { ...(p.accessories ?? {}), [kind]: Math.max(0, count - 1) } } as any)}
+                        className="w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                        data-track={`pathwaydrawer-acc-dec-${kind}`}
+                      >−</button>
+                      <span className="tabular-nums w-5 text-center">{count}</span>
+                      <button
+                        onClick={() => updatePathway(pathwayId, { accessories: { ...(p.accessories ?? {}), [kind]: count + 1 } } as any)}
+                        className="w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                        data-track={`pathwaydrawer-acc-inc-${kind}`}
+                      >+</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </DrawerSection>
+        )}
+
+        {sub === 'sugg' && (
+          <DrawerSection title="Suggestions">
+            {(() => {
+              const findings: { sev: 'high' | 'warn' | 'ok'; text: string }[] = [];
+              if (isCable) {
+                if (overDistance) findings.push({ sev: 'warn', text: `Run is ${lenFt} ft — exceeds 295 ft copper Ethernet limit. Switch to fiber or add an intermediate switch closer to the source.` });
+                if (cableType === 'cat6' && p.notes?.toLowerCase().includes('outdoor')) findings.push({ sev: 'warn', text: 'Indoor Cat6 routed outdoors. Use outdoor or direct-burial cable.' });
+                if (!p.patchPort)  findings.push({ sev: 'warn', text: 'No patch panel port assigned. Use IDF drawer or BundleInspector "Assign ports sequentially".' });
+                if (!p.switchPort) findings.push({ sev: 'warn', text: 'No switch port assigned. Same path.' });
+                if ((p.accessories?.firestop ?? 0) === 0 && (p.notes?.toLowerCase().includes('wall') || p.notes?.toLowerCase().includes('plenum'))) findings.push({ sev: 'warn', text: 'Wall/plenum penetration noted — add firestop sleeve + sealant.' });
+                if (findings.length === 0) findings.push({ sev: 'ok', text: 'Run looks healthy. Distance, terminations, and rating all within spec.' });
+              } else {
+                if (cablesInside.length === 0) findings.push({ sev: 'warn', text: 'No cables assigned. Drop cable runs onto this pathway or use Run-to-IDF with "Existing conduit".' });
+                if (fill && !fill.passes) findings.push({ sev: 'warn', text: `Conduit overfilled (${fill.fillPct.toFixed(0)}%). ${fill.recommended ? `Recommend ${fill.recommended} or split.` : 'Split conduit — no standard size satisfies the rule.'}` });
+                if ((p.accessories?.pullbox ?? 0) === 0 && (p.points ?? []).length > 3) findings.push({ sev: 'warn', text: 'Long route with multiple bends — add at least one pull box to reduce pulling tension.' });
+                if (findings.length === 0) findings.push({ sev: 'ok', text: 'Conduit looks healthy. Fill, capacity, and bends all within spec.' });
+              }
+              return (
+                <div className="space-y-1.5">
+                  {findings.map((f, i) => <FindingRow key={i} severity={f.sev} text={f.text} />)}
+                </div>
+              );
+            })()}
+          </DrawerSection>
+        )}
+
+        {sub === 'bom' && (
+          <DrawerSection title="BOM impact">
+            <Row label={isConduit ? 'Conduit footage' : 'Cable footage'} value={`${lenFt} ft`} />
+            {isCable && cableType && <Row label="Cable type" value={cableType.toUpperCase()} />}
+            {p.accessories && Object.entries(p.accessories).map(([k, v]: any) => (
+              v ? <Row key={k} label={k} value={String(v)} /> : null
+            ))}
+            {p.conduitType && p.conduitSize && <Row label="Conduit" value={`${p.conduitType} ${p.conduitSize}`} />}
+            <div className="mt-2 text-[10.5px] text-muted-foreground italic">Counts flow into project BOM via the Pathways selector.</div>
+          </DrawerSection>
+        )}
+
+        {sub === 'notes' && (
+          <DrawerSection title="Notes">
+            <textarea
+              key={pathwayId}
+              value={p.notes ?? ''}
+              onChange={(e) => updatePathway(pathwayId, { notes: e.target.value } as any)}
+              placeholder="Pathway notes — pulling strategy, firestop ratings, route deviations, etc."
+              className="dv-input text-[12px] resize-none min-h-[120px]"
+            />
+            <button
+              onClick={() => { removePathway(pathwayId); onClose(); toast.message('Pathway removed', { duration: 2500 }); }}
+              data-track="pathwaydrawer-remove"
+              className="mt-3 text-[11px] px-3 h-8 rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10"
+            >
+              Delete pathway
+            </button>
+          </DrawerSection>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode }: {
   d: Device; open: boolean; tab: EditTab; setTab: (t: EditTab) => void; onClose: () => void;
   onUpdate: (p: Partial<Device>) => void;
@@ -9165,7 +9579,10 @@ function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t
    destination so the user sees "10x Cat6A → IDF-01" at a glance.
    ═══════════════════════════════════════════════════════════════════════ */
 
-function PathwaysOverlay({ onPickBundle }: { onPickBundle?: (bundleId: string) => void }) {
+function PathwaysOverlay({ onPickBundle, onPickPathway }: {
+  onPickBundle?: (bundleId: string) => void;
+  onPickPathway?: (pathwayId: string) => void;
+}) {
   const pathways = useProjectStore((s) => s.pathways);
   // Group bundle paths so we collapse a 10-camera bundle into ONE label
   // even though there are 10 pathway records under the hood. Defensive
@@ -9183,22 +9600,48 @@ function PathwaysOverlay({ onPickBundle }: { onPickBundle?: (bundleId: string) =
     return { bundles, standalone };
   }, [pathways]);
   return (
-    <g pointerEvents="none">
-      {/* Standalone cable routes */}
+    <g>
+      {/* Standalone routes — cables AND standalone conduit / J-hook /
+          tray placements rendered here. Each is clickable so the user
+          can open the right-side PathwayDrawer. */}
       {items.standalone.map((p) => {
         const pts: { x: number; y: number }[] = p.points ?? [];
         if (pts.length < 2) return null;
+        const isConduitPath = p.pathwayKind && p.pathwayKind !== 'cable';
+        const stroke = isConduitPath ? '#A371F7' : '#22D3EE';
+        const dash = p.pathwayKind === 'conduit' ? '6 4' : p.pathwayKind === 'tray' ? '10 3 2 3' : p.pathwayKind === 'jhook' ? '2 4' : undefined;
+        const mid = pts.length >= 2 ? { x: (pts[0].x + pts[pts.length - 1].x) / 2, y: (pts[0].y + pts[pts.length - 1].y) / 2 } : null;
+        const label = isConduitPath
+          ? `${p.conduitType ?? p.pathwayKind?.toUpperCase()}${p.conduitSize ? ' ' + p.conduitSize : ''}`
+          : `${String(p.cableType ?? 'cat6').toUpperCase()}`;
         return (
-          <g key={p.id}>
+          <g key={p.id} style={{ cursor: onPickPathway ? 'pointer' : 'default' }} onClick={(e) => { e.stopPropagation(); onPickPathway && onPickPathway(p.id); }} data-track={`pathway-${p.id}`}>
+            {/* Hit-area: invisible thick stroke so clicks register on a
+                line that's otherwise 1.6 px wide. */}
             <polyline
               points={pts.map((pt) => `${pt.x},${pt.y}`).join(' ')}
               fill="none"
-              stroke="#22D3EE"
-              strokeWidth="1.6"
+              stroke="transparent"
+              strokeWidth="12"
+              pointerEvents="stroke"
+            />
+            <polyline
+              points={pts.map((pt) => `${pt.x},${pt.y}`).join(' ')}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={isConduitPath ? 2.2 : 1.6}
               opacity="0.78"
               strokeLinejoin="round"
               strokeLinecap="round"
+              strokeDasharray={dash}
+              pointerEvents="none"
             />
+            {mid && isConduitPath && (
+              <g transform={`translate(${mid.x}, ${mid.y - 8})`} pointerEvents="none">
+                <rect x={-44} y={-9} width={88} height={18} rx={9} fill="#1A1230" fillOpacity="0.92" stroke="#A371F7" strokeWidth="0.6" />
+                <text x={0} y={3} textAnchor="middle" fill="#E6E1FB" fontSize="10" fontWeight="600">{label}</text>
+              </g>
+            )}
           </g>
         );
       })}
@@ -9215,19 +9658,30 @@ function PathwaysOverlay({ onPickBundle }: { onPickBundle?: (bundleId: string) =
         return (
           <g key={bundleId}>
             {/* Draw each underlying path with reduced opacity so the
-                bundle reads as one route while still showing fan-in. */}
+                bundle reads as one route while still showing fan-in.
+                Each individual run is clickable too, opening the
+                right-side PathwayDrawer on its specific pathway. */}
             {group.map((p) => (
               p.points && p.points.length >= 2 && (
-                <polyline
-                  key={p.id}
-                  points={p.points.map((pt: any) => `${pt.x},${pt.y}`).join(' ')}
-                  fill="none"
-                  stroke="#22D3EE"
-                  strokeWidth="1.4"
-                  opacity="0.55"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
+                <g key={p.id} style={{ cursor: onPickPathway ? 'pointer' : 'default' }} onClick={(e) => { e.stopPropagation(); onPickPathway && onPickPathway(p.id); }}>
+                  <polyline
+                    points={p.points.map((pt: any) => `${pt.x},${pt.y}`).join(' ')}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth="10"
+                    pointerEvents="stroke"
+                  />
+                  <polyline
+                    points={p.points.map((pt: any) => `${pt.x},${pt.y}`).join(' ')}
+                    fill="none"
+                    stroke="#22D3EE"
+                    strokeWidth="1.4"
+                    opacity="0.55"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    pointerEvents="none"
+                  />
+                </g>
               )
             ))}
             {/* Bundle label at the midpoint of the first run. Includes the
@@ -9256,6 +9710,62 @@ function PathwaysOverlay({ onPickBundle }: { onPickBundle?: (bundleId: string) =
    pane. Tools only (no devices). Always visible in Default + Field
    modes; replaced by a small "Tools" reopener in Canvas mode.
    ═══════════════════════════════════════════════════════════════════════ */
+
+/** SelectByMenu — quick-pick chip that lets the user multi-select
+ *  every camera / door / reader / IDF / device on the current floor
+ *  in one click. Sits top-left of the canvas. Closes on outside-click. */
+function SelectByMenu({ devices, onPick }: { devices: Device[]; onPick: (ids: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onEsc);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onEsc); };
+  }, [open]);
+  const cams    = devices.filter((d) => TYPE_KIND[d.type] === 'camera');
+  const doors   = devices.filter((d) => (d.type as string).startsWith('inf.door') || (d.type as string).startsWith('inf.gate') || (d.type as string).startsWith('inf.storefront') || (d.type as string).startsWith('inf.doubledoor'));
+  const readers = devices.filter((d) => d.type === 'acc.reader' || d.type === 'acc.keypad');
+  const idfs    = devices.filter((d) => d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'inf.rack' || d.type === 'inf.mdf');
+  const sel = (list: Device[], label: string) => { onPick(list.map((d) => d.id)); setOpen(false); toast.message(`Selected ${list.length} · ${label}`, { duration: 2500 }); };
+  return (
+    <div className="absolute z-30 top-3 left-[88px]" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        data-track="select-by-menu"
+        className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border bg-card/90 backdrop-blur-md text-[12px] text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors ${open ? 'border-primary/40 text-primary' : 'border-border'}`}
+      >
+        Select
+        <ChevronDown className="w-3 h-3" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-9 w-[240px] rounded-xl border bg-card/95 backdrop-blur-xl shadow-[var(--shadow-medium)] overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+          <button onClick={() => sel(cams,    'cameras on floor')} disabled={cams.length === 0}    data-track="select-all-cameras"  className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"><span>All cameras on floor</span><span className="text-muted-foreground tabular-nums">{cams.length}</span></button>
+          <button onClick={() => sel(doors,   'doors on floor')}   disabled={doors.length === 0}   data-track="select-all-doors"    className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"><span>All doors on floor</span><span className="text-muted-foreground tabular-nums">{doors.length}</span></button>
+          <button onClick={() => sel(readers, 'readers on floor')} disabled={readers.length === 0} data-track="select-all-readers"  className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"><span>All readers on floor</span><span className="text-muted-foreground tabular-nums">{readers.length}</span></button>
+          <button onClick={() => sel(idfs,    'IDFs on floor')}    disabled={idfs.length === 0}    data-track="select-all-idfs"     className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"><span>All IDFs / racks</span><span className="text-muted-foreground tabular-nums">{idfs.length}</span></button>
+          <div className="px-3 pt-2 pb-1.5 text-[10px] uppercase tracking-[0.10em] text-muted-foreground border-t border-border/60">By type</div>
+          {Object.entries(devices.reduce<Record<string, number>>((m, d) => { m[d.type] = (m[d.type] ?? 0) + 1; return m; }, {})).slice(0, 8).map(([t, n]) => (
+            <button
+              key={t}
+              onClick={() => sel(devices.filter((d) => d.type === t), `of type ${t}`)}
+              data-track={`select-type-${t}`}
+              className="w-full text-left px-3 py-1.5 text-[11.5px] hover:bg-secondary/40 flex items-center justify-between"
+            >
+              <span className="text-foreground">{t}</span>
+              <span className="text-muted-foreground tabular-nums">{n}</span>
+            </button>
+          ))}
+          <div className="px-3 py-2 border-t border-border/60">
+            <button onClick={() => { onPick([]); setOpen(false); }} data-track="select-clear" className="text-[11px] text-muted-foreground hover:text-foreground">Clear selection</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function DrawingToolRail({
   tool, setTool, snap, setSnap, layersOpen, onToggleLayers,

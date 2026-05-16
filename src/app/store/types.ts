@@ -487,6 +487,15 @@ export interface Device {
   color?: string;
   /** Other entity ids this device is linked to (pathway endpoint, parent IDF, etc.). */
   linkedIds?: string[];
+  /** When a cable accessory (jack / coupler / pull box / firestop / J-hook)
+   *  is placed near a pathway, it auto-attaches; the attached pathway id
+   *  lives here so the drawer + BOM can roll up the accessory under that
+   *  route. Also used by patch panels that anchor to an IDF host. */
+  attachedPathwayId?: string;
+  /** Free-form sub-kind for cable accessories so the canvas can label
+   *  them ("Jack" / "Coupler" / "Pull box" / etc.) without a per-type
+   *  DeviceType expansion. */
+  accessoryKind?: 'jack' | 'jack-shld' | 'coupler' | 'patchcord' | 'pp24' | 'pp48' | 'pullbox' | 'jbox' | 'jhook' | 'tray' | 'firestop' | 'sleeve';
   /** Hardware stack — ordered list of accessory device-ids that are physically
    *  mounted on this host (door, gate, infrastructure object). The host
    *  renders a small stack-count chip; the inspector lists each accessory.
@@ -562,6 +571,13 @@ export interface Pathway {
   switchPort?: number;
   /** Tally of cable accessories counted into BOM for this run/bundle. */
   accessories?: Partial<Record<'jack' | 'coupler' | 'patchcord' | 'label' | 'pullbox' | 'jhook' | 'tray' | 'firestop', number>>;
+  /** When this pathway is a standalone conduit / cable tray / J-hook
+   *  run (not a cable bundle), this carries the placement kind. Cable
+   *  bundles leave it undefined. */
+  pathwayKind?: 'cable' | 'conduit' | 'tray' | 'jhook' | 'sleeve' | 'raceway' | 'duct';
+  /** When a placed device (jack / coupler / pull box / etc.) attaches
+   *  itself to a route, the route's id lands here on the device so the
+   *  drawer can show "Attached to PW-XX" and BOM can roll it up. */
   lengthFt?: number;       // optional — can be derived from points + scale
   notes?: string;
 }
