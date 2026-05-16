@@ -767,6 +767,12 @@ export function EngineeringCanvas() {
   }, [addPathway, projectId]);
   const [selId, setSelId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  /** Pan offset applied to the entire canvas content group, in pixels.
+   *  The Fit / Center / Actual-scale buttons compute zoom + pan together
+   *  so the floorplan visually dominates the workspace instead of sitting
+   *  pinned at (80,80). Updated by the auto-fit effect on mount + on
+   *  background change + on viewport resize, and by user drag-to-pan. */
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [floor, setFloor] = useState(0);
   const [snap, setSnap] = useState(true);
   const [units, setUnits] = useState<'ft' | 'm'>('ft');
@@ -1065,6 +1071,120 @@ export function EngineeringCanvas() {
   }, [lockedIds, projectId]);
 
   const surfaceRef = useRef<SVGSVGElement>(null);
+  /** Compute zoom + pan that fits the active floorplan into the visible
+   *  surface with comfortable padding. Used by the Fit button, the
+   *  auto-fit effect on first mount + viewport resize + background swap.
+   *  Plan extents default to the seed building (80,80 → 720,560 → 640×480)
+   *  unless an imported floor background overrides the bounds. */
+  const computeFit = useCallback((): { zoom: number; pan: { x: number; y: number } } | null => {
+    const surf = surfaceRef.current;
+    if (!surf) return null;
+    const r = surf.getBoundingClientRect();
+    if (r.width < 40 || r.height < 40) return null;
+    // Floor extents in plan coordinates.
+    let planX = 80, planY = 80, planW = 640, planH = 480;
+    if (floorBackground) {
+      planW = floorBackground.naturalWidth * floorBackground.scale;
+      planH = floorBackground.naturalHeight * floorBackground.scale;
+      planX = floorBackground.x;
+      planY = floorBackground.y;
+    }
+    const padding = 64; // px on each side in viewport space
+    const zx = (r.width  - padding * 2) / planW;
+    const zy = (r.height - padding * 2) / planH;
+    const z  = Math.max(0.25, Math.min(4, Math.min(zx, zy)));
+    // Pan so the plan center lands at the viewport center, accounting for
+    // the SVG group's `translate(pan) scale(zoom)` order.
+    const px = (r.width  / 2) - (planX + planW / 2) * z;
+    const py = (r.height / 2) - (planY + planH / 2) * z;
+    return { zoom: z, pan: { x: px, y: py } };
+  }, [floorBackground]);
+  const applyFit = useCallback(() => {
+    const fit = computeFit();
+    if (!fit) return;
+    setZoom(fit.zoom);
+    setPan(fit.pan);
+  }, [computeFit]);
+  const applyActualScale = useCallback(() => {
+    // 1 in = 10 ft is the canvas default; "actual scale" = 1:1 plan pixels.
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+  const applyCenter = useCallback(() => {
+    const surf = surfaceRef.current;
+    if (!surf) return;
+    const r = surf.getBoundingClientRect();
+    let planX = 80, planY = 80, planW = 640, planH = 480;
+    if (floorBackground) {
+      planW = floorBackground.naturalWidth * floorBackground.scale;
+      planH = floorBackground.naturalHeight * floorBackground.scale;
+      planX = floorBackground.x;
+      planY = floorBackground.y;
+    }
+    setPan({
+      x: (r.width  / 2) - (planX + planW / 2) * zoom,
+      y: (r.height / 2) - (planY + planH / 2) * zoom,
+    });
+  }, [floorBackground, zoom]);
+  // Auto-fit on mount + on viewport resize. Only auto-fits before the
+  // user has manually adjusted (we set a sentinel ref after first user
+  // pan / zoom so we don't keep snapping their view back).
+  const userTouchedViewRef = useRef(false);
+  useEffect(() => {
+    let raf = 0;
+    const run = () => { raf = requestAnimationFrame(() => { if (!userTouchedViewRef.current) applyFit(); }); };
+    run();
+    const ro = new ResizeObserver(run);
+    if (surfaceRef.current) ro.observe(surfaceRef.current);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, [applyFit, floorBackground?.dataUrl]);
+  // Wheel-zoom + canvas-to-canvas stack-attach are dispatched by the
+  // CanvasSurface as CustomEvents on the SVG element. We listen here so
+  // they touch the parent state (zoom + setDevices + toasts).
+  useEffect(() => {
+    const svg = surfaceRef.current;
+    if (!svg) return;
+    const onWheelZoom = (e: Event) => {
+      const next = (e as CustomEvent<number>).detail;
+      if (typeof next === 'number') {
+        setZoom(next);
+        userTouchedViewRef.current = true;
+      }
+    };
+    const onStackAttach = (e: Event) => {
+      const { childId, hostId } = (e as CustomEvent<{ childId: string; hostId: string }>).detail;
+      const child = devices.find((d) => d.id === childId);
+      const host  = devices.find((d) => d.id === hostId);
+      if (!child || !host) return;
+      const hostKind: 'door' | 'idf' = isStackableHost(host.type) ? 'door' : 'idf';
+      const compat = canHost(hostKind, child.type);
+      if (!compat.allowed) {
+        toast.warning(compat.reason ?? 'Cannot stack here', {
+          description: compat.hint ?? `${child.type} doesn't belong on a ${host.type}.`,
+          duration: 6000,
+        });
+        return;
+      }
+      // Attach: write child onto host.stack[], remove child as standalone.
+      const nextStack = [...((host as any).stack ?? []), child.id];
+      setDevices((ds) => ds
+        .map((d) => d.id === host.id ? { ...d, stack: nextStack } as any : d)
+        .filter((d) => d.id !== child.id)
+      );
+      setSelId(host.id);
+      toast.success(`Stacked · ${child.type.split('.').pop()} → ${host.id}`, {
+        description: compat.requires ?? 'Hardware attached. Open the drawer to add the rest of the door schedule.',
+        duration: 5000,
+      });
+    };
+    svg.addEventListener('dv-wheel-zoom', onWheelZoom as any);
+    svg.addEventListener('dv-stack-attach', onStackAttach as any);
+    return () => {
+      svg.removeEventListener('dv-wheel-zoom', onWheelZoom as any);
+      svg.removeEventListener('dv-stack-attach', onStackAttach as any);
+    };
+  }, [devices, setDevices]);
+
   // `sel` is what the SelectionPill anchors to. During a drag, swap in
   // the lagged position so the pill rides with the device's visual mass
   // (and its tether stays connected) instead of teleporting to the
@@ -1157,11 +1277,10 @@ export function EngineeringCanvas() {
       if (!r) return;
       setDrag((d) => d ? { ...d, x: e.clientX - r.left, y: e.clientY - r.top } : null);
       // Detect the nearest door / IDF host under the cursor and ask
-      // canHost whether the dragged product is compatible. We use the
-      // CANVAS-space cursor (px / zoom) so the range is consistent at
-      // any zoom level.
-      const cx = (e.clientX - r.left) / zoom;
-      const cy = (e.clientY - r.top) / zoom;
+      // canHost whether the dragged product is compatible. Plan-space
+      // cursor accounts for both pan and zoom so the range is consistent.
+      const cx = (e.clientX - r.left - pan.x) / zoom;
+      const cy = (e.clientY - r.top  - pan.y) / zoom;
       let best: { id: string; type: DeviceType; cx: number; cy: number; d: number } | null = null;
       for (const dev of devices) {
         const isHost = isStackableHost(dev.type)
@@ -1244,8 +1363,8 @@ export function EngineeringCanvas() {
         return;
       }
       // ── Normal floor drop ──
-      const rawX = (e.clientX - r.left) / zoom;
-      const rawY = (e.clientY - r.top) / zoom;
+      const rawX = (e.clientX - r.left - pan.x) / zoom;
+      const rawY = (e.clientY - r.top  - pan.y) / zoom;
       const x = snap ? Math.round(rawX / 20) * 20 : rawX;
       const y = snap ? Math.round(rawY / 20) * 20 : rawY;
       const kind = TYPE_KIND[drag.product.type];
@@ -1448,6 +1567,9 @@ export function EngineeringCanvas() {
               ref={surfaceRef}
               tool={tool}
               zoom={zoom}
+              pan={pan}
+              setPan={setPan}
+              onUserTouchView={() => { userTouchedViewRef.current = true; }}
               devices={devices.filter((d) => !hiddenIds.has(d.id))}
               selId={selId}
               selIds={selIds}
@@ -1598,8 +1720,47 @@ export function EngineeringCanvas() {
             {/* Floating status indicator (top-center) */}
             <StatusBar tool={tool} zoom={zoom} counts={counts} units={units} />
 
-            {/* Floating quick-tools capsule (bottom-center) */}
-            <QuickTools tool={tool} setTool={setTool} showWall={planSource === 'blank'} />
+            {/* Black drawing-tool rail — left side of the canvas pane.
+                Tools only (no devices). Always visible in Default + Field;
+                in Canvas mode a small reopener takes its place. */}
+            {viewMode !== 'canvas' && (
+              <DrawingToolRail
+                tool={tool} setTool={setTool}
+                snap={snap} setSnap={setSnap}
+                layersOpen={layersOpen} onToggleLayers={() => setLayersOpen((v) => !v)}
+              />
+            )}
+            {viewMode === 'canvas' && (
+              <button
+                onClick={() => setViewMode('default')}
+                data-track="canvas-reopen-tools"
+                title="Reopen tools"
+                className="absolute left-3 top-12 z-30 w-9 h-9 rounded-lg bg-black/85 text-white border border-white/15 backdrop-blur-md flex items-center justify-center hover:bg-black/95"
+              >
+                <PencilRuler className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Bottom Device Bar — horizontal strip with category icons
+                that open a tray of placeable items above. Replaces the
+                old bottom QuickTools capsule (cursor/hand/ruler/cable). */}
+            {viewMode !== 'canvas' && (
+              <BottomDeviceBar
+                onStartDrag={(p, e) => setDrag({ product: p, x: e.clientX, y: e.clientY })}
+                onPickTool={(t) => setTool(t)}
+                tool={tool}
+              />
+            )}
+            {viewMode === 'canvas' && (
+              <button
+                onClick={() => setViewMode('default')}
+                data-track="canvas-reopen-devices"
+                title="Reopen devices"
+                className="absolute left-1/2 -translate-x-1/2 bottom-3 z-30 inline-flex items-center gap-2 h-9 px-3 rounded-full bg-black/85 text-white border border-white/15 backdrop-blur-md hover:bg-black/95"
+              >
+                <Plus className="w-3.5 h-3.5" /> Devices
+              </button>
+            )}
 
             {/* Floating Add FAB — the canvas-side entry into the device
                 library. When the dock is collapsed (the new default) this
@@ -1644,7 +1805,13 @@ export function EngineeringCanvas() {
             )}
 
             {/* Zoom dock (bottom-left) */}
-            <ZoomDock zoom={zoom} setZoom={setZoom} />
+            <ZoomDock
+              zoom={zoom}
+              setZoom={(z) => { setZoom(z); userTouchedViewRef.current = true; }}
+              onFit={() => { applyFit(); userTouchedViewRef.current = false; }}
+              onCenter={() => { applyCenter(); userTouchedViewRef.current = true; }}
+              onActual={() => { applyActualScale(); userTouchedViewRef.current = true; }}
+            />
 
             {/* Minimap (bottom-right) */}
             <MiniMap devices={devices} />
@@ -3922,6 +4089,9 @@ type CoverageMode = 'minimal' | 'soft' | 'tactical' | 'heatmap' | 'wireframe' | 
 interface SurfaceProps {
   tool: Tool;
   zoom: number;
+  pan: { x: number; y: number };
+  setPan: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
+  onUserTouchView: () => void;
   devices: Device[];
   selId: string | null;
   selIds: Set<string>;
@@ -4015,7 +4185,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -4056,11 +4226,62 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
   }, [movingDev, renderedDevices]);
   const coords = (e: React.MouseEvent) => {
     const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-    return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
+    // Inverse of `translate(pan) scale(zoom)` so the click lands at the
+    // same plan-coordinates regardless of how the user has framed it.
+    return {
+      x: ((e.clientX - r.left) - pan.x) / zoom,
+      y: ((e.clientY - r.top)  - pan.y) / zoom,
+    };
+  };
+  // Pan-by-drag — engaged with the Hand tool or by holding Space (handled
+  // at the parent). Cumulative drag delta updates `pan` so the whole
+  // content group translates with the cursor.
+  const panRef = useRef<{ x: number; y: number } | null>(null);
+  const onPanStart = (e: React.PointerEvent) => {
+    if (tool !== 'pan') return;
+    panRef.current = { x: e.clientX, y: e.clientY };
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+  };
+  const onPanMove = (e: React.PointerEvent) => {
+    if (!panRef.current) return;
+    const dx = e.clientX - panRef.current.x;
+    const dy = e.clientY - panRef.current.y;
+    panRef.current = { x: e.clientX, y: e.clientY };
+    onUserTouchView();
+    setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+  };
+  const onPanEnd = (e: React.PointerEvent) => {
+    if (!panRef.current) return;
+    panRef.current = null;
+    try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch {}
   };
   return (
     <svg
       ref={ref}
+      onPointerDown={onPanStart}
+      onPointerMove={onPanMove}
+      onPointerUp={onPanEnd}
+      onPointerCancel={onPanEnd}
+      onWheel={(e) => {
+        // Wheel-zoom centred on the cursor for smooth, GIS-like zooming.
+        if (!ref) return;
+        const target = e.currentTarget;
+        const r = target.getBoundingClientRect();
+        const cx = e.clientX - r.left;
+        const cy = e.clientY - r.top;
+        const factor = e.deltaY > 0 ? 1 / 1.12 : 1.12;
+        const nextZoom = Math.max(0.25, Math.min(4, zoom * factor));
+        // Pan correction so the point under the cursor stays put.
+        const k = nextZoom / zoom;
+        setPan((p) => ({ x: cx - (cx - p.x) * k, y: cy - (cy - p.y) * k }));
+        onUserTouchView();
+        // The parent owns zoom; we still need to update it. Use the same
+        // facade as the cursor click — the parent listens via setZoom
+        // exposed through ZoomDock + keyboard. For pointer wheel we cheat
+        // via a custom event the parent listens for.
+        target.dispatchEvent(new CustomEvent('dv-wheel-zoom', { detail: nextZoom, bubbles: true }));
+        e.preventDefault();
+      }}
       onClick={(e) => {
         if (tool === 'wall') {
           const { x, y } = coords(e);
@@ -4075,8 +4296,8 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         onSurfaceMove(x, y);
       }}
       onDoubleClick={onSurfaceDblClick}
-      style={{ background: 'var(--canvas-background)' }}
-      className={`absolute inset-0 w-full h-full ${tool === 'wall' || tool === 'measure' || tool === 'cable' ? 'cursor-crosshair' : tool === 'pan' ? 'cursor-grab' : dragging ? 'cursor-copy' : 'cursor-default'}`}
+      style={{ background: 'var(--canvas-background)', touchAction: 'none' }}
+      className={`absolute inset-0 w-full h-full ${tool === 'wall' || tool === 'measure' || tool === 'cable' ? 'cursor-crosshair' : tool === 'pan' ? (panRef.current ? 'cursor-grabbing' : 'cursor-grab') : dragging ? 'cursor-copy' : 'cursor-default'}`}
     >
       <defs>
         <style>{`
@@ -4168,7 +4389,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       <rect width="100%" height="100%" fill="url(#canvas-vignette)" />
       <rect width="100%" height="100%" filter="url(#canvas-grain)" opacity="0.55" pointerEvents="none" />
 
-      <g transform={`scale(${zoom})`}>
+      <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
         {/* The plan — clearly delineated as the building */}
         <FloorPlan source={planSource} siteAddress={siteAddress} />
 
@@ -4241,8 +4462,8 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 const svg = (ref as React.RefObject<SVGSVGElement>).current;
                 if (!svg) return;
                 const r = svg.getBoundingClientRect();
-                const cx = (e.clientX - r.left) / zoom;
-                const cy = (e.clientY - r.top) / zoom;
+                const cx = ((e.clientX - r.left) - pan.x) / zoom;
+                const cy = ((e.clientY - r.top)  - pan.y) / zoom;
                 moveRef.current = { id: d.id, offX: cx - d.x, offY: cy - d.y };
                 setMovingId(d.id);
                 onPick(d.id);
@@ -4256,8 +4477,8 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 const svg = (ref as React.RefObject<SVGSVGElement>).current;
                 if (!svg) return;
                 const r = svg.getBoundingClientRect();
-                const cx = (e.clientX - r.left) / zoom;
-                const cy = (e.clientY - r.top) / zoom;
+                const cx = ((e.clientX - r.left) - pan.x) / zoom;
+                const cy = ((e.clientY - r.top)  - pan.y) / zoom;
                 let nx = cx - m.offX;
                 let ny = cy - m.offY;
                 // Magnetic snap on the *cursor target*. The visual still
@@ -4285,6 +4506,37 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 if (moveRef.current?.id === d.id) moveRef.current = null;
                 setMovingId(null);
                 (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+                // Canvas-to-canvas stacking: if the released device is a
+                // stackable accessory (reader / strike / maglock / etc.)
+                // and its current position is on top of a compatible host,
+                // emit a stack-attach event so the parent attaches it.
+                const dragged = devices.find((x) => x.id === d.id);
+                if (dragged && isStackAccessory(dragged.type)) {
+                  // Find a host within ~28 plan units of the released
+                  // device. Use the device list rendered through the lag,
+                  // not the raw store snapshot, so the test reads from
+                  // the position the user actually sees.
+                  const here = renderedDevices.find((x) => x.id === d.id);
+                  if (here) {
+                    let best: { host: Device; d: number } | null = null;
+                    for (const o of devices) {
+                      if (o.id === here.id) continue;
+                      if (!isStackableHost(o.type) && o.type !== 'net.idf' && o.type !== 'net.mdf' && o.type !== 'inf.rack' && o.type !== 'inf.mdf') continue;
+                      const dd = Math.hypot(o.x - here.x, o.y - here.y);
+                      if (dd < 28 && (!best || dd < best.d)) best = { host: o, d: dd };
+                    }
+                    if (best) {
+                      // Defer to the parent — fire a CustomEvent so the
+                      // parent's listener (registered in EngineeringCanvas)
+                      // performs the actual attach via the store + toast.
+                      const svgEl = (ref as React.RefObject<SVGSVGElement>).current;
+                      if (svgEl) svgEl.dispatchEvent(new CustomEvent('dv-stack-attach', {
+                        detail: { childId: here.id, hostId: best.host.id },
+                        bubbles: true,
+                      }));
+                    }
+                  }
+                }
                 // Tell the parent the pointer is released. Physics
                 // continues running until the device's visual position
                 // settles onto the (snapped) store position.
@@ -6395,6 +6647,38 @@ const EDIT_TABS: { id: EditTab; label: string; icon: any; covers: EditTab[] }[] 
   { id: 'ai',         label: 'AI',            icon: Sparkles,        covers: ['ai'] },
 ];
 
+/** Return the tile set the drawer should expose for a given device.
+ *  Cameras get Coverage / Lens; doors swap Coverage for a dedicated
+ *  Hardware Stack tile; IDFs surface a Port-schedule view via the
+ *  Network tile; cables don't get Coverage at all. The brief calls for
+ *  category-specific menus, not a one-size-fits-all grid. */
+function tilesForDevice(d: Device): { id: EditTab; label: string; icon: any; covers: EditTab[] }[] {
+  const kind = TYPE_KIND[d.type];
+  const isCamera   = kind === 'camera';
+  const isDoor     = d.type === 'inf.door' || (d.type as string).startsWith('inf.door') || (d.type as string).startsWith('inf.gate') || (d.type as string).startsWith('inf.storefront') || (d.type as string).startsWith('inf.doubledoor');
+  const isReader   = d.type === 'acc.reader' || d.type === 'acc.keypad';
+  const isIdf      = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'inf.rack' || d.type === 'inf.mdf';
+  const isCable    = (d.type as string).startsWith('cab.') || (d.type as string).startsWith('cable');
+  const includes = (ids: EditTab[]) => EDIT_TABS.filter((t) => ids.includes(t.id));
+  if (isDoor) {
+    return includes(['overview','linked','mounting','accessories','network','power','compliance','notes','media','ai']);
+  }
+  if (isReader) {
+    return includes(['overview','mounting','network','power','accessories','compliance','notes','media','ai']);
+  }
+  if (isIdf) {
+    return includes(['overview','network','power','accessories','compliance','linked','notes','media','ai']);
+  }
+  if (isCable) {
+    return includes(['overview','network','accessories','notes','media','ai']);
+  }
+  if (isCamera) {
+    return EDIT_TABS;
+  }
+  // Default: hide Coverage for non-cameras.
+  return EDIT_TABS.filter((t) => t.id !== 'lens');
+}
+
 /** Which visible tile does this internal section belong to? Lets callers
  *  jump to a section (e.g. "show AI optimize") and have the tile highlight
  *  match. */
@@ -6818,7 +7102,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           uses a tone-tinted border + soft background so the user can see
           where they are at a glance. */}
       <div className="px-3 py-3 border-b border-border/60 grid grid-cols-3 gap-1.5">
-        {EDIT_TABS.map((t) => {
+        {tilesForDevice(d).map((t) => {
           const active = tabGroupOf(tab) === t.id;
           const Icon = t.icon;
           return (
@@ -7983,6 +8267,224 @@ function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   DRAWING TOOL RAIL — black vertical strip on the left of the canvas
+   pane. Tools only (no devices). Always visible in Default + Field
+   modes; replaced by a small "Tools" reopener in Canvas mode.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function DrawingToolRail({
+  tool, setTool, snap, setSnap, layersOpen, onToggleLayers,
+}: {
+  tool: Tool;
+  setTool: (t: Tool) => void;
+  snap: boolean;
+  setSnap: (v: boolean) => void;
+  layersOpen: boolean;
+  onToggleLayers: () => void;
+}) {
+  // Tools that have actual canvas behaviour today. Items the brief lists
+  // that are NOT wired (Draw Door Opening / Draw Window / Text / Calibrate
+  // / Photo) are intentionally omitted — the brief's rule is "if it does
+  // not work, hide it." They'll join the rail as they're implemented.
+  type Item = { id: Tool; icon: any; label: string; key: string; hint: string };
+  const items: Item[] = [
+    { id: 'select',  icon: MousePointer2, label: 'Select',  key: 'V', hint: 'Select and edit objects' },
+    { id: 'pan',     icon: Hand,          label: 'Pan',     key: 'H', hint: 'Pan the map · drag to move' },
+    { id: 'measure', icon: Ruler,         label: 'Measure', key: 'M', hint: 'Two clicks to measure · Esc to cancel' },
+    { id: 'wall',    icon: WallIcon,      label: 'Wall',    key: 'W', hint: 'Draw walls · click vertices · dbl-click to finish' },
+    { id: 'cable',   icon: Cable,         label: 'Cable',   key: 'C', hint: 'Draw cable / pathway' },
+  ];
+  return (
+    <div
+      className="absolute z-30 top-3 left-3 flex flex-col items-center gap-1 rounded-2xl border bg-[#0B0F19]/90 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)] select-none"
+      style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+    >
+      {items.map((it) => {
+        const Icon = it.icon;
+        const active = tool === it.id;
+        return (
+          <button
+            key={it.id}
+            onClick={() => setTool(it.id)}
+            title={`${it.label} (${it.key}) — ${it.hint}`}
+            data-track={`tool-${it.id}`}
+            className={`group relative flex flex-col items-center justify-center gap-0.5 w-12 h-12 rounded-xl transition-colors ${active ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white hover:bg-white/8'}`}
+          >
+            <Icon className="w-4 h-4" strokeWidth={1.7} />
+            <span className="text-[8.5px] tracking-tight">{it.label}</span>
+            {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r bg-[var(--primary)]" />}
+          </button>
+        );
+      })}
+      <div className="w-7 h-px bg-white/8 my-1" />
+      <button
+        onClick={() => setSnap(!snap)}
+        title={`Snap (S) — ${snap ? 'on' : 'off'}`}
+        data-track="tool-snap"
+        className={`flex flex-col items-center justify-center gap-0.5 w-12 h-12 rounded-xl transition-colors ${snap ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white hover:bg-white/8'}`}
+      >
+        <Magnet className="w-4 h-4" strokeWidth={1.7} />
+        <span className="text-[8.5px] tracking-tight">Snap</span>
+      </button>
+      <button
+        onClick={onToggleLayers}
+        title="Layers"
+        data-track="tool-layers"
+        className={`flex flex-col items-center justify-center gap-0.5 w-12 h-12 rounded-xl transition-colors ${layersOpen ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white hover:bg-white/8'}`}
+      >
+        <Layers className="w-4 h-4" strokeWidth={1.7} />
+        <span className="text-[8.5px] tracking-tight">Layers</span>
+      </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOTTOM DEVICE BAR — horizontal category strip. Click a category to
+   open a tray of placeable items. Each item starts a drag the same way
+   the InsertDock products do, so the existing drag-to-place pipeline is
+   reused without changes.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function BottomDeviceBar({
+  onStartDrag, onPickTool, tool,
+}: {
+  onStartDrag: (p: Product, e: React.PointerEvent) => void;
+  onPickTool: (t: Tool) => void;
+  tool: Tool;
+}) {
+  type Cat = {
+    id: string;
+    label: string;
+    icon: any;
+    /** Types that the tray exposes as placeable products. Selected from
+     *  PRODUCTS so we always show real, in-catalog items. */
+    types?: DeviceType[];
+    /** Optional canvas tool to engage instead of opening a product tray
+     *  (Cabling → cable tool). */
+    tool?: Tool;
+  };
+  const cats: Cat[] = [
+    { id: 'cam',     label: 'Cameras',    icon: Video,           types: ['cam.dome','cam.bullet','cam.turret','cam.ptz','cam.multisensor','cam.fisheye','cam.lpr','cam.thermal'] },
+    { id: 'acc',     label: 'Access',     icon: ScanFace,        types: ['acc.reader','acc.keypad','acc.strike','acc.maglock','acc.exit','acc.dps','acc.panic','acc.controller','acc.psu'] as any },
+    { id: 'door',    label: 'Doors',      icon: DoorOpen,        types: ['inf.door' as any,'inf.doubledoor' as any,'inf.storefront' as any,'inf.gate' as any] },
+    { id: 'cable',   label: 'Cabling',    icon: Cable,           tool: 'cable' },
+    { id: 'net',     label: 'Network',    icon: NetworkIcon,     types: ['net.switch','net.idf','net.mdf','net.ap','net.firewall' as any] },
+    { id: 'power',   label: 'Power',      icon: BatteryCharging, types: ['inf.ups' as any,'inf.psu' as any,'inf.transformer' as any] as any },
+    { id: 'audio',   label: 'Audio / PA', icon: Volume2,         types: ['av.speaker' as any,'av.amp' as any,'av.mic' as any] as any },
+    { id: 'intercom',label: 'Intercom',   icon: Phone,           types: ['acc.intercom' as any,'av.intercom' as any] as any },
+    { id: 'sensor',  label: 'Sensors',    icon: Thermometer,     types: ['sen.motion' as any,'sen.glassbreak' as any,'sen.smoke' as any,'sen.temp' as any] as any },
+    { id: 'fire',    label: 'Fire',       icon: Flame,           types: ['fire.pull' as any,'fire.detector' as any,'fire.horn' as any,'fire.strobe' as any] as any },
+    { id: 'inf',     label: 'Infrastructure', icon: Server,      types: ['inf.rack','inf.mdf','inf.window' as any,'inf.wall' as any] as any },
+  ];
+  const [open, setOpen] = useState<string | null>(null);
+  const trayRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (trayRef.current && !trayRef.current.contains(e.target as Node)) setOpen(null);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(null); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onEsc);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onEsc); };
+  }, [open]);
+
+  // Resolve products per category. We only show items whose DeviceType is
+  // present in the PRODUCTS catalog AND has at least one product — that
+  // way no tray ever exposes a dead option (per the "no waste menus" rule).
+  const productsByCat = useMemo(() => {
+    const m: Record<string, Product[]> = {};
+    for (const c of cats) {
+      if (!c.types) { m[c.id] = []; continue; }
+      const pool = PRODUCTS.filter((p) => c.types!.includes(p.type as any));
+      // Deduplicate by type so each device type shows once in the tray
+      // unless multiple manufacturers exist; show first 12 to keep the
+      // tray scannable.
+      m[c.id] = pool.slice(0, 24);
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const trayCat = cats.find((c) => c.id === open) ?? null;
+  const trayProducts = open ? (productsByCat[open] ?? []) : [];
+
+  return (
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-30" ref={trayRef}>
+      {/* Tray (renders above the bar when a category is open) */}
+      {open && trayCat && (
+        <div
+          className="mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+            <trayCat.icon className="w-4 h-4 text-primary" />
+            <div className="text-[12px] font-medium tracking-tight">{trayCat.label}</div>
+            <div className="text-[10.5px] text-muted-foreground">·  {trayProducts.length} items</div>
+            <div className="flex-1" />
+            <button onClick={() => setOpen(null)} className="text-muted-foreground hover:text-foreground">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {trayProducts.length === 0 ? (
+            <div className="px-5 py-8 text-center text-[12px] text-muted-foreground">
+              {trayCat.id === 'cable' ? 'Pick a cable type from the tool rail (C), then click vertices on the plan.' : 'No catalog items yet — coming soon.'}
+            </div>
+          ) : (
+            <div className="p-3 grid grid-cols-6 gap-2 max-h-[260px] overflow-auto">
+              {trayProducts.map((p) => (
+                <button
+                  key={p.id}
+                  onPointerDown={(e) => { onStartDrag(p, e); setOpen(null); }}
+                  data-track={`bottombar-${trayCat.id}-${p.id}`}
+                  className="text-left rounded-xl border border-border bg-background hover:border-primary/40 hover:bg-secondary/20 p-2.5 transition-colors flex flex-col gap-1.5"
+                >
+                  <div className="w-8 h-8 rounded-md bg-secondary/40 text-foreground flex items-center justify-center mb-0.5">
+                    <DeviceGlyph type={p.type} size={18} tone={KIND_TONE[TYPE_KIND[p.type]]} />
+                  </div>
+                  <div className="text-[10.5px] font-medium tracking-tight truncate">{p.mfr}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">{p.model}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* The bar itself */}
+      <div
+        className="rounded-2xl border bg-card/90 backdrop-blur-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.55)] flex items-stretch overflow-hidden"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        {cats.map((c) => {
+          const Icon = c.icon;
+          const isToolCat = !!c.tool;
+          const active = isToolCat ? tool === c.tool : open === c.id;
+          const count = productsByCat[c.id]?.length ?? 0;
+          const dead = !isToolCat && count === 0;
+          return (
+            <button
+              key={c.id}
+              onClick={() => {
+                if (isToolCat && c.tool) { onPickTool(c.tool); setOpen(null); return; }
+                setOpen(open === c.id ? null : c.id);
+              }}
+              disabled={dead}
+              title={dead ? `${c.label} — coming soon` : c.label}
+              data-track={`bottombar-cat-${c.id}`}
+              className={`flex flex-col items-center justify-center gap-0.5 w-[64px] py-2 border-r border-border/60 last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : dead ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'}`}
+            >
+              <Icon className="w-4 h-4" strokeWidth={1.7} />
+              <span className="text-[9.5px] tracking-tight">{c.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool) => void; showWall: boolean }) {
   // Every tool here MUST have a working canvas behavior. Text and comment
   // tools were previously listed but never handled a click — they've been
@@ -8025,13 +8527,41 @@ function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool
   );
 }
 
-function ZoomDock({ zoom, setZoom }: { zoom: number; setZoom: React.Dispatch<React.SetStateAction<number>> }) {
+function ZoomDock({
+  zoom, setZoom, onFit, onCenter, onActual,
+}: {
+  zoom: number;
+  setZoom: (z: number) => void;
+  onFit: () => void;
+  onCenter: () => void;
+  onActual: () => void;
+}) {
   return (
     <div className="absolute bottom-5 left-5 z-20 inline-flex items-center bg-card/85 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] overflow-hidden text-xs">
-      <button onClick={() => setZoom((z) => Math.max(0.25, z / 1.2))} className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"><ZoomOut className="w-3.5 h-3.5" /></button>
-      <button onClick={() => setZoom(1)} className="px-2.5 h-9 border-x border-border/60 hover:bg-secondary min-w-[58px] text-center tabular-nums font-medium">{Math.round(zoom * 100)}%</button>
-      <button onClick={() => setZoom((z) => Math.min(4, z * 1.2))} className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"><ZoomIn className="w-3.5 h-3.5" /></button>
-      <button onClick={() => setZoom(1)} className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground border-l border-border/60 transition-colors" title="Fit (⌘0)"><Maximize2 className="w-3.5 h-3.5" /></button>
+      <button onClick={() => setZoom(Math.max(0.25, zoom / 1.2))} data-track="zoom-out" title="Zoom out (⌘-)"
+        className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+        <ZoomOut className="w-3.5 h-3.5" />
+      </button>
+      <button onClick={onFit} data-track="zoom-fit" title="Fit plan to viewport"
+        className="px-2.5 h-9 border-x border-border/60 hover:bg-secondary min-w-[58px] text-center tabular-nums font-medium">
+        {Math.round(zoom * 100)}%
+      </button>
+      <button onClick={() => setZoom(Math.min(4, zoom * 1.2))} data-track="zoom-in" title="Zoom in (⌘+)"
+        className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+        <ZoomIn className="w-3.5 h-3.5" />
+      </button>
+      <button onClick={onFit} data-track="zoom-fit-icon" title="Fit plan"
+        className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground border-l border-border/60 transition-colors">
+        <Maximize2 className="w-3.5 h-3.5" />
+      </button>
+      <button onClick={onCenter} data-track="zoom-center" title="Center plan"
+        className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground border-l border-border/60 transition-colors">
+        <Crosshair className="w-3.5 h-3.5" />
+      </button>
+      <button onClick={onActual} data-track="zoom-actual" title="Actual scale (1:1)"
+        className="px-2 h-9 inline-flex items-center justify-center hover:bg-secondary text-[10px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border-l border-border/60 transition-colors">
+        1:1
+      </button>
     </div>
   );
 }
