@@ -63,7 +63,7 @@ import { toast } from 'sonner';
 // Text + comment tools were never wired to real handlers; removed from the
 // Tool union in the surveyor gap-closure pass per the rule "no dead controls."
 // If we add inline annotation later, re-introduce them with real handlers.
-type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable';
+type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable' | 'conduit' | 'pathway';
 
 interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
 
@@ -739,10 +739,24 @@ export function EngineeringCanvas() {
   const addPathway = useProjectStore((s) => s.addPathway);
   const removePathway = useProjectStore((s) => s.removePathway);
   /** Commit the current cable draw to the store as a Pathway record. */
+  /** Dedicated draw-mode metadata for the current tool. When the user
+   *  picks "1-1/4 EMT" in the Conduit tray, drawModeRef holds
+   *  `{ kind: 'conduit', conduitType: 'EMT', conduitSize: '1-1/4"' }` so
+   *  the cable-tool commit handler can write the right fields onto the
+   *  new pathway. Picks from the Cable section reset this to `{ kind:
+   *  'cable' }` and the chosen cable type lives in cableDraw.cableType. */
+  const drawModeRef = useRef<{
+    kind: 'cable' | 'conduit' | 'pathway';
+    pathwayKind?: 'conduit' | 'tray' | 'jhook' | 'sleeve' | 'raceway' | 'duct';
+    conduitType?: 'EMT' | 'PVC' | 'FMC' | 'LFMC' | 'raceway' | 'tray';
+    conduitSize?: string;
+  }>({ kind: 'cable' });
   const finishCableDraw = useCallback(() => {
     setCableDraw((prev) => {
       if (prev.points.length < 2) return { points: [], cursor: null, cableType: prev.cableType };
-      const id = `PW-${Date.now().toString(36).slice(-5)}`;
+      const mode = drawModeRef.current;
+      const prefix = mode.kind === 'conduit' ? 'CD' : mode.kind === 'pathway' ? 'PT' : 'PW';
+      const id = `${prefix}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
       // Length: sum the segment distances (px) and divide by the canvas
       // scale (20 px = 1 ft, matching deriveBOM in the store).
       let lengthPx = 0;
@@ -751,15 +765,31 @@ export function EngineeringCanvas() {
       }
       const lengthFt = Math.round(lengthPx / 20);
       const fid = useProjectStore.getState().sites[projectId.replace(/^p/, 's') + ''] ? '' : (storeSelectors.firstFloorOfProject(useProjectStore.getState(), projectId)?.id ?? '');
+      const isConduit = mode.kind === 'conduit';
+      const isPathway = mode.kind === 'pathway';
       addPathway({
         id,
         projectId,
         floorId: fid || (storeSelectors.firstFloorOfProject(useProjectStore.getState(), projectId)?.id ?? ''),
-        type: 'conduit',
+        type: isConduit ? 'conduit' : isPathway ? 'open' : 'conduit',
         cableType: prev.cableType,
         cableCount: 1,
         points: prev.points,
         lengthFt,
+        // Dedicated-mode metadata so PathwaysOverlay + PathwayDrawer can
+        // tell standalone conduits / J-hooks / trays from cable runs.
+        ...(isConduit ? { pathwayKind: 'conduit', conduitType: mode.conduitType, conduitSize: mode.conduitSize } : {}),
+        ...(isPathway ? { pathwayKind: mode.pathwayKind ?? 'tray' } : {}),
+      } as any);
+      // Reset the draw-mode back to cable so the next click on the
+      // cable tool draws cable, not another conduit.
+      drawModeRef.current = { kind: 'cable' };
+      // Drop the user back to Select after a draw commits so they're
+      // not stuck in a draw mode they didn't realise was still active.
+      setTool('select');
+      toast.success(`${isConduit ? 'Conduit' : isPathway ? 'Pathway' : 'Cable'} ${id} drawn`, {
+        description: `${lengthFt} ft · saved. Click the route to edit.`,
+        duration: 3500,
       });
       // Reset
       return { points: [], cursor: null, cableType: prev.cableType };
@@ -1287,7 +1317,7 @@ export function EngineeringCanvas() {
         setMeasure({ start: null, end: null, cursor: null });
         setCableDraw((c) => ({ points: [], cursor: null, cableType: c.cableType }));
       }
-      if (e.key === 'Enter' && tool === 'cable' && cableDraw.points.length >= 2) {
+      if (e.key === 'Enter' && (tool === 'cable' || tool === 'conduit' || tool === 'pathway') && cableDraw.points.length >= 2) {
         finishCableDraw();
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selId) {
@@ -1428,8 +1458,12 @@ export function EngineeringCanvas() {
         ? `${(accKind ?? 'ACC').toString().toUpperCase()}-${100 + devices.filter((d) => (d as any).accessoryKind).length + 1}`
         : `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
       // Find nearest pathway midpoint within 60 units for cable accessories.
+      // Patch panels are explicitly skipped here — they belong on an IDF
+      // host, not on a pathway. The user can drag them onto the IDF/rack
+      // for the existing stack-attach flow.
       let attachedPathwayId: string | undefined;
-      if (isCableAcc) {
+      const isPatchPanel = accKind === 'pp24' || accKind === 'pp48' || accKind === 'pp-fiber';
+      if (isCableAcc && !isPatchPanel) {
         const allP = (Object.values(useProjectStore.getState().pathways) as any[]).filter((p) => p.projectId === (projectId ?? 'p1'));
         let best: { id: string; d: number } | null = null;
         for (const p of allP) {
@@ -1705,8 +1739,10 @@ export function EngineeringCanvas() {
                   }
                   return;
                 }
-                if (tool === 'cable') {
-                  // Each click adds a vertex. Optional snap to 20px grid.
+                if (tool === 'cable' || tool === 'conduit' || tool === 'pathway') {
+                  // All three draw modes share the same vertex-clicking
+                  // primitive; finishCableDraw branches on drawModeRef
+                  // to write the right pathway type.
                   const sx = snap ? Math.round(x / 20) * 20 : x;
                   const sy = snap ? Math.round(y / 20) * 20 : y;
                   setCableDraw((c) => ({ ...c, points: [...c.points, { x: sx, y: sy }] }));
@@ -1724,7 +1760,7 @@ export function EngineeringCanvas() {
                   setMeasure((m) => ({ ...m, cursor: { x, y } }));
                   return;
                 }
-                if (tool === 'cable' && cableDraw.points.length > 0) {
+                if ((tool === 'cable' || tool === 'conduit' || tool === 'pathway') && cableDraw.points.length > 0) {
                   setCableDraw((c) => ({ ...c, cursor: { x, y } }));
                   return;
                 }
@@ -1732,7 +1768,7 @@ export function EngineeringCanvas() {
               onSurfaceDblClick={() => {
                 if (tool === 'wall') setWallStart(null);
                 if (tool === 'measure') setMeasure({ start: null, end: null, cursor: null });
-                if (tool === 'cable') finishCableDraw();
+                if (tool === 'cable' || tool === 'conduit' || tool === 'pathway') finishCableDraw();
               }}
               measure={measure}
               cableDraw={cableDraw}
@@ -1842,7 +1878,9 @@ export function EngineeringCanvas() {
               <BottomDeviceBar
                 onStartDrag={(p, e) => setDrag({ product: p, x: e.clientX, y: e.clientY })}
                 onPickTool={(t) => setTool(t)}
-                onPickCableType={(id) => setCableDraw((c) => ({ ...c, cableType: id }))}
+                onPickCableType={(id) => { drawModeRef.current = { kind: 'cable' }; setCableDraw((c) => ({ ...c, cableType: id })); setTool('cable'); toast.message('Cable tool armed', { description: `Click vertices on the plan. Double-click or Enter to finish.`, duration: 4000 }); }}
+                onPickConduit={(type, size) => { drawModeRef.current = { kind: 'conduit', pathwayKind: 'conduit', conduitType: type, conduitSize: size }; setTool('conduit'); toast.message('Conduit tool armed', { description: `${type} ${size ?? ''} · click vertices on the plan. Double-click or Enter to finish.`, duration: 4500 }); }}
+                onPickPathway={(kind, label) => { drawModeRef.current = { kind: 'pathway', pathwayKind: kind }; setTool('pathway'); toast.message('Pathway tool armed', { description: `${label} · click vertices on the plan. Double-click or Enter to finish.`, duration: 4500 }); }}
                 tool={tool}
               />
             )}
@@ -6195,6 +6233,121 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
   const rot = d.rot;
   const ink = tone;
   const sw = 1.4;
+  const accKind = (d as any).accessoryKind as string | undefined;
+
+  // Distinct technical glyphs for cable accessories. Drawn before the
+  // generic kind-based branches so a patch panel / jack / pull box
+  // reads correctly even though the underlying DeviceType is `net.switch`.
+  if (accKind) {
+    return (
+      <g transform={`translate(${d.x}, ${d.y}) scale(${scale})`}>
+        <circle r={15} fill={ink} opacity="0.10" />
+        <circle r={13} fill="var(--canvas-background)" opacity="0.94" stroke={ink} strokeWidth="0.9" />
+        <g fill="none" stroke={ink} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round">
+          {(accKind === 'jack' || accKind === 'jack-shld' || accKind === 'jack-outdoor' || accKind === 'biscuit') && (
+            <g>
+              <rect x={-4} y={-6} width={8} height={12} rx={1.5} />
+              <line x1={-2.5} y1={-3} x2={2.5} y2={-3} />
+              <line x1={-2.5} y1={0}  x2={2.5} y2={0}  />
+              <line x1={-2.5} y1={3}  x2={2.5} y2={3}  />
+            </g>
+          )}
+          {(accKind === 'coupler' || accKind === 'coupler-rj45' || accKind === 'coupler-wp' || accKind === 'coupler-lc' || accKind === 'coupler-sc' || accKind === 'coupler-coax') && (
+            <g>
+              <line x1={-9} y1={0} x2={-3} y2={0} />
+              <rect x={-3} y={-3} width={6} height={6} rx={1} />
+              <line x1={3} y1={0} x2={9} y2={0} />
+            </g>
+          )}
+          {(accKind === 'patchcord') && (
+            <g>
+              <path d="M -8 -4 C -2 -4 2 4 8 4" />
+              <circle cx={-8} cy={-4} r={1.2} fill={ink} />
+              <circle cx={8}  cy={4}  r={1.2} fill={ink} />
+            </g>
+          )}
+          {(accKind === 'pp24' || accKind === 'pp48' || accKind === 'pp-fiber') && (
+            <g>
+              <rect x={-11} y={-4} width={22} height={8} rx={1.2} />
+              {[-8.5,-6,-3.5,-1,1.5,4,6.5,9].map((x) => <line key={x} x1={x} y1={-2.5} x2={x} y2={2.5} strokeWidth={0.9} />)}
+              <text x={0} y={6.5} textAnchor="middle" fontSize="3.4" fill={ink} stroke="none">{accKind === 'pp48' ? '48' : accKind === 'pp-fiber' ? 'FO' : '24'}</text>
+            </g>
+          )}
+          {accKind === 'pullbox' && (
+            <g>
+              <rect x={-6} y={-6} width={12} height={12} rx={1} />
+              <line x1={-6} y1={0} x2={-10} y2={0} />
+              <line x1={6}  y1={0} x2={10}  y2={0} />
+              <circle cx={-3.5} cy={-3.5} r={0.8} fill={ink} />
+              <circle cx={ 3.5} cy={-3.5} r={0.8} fill={ink} />
+              <circle cx={-3.5} cy={ 3.5} r={0.8} fill={ink} />
+              <circle cx={ 3.5} cy={ 3.5} r={0.8} fill={ink} />
+            </g>
+          )}
+          {accKind === 'jbox' && (
+            <g>
+              <rect x={-5.5} y={-5.5} width={11} height={11} rx={1.2} />
+              <line x1={-5.5} y1={0} x2={-9} y2={0} />
+              <line x1={5.5}  y1={0} x2={9} y2={0} />
+            </g>
+          )}
+          {accKind === 'jhook' && (
+            <g>
+              <path d="M -7 -5 L -7 3 A 5 5 0 0 0 -2 8" />
+              <path d="M  2 8 A 5 5 0 0 0  7 3 L 7 -5" />
+            </g>
+          )}
+          {accKind === 'tray' && (
+            <g>
+              <rect x={-10} y={-3} width={20} height={6} />
+              <line x1={-10} y1={-3} x2={-10} y2={6} />
+              <line x1={10}  y1={-3} x2={10}  y2={6} />
+              <line x1={-10} y1={6}  x2={10}  y2={6} />
+            </g>
+          )}
+          {accKind === 'firestop' && (
+            <g>
+              <rect x={-7} y={-3} width={14} height={6} rx={1} />
+              <path d="M -7 0 L -10 0 M 7 0 L 10 0" />
+              <path d="M -3 -3 L 3 3 M 3 -3 L -3 3" strokeWidth={0.9} />
+            </g>
+          )}
+          {accKind === 'sleeve' && (
+            <g>
+              <ellipse cx={0} cy={0} rx={9} ry={3} />
+              <line x1={-9} y1={0} x2={-12} y2={0} />
+              <line x1={9}  y1={0} x2={12} y2={0} />
+            </g>
+          )}
+          {(accKind === 'wallplate' || accKind === 'surfmount') && (
+            <g>
+              <rect x={-7} y={-5} width={14} height={10} rx={0.8} />
+              <rect x={-3} y={-2.5} width={6} height={5} />
+            </g>
+          )}
+          {accKind === 'terminal' && (
+            <g>
+              <rect x={-9} y={-3} width={18} height={6} />
+              {[-7,-4,-1,2,5,8].map((x) => <line key={x} x1={x} y1={-3} x2={x} y2={3} strokeWidth={0.7} />)}
+            </g>
+          )}
+          {accKind === 'splice' && (
+            <g>
+              <rect x={-9} y={-4} width={18} height={8} rx={1.2} />
+              <line x1={-5} y1={-1} x2={5} y2={-1} strokeWidth={0.7} />
+              <line x1={-5} y1={1}  x2={5} y2={1}  strokeWidth={0.7} />
+            </g>
+          )}
+          {accKind === 'mgr' && (
+            <g>
+              <rect x={-10} y={-2} width={20} height={4} />
+              <line x1={-10} y1={0} x2={10} y2={0} strokeDasharray="2 2" strokeWidth={0.7} />
+            </g>
+          )}
+        </g>
+      </g>
+    );
+  }
 
   return (
     <g transform={`translate(${d.x}, ${d.y}) scale(${scale})`}>
@@ -9740,29 +9893,56 @@ function SelectByMenu({ devices, onPick }: { devices: Device[]; onPick: (ids: st
         Select
         <ChevronDown className="w-3 h-3" />
       </button>
-      {open && (
-        <div className="absolute left-0 top-9 w-[240px] rounded-xl border bg-card/95 backdrop-blur-xl shadow-[var(--shadow-medium)] overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-          <button onClick={() => sel(cams,    'cameras on floor')} disabled={cams.length === 0}    data-track="select-all-cameras"  className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"><span>All cameras on floor</span><span className="text-muted-foreground tabular-nums">{cams.length}</span></button>
-          <button onClick={() => sel(doors,   'doors on floor')}   disabled={doors.length === 0}   data-track="select-all-doors"    className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"><span>All doors on floor</span><span className="text-muted-foreground tabular-nums">{doors.length}</span></button>
-          <button onClick={() => sel(readers, 'readers on floor')} disabled={readers.length === 0} data-track="select-all-readers"  className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"><span>All readers on floor</span><span className="text-muted-foreground tabular-nums">{readers.length}</span></button>
-          <button onClick={() => sel(idfs,    'IDFs on floor')}    disabled={idfs.length === 0}    data-track="select-all-idfs"     className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"><span>All IDFs / racks</span><span className="text-muted-foreground tabular-nums">{idfs.length}</span></button>
-          <div className="px-3 pt-2 pb-1.5 text-[10px] uppercase tracking-[0.10em] text-muted-foreground border-t border-border/60">By type</div>
-          {Object.entries(devices.reduce<Record<string, number>>((m, d) => { m[d.type] = (m[d.type] ?? 0) + 1; return m; }, {})).slice(0, 8).map(([t, n]) => (
-            <button
-              key={t}
-              onClick={() => sel(devices.filter((d) => d.type === t), `of type ${t}`)}
-              data-track={`select-type-${t}`}
-              className="w-full text-left px-3 py-1.5 text-[11.5px] hover:bg-secondary/40 flex items-center justify-between"
-            >
-              <span className="text-foreground">{t}</span>
-              <span className="text-muted-foreground tabular-nums">{n}</span>
-            </button>
-          ))}
-          <div className="px-3 py-2 border-t border-border/60">
-            <button onClick={() => { onPick([]); setOpen(false); }} data-track="select-clear" className="text-[11px] text-muted-foreground hover:text-foreground">Clear selection</button>
+      {open && (() => {
+        const onFloor: { label: string; list: Device[]; track: string }[] = ([
+          { label: 'All cameras on floor', list: cams,    track: 'select-all-cameras' },
+          { label: 'All doors on floor',   list: doors,   track: 'select-all-doors' },
+          { label: 'All readers on floor', list: readers, track: 'select-all-readers' },
+          { label: 'All IDFs / racks',     list: idfs,    track: 'select-all-idfs' },
+        ]).filter((r) => r.list.length > 0);
+        const byType = Object.entries(devices.reduce<Record<string, number>>((m, d) => { m[d.type] = (m[d.type] ?? 0) + 1; return m; }, {}))
+          .filter(([, n]) => n > 0)
+          .slice(0, 8);
+        return (
+          <div className="absolute left-0 top-9 w-[260px] rounded-xl border bg-card/95 backdrop-blur-xl shadow-[var(--shadow-medium)] overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+            {onFloor.length > 0 && (
+              <>
+                <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-[0.10em] text-muted-foreground">On floor</div>
+                {onFloor.map((r) => (
+                  <button key={r.track} onClick={() => sel(r.list, r.label.toLowerCase())} data-track={r.track} className="w-full text-left px-3 py-2 text-[12px] hover:bg-secondary/40 flex items-center justify-between">
+                    <span>{r.label}</span><span className="text-muted-foreground tabular-nums">{r.list.length}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            {byType.length > 0 && (
+              <>
+                <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-[0.10em] text-muted-foreground border-t border-border/60">By type</div>
+                {byType.map(([t, n]) => (
+                  <button
+                    key={t}
+                    onClick={() => sel(devices.filter((d) => d.type === t), `of type ${t}`)}
+                    data-track={`select-type-${t}`}
+                    className="w-full text-left px-3 py-1.5 text-[11.5px] hover:bg-secondary/40 flex items-center justify-between"
+                  >
+                    <span className="text-foreground">{t}</span>
+                    <span className="text-muted-foreground tabular-nums">{n}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-[0.10em] text-muted-foreground border-t border-border/60">By room</div>
+            <div className="px-3 py-2 text-[11px] text-muted-foreground italic">
+              Room-scoped selection unavailable — no room geometry on this floor yet. Use shift-click or drag a selection box for now.
+            </div>
+            {onFloor.length > 0 && (
+              <div className="px-3 py-2 border-t border-border/60">
+                <button onClick={() => { onPick([]); setOpen(false); }} data-track="select-clear" className="text-[11px] text-muted-foreground hover:text-foreground">Clear selection</button>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -9842,11 +10022,13 @@ function DrawingToolRail({
    ═══════════════════════════════════════════════════════════════════════ */
 
 function BottomDeviceBar({
-  onStartDrag, onPickTool, onPickCableType, tool,
+  onStartDrag, onPickTool, onPickCableType, onPickConduit, onPickPathway, tool,
 }: {
   onStartDrag: (p: Product, e: React.PointerEvent) => void;
   onPickTool: (t: Tool) => void;
   onPickCableType: (id: CableTypeId) => void;
+  onPickConduit: (type: 'EMT' | 'PVC' | 'FMC' | 'LFMC' | 'raceway' | 'tray', size?: string) => void;
+  onPickPathway: (kind: 'tray' | 'jhook' | 'sleeve' | 'raceway' | 'duct', label: string) => void;
   tool: Tool;
 }) {
   type Cat = {
@@ -9923,64 +10105,206 @@ function BottomDeviceBar({
             </button>
           </div>
           {trayCat.id === 'cable' ? (
-            <div className="p-3 max-h-[300px] overflow-auto">
-              <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">Cable types — click to draw</div>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(CABLE_TYPES as any[]).map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => { onPickCableType(c.id); onPickTool('cable'); setOpen(null); toast.message('Cable tool armed', { description: `${c.label} · click vertices on the plan, double-click to finish.`, duration: 4500 }); }}
-                    data-track={`bottombar-cable-${c.id}`}
-                    className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
-                  >
-                    <div className="text-[11.5px] font-medium tracking-tight">{c.label}</div>
-                    <div className="text-[10px] text-muted-foreground">{c.notes ?? `${c.gauge ?? ''}`}</div>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-3 pt-3 border-t border-border/60 px-1">
-                <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5">Cable accessories — drag onto the plan to place a marker</div>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {([
-                    { id: 'jack',      label: 'RJ45 jack',     note: 'Termination',     productId: 'cabacc-jack-rj45' },
-                    { id: 'jack-shld', label: 'Shielded jack', note: 'STP termination', productId: 'cabacc-jack-shielded' },
-                    { id: 'coupler',   label: 'Coupler',       note: 'Inline splice',   productId: 'cabacc-coupler-rj45' },
-                    { id: 'patchcord', label: 'Patch cord',    note: '7 ft default',    productId: 'cabacc-patchcord-7' },
-                    { id: 'pp24',      label: '24-port PP',    note: 'Patch panel',     productId: 'cabacc-pp-24' },
-                    { id: 'pp48',      label: '48-port PP',    note: 'Patch panel',     productId: 'cabacc-pp-48' },
-                    { id: 'pullbox',   label: 'Pull box',      note: 'Bend mgmt',       productId: 'cabacc-pullbox' },
-                    { id: 'jbox',      label: 'Junction box',  note: 'Splice point',    productId: 'cabacc-jbox' },
-                    { id: 'jhook',     label: 'J-hook',        note: 'Run support',     productId: 'cabacc-jhook' },
-                    { id: 'tray',      label: 'Cable tray',    note: 'Per ft',          productId: 'cabacc-tray' },
-                    { id: 'firestop',  label: 'Firestop',      note: 'Penetrations',    productId: 'cabacc-firestop' },
-                    { id: 'sleeve',    label: 'Wall sleeve',   note: 'Through-wall',    productId: 'cabacc-sleeve' },
-                  ]).map((a) => {
-                    // Build a faux Product on demand so the existing drag-to-
-                    // place pipeline accepts it. The product type isn't a
-                    // real device kind; the drop handler simply creates a
-                    // generic marker labelled with the accessory.
-                    const fakeProduct: Product = {
-                      id: a.productId,
-                      type: 'net.switch' as DeviceType, // closest infra glyph
-                      mfr: 'Cable',
-                      model: a.label,
-                      sub: a.note,
-                      recommended: false,
-                    } as any;
-                    return (
-                      <button
-                        key={a.id}
-                        onPointerDown={(e) => { onStartDrag(fakeProduct, e); setOpen(null); }}
-                        data-track={`bottombar-cableacc-${a.id}`}
-                        className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
-                      >
-                        <div className="text-[11.5px] font-medium tracking-tight">+ {a.label}</div>
-                        <div className="text-[10px] text-muted-foreground">{a.note}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            <div className="p-3 max-h-[360px] overflow-auto space-y-3">
+              {/* Eight clearly labelled sections per the brief. Each
+                  item carries an icon, a name, a short description, and
+                  a unit type ("per foot" / "each") so the tray reads
+                  like a real product library. */}
+              {(() => {
+                const fake = (id: string, label: string, note: string): Product => ({
+                  id, type: 'net.switch' as DeviceType, mfr: 'Cable', model: label, sub: note, recommended: false,
+                } as any);
+                const sections: { title: string; render: () => React.ReactNode }[] = [
+                  {
+                    title: '1 · Cable · per foot',
+                    render: () => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {(CABLE_TYPES as any[]).map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() => { onPickCableType(c.id); setOpen(null); }}
+                            data-track={`bottombar-cable-${c.id}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{c.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Data cable · per foot</div>
+                          </button>
+                        ))}
+                      </div>
+                    ),
+                  },
+                  {
+                    title: '2 · Terminations · each',
+                    render: () => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { id: 'jack',         label: 'RJ45 keystone',  pid: 'cabacc-jack-rj45' },
+                          { id: 'jack-shld',    label: 'Shielded jack',  pid: 'cabacc-jack-shielded' },
+                          { id: 'jack-outdoor', label: 'Outdoor jack',   pid: 'cabacc-jack-outdoor' },
+                          { id: 'wallplate',    label: 'Wall plate',     pid: 'cabacc-wallplate' },
+                          { id: 'surfmount',    label: 'Surface mount',  pid: 'cabacc-surfmount' },
+                          { id: 'terminal',     label: 'Terminal block', pid: 'cabacc-terminal' },
+                          { id: 'biscuit',      label: 'Biscuit jack',   pid: 'cabacc-biscuit' },
+                          { id: 'patchcord',    label: 'Patch cord',     pid: 'cabacc-patchcord-7' },
+                        ]).map((a) => (
+                          <button
+                            key={a.id}
+                            onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Termination · each'), e); setOpen(null); }}
+                            data-track={`bottombar-cableacc-${a.id}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Termination · each</div>
+                          </button>
+                        ))}
+                      </div>
+                    ),
+                  },
+                  {
+                    title: '3 · Couplers · each',
+                    render: () => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { id: 'coupler-rj45', label: 'RJ45 coupler',  pid: 'cabacc-coupler-rj45' },
+                          { id: 'coupler-wp',   label: 'Weatherproof',  pid: 'cabacc-coupler-wp' },
+                          { id: 'coupler-lc',   label: 'LC coupler',    pid: 'cabacc-coupler-lc' },
+                          { id: 'coupler-sc',   label: 'SC coupler',    pid: 'cabacc-coupler-sc' },
+                          { id: 'coupler-coax', label: 'Coax coupler',  pid: 'cabacc-coupler-coax' },
+                        ]).map((a) => (
+                          <button
+                            key={a.id}
+                            onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Coupler · each'), e); setOpen(null); }}
+                            data-track={`bottombar-cableacc-${a.id}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Coupler · each</div>
+                          </button>
+                        ))}
+                      </div>
+                    ),
+                  },
+                  {
+                    title: '4 · Patch / Rack · each',
+                    render: () => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { id: 'pp24',        label: '24-port PP',         pid: 'cabacc-pp-24' },
+                          { id: 'pp48',        label: '48-port PP',         pid: 'cabacc-pp-48' },
+                          { id: 'pp-fiber',    label: 'Fiber patch panel',  pid: 'cabacc-pp-fiber' },
+                          { id: 'splice',      label: 'Splice tray',        pid: 'cabacc-splice' },
+                          { id: 'mgr',         label: 'Cable manager',      pid: 'cabacc-mgr' },
+                        ]).map((a) => (
+                          <button
+                            key={a.id}
+                            onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Rack / IDF · each'), e); setOpen(null); }}
+                            data-track={`bottombar-cableacc-${a.id}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Rack / IDF · each</div>
+                          </button>
+                        ))}
+                      </div>
+                    ),
+                  },
+                  {
+                    title: '5 · Conduit · per foot',
+                    render: () => (
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">Pick a conduit type + size; the cursor arms a Conduit draw tool</div>
+                        <div className="grid grid-cols-6 gap-1">
+                          {(['EMT','PVC','FMC','LFMC','raceway'] as const).map((t) => (
+                            ['1/2"','3/4"','1"','1-1/4"','1-1/2"','2"'].map((sz) => (
+                              <button
+                                key={`${t}-${sz}`}
+                                onClick={() => onPickConduit(t, sz)}
+                                data-track={`bottombar-conduit-${t}-${sz.replace(/\W/g,'')}`}
+                                className="text-left px-2 py-1.5 rounded border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors text-[10.5px]"
+                              >
+                                <div className="font-medium">{t} {sz}</div>
+                                <div className="text-[9.5px] text-muted-foreground">Conduit · per ft</div>
+                              </button>
+                            ))
+                          ))}
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    title: '6 · Pathways · per foot',
+                    render: () => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { kind: 'tray' as const,  label: 'Cable tray' },
+                          { kind: 'jhook' as const, label: 'J-hooks' },
+                          { kind: 'raceway' as const, label: 'Surface raceway' },
+                          { kind: 'duct' as const,  label: 'Underground duct' },
+                          { kind: 'sleeve' as const, label: 'Wall sleeve' },
+                        ]).map((p) => (
+                          <button
+                            key={p.kind}
+                            onClick={() => onPickPathway(p.kind, p.label)}
+                            data-track={`bottombar-pathway-${p.kind}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{p.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Pathway · per ft</div>
+                          </button>
+                        ))}
+                      </div>
+                    ),
+                  },
+                  {
+                    title: '7 · Pull / Junction boxes · each',
+                    render: () => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { id: 'pullbox',    label: 'Pull box',       pid: 'cabacc-pullbox' },
+                          { id: 'jbox',       label: 'Junction box',   pid: 'cabacc-jbox' },
+                        ]).map((a) => (
+                          <button
+                            key={a.id}
+                            onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Conduit accessory · each'), e); setOpen(null); }}
+                            data-track={`bottombar-cableacc-${a.id}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Conduit accessory · each</div>
+                          </button>
+                        ))}
+                      </div>
+                    ),
+                  },
+                  {
+                    title: '8 · Firestop / Sleeves · each',
+                    render: () => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { id: 'firestop', label: 'Firestop',     pid: 'cabacc-firestop' },
+                          { id: 'sleeve',   label: 'Wall sleeve',  pid: 'cabacc-sleeve' },
+                        ]).map((a) => (
+                          <button
+                            key={a.id}
+                            onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Penetration · each'), e); setOpen(null); }}
+                            data-track={`bottombar-cableacc-${a.id}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Penetration · each</div>
+                          </button>
+                        ))}
+                      </div>
+                    ),
+                  },
+                ];
+                return sections.map((s) => (
+                  <div key={s.title}>
+                    <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">{s.title}</div>
+                    {s.render()}
+                  </div>
+                ));
+              })()}
             </div>
           ) : trayProducts.length === 0 ? (
             <div className="px-5 py-8 text-center text-[12px] text-muted-foreground">
