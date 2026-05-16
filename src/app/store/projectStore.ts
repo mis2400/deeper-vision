@@ -236,7 +236,7 @@ export const useProjectStore = create<ProjectState>()(
       canvasDisplay:     {},
       projectTechModels: {},
       currentRole:       'engineer',
-      canvasTheme:       'slate',
+      canvasTheme:       'light',
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -720,7 +720,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'deeperVisionStore',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -769,6 +769,15 @@ export const useProjectStore = create<ProjectState>()(
           // they can flip back via the overflow menu if they want.
           if (persisted.canvasTheme === 'dark') {
             persisted.canvasTheme = 'slate';
+          }
+        }
+        if (version < 4) {
+          // v3 → v4: the visual redesign pass moves the default away from
+          // Slate to Light Drafting so the canvas reads as a real drafting
+          // surface, not a dark prototype. Existing users on slate/dark get
+          // pushed to light once; they can flip back via the overflow menu.
+          if (persisted.canvasTheme === 'slate' || persisted.canvasTheme === 'dark') {
+            persisted.canvasTheme = 'light';
           }
         }
         return persisted;

@@ -24,6 +24,9 @@ import {
   PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
 } from 'lucide-react';
+import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
+const SURVEYOR_SYMBOL_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
+function SURVEYOR_SYMBOL_HAS(t: string): boolean { return SURVEYOR_SYMBOL_SET.has(t); }
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { canHost } from '../lib/compatibility';
 import { buildLabel, COMMIT_HASH } from '../../build-info';
@@ -4968,13 +4971,13 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         {/* Plan paper — a touch warmer than the canvas around it. The
             faint stroke is dialed down so the paper reads as a surface,
             not a print. */}
-        <linearGradient id="plan-fill" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%"  stopColor="#10182A" />
-          <stop offset="100%" stopColor="#0C1322" />
-        </linearGradient>
+        {/* Drafting paper — light-theme default is off-white drafting
+            paper with a soft architectural grid; dark themes still get a
+            slate paper. Both pull from theme tokens so the same SVG
+            renders correctly in any theme without branching. */}
         <pattern id="plan-paper" width="32" height="32" patternUnits="userSpaceOnUse">
-          <rect width="32" height="32" fill="url(#plan-fill)" />
-          <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#4A95E8" strokeWidth="0.4" opacity="0.10" />
+          <rect width="32" height="32" fill="var(--canvas-background)" />
+          <path d="M 32 0 L 0 0 0 32" fill="none" stroke="var(--canvas-grid)" strokeWidth="0.6" />
         </pattern>
         {/* Soft grain — drafting paper tooth. A barely-there speckle at
             high frequency so the canvas no longer reads as a flat web
@@ -5824,26 +5827,25 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
         <text y="-22" textAnchor="middle" fill="#7D8590" fontSize="10">N</text>
       </g>
 
-      {/* Floor plan — light architectural rendering, paper feel with clean wall lines */}
+      {/* Floor plan — theme-aware paper + charcoal wall lines */}
       <g>
-        <rect x="84" y="86" width="640" height="480" fill="#0F172A" opacity="0.12" rx="3" />
         <rect x="80" y="80" width="640" height="480" fill="url(#plan-paper)" rx="3" />
-        <rect x="80" y="80" width="640" height="480" fill="none" stroke="#1F2937" strokeWidth="2.5" rx="3" />
+        <rect x="80" y="80" width="640" height="480" fill="none" stroke="var(--foreground)" strokeWidth="2" opacity="0.7" rx="3" />
       </g>
 
-      <g stroke="#1F2937" strokeWidth="1.8" opacity="0.85" strokeLinecap="square">
+      <g stroke="var(--foreground)" strokeWidth="1.6" opacity="0.55" strokeLinecap="square">
         <line x1="80"  y1="320" x2="720" y2="320" />
         <line x1="400" y1="80"  x2="400" y2="560" />
         <line x1="240" y1="80"  x2="240" y2="320" />
         <line x1="560" y1="320" x2="560" y2="560" />
       </g>
 
-      {/* Door openings (gaps + swing arc) */}
+      {/* Door openings — gap + swing arc that read on any theme */}
       <g>
-        <line x1="380" y1="80" x2="420" y2="80" stroke="#F5F7FA" strokeWidth="3" />
-        <path d="M 380 80 A 40 40 0 0 1 420 120" fill="none" stroke="#6B7280" strokeWidth="1" strokeDasharray="3 3" />
-        <line x1="680" y1="320" x2="720" y2="320" stroke="#F5F7FA" strokeWidth="3" />
-        <path d="M 680 320 A 40 40 0 0 1 720 360" fill="none" stroke="#6B7280" strokeWidth="1" strokeDasharray="3 3" />
+        <line x1="380" y1="80" x2="420" y2="80" stroke="var(--canvas-background)" strokeWidth="3" />
+        <path d="M 380 80 A 40 40 0 0 1 420 120" fill="none" stroke="var(--foreground)" strokeWidth="1" strokeDasharray="3 3" opacity="0.45" />
+        <line x1="680" y1="320" x2="720" y2="320" stroke="var(--canvas-background)" strokeWidth="3" />
+        <path d="M 680 320 A 40 40 0 0 1 720 360" fill="none" stroke="var(--foreground)" strokeWidth="1" strokeDasharray="3 3" opacity="0.45" />
       </g>
 
       <g fill="var(--foreground)" fontSize="11" fontWeight="500">
@@ -6345,6 +6347,29 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
             </g>
           )}
         </g>
+      </g>
+    );
+  }
+
+  // Visual-redesign pass: when a SurveyorSymbol exists for this device
+  // type, render the technical plan symbol. Otherwise fall back to the
+  // legacy per-type SVG below so devices without a symbol stay visible.
+  // No filled tone halo — the symbol IS the plan glyph.
+  if (SURVEYOR_SYMBOL_HAS(d.type)) {
+    return (
+      <g transform={`translate(${d.x}, ${d.y}) scale(${scale})`} style={{ color: ink }}>
+        <g transform={`rotate(${rot})`}>
+          <SurveyorSymbolBody id={d.type} scale={1.0} stroke={1.4} />
+        </g>
+        {isStackableHost(d.type) && (d.stack?.length ?? 0) > 0 && (
+          <g transform="translate(11, -11)" pointerEvents="none">
+            <circle r={6} fill="var(--card)" stroke={ink} strokeWidth={0.9} />
+            <text textAnchor="middle" dominantBaseline="central" fontSize={7.5} fill={ink} fontWeight={600}>
+              {d.stack!.length}
+            </text>
+          </g>
+        )}
+        {selected && <circle r={14} fill="none" stroke={tone} strokeWidth="1.4" strokeDasharray="3 2" />}
       </g>
     );
   }
