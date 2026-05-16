@@ -423,5 +423,15 @@ export function buildSeed() {
     touches:       byId(TOUCHES),
     tasks:         byId(TASKS),
     activity:      byId(ACTIVITY),
+    // Threat Drill + Bus Security modules start empty by default;
+    // user creates scenarios / buses via the wizards. Seeded demo
+    // entries are added lazily on first visit if the project is empty.
+    scenarios:     {},
+    buses:         {},
+    busCameras:    {},
+    busDVRs:       {},
+    busCableRoutes:{},
+    busEvents:     {},
+    busChecks:     {},
   };
 }

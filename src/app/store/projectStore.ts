@@ -9,6 +9,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   Customer, Contact, Project, Site, Building, Floor, Device, Door, Pathway, IDF, Estimate,
+  Scenario, ScenarioZone, ScenarioRun, ProtocolStep, ScenarioGap,
+  Bus, BusCamera, BusDVR, BusCableRoute, BusEventInput, BusCommissioningCheck,
   EstimateLine, LensCfg, ActivityItem, ActivityType, LifecyclePhase, HealthStatus,
   Opportunity, OpportunityStage, Touch, Task,
   ProjectMode, UserRole, EngineeringLayer, CanvasLayerState, DEFAULT_CANVAS_LAYERS,
@@ -63,6 +65,15 @@ interface ProjectState {
   pathways:      Record<string, Pathway>;
   idfs:          Record<string, IDF>;
   estimates:     Record<string, Estimate>;
+  // ── Threat Drill Simulator ──
+  scenarios:     Record<string, Scenario>;
+  // ── Bus Security Designer ──
+  buses:         Record<string, Bus>;
+  busCameras:    Record<string, BusCamera>;
+  busDVRs:       Record<string, BusDVR>;
+  busCableRoutes:Record<string, BusCableRoute>;
+  busEvents:     Record<string, BusEventInput>;
+  busChecks:     Record<string, BusCommissioningCheck>;
   opportunities: Record<string, Opportunity>;
   touches:       Record<string, Touch>;
   tasks:         Record<string, Task>;
@@ -162,6 +173,31 @@ interface ProjectState {
 
   // ── Floor / walls ──
   updateFloor: (id: string, patch: Partial<Floor>) => void;
+
+  // ── Threat Drill ──
+  addScenario:    (s: Scenario) => void;
+  updateScenario: (id: string, patch: Partial<Scenario>) => void;
+  removeScenario: (id: string) => void;
+  /** Recompute gaps + readiness for a scenario from current project state. */
+  recomputeScenario: (id: string) => void;
+
+  // ── Bus Security ──
+  addBus:    (b: Bus) => void;
+  updateBus: (id: string, patch: Partial<Bus>) => void;
+  removeBus: (id: string) => void;
+  addBusCamera:     (c: BusCamera) => void;
+  updateBusCamera:  (id: string, patch: Partial<BusCamera>) => void;
+  removeBusCamera:  (id: string) => void;
+  addBusDVR:        (d: BusDVR) => void;
+  updateBusDVR:     (id: string, patch: Partial<BusDVR>) => void;
+  removeBusDVR:     (id: string) => void;
+  addBusCableRoute: (c: BusCableRoute) => void;
+  removeBusCableRoute: (id: string) => void;
+  addBusEvent:      (e: BusEventInput) => void;
+  removeBusEvent:   (id: string) => void;
+  updateBusCheck:   (id: string, patch: Partial<BusCommissioningCheck>) => void;
+  /** Seed the standard 11-step commissioning checklist for a bus. */
+  seedBusCommissioning: (busId: string) => void;
   /** Add a floor (used by Add Floor Map and VisionScan import). The
    *  buildingId is required so the canvas's site/building/floor selector
    *  can pick it up. */
@@ -594,6 +630,92 @@ export const useProjectStore = create<ProjectState>()(
       setFloorBackground: (floorId, bg) =>
         set((s) => (s.floors[floorId] ? { floors: { ...s.floors, [floorId]: { ...s.floors[floorId], background: bg ?? undefined } } } : s)),
 
+      // ── Threat Drill ─────────────────────────────────────────────
+      addScenario: (sc) => set((s) => ({ scenarios: { ...s.scenarios, [sc.id]: sc } })),
+      updateScenario: (id, patch) =>
+        set((s) => (s.scenarios[id]
+          ? { scenarios: { ...s.scenarios, [id]: { ...s.scenarios[id], ...patch } } }
+          : s)),
+      removeScenario: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.scenarios; return { scenarios: rest }; }),
+      recomputeScenario: (id) =>
+        set((s) => {
+          const sc = s.scenarios[id];
+          if (!sc) return s;
+          // Pull project state for the analyzer. We compute gaps in a pure
+          // helper (computeScenarioGaps) defined below so it stays unit-
+          // testable and re-callable from the AI side panel.
+          const result = computeScenarioGaps(s, sc);
+          return {
+            scenarios: {
+              ...s.scenarios,
+              [id]: { ...sc, gaps: result.gaps, readinessScore: result.readiness, lastSimulatedAt: Date.now() },
+            },
+          };
+        }),
+
+      // ── Bus Security ─────────────────────────────────────────────
+      addBus: (b) => set((s) => ({ buses: { ...s.buses, [b.id]: b } })),
+      updateBus: (id, patch) =>
+        set((s) => (s.buses[id]
+          ? { buses: { ...s.buses, [id]: { ...s.buses[id], ...patch } } }
+          : s)),
+      removeBus: (id) => set((s) => {
+        const { [id]: _, ...rest } = s.buses;
+        // Cascade-delete dependents
+        const cams = Object.fromEntries(Object.entries(s.busCameras).filter(([, c]) => c.busId !== id));
+        const dvrs = Object.fromEntries(Object.entries(s.busDVRs).filter(([, d]) => d.busId !== id));
+        const cables = Object.fromEntries(Object.entries(s.busCableRoutes).filter(([, c]) => c.busId !== id));
+        const events = Object.fromEntries(Object.entries(s.busEvents).filter(([, e]) => e.busId !== id));
+        const checks = Object.fromEntries(Object.entries(s.busChecks).filter(([, c]) => c.busId !== id));
+        return { buses: rest, busCameras: cams, busDVRs: dvrs, busCableRoutes: cables, busEvents: events, busChecks: checks };
+      }),
+      addBusCamera: (c) => set((s) => ({ busCameras: { ...s.busCameras, [c.id]: c } })),
+      updateBusCamera: (id, patch) =>
+        set((s) => (s.busCameras[id]
+          ? { busCameras: { ...s.busCameras, [id]: { ...s.busCameras[id], ...patch } } }
+          : s)),
+      removeBusCamera: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.busCameras; return { busCameras: rest }; }),
+      addBusDVR: (d) => set((s) => ({ busDVRs: { ...s.busDVRs, [d.id]: d } })),
+      updateBusDVR: (id, patch) =>
+        set((s) => (s.busDVRs[id]
+          ? { busDVRs: { ...s.busDVRs, [id]: { ...s.busDVRs[id], ...patch } } }
+          : s)),
+      removeBusDVR: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.busDVRs; return { busDVRs: rest }; }),
+      addBusCableRoute: (c) => set((s) => ({ busCableRoutes: { ...s.busCableRoutes, [c.id]: c } })),
+      removeBusCableRoute: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.busCableRoutes; return { busCableRoutes: rest }; }),
+      addBusEvent: (e) => set((s) => ({ busEvents: { ...s.busEvents, [e.id]: e } })),
+      removeBusEvent: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.busEvents; return { busEvents: rest }; }),
+      updateBusCheck: (id, patch) =>
+        set((s) => (s.busChecks[id]
+          ? { busChecks: { ...s.busChecks, [id]: { ...s.busChecks[id], ...patch } } }
+          : s)),
+      seedBusCommissioning: (busId) => set((s) => {
+        const stepLabels = [
+          'Recorder powers on (ignition + steady state)',
+          'All cameras record to assigned DVR channels',
+          'GPS fix acquired within 60 s of start-up',
+          'Cellular uplink registers and reports health',
+          'Wi-Fi offload negotiates depot SSID',
+          'Playback confirmed for every camera channel',
+          'Event button records flagged clip',
+          'Stop-arm trigger fires and tags clip',
+          'Driver monitor / status LED indicates ready',
+          'Cables secured and concealed; service loop verified',
+          'Roof / firewall penetrations sealed against weather',
+        ];
+        const checks: Record<string, BusCommissioningCheck> = { ...s.busChecks };
+        for (const step of stepLabels) {
+          const id = `chk-${busId}-${step.slice(0, 18).replace(/\W+/g, '-')}`;
+          if (!checks[id]) checks[id] = { id, busId, step, status: 'pending' };
+        }
+        return { busChecks: checks };
+      }),
+
       resetDemoData: () => set(() => ({ ...buildSeed() })),
     }),
     {
@@ -681,6 +803,13 @@ export const useProjectStore = create<ProjectState>()(
         projectTechModels: s.projectTechModels,
         currentRole:       s.currentRole,
         canvasTheme:       s.canvasTheme,
+        scenarios:         s.scenarios,
+        buses:             s.buses,
+        busCameras:        s.busCameras,
+        busDVRs:           s.busDVRs,
+        busCableRoutes:    s.busCableRoutes,
+        busEvents:         s.busEvents,
+        busChecks:         s.busChecks,
       }),
     },
   ),
@@ -1116,4 +1245,170 @@ export function deriveBOM(state: ProjectState, projectId: string): {
 
   void project; // silence unused if we don't surface project name here
   return { lines, hardwareTotal, cableTotal, laborHours, laborTotal, total };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// THREAT DRILL — GAP ANALYSIS + READINESS SCORE
+// ═══════════════════════════════════════════════════════════════════
+// Pure function over a state snapshot + a scenario. Returns the list
+// of gaps (severity + suggestion + focus) and a readiness score 0–100.
+// Drives both the side panel chips and the report.
+
+export function computeScenarioGaps(
+  s: ProjectState,
+  sc: Scenario,
+): { gaps: ScenarioGap[]; readiness: number } {
+  const gaps: ScenarioGap[] = [];
+  // Scope devices to this project
+  const projectDevices = Object.values(s.devices).filter((d: any) => d.projectId === sc.projectId);
+  const cameras = projectDevices.filter((d: any) => d.type?.startsWith('cam.'));
+  const speakers = projectDevices.filter((d: any) => d.type === 'aud.speaker' || d.type === 'aud.horn' || d.type === 'aud.amp');
+  const intercoms = projectDevices.filter((d: any) => d.type === 'acc.intercom' || d.type === 'aud.intercom');
+  const doors = projectDevices.filter((d: any) => d.type?.startsWith('inf.door') || d.type === 'acc.exit' || d.type === 'acc.door' || d.type === 'acc.gate');
+  const maglocks = projectDevices.filter((d: any) => d.type === 'acc.maglock');
+  const idfs = projectDevices.filter((d: any) => d.type === 'net.idf' || d.type === 'net.switch' || d.type === 'inf.rack' || d.type === 'inf.mdf');
+
+  // Helper: point-in-rect check, with ~150px slack so a camera mounted
+  // outside but pointing into the zone still counts as covering it.
+  const rectIntersects = (z: ScenarioZone, x: number, y: number, slack = 0) =>
+    x >= z.rect.x - slack && x <= z.rect.x + z.rect.w + slack
+    && y >= z.rect.y - slack && y <= z.rect.y + z.rect.h + slack;
+
+  // 1. Each accountability zone needs camera coverage
+  for (const z of sc.zones) {
+    const isAccount = ['classroom', 'cafeteria', 'gym', 'restroom', 'exterior'].includes(z.kind);
+    if (!isAccount) continue;
+    const cams = cameras.filter((c: any) => rectIntersects(z, c.x, c.y, 180));
+    if (cams.length === 0) {
+      gaps.push({
+        id: `g-blind-${z.id}`,
+        severity: 'high',
+        kind: 'blind-spot',
+        label: `${z.label} has no camera coverage`,
+        detail: 'No camera within ~50 ft of this zone. Visual accountability not possible.',
+        focusZoneId: z.id,
+        suggestion: 'Add a fixed dome at the zone perimeter (Axis P3265-LV or Verkada CD42-E).',
+        estimatedFixCost: 1450,
+      });
+    }
+  }
+
+  // 2. Safe zones need PA coverage
+  for (const z of sc.zones) {
+    if (z.kind !== 'safe-room' && z.kind !== 'lockdown-zone' && z.kind !== 'reunification') continue;
+    const pas = speakers.filter((p: any) => rectIntersects(z, p.x, p.y, 180));
+    if (pas.length === 0) {
+      gaps.push({
+        id: `g-pa-${z.id}`,
+        severity: 'med',
+        kind: 'no-pa',
+        label: `${z.label} has no PA coverage`,
+        detail: 'No IP speaker or horn within audible range; lockdown announcements may not reach occupants.',
+        focusZoneId: z.id,
+        suggestion: 'Add Axis C1410 ceiling speaker or C1310-E horn at the zone.',
+        estimatedFixCost: 595,
+      });
+    }
+  }
+
+  // 3. Maglock without REX (re-uses canHost-style heuristic)
+  for (const m of maglocks as any[]) {
+    const rex = projectDevices.find((x: any) =>
+      (x.type === 'acc.exit' || x.type === 'acc.dps') && Math.hypot(x.x - m.x, x.y - m.y) < 80);
+    if (!rex) {
+      gaps.push({
+        id: `g-rex-${m.id}`,
+        severity: 'high',
+        kind: 'no-rex',
+        label: `Maglock ${m.id} has no REX`,
+        detail: 'IBC 1010.1.9.7 requires a request-to-exit device adjacent to maglocked openings.',
+        focusDeviceIds: [m.id],
+        suggestion: 'Drop a Camden CM-330 wave-to-exit or Bosch REX-PIR within 12 in. of the maglock.',
+        estimatedFixCost: 185,
+      });
+    }
+  }
+
+  // 4. Doors without lockdown capability (no strike + no maglock linked)
+  for (const d of doors as any[]) {
+    if (!d.type?.startsWith('inf.door')) continue;
+    const electrified = (d.stack ?? []).some((aid: string) => {
+      const a = s.devices[aid];
+      return a && (a.type === 'acc.strike' || a.type === 'acc.maglock');
+    });
+    if (!electrified) {
+      gaps.push({
+        id: `g-lock-${d.id}`,
+        severity: 'high',
+        kind: 'no-lockdown',
+        label: `${d.label || d.id} cannot be locked from the access system`,
+        detail: 'Door is not electrified — no remote lock confirmation, no lockdown response.',
+        focusDeviceIds: [d.id],
+        suggestion: 'Add an electric strike (Von Duprin 6210) or maglock + REX pair.',
+        estimatedFixCost: 285,
+      });
+    }
+  }
+
+  // 5. Protocol gaps — sections present in the catalog but missing from protocol
+  const presentSections = new Set(sc.protocol.steps.map((p) => p.section));
+  const required: { section: ProtocolStep['section']; label: string }[] = [
+    { section: 'lockdown-triggers',      label: 'Lockdown triggers' },
+    { section: 'pa-announcements',       label: 'PA announcements' },
+    { section: 'classroom-response',     label: 'Classroom response' },
+    { section: 'student-accountability', label: 'Student accountability' },
+    { section: 'reunification',          label: 'Reunification' },
+    { section: 'all-clear',              label: 'All-clear process' },
+  ];
+  for (const r of required) {
+    if (!presentSections.has(r.section)) {
+      gaps.push({
+        id: `g-proto-${r.section}`,
+        severity: 'med',
+        kind: 'protocol-gap',
+        label: `Protocol missing: ${r.label}`,
+        detail: `No step found for ${r.label}. Drill may not be defensible in an after-action review.`,
+        suggestion: 'Use the AI protocol builder to draft this section against current device coverage.',
+      });
+    }
+  }
+
+  // 6. Accountability zones beyond rated occupancy of nearest safe room
+  for (const z of sc.zones) {
+    if (z.kind !== 'classroom' && z.kind !== 'cafeteria' && z.kind !== 'gym') continue;
+    if (z.occupancy && z.occupancy > 35) {
+      gaps.push({
+        id: `g-occ-${z.id}`,
+        severity: 'low',
+        kind: 'occupancy-overflow',
+        label: `${z.label} occupancy ${z.occupancy} above 35-person target`,
+        detail: 'High-occupancy spaces require redundant communication paths and dedicated accountability.',
+        focusZoneId: z.id,
+        suggestion: 'Add a secondary speaker and define a backup accountability owner.',
+      });
+    }
+  }
+
+  // 7. Network single point of failure — every PoE device behind one IDF
+  if (cameras.length >= 6 && idfs.length <= 1) {
+    gaps.push({
+      id: 'g-spof',
+      severity: 'med',
+      kind: 'network-spof',
+      label: 'Single IDF dependency for all cameras',
+      detail: `${cameras.length} cameras served by ${idfs.length || 'no'} IDF — switch failure removes all coverage.`,
+      suggestion: 'Distribute cameras across at least two IDFs or add a redundant uplink.',
+      estimatedFixCost: 3495,
+    });
+  }
+
+  // ── Readiness score: start at 100, subtract per gap weighted by severity.
+  let score = 100;
+  for (const g of gaps) score -= g.severity === 'high' ? 12 : g.severity === 'med' ? 6 : 3;
+  // Bonus for having coverage on every safe zone
+  const safeZones = sc.zones.filter((z) => z.kind === 'safe-room' || z.kind === 'lockdown-zone');
+  if (safeZones.length > 0 && !gaps.some((g) => g.kind === 'no-pa')) score += 4;
+  // Floor at 0, ceiling at 100
+  score = Math.max(0, Math.min(100, score));
+  return { gaps, readiness: score };
 }

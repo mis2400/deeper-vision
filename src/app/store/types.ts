@@ -584,3 +584,272 @@ export interface Estimate {
   markup: number;            // 0..1, e.g. 0.18 = 18%
   notes?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// THREAT DRILL SIMULATOR — emergency-readiness planning module
+// ═══════════════════════════════════════════════════════════════════
+// Defensive-only. Models how the engineered infrastructure responds
+// during emergency drills; identifies coverage gaps, protocol gaps,
+// and accountability gaps. Never models attacker tactics.
+
+export type ScenarioType =
+  | 'lockdown-drill'
+  | 'shelter-in-place'
+  | 'secure-perimeter'
+  | 'unauthorized-entry'
+  | 'forced-door-event'
+  | 'panic-button-event'
+  | 'bus-loop-emergency'
+  | 'after-hours-intrusion';
+
+export type ScenarioZoneKind =
+  // Safe / response
+  | 'safe-room'
+  | 'lockdown-zone'
+  | 'reunification'
+  | 'staff-command'
+  | 'first-responder-staging'
+  | 'medical-triage'
+  | 'bus-staging'
+  // Accountability
+  | 'classroom'
+  | 'cafeteria'
+  | 'gym'
+  | 'restroom'
+  | 'exterior';
+
+export interface ScenarioZone {
+  id: string;
+  kind: ScenarioZoneKind;
+  /** Display label, e.g. "Classroom 204" */
+  label: string;
+  /** Rectangle (canvas-px) defining the zone footprint. */
+  rect: { x: number; y: number; w: number; h: number };
+  /** Estimated occupancy used by the readiness calc. */
+  occupancy?: number;
+  /** Free-form protocol notes the planner attaches to this zone. */
+  notes?: string;
+}
+
+/** Threat marker + ordered waypoints. Single path per scenario for v1;
+ *  the schema supports multiple via runs[]. */
+export interface ScenarioRun {
+  id: string;
+  label: string;
+  /** Start point (canvas-px). */
+  start: { x: number; y: number };
+  /** Ordered waypoints the planner draws after the start. */
+  waypoints: { x: number; y: number; tSec: number }[];
+  /** Drill speed multiplier for playback. */
+  speedX: number;
+}
+
+export type ProtocolSection =
+  | 'lockdown-triggers'
+  | 'communication-tree'
+  | 'pa-announcements'
+  | 'classroom-response'
+  | 'common-area-response'
+  | 'student-accountability'
+  | 'reunification'
+  | 'all-clear'
+  | 'after-action';
+
+export interface ProtocolStep {
+  id: string;
+  section: ProtocolSection;
+  /** What the protocol says, verbatim or paraphrased. */
+  text: string;
+  /** Device-ids on the canvas this step depends on (door / cam / PA). */
+  mappedDeviceIds: string[];
+  /** Author-tagged owner role (e.g. "Front-office staff", "SRO"). */
+  owner?: string;
+  /** Done flag for the after-action review. */
+  verified?: boolean;
+}
+
+export interface ScenarioProtocol {
+  version: string;
+  source: 'manual' | 'uploaded' | 'ai-draft';
+  uploadedFile?: { name: string; bytes: number };
+  steps: ProtocolStep[];
+}
+
+export interface ScenarioGap {
+  id: string;
+  severity: 'high' | 'med' | 'low';
+  kind: 'blind-spot' | 'no-lockdown' | 'no-pa' | 'no-accountability'
+      | 'no-rex' | 'protocol-gap' | 'occupancy-overflow' | 'network-spof';
+  label: string;
+  detail: string;
+  /** Optional zone or device focus for the canvas chip. */
+  focusZoneId?: string;
+  focusDeviceIds?: string[];
+  /** AI suggestion (string for now; structured object later). */
+  suggestion?: string;
+  /** Approximate dollar cost to close, if knowable. */
+  estimatedFixCost?: number;
+}
+
+export interface Scenario {
+  id: string;
+  projectId: string;
+  name: string;
+  type: ScenarioType;
+  /** Free-form site descriptor — typically "Campus / Building / Floor". */
+  campus?: string;
+  buildingId?: string;
+  floorId?: string;
+  /** Estimated population in scope at scenario time. */
+  occupancy?: number;
+  /** "School day · morning bell" — used by AI to pick sensible defaults. */
+  timeOfDay?: 'pre-school' | 'morning' | 'midday' | 'afternoon' | 'after-school' | 'evening' | 'overnight';
+  /** Drill objective in plain English. */
+  objective?: string;
+  /** Operational assumptions ("All exterior doors locked", etc.). */
+  assumptions?: string;
+  /** Protocol attached to this scenario. */
+  protocol: ScenarioProtocol;
+  /** Zones drawn on the canvas. */
+  zones: ScenarioZone[];
+  /** Threat marker + waypoints. Empty until placed. */
+  runs: ScenarioRun[];
+  /** Computed gaps from the last simulation. */
+  gaps: ScenarioGap[];
+  /** Computed readiness score 0–100. */
+  readinessScore?: number;
+  /** ISO timestamp of last simulation run. */
+  lastSimulatedAt?: number;
+  /** Author-tagged history note for the version chip. */
+  versionLabel?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BUS SECURITY DESIGNER — fleet vehicle security infrastructure
+// ═══════════════════════════════════════════════════════════════════
+
+export type BusType =
+  | 'type-a' | 'type-c' | 'type-d'
+  | 'transit' | 'activity' | 'special-needs' | 'van';
+
+/** Camera mounting position on the bus body (top-down + side views
+ *  share the same enum so the UI can render either). */
+export type BusCameraLocation =
+  | 'driver-area'         // facing driver
+  | 'aisle-front'         // dome above front rows
+  | 'aisle-mid'           // dome above middle rows
+  | 'aisle-rear'          // dome above rear rows
+  | 'door-entry'          // entry doorway
+  | 'rear-cabin'          // wide-angle inside rear
+  | 'road-forward'        // forward exterior windshield
+  | 'road-rear'           // rearview exterior
+  | 'side-left'           // exterior left side
+  | 'side-right'          // exterior right side
+  | 'stop-arm'            // stop-arm enforcement
+  | 'wheelchair-lift'     // lift bay coverage
+  | 'lpr';                // license-plate capture
+
+export interface BusCamera {
+  id: string;
+  busId: string;
+  location: BusCameraLocation;
+  /** Position in the top-down bus template (0..1 normalized along bus length / width). */
+  uX: number;
+  uY: number;
+  /** Heading in degrees, 0 = facing front of bus. */
+  rot: number;
+  /** Horizontal field of view. */
+  fov: number;
+  /** Effective range in feet at design-grade resolution. */
+  rangeFt: number;
+  /** DVR channel binding — must be unique per bus. */
+  dvrChannel?: number;
+  /** Catalog product id (lookups into productCatalog SAMPLE_PRODUCTS). */
+  productId?: string;
+  /** Power draw in watts. */
+  powerW?: number;
+  /** Mount type for the BOM. */
+  mount?: 'flush' | 'corner' | 'pendant' | 'pole' | 'side-window';
+  /** IP / vandal rating summary. */
+  rating?: string;
+  notes?: string;
+}
+
+export type BusDVRType = 'mobile-dvr' | 'mobile-nvr' | 'cloud-bridge';
+export interface BusDVR {
+  id: string;
+  busId: string;
+  kind: BusDVRType;
+  manufacturer: string;
+  model: string;
+  /** Total channels supported. */
+  channels: number;
+  /** Storage capacity in GB (SSD/SD). */
+  storageGB: number;
+  gps: boolean;
+  lte: boolean;
+  wifiOffload: boolean;
+  /** Discrete sensor inputs (event button, stop-arm trigger, ignition). */
+  sensorInputs: number;
+  /** Power input voltage. */
+  inputVDC: '12V' | '24V' | '12/24V';
+  notes?: string;
+}
+
+export type BusCableKind = 'aviation' | 'ethernet' | 'power-harness' | 'gps-antenna' | 'event-button' | 'speaker';
+export interface BusCableRoute {
+  id: string;
+  busId: string;
+  kind: BusCableKind;
+  /** Friendly label, e.g. "CAM-3 → DVR". */
+  label: string;
+  /** Path in bus template (0..1 normalized). */
+  path: { x: number; y: number }[];
+  /** Concealment difficulty signal — drives labor estimate. */
+  difficulty: 'easy' | 'moderate' | 'difficult';
+  lengthFt: number;
+}
+
+export interface BusEventInput {
+  id: string;
+  busId: string;
+  kind: 'panic-button' | 'event-marker' | 'stop-arm-trigger' | 'ignition' | 'status-led' | 'driver-monitor' | 'touch-display';
+  label: string;
+  /** Wired to a DVR sensor input. */
+  inputIndex?: number;
+}
+
+export interface BusCommissioningCheck {
+  id: string;
+  busId: string;
+  step: string;
+  status: 'pending' | 'pass' | 'fail';
+  notes?: string;
+}
+
+export interface Bus {
+  id: string;
+  projectId: string;
+  /** District-facing bus tag (e.g. "78"). */
+  busTag: string;
+  year?: number;
+  make?: string;
+  model?: string;
+  vin?: string;
+  busType: BusType;
+  capacity?: number;
+  hasWheelchairLift?: boolean;
+  hasStopArm?: boolean;
+  voltage: '12V' | '24V';
+  batteryLocation?: string;
+  fusePanelLocation?: string;
+  /** Days of footage the design must retain. */
+  retentionTargetDays: number;
+  /** Cellular upload required. */
+  cellularRequired: boolean;
+  /** Wi-Fi offload at depot. */
+  wifiOffload: boolean;
+  /** Author-tagged stage. */
+  status: 'draft' | 'engineered' | 'approved' | 'installed' | 'commissioned';
+  notes?: string;
+}

@@ -102,7 +102,13 @@ export function ProjectCenter() {
             </Button>
           )}
           <Button size="sm" variant="outline" onClick={() => navigate(`/project/${projectId}/canvas`)}>
-            Open canvas
+            Canvas
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate(`/project/${projectId}/drill`)}>
+            Drill Simulator
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate(`/project/${projectId}/bus`)}>
+            Bus Security
           </Button>
           <Button size="sm" onClick={() => navigate(qa.href)}>
             {qa.label} <ArrowRight className="w-3 h-3 ml-1" />

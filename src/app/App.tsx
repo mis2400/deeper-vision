@@ -33,6 +33,10 @@ import { PipelineView } from './screens/PipelineView';
 import { AccountDetail } from './screens/AccountDetail';
 import { Dashboard } from './screens/Dashboard';
 import { ProductCatalog } from './screens/ProductCatalog';
+import { ThreatDrillLibrary } from './screens/ThreatDrillLibrary';
+import { ThreatDrillEditor } from './screens/ThreatDrillEditor';
+import { BusFleet } from './screens/BusFleet';
+import { BusDesigner } from './screens/BusDesigner';
 import { PdfExporter } from './components/PdfExporter';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { Toaster } from './components/ui/sonner';
@@ -82,6 +86,12 @@ export default function App() {
           <Route path="/pathways/:projectId" element={<PathwayRouting />} />
           <Route path="/intake/:projectId" element={<SiteIntake />} />
           <Route path="/threat/:projectId" element={<ThreatSimulator />} />
+          {/* Threat Drill Simulator — flagship defensive readiness module */}
+          <Route path="/project/:projectId/drill" element={<ThreatDrillLibrary />} />
+          <Route path="/project/:projectId/drill/:scenarioId" element={<ThreatDrillEditor />} />
+          {/* Bus Security Designer — flagship fleet module */}
+          <Route path="/project/:projectId/bus" element={<BusFleet />} />
+          <Route path="/project/:projectId/bus/:busId" element={<BusDesigner />} />
           <Route path="/layers/:projectId" element={<LayerStack />} />
           <Route path="/power/:projectId" element={<PowerCablePlan />} />
           <Route path="/proposal/:projectId" element={<ProposalBuilder />} />
