@@ -196,6 +196,18 @@ export function PdfExporter() {
     }
   }
 
+  // UX hard-reset: this used to render two prominent "Screen" + "Export
+  // PDF" buttons in the bottom-right of every screen — they read as a
+  // global debug HUD. They now live behind a single tiny icon that
+  // expands the two actions on click. The Canvas + Reports flows have
+  // their own first-class export paths.
+  const [open, setOpen] = useState(false);
+
+  // Hide entirely on the engineering canvas — the surveyor's own
+  // ReportBuilder is the right entry point there. Keep available on
+  // other screens for ad-hoc "send me a PDF of this view".
+  if (location.pathname.includes('/canvas')) return null;
+
   return (
     <div
       data-pdf-exporter
@@ -203,28 +215,48 @@ export function PdfExporter() {
       className="flex items-center gap-2 print:hidden"
     >
       {status && (
-        <div className="bg-[#0F172A] border border-white/10 text-[11px] text-slate-200 px-3 py-1.5 rounded-md shadow-xl">
+        <div className="bg-[var(--card)] border border-[var(--border)] text-[11px] text-[var(--foreground)] px-3 py-1.5 rounded-md shadow-[var(--shadow-medium)]">
           {status}
         </div>
       )}
-      <button
-        onClick={exportCurrent}
-        disabled={busy}
-        className="bg-[#0F172A] border border-white/10 hover:border-white/30 text-slate-200 text-xs px-3 py-2 rounded-md shadow-xl disabled:opacity-50 flex items-center gap-1.5"
-        title="Export current screen"
-      >
-        <FileDown className="w-3.5 h-3.5" />
-        Screen
-      </button>
-      <button
-        onClick={exportAll}
-        disabled={busy}
-        className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs px-3 py-2 rounded-md shadow-xl disabled:opacity-50 flex items-center gap-1.5"
-        title="Export all screens to PDF"
-      >
-        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
-        Export PDF
-      </button>
+      {open ? (
+        <>
+          <button
+            onClick={exportCurrent}
+            disabled={busy}
+            className="bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border-strong)] text-[var(--foreground)] text-[12px] px-3 h-9 rounded-lg shadow-[var(--shadow-medium)] disabled:opacity-50 flex items-center gap-1.5"
+            title="Export current screen"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            Screen
+          </button>
+          <button
+            onClick={exportAll}
+            disabled={busy}
+            className="bg-[var(--primary)] hover:opacity-90 text-[var(--primary-foreground)] text-[12px] px-3 h-9 rounded-lg shadow-[var(--shadow-medium)] disabled:opacity-50 flex items-center gap-1.5"
+            title="Export all screens to PDF"
+          >
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+            Export PDF
+          </button>
+          <button
+            onClick={() => setOpen(false)}
+            title="Hide export controls"
+            className="bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)] h-9 w-9 rounded-lg shadow-[var(--shadow-medium)] flex items-center justify-center hover:text-[var(--foreground)]"
+          >
+            ×
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          title="Export this screen"
+          aria-label="Export"
+          className="bg-[var(--card)]/85 backdrop-blur-xl border border-[var(--border)]/70 text-[var(--muted-foreground)] hover:text-[var(--foreground)] h-9 w-9 rounded-lg shadow-[var(--shadow-low)] flex items-center justify-center"
+        >
+          <FileDown className="w-3.5 h-3.5" />
+        </button>
+      )}
     </div>
   );
 }

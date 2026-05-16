@@ -373,6 +373,35 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-pill: 9999px;
+
+  /* ── Spacing scale ─────────────────────────────────────────────────
+     A small honest scale. Used everywhere we hand-rolled px-2 / px-2.5
+     / px-3 / etc. so the system reads as one product. */
+  --space-xs: 0.25rem;   /* 4px  — tight chip / between-icon gaps */
+  --space-sm: 0.5rem;    /* 8px  — between primitives inside a row */
+  --space-md: 0.75rem;   /* 12px — card padding / control gaps */
+  --space-lg: 1rem;      /* 16px — card body padding */
+  --space-xl: 1.5rem;    /* 24px — section padding */
+  --space-2xl: 2rem;     /* 32px — page padding */
+
+  /* ── Elevation / shadows ──────────────────────────────────────────
+     Four levels. low / medium are for resting cards. floating is for
+     popovers and the right drawer. focus is the focus ring used by the
+     shared Button / Input primitives. */
+  --shadow-low:      0 1px 1px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-medium:   0 2px 4px -1px rgba(0,0,0,0.06), 0 8px 18px -10px rgba(0,0,0,0.16);
+  --shadow-floating: 0 12px 28px -10px rgba(0,0,0,0.28), 0 24px 48px -26px rgba(0,0,0,0.18);
+  --shadow-focus:    0 0 0 2px color-mix(in oklab, var(--primary) 28%, transparent);
+
+  /* ── Motion ───────────────────────────────────────────────────────
+     Three durations + two easings. All shared components animate via
+     these tokens — no more hand-rolled 100ms / 120ms / 150ms scatter. */
+  --motion-fast:     120ms;
+  --motion-standard: 200ms;
+  --motion-slow:     320ms;
+  --ease-out:        cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @layer base {

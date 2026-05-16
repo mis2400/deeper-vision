@@ -10,6 +10,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
+import { IntegrationCard } from '../components/ui/dv';
 import {
   Calendar, Briefcase, Users, Link as LinkIcon, MessageCircle,
   ArrowRight, ChevronRight, CheckCircle2, Clock, AlertTriangle,
@@ -277,35 +278,49 @@ export function Dashboard() {
         <Section
           icon={<LinkIcon className="w-3.5 h-3.5" />}
           title="Integrations"
-          hint="External systems · none connected yet"
+          hint="CRM · ERP · accounting · calendar · manufacturer ecosystems"
         >
-          <div className="grid grid-cols-4 gap-3">
-            {[
-              { vendor: 'HubSpot', category: 'CRM' },
-              { vendor: 'Salesforce', category: 'CRM' },
-              { vendor: 'Q360', category: 'ERP' },
-              { vendor: 'QuickBooks', category: 'Accounting' },
-              { vendor: 'Microsoft 365', category: 'Calendar / Storage' },
-              { vendor: 'Google Workspace', category: 'Calendar / Storage' },
-              { vendor: 'Verkada Command', category: 'Manufacturer · cloud' },
-              { vendor: 'Axis Communications', category: 'Manufacturer · on-prem' },
-              { vendor: 'Avigilon Alta', category: 'Manufacturer · cloud' },
-              { vendor: 'Genetec Security Center', category: 'Manufacturer · on-prem' },
-              { vendor: 'Milestone XProtect', category: 'Manufacturer · on-prem' },
-              { vendor: 'Brivo', category: 'Access · cloud' },
-            ].map((i) => (
-              <div key={i.vendor} className="bg-card border border-border rounded-lg p-3">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-[12.5px] font-medium text-foreground">{i.vendor}</div>
-                  <span className="text-[10px] text-muted-foreground/70 inline-flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
-                    Not connected
-                  </span>
-                </div>
-                <div className="text-[11px] text-muted-foreground">{i.category}</div>
+          {(() => {
+            // Text-mark logo cards. Real trademarked logos aren't shipped
+            // with the repo; we use the manufacturer's recognisable initials
+            // in their own brand color so the cards still read like a known
+            // vendor at a glance instead of a generic gray box. Status is
+            // honest — nothing is wired to a live API yet.
+            const integrations: Array<{
+              mark: string; color: string; name: string; category: string;
+              status: 'connected' | 'available' | 'attention' | 'syncing';
+              lastSync?: string; objectCount?: string;
+            }> = [
+              { mark: 'HS', color: '#FF7A59', name: 'HubSpot',           category: 'CRM',                        status: 'available' },
+              { mark: 'SF', color: '#00A1E0', name: 'Salesforce',        category: 'CRM',                        status: 'available' },
+              { mark: 'Q3', color: '#7C3AED', name: 'Q360',              category: 'ERP · Integrator suite',     status: 'available' },
+              { mark: 'QB', color: '#2CA01C', name: 'QuickBooks',        category: 'Accounting',                 status: 'available' },
+              { mark: 'NS', color: '#1A6BBA', name: 'NetSuite',          category: 'Accounting / ERP',           status: 'available' },
+              { mark: 'O',  color: '#0078D4', name: 'Microsoft Outlook', category: 'Calendar / mail',            status: 'available' },
+              { mark: 'GC', color: '#4285F4', name: 'Google Calendar',   category: 'Calendar',                   status: 'available' },
+              { mark: 'VK', color: '#3B82F6', name: 'Verkada',           category: 'Cloud video / access',       status: 'available' },
+              { mark: 'AX', color: '#E60028', name: 'Axis',              category: 'Cameras · on-prem',          status: 'available' },
+              { mark: 'AL', color: '#F08F3C', name: 'Avigilon Alta',     category: 'Cloud video',                status: 'available' },
+              { mark: 'GE', color: '#0EA5E9', name: 'Genetec',           category: 'Security Center · on-prem',  status: 'available' },
+              { mark: 'MS', color: '#5B6CFF', name: 'Milestone',         category: 'XProtect · on-prem VMS',     status: 'available' },
+            ];
+            return (
+              <div className="grid grid-cols-4 gap-3">
+                {integrations.map((i) => (
+                  <IntegrationCard
+                    key={i.name}
+                    mark={i.mark}
+                    markColor={i.color}
+                    name={i.name}
+                    category={i.category}
+                    status={i.status}
+                    lastSync={i.lastSync}
+                    objectCount={i.objectCount}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
+            );
+          })()}
           <div className="mt-3 text-[11px] text-muted-foreground italic">
             Integration substrate is in the data layer (external IDs, sync state, mapping). No vendor is live yet — connection flows are a labeled placeholder.
           </div>

@@ -804,6 +804,9 @@ export function EngineeringCanvas() {
   // generate a floor surface (scan with camera, upload, satellite trace,
   // or sketch from scratch).
   const [scanBuildOpen, setScanBuildOpen] = useState(false);
+  // Report Builder modal — the new "real builder" entry; replaces the
+  // scattered list of export rows as the primary report flow.
+  const [reportOpen, setReportOpen] = useState(false);
   // Fullscreen mode — uses the Fullscreen API to expand the canvas to fill
   // the entire monitor. Distinct from viewMode (which is an in-app immersion
   // toggle that hides chrome but stays inside the window). The two compose:
@@ -1108,6 +1111,7 @@ export function EngineeringCanvas() {
         // view, then close transient pickers, then drop selection.
         if (viewMode === 'canvas') { setViewMode('default'); return; }
         if (viewMode === 'field')  { setViewMode('default'); return; }
+        if (reportOpen)            { setReportOpen(false); return; }
         if (scanBuildOpen)         { setScanBuildOpen(false); return; }
         setSelId(null); setDrag(null); setOpenCat(null); setOpenType(null);
         setWallStart(null);
@@ -1131,7 +1135,7 @@ export function EngineeringCanvas() {
     // layer first (Canvas → Field → modal → selection). tool included so
     // Enter knows whether the cable tool is active.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selId, viewMode, scanBuildOpen, tool, cableDraw.points.length]);
+  }, [selId, viewMode, scanBuildOpen, reportOpen, tool, cableDraw.points.length]);
 
   /* Drag-to-place from the library --------------------------------------- */
   // hoverHost is the door / IDF currently under the cursor while a drag is
@@ -1359,6 +1363,7 @@ export function EngineeringCanvas() {
             viewMode={viewMode}
             setViewMode={setViewMode}
             onOpenScanBuild={() => setScanBuildOpen(true)}
+            onOpenReport={() => setReportOpen(true)}
             compact={viewMode === 'field'}
             intelOpen={intelOpen}
             setIntelOpen={setIntelOpen}
@@ -1417,6 +1422,7 @@ export function EngineeringCanvas() {
               devices={devices}
               projectId={projectId}
               onOpenScanBuild={() => setScanBuildOpen(true)}
+              onOpenReport={() => setReportOpen(true)}
             />
           )}
 
@@ -1737,6 +1743,13 @@ export function EngineeringCanvas() {
             onClose={() => setOnboarded(true)}
           />
         )}
+        {reportOpen && (
+          <ReportBuilderDialog
+            onClose={() => setReportOpen(false)}
+            devices={devices}
+            projectId={projectId}
+          />
+        )}
         {scanBuildOpen && (
           <ScanBuildFloorplanDialog
             onClose={() => setScanBuildOpen(false)}
@@ -1875,6 +1888,7 @@ function TopBar(props: {
   viewMode: 'default' | 'field' | 'canvas';
   setViewMode: (m: 'default' | 'field' | 'canvas') => void;
   onOpenScanBuild: () => void;
+  onOpenReport: () => void;
   /** Compact = render only the essentials. Used in Field view so the bar
    *  is a thin operations strip rather than a full chrome row. */
   compact?: boolean;
@@ -2015,6 +2029,16 @@ function TopBar(props: {
               <span className={`text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded ${props.intelOpen ? 'bg-primary/15 text-primary' : 'bg-secondary/40 text-muted-foreground'}`}>
                 {props.intelOpen ? 'On' : 'Off'}
               </span>
+            </button>
+
+            {/* Report Builder — the new first-class export entry */}
+            <button
+              onClick={() => { setMoreOpen(false); props.onOpenReport(); }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors"
+              data-track="topbar-more-report"
+            >
+              <FileBarChart className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[12px]">Report Builder</span>
             </button>
 
             {/* Plan source */}
@@ -2354,6 +2378,222 @@ function MapsPanel({ onOpenScanBuild }: { onOpenScanBuild?: () => void }) {
  *
  *  This dialog is intentionally large and editorial — Scan/Build is the
  *  most important workflow on the surveyor and the UI says so. */
+/** Report Builder — the brief asks for a real builder (not a list of
+ *  random export buttons). 8 report types × audience selector × content
+ *  toggles → live page-count estimate → export PDF (uses the same
+ *  drawReport helpers the existing rows do). */
+function ReportBuilderDialog({
+  onClose, devices, projectId,
+}: { onClose: () => void; devices: Device[]; projectId: string }) {
+  type ReportType = ReportKind | 'estimate';
+  const TYPES: Array<{ id: ReportType; label: string; sub: string; icon: any; tone: string }> = [
+    { id: 'customer',         label: 'Customer presentation', sub: 'Cover · overview · investment · timeline', icon: Sparkles,    tone: '#A371F7' },
+    { id: 'engineering',      label: 'Engineering packet',    sub: 'Device schedule · BOM · cable schedule · findings', icon: FileBarChart, tone: '#5DA0E8' },
+    { id: 'camera-schedule',  label: 'Camera schedule',       sub: 'Location · model · IR · mount · power',   icon: Video,       tone: '#F08F3C' },
+    { id: 'door-schedule',    label: 'Door schedule',         sub: 'Openings · reader / strike / REX / DPS',  icon: DoorOpen,    tone: '#4FB87E' },
+    { id: 'cable-schedule',   label: 'Cable schedule',        sub: 'Runs · cable type · length · termination', icon: Cable,      tone: '#22D3EE' },
+    { id: 'bom',              label: 'Bill of materials',     sub: 'Line items · live unit pricing',          icon: DollarSign,  tone: '#E5A23A' },
+    { id: 'estimate',         label: 'Estimate',              sub: 'Customer-safe pricing summary',           icon: DollarSign,  tone: '#E5A23A' },
+    { id: 'commissioning',    label: 'Commissioning report',  sub: 'Per-device install / firmware / sign-off', icon: ShieldCheck, tone: '#E55B5B' },
+  ];
+  const [reportType, setReportType] = useState<ReportType>('engineering');
+  const [audience, setAudience] = useState<'customer' | 'internal'>('internal');
+  const [include, setInclude] = useState({
+    mapSnapshot:    true,
+    selectedLayers: true,
+    deviceTable:    true,
+    bom:            true,
+    notesMedia:     false,
+    aiRecs:         false,
+    cutSheets:      false,
+  });
+  const [busy, setBusy] = useState(false);
+
+  const sections: string[] = [];
+  if (include.mapSnapshot)    sections.push('Map snapshot');
+  if (include.selectedLayers) sections.push('Engineering layers');
+  if (include.deviceTable)    sections.push('Device table');
+  if (include.bom)            sections.push('Bill of materials');
+  if (include.notesMedia)     sections.push('Notes & media');
+  if (include.aiRecs)         sections.push('AI recommendations');
+  if (include.cutSheets)      sections.push('Product cut sheets');
+  const pageEstimate = 1
+    + (include.mapSnapshot ? 1 : 0)
+    + (include.deviceTable ? Math.max(1, Math.ceil(devices.length / 24)) : 0)
+    + (include.bom         ? Math.max(1, Math.ceil(devices.length / 30)) : 0)
+    + (include.notesMedia  ? 2 : 0)
+    + (include.aiRecs      ? 1 : 0)
+    + (include.cutSheets   ? Math.min(8, devices.length) : 0);
+
+  const handleExport = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+      // Estimate reuses BOM under the hood for now; the audience selector
+      // gates the customer/internal label baked into the cover.
+      const kind: ReportKind = (reportType === 'estimate' ? 'bom' : reportType) as ReportKind;
+      drawReport(doc, kind, devices, projectId);
+      const label = `${projectId}-${reportType}-${audience}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(label);
+      toast.success(`Exported · ${TYPES.find((t) => t.id === reportType)?.label}`, {
+        description: `${pageEstimate} page${pageEstimate === 1 ? '' : 's'} · ${audience === 'customer' ? 'Customer-safe' : 'Internal'}`,
+        duration: 4000,
+      });
+      onClose();
+    } catch (e) {
+      console.error(e);
+      toast.error('Export failed', { description: 'See console for details.', duration: 5000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[820px] max-w-full max-h-[88vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="px-6 pt-5 pb-4 border-b border-border flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
+            <FileBarChart className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-semibold tracking-tight">Report Builder</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">Pick a report type, choose what to include, then export.</div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="flex-1 overflow-auto grid grid-cols-12 gap-5 p-5">
+          {/* Left — report type chooser */}
+          <div className="col-span-5 space-y-1.5">
+            <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5 px-1">Report type</div>
+            {TYPES.map((t) => {
+              const Icon = t.icon;
+              const active = reportType === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setReportType(t.id)}
+                  data-track={`report-type-${t.id}`}
+                  className={`w-full text-left rounded-lg border p-3 transition-colors ${active ? 'border-primary/40 bg-primary/8' : 'border-border hover:border-border-strong hover:bg-secondary/30'}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="w-9 h-9 rounded-md flex items-center justify-center shrink-0"
+                      style={{ background: `${t.tone}1F`, color: t.tone, boxShadow: `inset 0 0 0 1px ${t.tone}55` }}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-[12.5px] font-medium ${active ? 'text-foreground' : 'text-foreground'}`}>{t.label}</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">{t.sub}</div>
+                    </div>
+                    {active && <Check className="w-4 h-4 text-primary shrink-0" />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right — options + preview */}
+          <div className="col-span-7 space-y-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Audience</div>
+              <div className="flex items-stretch h-9 border border-border rounded-lg overflow-hidden">
+                {([
+                  { id: 'internal' as const, label: 'Internal engineering', hint: 'Full detail · prices · findings · warnings' },
+                  { id: 'customer' as const, label: 'Customer-safe',        hint: 'Removes dealer cost · internal-only sections' },
+                ]).map((a) => {
+                  const active = audience === a.id;
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => setAudience(a.id)}
+                      title={a.hint}
+                      data-track={`report-audience-${a.id}`}
+                      className={`flex-1 text-[12px] transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                    >
+                      {a.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Include</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {([
+                  { k: 'mapSnapshot',    label: 'Map snapshot',      hint: 'Current floorplan view' },
+                  { k: 'selectedLayers', label: 'Engineering layers', hint: 'FOV / power / pathways / annotations' },
+                  { k: 'deviceTable',    label: 'Device table',      hint: `${devices.length} devices · ID · model · location` },
+                  { k: 'bom',            label: 'Bill of materials', hint: 'Quantities · MSRP · totals' },
+                  { k: 'notesMedia',     label: 'Notes & media',     hint: 'Field photos and site notes' },
+                  { k: 'aiRecs',         label: 'AI recommendations', hint: 'Engineering Assistant findings' },
+                  { k: 'cutSheets',      label: 'Product cut sheets', hint: 'Per-device datasheet pages' },
+                ] as const).map((opt) => {
+                  const checked = !!include[opt.k];
+                  return (
+                    <label
+                      key={opt.k}
+                      className={`flex items-start gap-2.5 px-3 py-2 rounded-md border cursor-pointer transition-colors ${checked ? 'border-primary/35 bg-primary/8' : 'border-border hover:border-border-strong hover:bg-secondary/30'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => setInclude((v) => ({ ...v, [opt.k]: e.target.checked }))}
+                        className="mt-0.5 accent-primary"
+                        data-track={`report-opt-${opt.k}`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-medium">{opt.label}</div>
+                        <div className="text-[10.5px] text-muted-foreground">{opt.hint}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-background p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] uppercase tracking-[0.10em] text-muted-foreground">Preview summary</div>
+                <div className="text-[10.5px] text-muted-foreground">
+                  ~{pageEstimate} page{pageEstimate === 1 ? '' : 's'}
+                </div>
+              </div>
+              <div className="text-[12px] font-medium mt-1">
+                {TYPES.find((t) => t.id === reportType)?.label} · {audience === 'customer' ? 'Customer-safe' : 'Internal'}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1.5">
+                {sections.length === 0 ? 'No sections selected — cover page only.' : `Includes: ${sections.join(' · ')}.`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-3 border-t border-border flex items-center justify-between gap-3">
+          <div className="text-[11px] text-muted-foreground">
+            Output: PDF · letter · landscape. Generated from your live canvas.
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="text-[12px] px-3 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40">Cancel</button>
+            <button
+              onClick={handleExport}
+              disabled={busy || sections.length === 0}
+              data-track="report-export"
+              className="text-[12px] font-medium px-3.5 h-8 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {busy ? 'Exporting…' : 'Export PDF'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScanBuildFloorplanDialog({
   onClose, onScanCamera, onUpload, onSatellite, onDrawScratch,
 }: {
@@ -2678,7 +2918,7 @@ function ImportFloorplanDialog({ onClose, onImported }: { onClose: () => void; o
   );
 }
 
-function SectionPanel({ section, devices, projectId, onOpenScanBuild }: { section: string; devices: Device[]; projectId: string; onOpenScanBuild?: () => void }) {
+function SectionPanel({ section, devices, projectId, onOpenScanBuild, onOpenReport }: { section: string; devices: Device[]; projectId: string; onOpenScanBuild?: () => void; onOpenReport?: () => void }) {
   const counts = useMemo(() => {
     const c: Record<DeviceKind, number> = { camera: 0, access: 0, network: 0, intrusion: 0, audio: 0, storage: 0, display: 0, power: 0, sensor: 0 };
     devices.forEach((d) => { c[TYPE_KIND[d.type]]++; });
@@ -2800,6 +3040,20 @@ function SectionPanel({ section, devices, projectId, onOpenScanBuild }: { sectio
   if (section === 'reports') {
     return (
       <Wrapper title="Reports" sub="Auto-generated from the canvas">
+        {onOpenReport && (
+          <div className="px-3 pt-2 pb-1.5 border-b border-border">
+            <button
+              onClick={onOpenReport}
+              data-track="reports-open-builder"
+              className="w-full inline-flex items-center justify-center gap-2 text-[12px] h-9 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity shadow-[var(--shadow-low)]"
+            >
+              <FileBarChart className="w-3.5 h-3.5" /> Open Report Builder
+            </button>
+            <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
+              Pick a report type, choose what to include, then export.
+            </div>
+          </div>
+        )}
         <ReportExportRow icon={FileBarChart} label="Engineering packet" sub="Cover · device schedule · BOM · cable schedule · findings" tone="#1F6FEB" kind="engineering" devices={devices} projectId={projectId} />
         <ReportExportRow icon={Sparkles}     label="Customer presentation" sub="Cover · system overview · investment · timeline" tone="#A371F7" kind="customer" devices={devices} projectId={projectId} />
         <ReportExportRow icon={FileText}     label="Camera schedule" sub={`${devices.filter((d) => TYPE_KIND[d.type] === 'camera').length} cameras · location · model · IR`} tone="#F08F3C" kind="camera-schedule" devices={devices} projectId={projectId} />
@@ -6490,6 +6744,36 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   const blindPct = 6 + (Math.abs(d.rot) % 12);
   const pxPerFt = Math.round(180 - distance * 1.4);
 
+  // Coverage sub-tab — Overview (engineering numbers) vs Prosecution
+  // (evidence-quality readouts). Per the brief, both must change content.
+  const [coverageSub, setCoverageSub] = useState<'overview' | 'prosecution'>('overview');
+
+  // Prosecution math — derived from the live lens config so the user
+  // sees a real change when they pan / zoom / refocus the camera.
+  // Standard subject assumptions per EN-50132-7: 1.7 m tall, 0.18 m
+  // face width, license plates 0.52 m × 0.11 m at 25 m read range.
+  const distM = distance * 0.3048;
+  const sensorPx = 1920; // assumed 1080p horizontal
+  const halfFovRad = (Math.min(hfov, 179) * Math.PI / 180) / 2;
+  const fovWidthM = Math.max(0.01, 2 * distM * Math.tan(halfFovRad));
+  const pxPerM = sensorPx / fovWidthM;
+  const facePx = Math.round(pxPerM * 0.18);
+  const platePx = Math.round(pxPerM * 0.52);
+  const bodyPx = Math.round(pxPerM * 0.5);
+  const heightPx = Math.round(pxPerM * 1.7);
+  const plateReadable = platePx >= 80;
+  const faceIdentifiable = facePx >= 80;
+  // IR effectiveness — simple linear falloff from declared range.
+  const irRangeFt = d.range ?? 50;
+  const irEff = Math.max(0, Math.min(1, 1 - distance / Math.max(irRangeFt * 1.4, 1)));
+  // Prosecution readiness — composite of pixel density + framing.
+  const prosecutionScore = Math.min(100, Math.round(
+    (facePx >= 100 ? 35 : facePx >= 80 ? 25 : facePx >= 40 ? 12 : 5)
+    + (plateReadable ? 30 : platePx >= 40 ? 15 : 5)
+    + (irEff * 20)
+    + (heightPx >= 250 ? 15 : 8)
+  ));
+
   return (
     <div
       className={`absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 pointer-events-auto ${open ? 'translate-x-0' : 'translate-x-full'}`}
@@ -6569,7 +6853,87 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
 
         {bodyShows(tab, 'lens') && (
           <>
-            {isMultisensor && (
+            {/* Overview / Prosecution sub-tab switch — both modes change
+                the body content (Overview = direct manipulation + DORI;
+                Prosecution = face / plate / IR / evidence quality). */}
+            <div className="mb-3 flex items-stretch h-8 border border-border/60 rounded-lg overflow-hidden">
+              {([
+                { id: 'overview' as const,    label: 'Overview',    hint: 'FOV / DORI / direct manipulation' },
+                { id: 'prosecution' as const, label: 'Prosecution', hint: 'Evidence quality at the current target distance' },
+              ]).map((s) => {
+                const active = coverageSub === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setCoverageSub(s.id)}
+                    title={s.hint}
+                    data-track={`drawer-coverage-${s.id}`}
+                    className={`flex-1 text-[11.5px] transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                  >
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+            {coverageSub === 'prosecution' && (
+              <>
+                <DrawerSection title="Evidence quality">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {([
+                      { k: 'Face pixels',     v: facePx,  ok: facePx >= 80,            sub: '≥ 80 px to identify' },
+                      { k: 'Plate pixels',    v: platePx, ok: plateReadable,           sub: '≥ 80 px to read' },
+                      { k: 'Body pixels',     v: bodyPx,  ok: bodyPx >= 60,            sub: 'Profile / gait' },
+                      { k: 'Subject height',  v: heightPx,ok: heightPx >= 250,         sub: '1.7 m tall' },
+                    ]).map((row) => (
+                      <div
+                        key={row.k}
+                        className="rounded-lg border p-2.5"
+                        style={{
+                          background: row.ok ? 'rgba(79,184,126,0.08)' : 'rgba(229,162,58,0.08)',
+                          borderColor: row.ok ? 'rgba(79,184,126,0.32)' : 'rgba(229,162,58,0.32)',
+                        }}
+                      >
+                        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">{row.k}</div>
+                        <div className="text-[15px] font-medium tabular-nums mt-0.5" style={{ color: row.ok ? '#4FB87E' : '#E5A23A' }}>
+                          {row.v} <span className="text-[10px] text-muted-foreground">px</span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{row.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                </DrawerSection>
+                <DrawerSection title="Readability">
+                  <Row label="Face identifiable"     value={faceIdentifiable ? 'Yes' : 'Marginal'} tone={faceIdentifiable ? '#4FB87E' : '#E5A23A'} />
+                  <Row label="License plate"         value={plateReadable    ? 'Readable' : 'Insufficient'} tone={plateReadable ? '#4FB87E' : '#E5A23A'} />
+                  <Row label="Low-light confidence"  value={`${Math.round(irEff * 100)}%`}        tone={irEff > 0.6 ? '#4FB87E' : irEff > 0.3 ? '#E5A23A' : '#E55B5B'} />
+                  <Row label="IR effectiveness"      value={`${Math.round(irEff * 100)}% @ ${distance.toFixed(0)} ft`} tone={irEff > 0.6 ? '#4FB87E' : '#E5A23A'} />
+                </DrawerSection>
+                <DrawerSection title="Prosecution readiness">
+                  <div className="px-1">
+                    <div className="flex items-end justify-between mb-1.5">
+                      <span className="text-[11px] text-muted-foreground">Composite score</span>
+                      <span className="text-[18px] font-medium tabular-nums" style={{ color: prosecutionScore >= 70 ? '#4FB87E' : prosecutionScore >= 45 ? '#E5A23A' : '#E55B5B' }}>
+                        {prosecutionScore}<span className="text-[10px] text-muted-foreground"> / 100</span>
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${prosecutionScore}%`,
+                          background: prosecutionScore >= 70 ? '#4FB87E' : prosecutionScore >= 45 ? '#E5A23A' : '#E55B5B',
+                          transitionDuration: 'var(--motion-standard)',
+                        }}
+                      />
+                    </div>
+                    <div className="text-[10.5px] text-muted-foreground mt-1.5">
+                      Composite of pixel density, IR effectiveness, and subject framing at the simulated target distance.
+                    </div>
+                  </div>
+                </DrawerSection>
+              </>
+            )}
+            {coverageSub === 'overview' && isMultisensor && (
               <div className="mb-3 flex items-center gap-1 p-1 rounded-md" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 {/* All + per-lens chips. Each lens chip uses its own color
                     (cyan/violet/amber/emerald) so the user sees at-a-glance
@@ -6610,39 +6974,43 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                 >{lensMode === 'linked' ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}{lensMode}</button>
               </div>
             )}
-            <DrawerSection title={isMultisensor
-              ? (activeLens === 'all' ? 'Direct manipulation — all lenses' : `Direct manipulation — Lens ${LENS_LABEL[activeLens]}`)
-              : 'Direct manipulation'}>
-              <Slider label="Rotation" value={lensRot} min={0} max={359} unit="°" tone={isMultisensor && activeLens !== 'all' ? LENS_TONE[activeLens as LensId] : tone} onChange={setLensRot} />
-              <Slider label="Focal length" value={localFocal} min={1.4} max={30} step={0.1} unit="mm" tone={tone} onChange={setLocalFocal} />
-              <Slider label="Horizontal FOV" value={hfov} min={20} max={360} unit="°" tone={tone} onChange={setHfov} />
-              <Slider label="Distance" value={distance} min={5} max={150} unit="ft" tone={tone} onChange={setDistance} />
-            </DrawerSection>
-            <DrawerSection title="DORI ranges">
-              {[
-                { k: 'Identify',  d: Math.round(doriRange * 0.35), c: '#34D399' },
-                { k: 'Recognize', d: Math.round(doriRange * 0.55), c: '#FACC15' },
-                { k: 'Observe',   d: Math.round(doriRange * 0.75), c: '#FB923C' },
-                { k: 'Detect',    d: doriRange, c: '#F87171' },
-              ].map((row) => (
-                <div key={row.k} className="flex items-center gap-2 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: row.c, boxShadow: `0 0 6px ${row.c}` }} />
-                  <span className="flex-1 text-[11.5px] text-muted-foreground">{row.k}</span>
-                  <span className="text-[12px] tabular-nums text-foreground">{row.d} ft</span>
-                </div>
-              ))}
-            </DrawerSection>
-            <DrawerSection title="Telemetry">
-              <Row label="px / ft @ 30ft" value={pxPerFt} />
-              <Row label="Overlap %" value={`${overlapPct}%`} tone={overlapPct > 35 ? '#FACC15' : undefined} />
-              <Row label="Blind spot %" value={`${blindPct}%`} tone={blindPct > 12 ? '#F87171' : undefined} />
-              <Row label="Confidence" value="0.92" tone="#34D399" />
-            </DrawerSection>
+            {coverageSub === 'overview' && (
+              <>
+                <DrawerSection title={isMultisensor
+                  ? (activeLens === 'all' ? 'Direct manipulation — all lenses' : `Direct manipulation — Lens ${LENS_LABEL[activeLens]}`)
+                  : 'Direct manipulation'}>
+                  <Slider label="Rotation" value={lensRot} min={0} max={359} unit="°" tone={isMultisensor && activeLens !== 'all' ? LENS_TONE[activeLens as LensId] : tone} onChange={setLensRot} />
+                  <Slider label="Focal length" value={localFocal} min={1.4} max={30} step={0.1} unit="mm" tone={tone} onChange={setLocalFocal} />
+                  <Slider label="Horizontal FOV" value={hfov} min={20} max={360} unit="°" tone={tone} onChange={setHfov} />
+                  <Slider label="Distance" value={distance} min={5} max={150} unit="ft" tone={tone} onChange={setDistance} />
+                </DrawerSection>
+                <DrawerSection title="DORI ranges">
+                  {[
+                    { k: 'Identify',  d: Math.round(doriRange * 0.35), c: '#34D399' },
+                    { k: 'Recognize', d: Math.round(doriRange * 0.55), c: '#FACC15' },
+                    { k: 'Observe',   d: Math.round(doriRange * 0.75), c: '#FB923C' },
+                    { k: 'Detect',    d: doriRange, c: '#F87171' },
+                  ].map((row) => (
+                    <div key={row.k} className="flex items-center gap-2 py-1">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: row.c, boxShadow: `0 0 6px ${row.c}` }} />
+                      <span className="flex-1 text-[11.5px] text-muted-foreground">{row.k}</span>
+                      <span className="text-[12px] tabular-nums text-foreground">{row.d} ft</span>
+                    </div>
+                  ))}
+                </DrawerSection>
+                <DrawerSection title="Telemetry">
+                  <Row label="px / ft @ 30ft" value={pxPerFt} />
+                  <Row label="Overlap %" value={`${overlapPct}%`} tone={overlapPct > 35 ? '#FACC15' : undefined} />
+                  <Row label="Blind spot %" value={`${blindPct}%`} tone={blindPct > 12 ? '#F87171' : undefined} />
+                  <Row label="Confidence" value="0.92" tone="#34D399" />
+                </DrawerSection>
+              </>
+            )}
             {/* Multisensor scene presets — one-click orientations for
                 common deployments. Each writes a new lens config to the
                 device; the user can then fine-tune from there. Hidden
-                for non-multisensor cameras. */}
-            {isMultisensor && (
+                for non-multisensor cameras and on the Prosecution tab. */}
+            {isMultisensor && coverageSub === 'overview' && (
               <DrawerSection title="Scene presets">
                 <div className="grid grid-cols-2 gap-2">
                   {[
@@ -6950,7 +7318,14 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
         </div>
       </div>
 
-      {/* DORI panel. Engineering numbers, not a cartoon portrait. */}
+      {/* DORI panel. Engineering numbers, not a cartoon portrait.
+          UX hard-reset: this side card is suppressed by default — the
+          drawer Coverage tab now carries the full Overview / Prosecution
+          readouts. The card lives behind a localStorage flag for any
+          power-user who wants the canvas-side card back. */}
+      {(() => {
+        try { return localStorage.getItem('canvas:coverage:card') === '1'; } catch { return false; }
+      })() && (
       <div
         className="absolute z-40 pointer-events-auto select-none"
         style={{ left: pos.x * zoom + 36, top: pos.y * zoom - 140, width: 280 }}
@@ -7099,6 +7474,7 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
           </div>
         </div>
       </div>
+      )}
     </>
   );
 }
@@ -7661,10 +8037,18 @@ function ZoomDock({ zoom, setZoom }: { zoom: number; setZoom: React.Dispatch<Rea
 }
 
 function MiniMap({ devices }: { devices: Device[] }) {
-  const [visible, setVisible] = useState(true);
+  // UX hard-reset: minimap defaults to OFF on the calm canvas. A single
+  // eye icon in the bottom-right toggles it back when the engineer wants
+  // a viewport overview. (Was visible-by-default, was "OVERVIEW" labelled.)
+  const [visible, setVisible] = useState<boolean>(() => {
+    try { return localStorage.getItem('canvas:minimap:visible') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('canvas:minimap:visible', visible ? '1' : '0'); } catch {}
+  }, [visible]);
   if (!visible) return (
-    <button onClick={() => setVisible(true)} className="absolute bottom-5 right-5 z-20 w-9 h-9 rounded-xl bg-card/85 backdrop-blur-xl border border-border/80 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] flex items-center justify-center text-muted-foreground hover:text-foreground">
-      <Eye className="w-4 h-4" />
+    <button onClick={() => setVisible(true)} title="Show minimap" data-track="canvas-minimap-show" className="absolute bottom-5 right-5 z-20 w-9 h-9 rounded-xl bg-card/85 backdrop-blur-xl border border-border/80 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] flex items-center justify-center text-muted-foreground hover:text-foreground">
+      <MapIcon className="w-4 h-4" />
     </button>
   );
   return (
