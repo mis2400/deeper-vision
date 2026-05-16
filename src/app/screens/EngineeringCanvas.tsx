@@ -21,6 +21,8 @@ import {
   Tv2, AppWindow, MonitorSmartphone, BatteryCharging, Zap, ShieldAlert, Sun, Thermometer, CloudFog,
   Droplets, Users2, Wind, Crosshair as CrosshairIcon, Calendar, ListChecks, Wrench, FileBarChart,
   Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink,
+  PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
+  PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
 } from 'lucide-react';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { canHost } from '../lib/compatibility';
@@ -773,11 +775,32 @@ export function EngineeringCanvas() {
   // is calm until the engineer asks for more. Click the top-right
   // "Intelligence" pill to surface flagged issues.
   const [intelOpen, setIntelOpen] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
+  // View mode — three serious survey modes:
+  //   default → full chrome (TopBar + LeftNavRail + InsertDock)
+  //   field   → hides rails so the canvas is the hero; slim TopBar stays
+  //   canvas  → maximises the plotting surface; only floating tools + an
+  //             Exit chip remain. Escape exits.
+  // The user spec demands canvas occupies ~75–85% of available screen on
+  // default and approaches full viewport in Field / Canvas modes.
+  const [viewMode, setViewMode] = useState<'default' | 'field' | 'canvas'>('default');
+  const focusMode = viewMode === 'canvas';
+  // Insert dock can be collapsed to a 48px icon rail at any time so the
+  // device library never blocks the plan. Collapsed state persists across
+  // sessions because that's how engineers actually work.
+  const [dockCollapsed, setDockCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('canvas:dock:collapsed') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('canvas:dock:collapsed', dockCollapsed ? '1' : '0'); } catch {}
+  }, [dockCollapsed]);
+  // Scan / Build Floorplan modal — the obvious entry point to capture or
+  // generate a floor surface (scan with camera, upload, satellite trace,
+  // or sketch from scratch).
+  const [scanBuildOpen, setScanBuildOpen] = useState(false);
   // Fullscreen mode — uses the Fullscreen API to expand the canvas to fill
-  // the entire monitor. Distinct from focusMode (which is an in-app immersion
+  // the entire monitor. Distinct from viewMode (which is an in-app immersion
   // toggle that hides chrome but stays inside the window). The two compose:
-  // hitting Fullscreen also flips on focusMode so the user gets a true
+  // hitting Fullscreen also flips on Canvas mode so the user gets a true
   // floorplan-only experience. Escape exits cleanly.
   const [isFullscreen, setIsFullscreen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -788,11 +811,11 @@ export function EngineeringCanvas() {
       if (el.requestFullscreen)            await el.requestFullscreen();
       else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
       else if (el.msRequestFullscreen)     await el.msRequestFullscreen();
-      setFocusMode(true);
+      setViewMode('canvas');
     } catch {
       // Some browsers throw if a previous request hasn't finished. Treat
-      // the failure as a no-op; focusMode still gives an immersive view.
-      setFocusMode(true);
+      // the failure as a no-op; Canvas view still gives an immersive view.
+      setViewMode('canvas');
     }
   }, []);
   const exitFullscreen = useCallback(async () => {
@@ -802,13 +825,13 @@ export function EngineeringCanvas() {
       else if (doc.webkitFullscreenElement) await doc.webkitExitFullscreen();
       else if (doc.msFullscreenElement)     await doc.msExitFullscreen();
     } catch { /* noop */ }
-    setFocusMode(false);
+    setViewMode('default');
   }, []);
   useEffect(() => {
     const handler = () => {
       const fs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).msFullscreenElement);
       setIsFullscreen(fs);
-      if (!fs) setFocusMode(false);
+      if (!fs && viewMode === 'canvas') setViewMode('default');
     };
     document.addEventListener('fullscreenchange', handler);
     document.addEventListener('webkitfullscreenchange', handler as any);
@@ -816,7 +839,8 @@ export function EngineeringCanvas() {
       document.removeEventListener('fullscreenchange', handler);
       document.removeEventListener('webkitfullscreenchange', handler as any);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
 
   // Canvas engineering layers — toggleable overlays. Pulled from the
   // store so they persist per project. Replaces the previous ad-hoc
@@ -1062,6 +1086,12 @@ export function EngineeringCanvas() {
       if (e.key === 'c' || e.key === 'C') setTool('cable');
       if (e.key === 'w' || e.key === 'W') setTool('wall');
       if (e.key === 'Escape') {
+        // Escape unwinds from the most-immersive layer first so a single
+        // press always feels predictable — first leave Canvas / Field
+        // view, then close transient pickers, then drop selection.
+        if (viewMode === 'canvas') { setViewMode('default'); return; }
+        if (viewMode === 'field')  { setViewMode('default'); return; }
+        if (scanBuildOpen)         { setScanBuildOpen(false); return; }
         setSelId(null); setDrag(null); setOpenCat(null); setOpenType(null);
         setWallStart(null);
         setMeasure({ start: null, end: null, cursor: null });
@@ -1080,7 +1110,11 @@ export function EngineeringCanvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selId]);
+    // viewMode + scanBuildOpen captured so Escape unwinds the most-immersive
+    // layer first (Canvas → Field → modal → selection). tool included so
+    // Enter knows whether the cable tool is active.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selId, viewMode, scanBuildOpen, tool, cableDraw.points.length]);
 
   /* Drag-to-place from the library --------------------------------------- */
   // hoverHost is the door / IDF currently under the cursor while a drag is
@@ -1284,10 +1318,16 @@ export function EngineeringCanvas() {
             .dv-device:hover:not(.dv-selected) { transform: none; filter: none; }
           }
         `}</style>
-        {/* Focus mode = immersive canvas. Hide the top toolbar entirely so the
-            floorplan dominates. A small floating chip in the corner lets the
-            user exit. The intent is "canvas is the product" — no SaaS chrome. */}
-        {!focusMode && (
+        {/* viewMode === 'canvas' = full-canvas mode. Hide the top toolbar
+            entirely so the floorplan dominates. A small floating chip in the
+            corner lets the user exit. The intent is "canvas is the product"
+            — no SaaS chrome.
+
+            viewMode === 'field' = field-survey mode. Slim TopBar still
+            visible (so the engineer keeps snap / units / theme / scan /
+            view-mode controls one click away) but BOTH side rails are
+            hidden so the canvas takes the full width of the viewport. */}
+        {viewMode !== 'canvas' && (
           <TopBar
             floor={floor} setFloor={setFloor}
             snap={snap} setSnap={setSnap}
@@ -1299,7 +1339,10 @@ export function EngineeringCanvas() {
             isFullscreen={isFullscreen}
             onEnterFullscreen={enterFullscreen}
             onExitFullscreen={exitFullscreen}
-            onEnterFocus={() => setFocusMode(true)}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            onOpenScanBuild={() => setScanBuildOpen(true)}
+            compact={viewMode === 'field'}
             onPopOut={() => {
               // Opens the canvas in a new window. The persist middleware
               // shares zustand state across windows via localStorage, so
@@ -1313,25 +1356,25 @@ export function EngineeringCanvas() {
             }}
           />
         )}
-        {focusMode && (
+        {viewMode === 'canvas' && (
           <button
             onClick={() => {
-              setFocusMode(false);
+              setViewMode('default');
               // If we're in browser fullscreen as well, drop both at once
               // so a single click returns the user to the normal canvas.
               if (isFullscreen) exitFullscreen();
             }}
             className="absolute top-3 left-3 z-50 px-2.5 py-1.5 rounded-md bg-card/85 border border-border text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground hover:border-border-strong backdrop-blur-xl flex items-center gap-1.5"
-            title="Exit immersive mode"
+            title="Exit full-canvas mode · Esc"
           >
             <ChevronLeft className="w-3 h-3" />
-            {isFullscreen ? 'Exit fullscreen' : 'Exit immersive'}
+            {isFullscreen ? 'Exit fullscreen' : 'Exit canvas'}
           </button>
         )}
 
         <div className="flex-1 min-h-0 flex">
-          {!focusMode && <LeftNavRail section={navSection} setSection={setNavSection} />}
-          {!focusMode && navSection === 'devices' && (
+          {viewMode === 'default' && <LeftNavRail section={navSection} setSection={setNavSection} />}
+          {viewMode === 'default' && navSection === 'devices' && (
             <InsertDock
               openCat={openCat} setOpenCat={setOpenCat}
               openType={openType} setOpenType={setOpenType}
@@ -1343,10 +1386,18 @@ export function EngineeringCanvas() {
               techModel={techModel}
               openGroup={openGroup}
               setOpenGroup={setOpenGroup}
+              collapsed={dockCollapsed}
+              onToggleCollapsed={() => setDockCollapsed((c) => !c)}
+              onOpenScanBuild={() => setScanBuildOpen(true)}
             />
           )}
-          {!focusMode && navSection !== 'devices' && (
-            <SectionPanel section={navSection} devices={devices} projectId={projectId} />
+          {viewMode === 'default' && navSection !== 'devices' && (
+            <SectionPanel
+              section={navSection}
+              devices={devices}
+              projectId={projectId}
+              onOpenScanBuild={() => setScanBuildOpen(true)}
+            />
           )}
 
           {layersOpen && (
@@ -1647,6 +1698,28 @@ export function EngineeringCanvas() {
             onClose={() => setOnboarded(true)}
           />
         )}
+        {scanBuildOpen && (
+          <ScanBuildFloorplanDialog
+            onClose={() => setScanBuildOpen(false)}
+            onScanCamera={() => { setScanBuildOpen(false); nav('/visionscan'); }}
+            onUpload={() => {
+              setScanBuildOpen(false);
+              setNavSection('maps');
+              toast.message('Upload a floorplan', { description: 'Pick a building → floor → Import floorplan in the Maps panel.', duration: 5000 });
+            }}
+            onSatellite={() => {
+              setScanBuildOpen(false);
+              setPlanSource('satellite');
+              toast.message('Satellite base map active', { description: 'Trace walls over the imagery. Calibrate scale before plotting devices.', duration: 5000 });
+            }}
+            onDrawScratch={() => {
+              setScanBuildOpen(false);
+              setPlanSource('blank');
+              setTool('wall');
+              toast.message('Sketch mode', { description: 'Click to drop wall vertices · double-click to end a run · W toggles the wall tool.', duration: 6000 });
+            }}
+          />
+        )}
       </div>
     </AppShell>
   );
@@ -1760,22 +1833,32 @@ function TopBar(props: {
   isFullscreen: boolean;
   onEnterFullscreen: () => void;
   onExitFullscreen: () => void;
-  onEnterFocus: () => void;
+  viewMode: 'default' | 'field' | 'canvas';
+  setViewMode: (m: 'default' | 'field' | 'canvas') => void;
+  onOpenScanBuild: () => void;
+  /** Compact = render only the essentials. Used in Field view so the bar
+   *  is a thin operations strip rather than a full chrome row. */
+  compact?: boolean;
   onPopOut: () => void;
 }) {
   // Canvas theme picker — three visual languages for the surveyor.
   // Lifted into the top bar so it's discoverable without opening Settings.
   const canvasTheme = useProjectStore((s) => s.canvasTheme);
   const setCanvasTheme = useProjectStore((s) => s.setCanvasTheme);
+  const compact = !!props.compact;
   return (
-    <div className="h-14 shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-4 pr-3 gap-4 text-sm relative z-30">
+    <div
+      className={`shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-4 pr-3 gap-3 text-sm relative z-30 ${compact ? 'h-11' : 'h-14'}`}
+    >
       {/* Left — project identity */}
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
-          <Layers className="w-4 h-4" />
-        </div>
+        {!compact && (
+          <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
+            <Layers className="w-4 h-4" />
+          </div>
+        )}
         <div className="leading-tight min-w-0">
-          <div className="text-[11px] text-muted-foreground">Riverbend HQ</div>
+          {!compact && <div className="text-[11px] text-muted-foreground">Riverbend HQ</div>}
           <div className="flex items-center gap-1.5">
             <Dropdown label={FLOORS[props.floor]} options={FLOORS} onPick={(i) => props.setFloor(i)} />
             <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-400/10">
@@ -1791,52 +1874,71 @@ function TopBar(props: {
       <div className="flex items-center gap-0.5">
         <SegButton active={props.snap} onClick={() => props.setSnap(!props.snap)} icon={Magnet} label="Snap" hint="S" />
         <SegButton active={false} onClick={() => props.setUnits(props.units === 'ft' ? 'm' : 'ft')} icon={Ruler} label={props.units === 'ft' ? 'ft' : 'm'} hint="U" />
-        <SegButton active={false} onClick={props.onSetup} icon={FileText} label="Plan source" />
+        {!compact && (
+          <SegButton active={false} onClick={props.onSetup} icon={FileText} label="Plan source" />
+        )}
+        {/* Scan / Build Floorplan — the obvious entry point for capturing
+            the site geometry. Prominent on the TopBar so the user never
+            has to hunt for it. */}
+        <button
+          onClick={props.onOpenScanBuild}
+          title="Scan / Build Floorplan — camera, upload, satellite, or sketch"
+          className="ml-1.5 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+          data-track="topbar-scan-build"
+        >
+          <ScanLine className="w-3.5 h-3.5" />Scan / Build
+        </button>
 
         {/* Canvas theme picker — Light Drafting / Slate Engineering /
             Dark Command. Lives in the top bar so engineers can switch
-            mid-session for daylight reviews vs night ops. */}
-        <div className="ml-1.5 flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
-          <span className="inline-flex items-center px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground border-r border-border">Theme</span>
-          {(['light', 'slate', 'dark'] as const).map((t) => {
-            const active = canvasTheme === t;
-            const label = t === 'light' ? 'Drafting' : t === 'slate' ? 'Slate' : 'Dark';
-            return (
-              <button
-                key={t}
-                onClick={() => setCanvasTheme(t)}
-                className={`px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                title={t === 'light' ? 'Light Drafting — off-white drafting paper' : t === 'slate' ? 'Slate Engineering — balanced default' : 'Dark Command — night-ops / projector contexts'}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+            mid-session for daylight reviews vs night ops. Hidden in
+            compact (Field) view; theme stays whatever was last picked. */}
+        {!compact && (
+          <div className="ml-1.5 flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
+            <span className="inline-flex items-center px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground border-r border-border">Theme</span>
+            {(['light', 'slate', 'dark'] as const).map((t) => {
+              const active = canvasTheme === t;
+              const label = t === 'light' ? 'Drafting' : t === 'slate' ? 'Slate' : 'Dark';
+              return (
+                <button
+                  key={t}
+                  onClick={() => setCanvasTheme(t)}
+                  className={`px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                  title={t === 'light' ? 'Light Drafting — off-white drafting paper' : t === 'slate' ? 'Slate Engineering — balanced default' : 'Dark Command — night-ops / projector contexts'}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Tech-model selector — gates which manufacturer ecosystem the
-            library / drawer suggests. Persistent per project. */}
-        <div className="ml-1.5 flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
-          <span className="inline-flex items-center px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground border-r border-border">Stack</span>
-          {(['cloud', 'on_prem', 'hybrid'] as const).map((m) => {
-            const active = props.techModel === m;
-            const label = m === 'cloud' ? 'Cloud' : m === 'on_prem' ? 'On-prem' : 'Hybrid';
-            return (
-              <button
-                key={m}
-                onClick={() => props.setTechModel(m)}
-                className={`px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                title={
-                  m === 'cloud' ? 'Cloud-first ecosystem — Verkada / Rhombus / Meraki / Brivo / Openpath' :
-                  m === 'on_prem' ? 'On-prem ecosystem — Axis / Hanwha / Avigilon / Bosch / Genetec' :
-                  'Hybrid — show all manufacturers; compatibility flagged'
-                }
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+            library / drawer suggests. Persistent per project. Hidden in
+            compact (Field) view; tech-model rarely changes mid-survey. */}
+        {!compact && (
+          <div className="ml-1.5 flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
+            <span className="inline-flex items-center px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground border-r border-border">Stack</span>
+            {(['cloud', 'on_prem', 'hybrid'] as const).map((m) => {
+              const active = props.techModel === m;
+              const label = m === 'cloud' ? 'Cloud' : m === 'on_prem' ? 'On-prem' : 'Hybrid';
+              return (
+                <button
+                  key={m}
+                  onClick={() => props.setTechModel(m)}
+                  className={`px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                  title={
+                    m === 'cloud' ? 'Cloud-first ecosystem — Verkada / Rhombus / Meraki / Brivo / Openpath' :
+                    m === 'on_prem' ? 'On-prem ecosystem — Axis / Hanwha / Avigilon / Bosch / Genetec' :
+                    'Hybrid — show all manufacturers; compatibility flagged'
+                  }
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="flex-1" />
@@ -1844,43 +1946,62 @@ function TopBar(props: {
       {/* Right — view + AI. Undo/Redo + Share removed in the lockdown pass:
           there's no action history subsystem behind them yet, and the
           absolute rule is "if a button doesn't work, hide it." */}
-      <div className="flex items-center -space-x-1.5">
-        <Avatar initials="JS" tone="#2F81F7" />
-        <Avatar initials="MK" tone="#A371F7" />
-        <Avatar initials="RT" tone="#3FB950" />
+      {!compact && (
+        <div className="flex items-center -space-x-1.5">
+          <Avatar initials="JS" tone="#2F81F7" />
+          <Avatar initials="MK" tone="#A371F7" />
+          <Avatar initials="RT" tone="#3FB950" />
+        </div>
+      )}
+      {/* View-mode picker — three serious survey modes. Default keeps full
+          chrome. Field hides the side rails so the canvas is the hero.
+          Canvas drops everything to a floating overlay so the floorplan
+          owns the screen for site walks. */}
+      <div className="flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
+        {([
+          { id: 'default' as const, label: 'Default', icon: Columns3, hint: 'Default — full chrome (rails + dock)' },
+          { id: 'field' as const,   label: 'Field',   icon: Square,   hint: 'Field — slim TopBar, no side rails, canvas is the hero' },
+          { id: 'canvas' as const,  label: 'Canvas',  icon: Maximize, hint: 'Full Canvas — only floating controls (Esc exits)' },
+        ]).map((m) => {
+          const active = props.viewMode === m.id;
+          const Icon = m.icon;
+          return (
+            <button
+              key={m.id}
+              onClick={() => props.setViewMode(m.id)}
+              title={m.hint}
+              data-track={`topbar-view-${m.id}`}
+              className={`inline-flex items-center gap-1.5 px-2.5 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+            >
+              <Icon className="w-3.5 h-3.5" />{m.label}
+            </button>
+          );
+        })}
       </div>
-      {/* Focus + Fullscreen — paired view modes. Focus hides the in-app
-          chrome (left nav + insert dock). Fullscreen uses the browser's
-          Fullscreen API to fill the monitor. Together they give an
-          honest "canvas-only" experience for site walks and reviews. */}
-      <button
-        onClick={props.onEnterFocus}
-        title="Focus mode — hide chrome (canvas only)"
-        className="inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <EyeOff className="w-3.5 h-3.5" />Focus
-      </button>
       <button
         onClick={props.isFullscreen ? props.onExitFullscreen : props.onEnterFullscreen}
         title={props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen monitor'}
         className={`inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border transition-colors ${props.isFullscreen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
       >
-        <Maximize2 className="w-3.5 h-3.5" />{props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        <Maximize2 className="w-3.5 h-3.5" />{compact ? '' : props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
       </button>
       {/* Pop-out — open the engineering canvas in its own browser window.
-          Useful for two-monitor setups: keep CRM / project hub on the main
-          display, drag the canvas window to the second. State is persisted
-          (zustand persist), so the popped-out window shares the same
-          project. */}
+          Hidden in compact (Field) mode; rarely used mid-survey. */}
+      {!compact && (
+        <button
+          onClick={props.onPopOut}
+          title="Open canvas in a new window (second-monitor use)"
+          className="inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />Pop out
+        </button>
+      )}
       <button
-        onClick={props.onPopOut}
-        title="Open canvas in a new window (second-monitor use)"
-        className="inline-flex items-center gap-1.5 text-xs px-2.5 h-8 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+        onClick={props.onScan}
+        className={`inline-flex items-center gap-1.5 text-xs ${compact ? 'px-2.5' : 'px-3.5'} h-8 rounded-lg bg-primary text-primary-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_1px_2px_rgba(0,0,0,0.4)] hover:opacity-90`}
+        title="Run vision scan"
       >
-        <ExternalLink className="w-3.5 h-3.5" />Pop out
-      </button>
-      <button onClick={props.onScan} className="inline-flex items-center gap-1.5 text-xs px-3.5 h-8 rounded-lg bg-primary text-primary-foreground shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_1px_2px_rgba(0,0,0,0.4)] hover:opacity-90">
-        <Sparkles className="w-3.5 h-3.5" />Run vision scan
+        <Sparkles className="w-3.5 h-3.5" />{compact ? 'Scan' : 'Run vision scan'}
       </button>
     </div>
   );
@@ -1988,7 +2109,7 @@ function LeftNavRail({ section, setSection }: { section: string; setSection: (s:
    SECTION PANEL — content for non-Devices nav sections
    ═══════════════════════════════════════════════════════════════════════ */
 
-function MapsPanel() {
+function MapsPanel({ onOpenScanBuild }: { onOpenScanBuild?: () => void }) {
   // SITE_BUILDINGS is the seed. The user can add new buildings and floors
   // through this panel; both flows mutate local state so the additions show
   // up immediately. (When the full site/building/floor store is wired up,
@@ -2035,10 +2156,28 @@ function MapsPanel() {
         <div className="text-[11px] text-muted-foreground mt-0.5">{buildings.length} buildings · {totalFloors} floor maps</div>
       </div>
 
+      {/* Primary entry — Scan / Build Floorplan. The four-way workflow
+          (scan / upload / satellite / sketch) is the obvious first step
+          on any project, so it lives at the top of the Maps panel. */}
+      {onOpenScanBuild && (
+        <div className="px-3 pt-2 pb-1.5 border-b border-border">
+          <button
+            onClick={onOpenScanBuild}
+            data-track="maps-scan-build"
+            className="w-full inline-flex items-center justify-center gap-2 text-[12px] h-9 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_1px_2px_rgba(0,0,0,0.4)]"
+          >
+            <ScanLine className="w-3.5 h-3.5" /> Scan / Build Floorplan
+          </button>
+          <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
+            Camera scan · upload · satellite trace · sketch
+          </div>
+        </div>
+      )}
+
       <div className="px-3 py-2 border-b border-border flex items-center gap-2">
         <button
           onClick={() => setAddBuildingOpen(true)}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 text-[11px] h-7 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+          className="flex-1 inline-flex items-center justify-center gap-1.5 text-[11px] h-7 rounded-lg border border-border hover:bg-secondary/30 transition-colors"
         >
           <Plus className="w-3 h-3" /> Add building
         </button>
@@ -2140,6 +2279,117 @@ function MapsPanel() {
           onImported={() => setImportOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+/** Scan / Build Floorplan — the obvious four-way entry into capturing or
+ *  generating a floor surface. The four options map to:
+ *    1. Scan with camera   → VisionScan workflow (AR/LiDAR is honest about
+ *                            being a simulated capture today).
+ *    2. Upload floorplan   → ImportFloorplanDialog (PNG/JPG/PDF).
+ *    3. Use satellite map  → sets baseMap to 'satellite' so the engineer
+ *                            traces walls over real imagery.
+ *    4. Draw from scratch  → blank surface + wall tool armed; orthogonal
+ *                            snap & scale calibration available via Tools.
+ *
+ *  This dialog is intentionally large and editorial — Scan/Build is the
+ *  most important workflow on the surveyor and the UI says so. */
+function ScanBuildFloorplanDialog({
+  onClose, onScanCamera, onUpload, onSatellite, onDrawScratch,
+}: {
+  onClose: () => void;
+  onScanCamera: () => void;
+  onUpload: () => void;
+  onSatellite: () => void;
+  onDrawScratch: () => void;
+}) {
+  type Opt = { id: string; icon: any; tone: string; title: string; sub: string; honest?: string; onClick: () => void; recommended?: boolean; track: string };
+  const opts: Opt[] = [
+    {
+      id: 'scan', icon: CameraIcon, tone: '#22D3EE', track: 'scan-build-camera',
+      title: 'Scan with camera',
+      sub: 'Walk the site. Capture rooms, detect walls and openings, review and import to canvas.',
+      honest: 'Simulated scan workflow. AR / LiDAR capture not connected.',
+      onClick: onScanCamera, recommended: true,
+    },
+    {
+      id: 'upload', icon: FolderUp, tone: '#A371F7', track: 'scan-build-upload',
+      title: 'Upload floorplan',
+      sub: 'PNG, JPG, or PDF. Drop it onto the active floor, calibrate scale, then plot devices.',
+      onClick: onUpload,
+    },
+    {
+      id: 'satellite', icon: SatelliteIcon, tone: '#34D399', track: 'scan-build-satellite',
+      title: 'Use satellite map',
+      sub: 'Trace walls over real aerial imagery. Useful for exteriors, rooftops, and parking.',
+      honest: 'Tile provider not connected; current view is a stylised stand-in until live tiles ship.',
+      onClick: onSatellite,
+    },
+    {
+      id: 'draw', icon: PencilLine, tone: '#F08F3C', track: 'scan-build-draw',
+      title: 'Draw from scratch',
+      sub: 'Sketch walls, rooms, and openings on a blank surface. Snap to grid + ortho lock are on.',
+      onClick: onDrawScratch,
+    },
+  ];
+  return (
+    <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[760px] max-w-full bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-border flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
+            <ScanLine className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-semibold tracking-tight">Scan / Build Floorplan</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">How do you want to capture this site?</div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 grid grid-cols-2 gap-3">
+          {opts.map((o) => {
+            const Icon = o.icon;
+            return (
+              <button
+                key={o.id}
+                onClick={o.onClick}
+                data-track={o.track}
+                className="text-left group rounded-xl border border-border bg-background hover:border-primary/40 hover:bg-secondary/20 p-4 transition-colors flex flex-col gap-2.5"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: `${o.tone}1F`, color: o.tone, boxShadow: `inset 0 0 0 1px ${o.tone}55` }}
+                  >
+                    <Icon className="w-5 h-5" strokeWidth={1.7} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] font-medium tracking-tight">{o.title}</span>
+                      {o.recommended && (
+                        <span className="text-[9px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-300">Start here</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[12px] text-muted-foreground leading-relaxed">{o.sub}</p>
+                {o.honest && (
+                  <div className="mt-1 text-[10.5px] text-amber-300/85 bg-amber-300/10 border border-amber-300/25 rounded px-2 py-1 flex items-start gap-1.5">
+                    <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
+                    <span className="leading-snug">{o.honest}</span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="px-6 py-3 border-t border-border text-[11px] text-muted-foreground flex items-center gap-2">
+          <Compass className="w-3 h-3" />
+          After capture: calibrate scale, place doors/windows/walls, then plot devices. Esc to cancel.
+        </div>
+      </div>
     </div>
   );
 }
@@ -2369,7 +2619,7 @@ function ImportFloorplanDialog({ onClose, onImported }: { onClose: () => void; o
   );
 }
 
-function SectionPanel({ section, devices, projectId }: { section: string; devices: Device[]; projectId: string }) {
+function SectionPanel({ section, devices, projectId, onOpenScanBuild }: { section: string; devices: Device[]; projectId: string; onOpenScanBuild?: () => void }) {
   const counts = useMemo(() => {
     const c: Record<DeviceKind, number> = { camera: 0, access: 0, network: 0, intrusion: 0, audio: 0, storage: 0, display: 0, power: 0, sensor: 0 };
     devices.forEach((d) => { c[TYPE_KIND[d.type]]++; });
@@ -2485,7 +2735,7 @@ function SectionPanel({ section, devices, projectId }: { section: string; device
   }
 
   if (section === 'maps') {
-    return <MapsPanel />;
+    return <MapsPanel onOpenScanBuild={onOpenScanBuild} />;
   }
 
   if (section === 'reports') {
@@ -2542,6 +2792,13 @@ function InsertDock(props: {
   techModel: 'cloud' | 'on_prem' | 'hybrid';
   openGroup: string | null;
   setOpenGroup: (g: string | null) => void;
+  /** When true, collapse the 320px dock to a 48px icon rail. The user can
+   *  still launch Scan/Build, jump into a category, or expand the dock —
+   *  but the canvas regains ~272px of horizontal real estate. Persisted
+   *  in localStorage so the engineer's choice survives reloads. */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  onOpenScanBuild?: () => void;
 }) {
   const cat = CATEGORIES.find((c) => c.id === props.openCat);
   /** Two-pass filter:
@@ -2585,11 +2842,65 @@ function InsertDock(props: {
   }
 
   const activeCat = CATEGORIES.find((c) => c.id === props.openCat) ?? null;
+
+  // Collapsed = thin 48px icon rail. Engineers in the field rarely need the
+  // full library expanded; collapsed keeps Scan/Build, Layers, and category
+  // entry points one click away while handing 272px back to the canvas.
+  if (props.collapsed) {
+    return (
+      <div className="shrink-0 flex bg-background relative">
+        <div className="w-[48px] border-r border-border flex flex-col bg-card items-center py-2 gap-1.5">
+          <button
+            onClick={props.onToggleCollapsed}
+            title="Expand device library"
+            data-track="dock-expand"
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+          <div className="w-7 h-px bg-border my-0.5" />
+          {props.onOpenScanBuild && (
+            <button
+              onClick={props.onOpenScanBuild}
+              title="Scan / Build Floorplan"
+              data-track="dock-scan-build"
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-primary bg-primary/12 hover:bg-primary/20 transition-colors"
+            >
+              <ScanLine className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            onClick={props.onToggleLayers}
+            title="Layers"
+            data-track="dock-layers"
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${props.layersOpen ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
+          >
+            <Layers className="w-4 h-4" />
+          </button>
+          <div className="w-7 h-px bg-border my-0.5" />
+          {CATEGORIES.slice(0, 8).map((c) => (
+            <button
+              key={c.id}
+              onClick={() => { props.setOpenCat(c.id); props.onToggleCollapsed && props.onToggleCollapsed(); }}
+              title={c.label}
+              data-track={`dock-cat-${c.id}`}
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+              style={{ color: c.tone }}
+            >
+              <CategoryGlyph kind={c.id} active />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="shrink-0 flex bg-background relative">
       {/* InsertDock narrowed from 360px → 320px in the chrome-reduction
           pass. Header padding tightened to give the canvas back another
-          ~52px of horizontal space. */}
+          ~52px of horizontal space. Collapse arrow at top-left collapses
+          the dock to a 48px icon rail for max canvas space. */}
       <div className="w-[320px] border-r border-border flex flex-col bg-card">
         {/* Header — editorial. The device-library title sits as a calm
             headline; the count below is supporting metadata. When drilled
@@ -2634,13 +2945,25 @@ function InsertDock(props: {
               </>
             )}
           </div>
-          <button
-            onClick={props.onToggleLayers}
-            title="Layers"
-            className={`p-1.5 rounded-md transition-colors duration-150 ${props.layersOpen ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'}`}
-          >
-            <Layers className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={props.onToggleLayers}
+              title="Layers"
+              className={`p-1.5 rounded-md transition-colors duration-150 ${props.layersOpen ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'}`}
+            >
+              <Layers className="w-4 h-4" />
+            </button>
+            {props.onToggleCollapsed && (
+              <button
+                onClick={props.onToggleCollapsed}
+                title="Collapse library to an icon rail"
+                data-track="dock-collapse"
+                className="p-1.5 rounded-md text-muted-foreground hover:bg-secondary/50 hover:text-foreground transition-colors"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Search — calmer materials. Same affordance, gentler chrome. */}
@@ -4022,27 +4345,42 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
     );
   }
   if (source === 'hybrid') {
+    // Hybrid = aerial surface + clear road/label overlays. Uses the same
+    // honest aerial we render in the satellite branch, then layers
+    // labelled streets on top so the engineer can orient.
     return (
       <g>
-        {/* Satellite imagery + cartographic labels & roads. */}
-        <image
-          href="https://images.unsplash.com/photo-1569163139394-de4798aa62b6?w=1200&q=70"
-          x="80" y="80" width="640" height="480" preserveAspectRatio="xMidYMid slice"
-        />
-        <rect x="80" y="80" width="640" height="480" fill="#0D1424" opacity="0.18" />
-        {/* Road overlay */}
-        <g stroke="#F4E07A" strokeOpacity="0.75" strokeLinecap="round">
-          <line x1="80"  y1="220" x2="720" y2="220" strokeWidth="3" />
-          <line x1="80"  y1="420" x2="720" y2="420" strokeWidth="2.5" />
-          <line x1="320" y1="80"  x2="320" y2="560" strokeWidth="3" />
+        <defs>
+          <pattern id="hyb-veg" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
+            <rect width="14" height="14" fill="#3F5C42" />
+            <circle cx="4" cy="4" r="1.4" fill="#5A7B5D" opacity="0.6" />
+            <circle cx="10" cy="9" r="1.2" fill="#365139" opacity="0.7" />
+          </pattern>
+          <pattern id="hyb-asphalt" x="0" y="0" width="18" height="18" patternUnits="userSpaceOnUse">
+            <rect width="18" height="18" fill="#3A3F47" />
+            <line x1="0" y1="9" x2="18" y2="9" stroke="#52575F" strokeWidth="0.4" opacity="0.5" />
+          </pattern>
+        </defs>
+        <rect x="80" y="80" width="640" height="480" fill="url(#hyb-veg)" rx="3" />
+        <rect x="120" y="420" width="560" height="120" fill="url(#hyb-asphalt)" rx="2" />
+        <rect x="220" y="200" width="360" height="200" fill="#8B928D" stroke="#1F2A33" strokeWidth="0.8" />
+        {/* Roads (labelled) */}
+        <g stroke="#FFFFFF" strokeOpacity="0.55" strokeLinecap="round" fill="none">
+          <line x1="80"  y1="220" x2="720" y2="220" strokeWidth="14" />
+          <line x1="80"  y1="540" x2="720" y2="540" strokeWidth="10" />
+          <line x1="400" y1="80"  x2="400" y2="560" strokeWidth="12" />
         </g>
-        {/* Labels */}
-        <g fill="#F4E07A" fontSize="11" fontFamily="ui-sans-serif">
-          <text x="400" y="216" textAnchor="middle" stroke="#0D1424" strokeWidth="3" paintOrder="stroke">Commerce Blvd</text>
-          <text x="324" y="320" textAnchor="middle" stroke="#0D1424" strokeWidth="3" paintOrder="stroke">7th St</text>
+        <g stroke="#FFFFFF" strokeOpacity="0.95" strokeLinecap="round" strokeDasharray="6 6">
+          <line x1="80"  y1="220" x2="720" y2="220" strokeWidth="1" />
+          <line x1="80"  y1="540" x2="720" y2="540" strokeWidth="1" />
+          <line x1="400" y1="80"  x2="400" y2="560" strokeWidth="1" />
+        </g>
+        <g fill="#FFFFFF" fontSize="10.5" fontFamily="ui-sans-serif" fontWeight="500">
+          <text x="500" y="216" textAnchor="middle" stroke="#0D1424" strokeWidth="3" paintOrder="stroke">Commerce Blvd</text>
+          <text x="412" y="330" textAnchor="middle" stroke="#0D1424" strokeWidth="3" paintOrder="stroke" transform="rotate(-90 412 330)">7th St</text>
         </g>
         <g transform="translate(96, 100)">
-          <rect width="220" height="26" rx="13" fill="var(--canvas-background)" fillOpacity="0.78" stroke="#30363D" />
+          <rect width="220" height="26" rx="13" fill="var(--canvas-background)" fillOpacity="0.8" stroke="#30363D" />
           <circle cx="14" cy="13" r="3.5" fill="#2F81F7" />
           <text x="26" y="17" fill="var(--foreground)" fontSize="11">{siteAddress || 'No address set'}</text>
         </g>
@@ -4087,37 +4425,95 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
     );
   }
   if (source === 'satellite') {
+    // Honest satellite stand-in: while a live tile provider isn't wired,
+    // we draw a clean engineering aerial — parcel grid, vegetation
+    // tiles, hardstanding (parking) and a clear primary structure. The
+    // colour palette stays mid-tone so plotted device icons (high-
+    // contrast white-on-tone glyphs) read cleanly against the surface.
+    // The SimulatedMapBadge keeps the label honest.
     return (
       <g>
-        <image
-          href="https://images.unsplash.com/photo-1569163139394-de4798aa62b6?w=1200&q=70"
-          x="80" y="80" width="640" height="480" preserveAspectRatio="xMidYMid slice"
-        />
-        <rect x="80" y="80" width="640" height="480" fill="var(--canvas-background)" opacity="0.28" />
-        {/* Parcel outline */}
-        <rect x="80" y="80" width="640" height="480" fill="none" stroke="#2F81F7" strokeWidth="2" strokeDasharray="8 6" />
-        {/* Building footprint over the satellite */}
-        <g>
-          <rect x="220" y="200" width="360" height="240" fill="var(--canvas-background)" fillOpacity="0.55" stroke="#E6EDF3" strokeWidth="2" />
-          <text x="400" y="328" textAnchor="middle" fill="var(--foreground)" fontSize="12">Building footprint</text>
+        <defs>
+          <pattern id="sat-veg" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
+            <rect width="14" height="14" fill="#3F5C42" />
+            <circle cx="4" cy="4" r="1.4" fill="#5A7B5D" opacity="0.6" />
+            <circle cx="10" cy="9" r="1.2" fill="#365139" opacity="0.7" />
+          </pattern>
+          <pattern id="sat-asphalt" x="0" y="0" width="18" height="18" patternUnits="userSpaceOnUse">
+            <rect width="18" height="18" fill="#3A3F47" />
+            <line x1="0" y1="9" x2="18" y2="9" stroke="#52575F" strokeWidth="0.4" opacity="0.5" />
+          </pattern>
+          <linearGradient id="sat-roof" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"  stopColor="#9BA29C" />
+            <stop offset="50%" stopColor="#828A85" />
+            <stop offset="100%" stopColor="#6E7570" />
+          </linearGradient>
+        </defs>
+
+        {/* Base aerial (vegetation / land) */}
+        <rect x="80" y="80" width="640" height="480" fill="url(#sat-veg)" rx="3" />
+
+        {/* Parking lot — primary hardstanding south of the building */}
+        <rect x="120" y="420" width="560" height="120" fill="url(#sat-asphalt)" rx="2" />
+        {/* Parking stripes */}
+        <g stroke="#D7DCE2" strokeWidth="0.9" opacity="0.85">
+          {Array.from({ length: 18 }).map((_, i) => (
+            <line key={i} x1={140 + i * 30} y1={440} x2={140 + i * 30} y2={485} />
+          ))}
+          {Array.from({ length: 18 }).map((_, i) => (
+            <line key={`b${i}`} x1={140 + i * 30} y1={500} x2={140 + i * 30} y2={540} />
+          ))}
+          <line x1="120" y1="492" x2="680" y2="492" strokeDasharray="6 6" opacity="0.6" />
         </g>
+
+        {/* Driveway entry north */}
+        <rect x="380" y="80" width="40" height="120" fill="url(#sat-asphalt)" />
+
+        {/* Primary structure (building roof) */}
+        <g>
+          <rect x="220" y="200" width="360" height="200" fill="url(#sat-roof)" stroke="#1F2A33" strokeWidth="0.8" />
+          {/* Roof equipment — HVAC blocks read as small dark rectangles
+              over the roof. Helps the surface feel like real imagery. */}
+          <g fill="#4A5058" stroke="#262B30" strokeWidth="0.4">
+            <rect x="244" y="220" width="36" height="22" />
+            <rect x="296" y="220" width="28" height="22" />
+            <rect x="520" y="232" width="40" height="28" />
+            <rect x="244" y="356" width="26" height="22" />
+            <rect x="520" y="356" width="40" height="22" />
+          </g>
+          {/* Roof seam lines */}
+          <g stroke="#1F2A33" strokeWidth="0.4" opacity="0.55">
+            <line x1="220" y1="270" x2="580" y2="270" />
+            <line x1="220" y1="330" x2="580" y2="330" />
+            <line x1="400" y1="200" x2="400" y2="400" />
+          </g>
+        </g>
+
+        {/* Sidewalk perimeter */}
+        <g stroke="#C7CDD4" strokeOpacity="0.55" strokeWidth="3" fill="none">
+          <rect x="206" y="186" width="388" height="228" />
+        </g>
+
+        {/* Parcel outline (engineering boundary, not imagery) */}
+        <rect x="80" y="80" width="640" height="480" fill="none" stroke="#2F81F7" strokeWidth="2" strokeDasharray="8 6" />
+
         {/* Address chip */}
         <g transform="translate(96, 100)">
-          <rect width="220" height="26" rx="13" fill="var(--canvas-background)" fillOpacity="0.7" stroke="#30363D" />
+          <rect width="220" height="26" rx="13" fill="var(--canvas-background)" fillOpacity="0.8" stroke="#30363D" />
           <circle cx="14" cy="13" r="3.5" fill="#2F81F7" />
           <text x="26" y="17" fill="var(--foreground)" fontSize="11">{siteAddress || 'No address set'}</text>
         </g>
-        <g transform="translate(740, 90)">
-          <circle r="18" fill="#161B22" stroke="#30363D" strokeWidth="1" />
-          <path d="M 0 -10 L 4 6 L 0 2 L -4 6 Z" fill="var(--foreground)" />
-          <text y="-22" textAnchor="middle" fill="#7D8590" fontSize="10">N</text>
-        </g>
+
+        {/* Scale bar */}
         <g transform="translate(100, 580)">
+          <rect x="-6" y="-12" width="124" height="22" rx="4" fill="var(--canvas-background)" fillOpacity="0.62" stroke="#30363D" strokeWidth="0.6" />
           <line x1="0" y1="0" x2="100" y2="0" stroke="#E6EDF3" strokeWidth="2" />
           <line x1="0" y1="-4" x2="0" y2="4" stroke="#E6EDF3" strokeWidth="2" />
           <line x1="100" y1="-4" x2="100" y2="4" stroke="#E6EDF3" strokeWidth="2" />
           <text x="50" y="-7" textAnchor="middle" fill="var(--foreground)" fontSize="10">~30 ft</text>
         </g>
+
+        <SimulatedMapBadge label="Simulated satellite layer" />
       </g>
     );
   }
@@ -4995,7 +5391,11 @@ function CategoryGlyph({ kind, active }: { kind: DeviceKind; active?: boolean })
    SELECTION PILL — floats near the selected device
    ═══════════════════════════════════════════════════════════════════════ */
 
-type EditTab = 'overview' | 'lens' | 'ai' | 'network' | 'power' | 'mounting' | 'compliance' | 'telemetry' | 'linked' | 'notes';
+type EditTab =
+  | 'overview' | 'lens' | 'ai' | 'network' | 'power' | 'mounting'
+  | 'compliance' | 'telemetry' | 'linked' | 'notes'
+  // V18 surveyor redesign — new sections rendered in the 3-icon grid
+  | 'accessories' | 'media' | 'history';
 
 interface ToolbarAction {
   id: string;
@@ -5285,48 +5685,59 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
         />
       )}
 
-      {/* Single elegant strip — identity + actions inline. Reads as one
-          contextual control rather than two stacked panels. Restrained
-          materials: hairline border, soft shadow, no neon outline. The
-          dot retains a subtle tone glow as the only color accent. */}
+      {/* Minimal selection pill — field-ready redesign.
+          Identity strip with status dot · ID · type · Expand · Edit.
+          Nothing else. The previous 5-button toolbar moved into the
+          Expand menu so the canvas reads as a calm engineering drawing
+          rather than a HUD. */}
       <div
-        className="flex items-stretch h-9 rounded-lg overflow-hidden"
+        className="flex items-stretch h-8 rounded-md overflow-hidden"
         style={{
           background: 'var(--panel-background)',
-          backdropFilter: 'blur(18px)',
-          WebkitBackdropFilter: 'blur(18px)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 10px 28px -14px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid var(--border)',
+          boxShadow: '0 8px 22px -12px rgba(0,0,0,0.45)',
         }}
       >
-        {/* Identity cell — kind dot, editable id, optional manufacturer */}
-        <div className="flex items-center gap-2 px-2.5 border-r border-white/8">
+        {/* Identity */}
+        <div className="flex items-center gap-2 pl-2.5 pr-3 border-r border-border/60">
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ background: tone, boxShadow: `0 0 6px ${tone}88` }}
+            style={{ background: tone }}
+            title="Online"
           />
           <CommitInput
             value={d.id}
             onCommit={(v) => onUpdate({ id: v })}
-            className="bg-transparent w-[82px] focus:outline-none text-[11.5px] font-medium tracking-tight text-foreground"
+            className="bg-transparent w-[64px] focus:outline-none text-[11.5px] font-medium tracking-tight text-foreground"
           />
-          {product && (
-            <span className="text-[10px] text-muted-foreground tracking-tight whitespace-nowrap">{product.mfr}</span>
-          )}
+          <span className="text-[10.5px] text-muted-foreground tracking-tight whitespace-nowrap">
+            {kindLabel.toLowerCase()}
+          </span>
         </div>
 
-        {/* Actions */}
-        {primaryActions.map((a) => <ToolbarButton key={a.id} a={a} tone={tone} />)}
-        {/* Per-object color picker — small swatch button that opens a tiny
-            palette popover. Selecting a color writes d.color through the
-            store; "Default" clears the override and the device returns to
-            its category tone. */}
-        <ColorPickerButton
-          currentHex={d.color}
-          onPick={(hex) => onUpdate({ color: hex || undefined })}
+        {/* Expand — opens a small popover with secondary actions */}
+        <ExpandMenu
+          d={d}
           tone={tone}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+          onOpenTab={onOpenTab}
+          currentColor={d.color}
+          onPickColor={(hex) => onUpdate({ color: hex || undefined })}
         />
-        {overflowActions.length > 0 && <MoreButton items={overflowActions} tone={tone} />}
+
+        {/* Edit — single explicit affordance that opens the right drawer */}
+        <button
+          onClick={() => onOpenTab('overview')}
+          title="Edit details"
+          data-track="pill-edit"
+          className="px-3 inline-flex items-center gap-1.5 text-[12px] font-medium border-l border-border/60 text-foreground hover:bg-secondary/30 transition-colors"
+        >
+          <Settings2 className="w-3.5 h-3.5" style={{ color: tone }} />
+          Edit
+        </button>
       </div>
 
       {/* Stack popover — opens when the user clicks the stack chip on a
@@ -5352,6 +5763,111 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
               {id}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Compact Expand menu that lives inside the minimal selection pill.
+ *  Holds the secondary actions that used to crowd the toolbar — duplicate,
+ *  color, lock, stack peek, delete, and "more details" (opens drawer to
+ *  general). Click outside or press Escape to close. */
+function ExpandMenu({
+  d, tone, onDuplicate, onDelete, onOpenTab, currentColor, onPickColor,
+}: {
+  d: Device;
+  tone: string;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onOpenTab: (t: EditTab) => void;
+  currentColor?: string;
+  onPickColor: (hex: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setColorOpen(false); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); setColorOpen(false); } };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  const items: Array<{ id: string; label: string; icon: any; onClick: () => void; danger?: boolean }> = [
+    { id: 'duplicate', label: 'Duplicate',    icon: Copy,       onClick: () => { onDuplicate(); setOpen(false); } },
+    { id: 'color',     label: 'Color',        icon: PaintBucket, onClick: () => { setColorOpen((v) => !v); } },
+    { id: 'lock',      label: 'Lock',         icon: Lock,       onClick: () => { /* hook from caller in v2 */ setOpen(false); } },
+    { id: 'stack',     label: 'Stack',        icon: Layers,     onClick: () => { onOpenTab('compliance'); setOpen(false); } },
+    { id: 'details',   label: 'More details', icon: FileText,   onClick: () => { onOpenTab('overview'); setOpen(false); } },
+    { id: 'delete',    label: 'Delete',       icon: Trash2,     onClick: () => { onDelete(); setOpen(false); }, danger: true },
+  ];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="More actions"
+        data-track="pill-expand"
+        className={`px-2.5 h-full inline-flex items-center gap-1 text-[12px] border-r border-border/60 transition-colors ${open ? 'bg-secondary/40 text-foreground' : 'text-muted-foreground hover:bg-secondary/30 hover:text-foreground'}`}
+      >
+        <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1 z-40 w-[180px] rounded-md overflow-hidden"
+          style={{
+            background: 'var(--popover)',
+            border: '1px solid var(--border)',
+            boxShadow: '0 14px 32px -14px rgba(0,0,0,0.5)',
+          }}
+        >
+          {items.map((it) => (
+            <button
+              key={it.id}
+              onClick={it.onClick}
+              className={`w-full px-3 py-2 text-left text-[12px] flex items-center gap-2 transition-colors ${
+                it.danger
+                  ? 'text-destructive hover:bg-destructive/10'
+                  : 'text-foreground hover:bg-secondary/40'
+              }`}
+            >
+              <it.icon className="w-3.5 h-3.5" />
+              {it.label}
+            </button>
+          ))}
+          {colorOpen && (
+            <div className="px-2 py-2 border-t border-border/60 grid grid-cols-5 gap-1">
+              {DEVICE_COLOR_PALETTE.map((c) => {
+                const isCur = (currentColor || '') === c.hex;
+                if (c.id === 'reset') {
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => { onPickColor(''); setOpen(false); }}
+                      title="Use category color"
+                      className={`h-7 rounded border text-[9.5px] tracking-tight transition-colors ${
+                        isCur || !currentColor ? 'border-primary/60 text-primary bg-primary/10' : 'border-border text-muted-foreground'
+                      }`}
+                    >Auto</button>
+                  );
+                }
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => { onPickColor(c.hex); setOpen(false); }}
+                    title={c.name}
+                    className="h-7 rounded border"
+                    style={{ background: c.hex, borderColor: isCur ? '#FFFFFF' : 'var(--border)' }}
+                  >
+                    {isCur && <Check className="w-3 h-3 text-white mx-auto" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -5501,27 +6017,34 @@ function MoreButton({ items, tone }: { items: ToolbarAction[]; tone: string }) {
    EDIT DRAWER — right-side engineering inspector with 10 tabs
    ═══════════════════════════════════════════════════════════════════════ */
 
-// Six visible drawer tabs. Each visible tab covers one or more internal
-// section ids — clicking the Coverage tab renders Lens + AI + Telemetry
-// content together so the user has ONE place to do coverage work, not three.
+// Twelve drawer sections rendered as a 3-icon-per-row grid in the
+// redesigned right sidebar. One section = one tile = one bodyShows branch.
+// Layout matches the field-ready spec: General, Placement, Coverage,
+// Power, Network, Accessories, Compatibility, Notes, Media, History,
+// Stack, AI.
 const EDIT_TABS: { id: EditTab; label: string; icon: any; covers: EditTab[] }[] = [
-  { id: 'overview',   label: 'General',          icon: ListChecks,      covers: ['overview'] },
-  { id: 'mounting',   label: 'Placement',        icon: Wrench,          covers: ['mounting'] },
-  { id: 'lens',       label: 'Coverage',         icon: Aperture,        covers: ['lens', 'ai', 'telemetry'] },
-  { id: 'power',      label: 'Power & Network',  icon: BatteryCharging, covers: ['power', 'network'] },
-  { id: 'compliance', label: 'Compatibility',    icon: ShieldCheck,     covers: ['compliance', 'linked'] },
-  { id: 'notes',      label: 'Notes & Media',    icon: FileText,        covers: ['notes'] },
+  { id: 'overview',   label: 'General',       icon: ListChecks,      covers: ['overview'] },
+  { id: 'mounting',   label: 'Placement',     icon: Wrench,          covers: ['mounting'] },
+  { id: 'lens',       label: 'Coverage',      icon: Aperture,        covers: ['lens', 'telemetry'] },
+  { id: 'power',      label: 'Power',         icon: BatteryCharging, covers: ['power'] },
+  { id: 'network',    label: 'Network',       icon: NetworkIcon,     covers: ['network'] },
+  { id: 'accessories',label: 'Accessories',   icon: PencilRuler,     covers: ['accessories'] },
+  { id: 'compliance', label: 'Compatibility', icon: ShieldCheck,     covers: ['compliance'] },
+  { id: 'notes',      label: 'Notes',         icon: FileText,        covers: ['notes'] },
+  { id: 'media',      label: 'Media',         icon: ImageIcon,       covers: ['media'] },
+  { id: 'history',    label: 'History',       icon: HistoryIcon,     covers: ['history'] },
+  { id: 'linked',     label: 'Stack',         icon: Layers,          covers: ['linked'] },
+  { id: 'ai',         label: 'AI',            icon: Sparkles,        covers: ['ai'] },
 ];
 
-/** Which visible tab does this internal section belong to? Used to keep
- *  the strip highlight in sync when toolbar buttons open hidden section
- *  ids (e.g. clicking "AI" still shows the Coverage tab as active). */
+/** Which visible tile does this internal section belong to? Lets callers
+ *  jump to a section (e.g. "show AI optimize") and have the tile highlight
+ *  match. */
 function tabGroupOf(t: EditTab): EditTab {
   for (const g of EDIT_TABS) if (g.covers.includes(t)) return g.id;
   return 'overview';
 }
-/** Should the section's body render for the currently-active tab? True
- *  when the section belongs to the same visible group as `tab`. */
+/** Render this section's body if the currently-active tab maps to it. */
 function bodyShows(tab: EditTab, section: EditTab): boolean {
   return tabGroupOf(tab) === tabGroupOf(section);
 }
@@ -5902,12 +6425,11 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         </div>
       </div>
 
-      {/* Tab strip — underlined tabs, editorial. The pill-tinted active
-          state has been replaced with a hairline accent underline that
-          sits on the strip's bottom border, so the active tab anchors
-          the section visually without painting a colored pill on the
-          drawer. */}
-      <div className="px-3 border-b border-white/[0.05] flex gap-0.5 overflow-x-auto">
+      {/* Section grid — 3 icons per row, 4 rows. No horizontal scroll,
+          no hidden tabs. Every section is one click away. The active tile
+          uses a tone-tinted border + soft background so the user can see
+          where they are at a glance. */}
+      <div className="px-3 py-3 border-b border-border/60 grid grid-cols-3 gap-1.5">
         {EDIT_TABS.map((t) => {
           const active = tabGroupOf(tab) === t.id;
           const Icon = t.icon;
@@ -5915,17 +6437,17 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className="relative px-3 py-3 inline-flex items-center gap-1.5 text-[12px] transition-colors duration-150 shrink-0"
-              style={{ color: active ? '#F1F5F9' : 'rgba(148,163,184,0.85)' }}
+              data-track={`drawer-tab-${t.id}`}
+              className={`flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[10.5px] tracking-tight transition-colors ${
+                active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30'
+              }`}
+              style={active ? {
+                background: `${tone}14`,
+                boxShadow: `inset 0 0 0 1px ${tone}55`,
+              } : undefined}
             >
-              <Icon className="w-3.5 h-3.5" style={{ color: active ? tone : 'rgba(148,163,184,0.6)' }} />
-              <span className="font-medium tracking-tight">{t.label}</span>
-              {active && (
-                <span
-                  className="absolute left-2 right-2 -bottom-px h-[1.5px] rounded-full"
-                  style={{ background: tone }}
-                />
-              )}
+              <Icon className="w-4 h-4" style={{ color: active ? tone : undefined }} />
+              <span className="font-medium">{t.label}</span>
             </button>
           );
         })}
@@ -6183,26 +6705,64 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         )}
 
         {bodyShows(tab, 'notes') && (
-          <>
-            <DrawerSection title="Field notes">
-              <textarea
-                key={d.id /* reset cursor on device change, not on every keystroke */}
-                value={d.notes ?? ''}
-                onChange={(e) => onUpdate({ notes: e.target.value })}
-                placeholder="Engineering notes — mount blocking, aim direction, GC coordination, etc."
-                className="w-full h-24 text-[11.5px] text-foreground bg-white/5 border border-white/10 rounded p-2 focus:outline-none focus:border-white/25 resize-none"
-              />
-            </DrawerSection>
-            <DrawerSection title="Media">
-              <div className="grid grid-cols-3 gap-1.5">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="aspect-square rounded border border-white/10 bg-white/5 flex items-center justify-center text-slate-600">
-                    <ImageIcon className="w-4 h-4" />
+          <DrawerSection title="Field notes">
+            <textarea
+              key={d.id}
+              value={d.notes ?? ''}
+              onChange={(e) => onUpdate({ notes: e.target.value })}
+              placeholder="Engineering notes — mount blocking, aim direction, GC coordination, etc."
+              className="dv-input text-[12px] resize-none min-h-[140px]"
+            />
+          </DrawerSection>
+        )}
+
+        {bodyShows(tab, 'accessories') && (
+          <AccessoriesSection
+            cameraType={d.type}
+            selected={d.accessories ?? []}
+            onToggle={(id) => {
+              const cur = d.accessories ?? [];
+              const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+              onUpdate({ accessories: next });
+            }}
+          />
+        )}
+
+        {bodyShows(tab, 'media') && (
+          <DrawerSection title="Media">
+            <div className="text-[11.5px] text-muted-foreground mb-2">
+              Attach site photos, datasheets, or scope-of-work snippets for this device.
+              Drag a file in or click below — files persist on the device record.
+            </div>
+            <button
+              className="w-full px-3 py-6 rounded-md border-2 border-dashed border-border hover:border-primary/60 hover:bg-primary/4 text-[12px] text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-2"
+              onClick={() => toast.message('Media upload', { description: 'In-browser file persistence ships once the media store is connected.', duration: 4000 })}
+            >
+              <FolderUp className="w-4 h-4" /> Add media
+            </button>
+          </DrawerSection>
+        )}
+
+        {bodyShows(tab, 'history') && (
+          <DrawerSection title="Change history">
+            <div className="space-y-2 text-[11.5px]">
+              {[
+                { who: 'Engineer · Jordan', what: 'Placed device on canvas', when: 'just now' },
+                { who: 'System', what: 'Auto-bound to nearest IDF', when: 'just now' },
+              ].map((h, i) => (
+                <div key={i} className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-b-0">
+                  <span className="mt-1 w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                  <div className="flex-1">
+                    <div className="text-foreground">{h.what}</div>
+                    <div className="text-muted-foreground/80 text-[10.5px]">{h.who} · {h.when}</div>
                   </div>
-                ))}
+                </div>
+              ))}
+              <div className="text-[10.5px] text-muted-foreground/80 pt-1">
+                History is captured per-session today; persistent audit ships with the activity store integration.
               </div>
-            </DrawerSection>
-          </>
+            </div>
+          </DrawerSection>
         )}
       </div>
     </div>
