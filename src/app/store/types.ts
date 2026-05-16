@@ -544,9 +544,24 @@ export interface Pathway {
   points: { x: number; y: number }[];
   sourceId?: string;       // device or IDF id
   destinationId?: string;
-  cableType: CableType;
+  targetId?: string;       // alias for bundle target IDF/rack
+  cableType: CableType | string;
   cableCount: number;
   conduitFill?: number;    // 0..1 (NEC fill ratio)
+  /** When multiple paths share a bundleId, the canvas / inspector
+   *  collapses them into one labelled bundle. */
+  bundleId?: string;
+  /** Conduit assignment for this run / bundle. Type + trade size as a
+   *  string ("EMT 3/4\"") + fill % at last calculation. */
+  conduitType?: 'EMT' | 'PVC' | 'FMC' | 'LFMC' | 'raceway' | 'tray' | 'none';
+  conduitSize?: string;    // e.g. '3/4"', '1"', '1-1/4"'
+  /** Assigned IDF patch panel + port + switch + port for sequential
+   *  schedules. Written by the IDF port-schedule helper, persisted
+   *  here so refresh shows the same assignment. */
+  patchPort?: number;
+  switchPort?: number;
+  /** Tally of cable accessories counted into BOM for this run/bundle. */
+  accessories?: Partial<Record<'jack' | 'coupler' | 'patchcord' | 'label' | 'pullbox' | 'jhook' | 'tray' | 'firestop', number>>;
   lengthFt?: number;       // optional — can be derived from points + scale
   notes?: string;
 }

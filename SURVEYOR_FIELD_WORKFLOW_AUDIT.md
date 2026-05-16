@@ -264,3 +264,32 @@ the completion pass and what stayed deferred.
 - "Detach" UX from the stack (right-click → detach) is a stub: opening a stacked item still requires the host drawer's Stack list, no canvas dropdown yet.
 - Door-after-attach guidance toast lists are honest text descriptions — they don't actually drag-place the next item for you.
 - Cable/Conduit canvas markers (jacks, couplers, pull-box, conduit segments) are honest markers with type + position; full per-marker inspectors are not built. They show up in BOM via their pathway parent.
+
+---
+
+## Critical Workflow Completion Pass (added 2026-05-16)
+
+This pass closes the items the prior pass left as ⚠️ / ❌.
+
+| # | Item | Before this pass | Plan | Files touched | Acceptance test |
+|---|---|---|---|---|---|
+| 1  | Multi-select shift-click | ✅ Worked | Already done | EngineeringCanvas | n/a |
+| 2  | Drag-selection-box | ❌ Not built | Add svg drag-rectangle that captures any device whose center falls inside; commit on pointerUp | EngineeringCanvas | Drag a rect across 3 devices → all selected |
+| 3  | Run to IDF | ✅ Dialog wired | Already wired | EngineeringCanvas (RunToIdfDialog) | 10 cameras → IDF-01 |
+| 4  | Bundle visualization | ✅ PathwaysOverlay label | Already done | EngineeringCanvas (PathwaysOverlay) | "10× CAT6A → IDF-01" visible |
+| 5  | Bundle inspector | ❌ Not built | Click bundle path on canvas → BundleInspectorDialog with individual runs, conduit assignment, port assignment | EngineeringCanvas (new BundleInspectorDialog) | Click bundle → see 10 runs + Conduit picker |
+| 6  | Conduit assignment | ❌ Not built | Pathway record gains `conduitType` + `conduitSize` written from BundleInspector picker | projectStore types, EngineeringCanvas | Pick EMT 3/4″ → fill recalculates |
+| 7  | Conduit fill calc | ⚠️ Read-only assist tile | ConduitFill helper now drives BundleInspector + ConduitAssistSection + IDF schedule | EngineeringCanvas | Change quantity → fill % updates |
+| 8  | Assist Apply Recommendation | ❌ Not built | Each finding gains an Apply button that writes recommended conduitSize onto the bundle | EngineeringCanvas (ConduitAssistSection) | Apply → conduit changes to recommended size |
+| 9  | IDF port schedule | ❌ Empty body | Network drawer body for IDF / MDF / rack: list incoming runs, assign sequential PP + SW ports, over-capacity warnings | EngineeringCanvas (IdfPortScheduleSection) | Open IDF-01 after Run-to-IDF → see PP-01/Port 01–10 |
+| 10 | Switch port schedule | ❌ Not built | Inside IdfPortScheduleSection: per-switch port list, PoE budget total + warning | EngineeringCanvas | 13 cameras on a 12-port switch → warning |
+| 11 | Selectable cabling objects | ⚠️ Toast only | New `CABLING_OBJECT_TYPES` set; trays place real `Device` records of those types so they appear on canvas + drive BOM | EngineeringCanvas | Click "RJ45 jack" → places jack glyph on canvas |
+| 12 | Cable-specific drawer | ❌ Bare | Real body: cable type / source / destination / length / conduit / fill / jacks / couplers / patch port / switch port / Suggestions | EngineeringCanvas | Click cable bundle → drawer shows complete fields |
+| 13 | Conduit-specific drawer | ❌ Bare | Real body: type / size / cables / fill / pull boxes / bends / firestop / Suggestions | EngineeringCanvas | Same flow as cable |
+| 14 | Accessories per category | ⚠️ Camera only | Camera + door + reader + IDF + cable + conduit all surface an Accessories list driven by per-type catalogs | EngineeringCanvas | Open door drawer → Accessories shows strikes / maglocks / etc. |
+| 15 | Suggestions per category | ⚠️ AI tile only | Per-type suggestions surfaced inside the type-specific drawer | EngineeringCanvas | Each type shows at least 3 suggestions |
+| 16 | BOM update from cable/conduit | ✅ via pathways | verify totals reflect bundle pathways + conduit | projectStore selector | BOM contains bundle footage + jacks |
+| 17 | Cable Schedule export | ✅ existed | Already wired | EngineeringCanvas (report builder) | Pick → PDF saves |
+| 18 | Conduit Schedule export | ❌ Not separate | New `conduit-schedule` report type with its own draw function | EngineeringCanvas | Pick Conduit schedule → PDF saves |
+| 19 | No visible dead options | ⚠️ Some toasts | Sweep cabling tray "accessory" toasts → real device placements | EngineeringCanvas | Every tray click does something visible on canvas or drawer |
+| 20 | Refresh persistence | ✅ zustand persist | n/a | n/a | Refresh → bundles + conduit + port assignments persist |

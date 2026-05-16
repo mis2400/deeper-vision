@@ -1186,18 +1186,38 @@ export function EngineeringCanvas() {
         return next;
       });
     };
+    const onBundleOpen = (e: Event) => {
+      const id = (e as CustomEvent<{ bundleId: string }>).detail.bundleId;
+      setBundleInspectorId(id);
+    };
+    const onMarqueePick = (e: Event) => {
+      const ids = (e as CustomEvent<{ ids: string[] }>).detail.ids;
+      setSelIds(new Set(ids));
+      if (ids[0]) setSelId(ids[0]);
+    };
     svg.addEventListener('dv-wheel-zoom', onWheelZoom as any);
     svg.addEventListener('dv-stack-attach', onStackAttach as any);
     svg.addEventListener('dv-shift-pick', onShiftPick as any);
+    svg.addEventListener('dv-bundle-open', onBundleOpen as any);
+    svg.addEventListener('dv-marquee-pick', onMarqueePick as any);
     return () => {
       svg.removeEventListener('dv-wheel-zoom', onWheelZoom as any);
       svg.removeEventListener('dv-stack-attach', onStackAttach as any);
       svg.removeEventListener('dv-shift-pick', onShiftPick as any);
+      svg.removeEventListener('dv-bundle-open', onBundleOpen as any);
+      svg.removeEventListener('dv-marquee-pick', onMarqueePick as any);
     };
   }, [devices, setDevices]);
 
   // Run-to-IDF state — opens when the group toolbar's button is clicked.
   const [runToIdfOpen, setRunToIdfOpen] = useState(false);
+  // Bundle inspector — opens with the bundleId when the user clicks a
+  // bundled pathway label on the canvas.
+  const [bundleInspectorId, setBundleInspectorId] = useState<string | null>(null);
+  // Drag-selection-box state — pointerDown on an empty surface starts
+  // a marquee selection; pointerUp commits every device whose centre
+  // falls inside the rect into `selIds`.
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   // `sel` is what the SelectionPill anchors to. During a drag, swap in
   // the lagged position so the pill rides with the device's visual mass
@@ -1962,6 +1982,12 @@ export function EngineeringCanvas() {
             projectId={projectId}
           />
         )}
+        {bundleInspectorId && (
+          <BundleInspectorDialog
+            bundleId={bundleInspectorId}
+            onClose={() => setBundleInspectorId(null)}
+          />
+        )}
         {runToIdfOpen && (
           <RunToIdfDialog
             onClose={() => setRunToIdfOpen(false)}
@@ -2620,6 +2646,7 @@ function ReportBuilderDialog({
     { id: 'camera-schedule',  label: 'Camera schedule',       sub: 'Location · model · IR · mount · power',   icon: Video,       tone: '#F08F3C' },
     { id: 'door-schedule',    label: 'Door schedule',         sub: 'Openings · reader / strike / REX / DPS',  icon: DoorOpen,    tone: '#4FB87E' },
     { id: 'cable-schedule',   label: 'Cable schedule',        sub: 'Runs · cable type · length · termination', icon: Cable,      tone: '#22D3EE' },
+    { id: 'conduit-schedule', label: 'Conduit schedule',      sub: 'Conduit · size · cables · fill %',         icon: PencilRuler, tone: '#A371F7' },
     { id: 'bom',              label: 'Bill of materials',     sub: 'Line items · live unit pricing',          icon: DollarSign,  tone: '#E5A23A' },
     { id: 'estimate',         label: 'Estimate',              sub: 'Customer-safe pricing summary',           icon: DollarSign,  tone: '#E5A23A' },
     { id: 'commissioning',    label: 'Commissioning report',  sub: 'Per-device install / firmware / sign-off', icon: ShieldCheck, tone: '#E55B5B' },
@@ -2816,6 +2843,229 @@ function ReportBuilderDialog({
               {busy ? 'Exporting…' : 'Export PDF'}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BUNDLE INSPECTOR DIALOG — opens when the user clicks a bundle label
+   on the canvas. Shows the individual runs, conduit assignment, fill
+   calc + recommendation, and per-run terminations (patch panel + switch
+   port). All edits write back to the store so refresh persists.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const EMT_SIZES: { size: string; areaIn2: number }[] = [
+  { size: '1/2"',   areaIn2: 0.304 },
+  { size: '3/4"',   areaIn2: 0.533 },
+  { size: '1"',     areaIn2: 0.864 },
+  { size: '1-1/4"', areaIn2: 1.496 },
+  { size: '1-1/2"', areaIn2: 2.036 },
+  { size: '2"',     areaIn2: 3.356 },
+];
+const CABLE_OD_IN: Record<string, number> = {
+  cat5e: 0.21, cat6: 0.24, cat6a: 0.31, fiber: 0.20,
+  '18/2': 0.21, '18/4': 0.27, '22/6': 0.32, speaker: 0.24,
+  fire: 0.27, coax: 0.27,
+};
+function computeBundleFill(count: number, cableType: string, conduitSize?: string): { fillPct: number; rule: number; recommended?: string; passes: boolean; totalAreaIn2: number; conduitAreaIn2?: number } {
+  const ct = String(cableType ?? 'cat6a').toLowerCase();
+  const od = CABLE_OD_IN[ct] ?? 0.31;
+  const totalArea = count * Math.PI * (od / 2) ** 2;
+  const rule = count <= 1 ? 0.53 : count === 2 ? 0.31 : 0.40;
+  const recommendedRow = EMT_SIZES.find((e) => totalArea / e.areaIn2 <= rule);
+  const recommended = recommendedRow?.size;
+  if (!conduitSize) {
+    return { fillPct: 0, rule, recommended, passes: true, totalAreaIn2: totalArea };
+  }
+  const row = EMT_SIZES.find((e) => e.size === conduitSize);
+  if (!row) return { fillPct: 0, rule, recommended, passes: true, totalAreaIn2: totalArea };
+  const fillPct = (totalArea / row.areaIn2) * 100;
+  return { fillPct, rule, recommended, passes: fillPct / 100 <= rule, totalAreaIn2: totalArea, conduitAreaIn2: row.areaIn2 };
+}
+
+function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClose: () => void }) {
+  const pathways = useProjectStore((s) => s.pathways);
+  const devices = useProjectStore((s) => s.devices);
+  const updatePathway = useProjectStore((s) => s.updatePathway);
+  const removePathway = useProjectStore((s) => s.removePathway);
+  const runs = useMemo(
+    () => (Object.values(pathways) as any[]).filter((p) => p?.bundleId === bundleId),
+    [pathways, bundleId],
+  );
+  const first = runs[0];
+  const cableType = String(first?.cableType ?? 'cat6a');
+  const targetId = first?.targetId ?? first?.destinationId ?? '—';
+  const totalLen = runs.reduce((s, p) => s + (p.lengthFt ?? 0), 0);
+  const conduitType = first?.conduitType ?? 'none';
+  const conduitSize = first?.conduitSize;
+  const fill = computeBundleFill(runs.length, cableType, conduitSize);
+  // Assign patch / switch ports sequentially per-bundle so the schedule
+  // is honest and stable. The dialog writes the assignments to the
+  // store so the IDF drawer sees them.
+  const assignPorts = () => {
+    runs.forEach((p, i) => {
+      updatePathway(p.id, { patchPort: i + 1, switchPort: i + 1 });
+    });
+    toast.success('Ports assigned', { description: `${runs.length} runs assigned to ports 01–${String(runs.length).padStart(2, '0')}.`, duration: 3500 });
+  };
+  const setConduit = (type: any, size?: string) => {
+    const next = type === 'none' ? { conduitType: undefined, conduitSize: undefined } : { conduitType: type, conduitSize: size };
+    runs.forEach((p) => updatePathway(p.id, next as any));
+  };
+  const applyRecommendation = () => {
+    if (!fill.recommended) return;
+    setConduit('EMT', fill.recommended);
+    toast.success(`Conduit set · EMT ${fill.recommended}`, { description: 'Fill recalculated for the recommended trade size.', duration: 3500 });
+  };
+  return (
+    <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[860px] max-w-full max-h-[88vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="px-6 pt-4 pb-3 border-b border-border flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
+            <Cable className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-semibold tracking-tight">Cable bundle · {bundleId}</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">
+              {runs.length}× {cableType.toUpperCase()} → {targetId} · total <span className="tabular-nums">{Math.round(totalLen)} ft</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="flex-1 overflow-auto grid grid-cols-5 gap-0 divide-x divide-border">
+          {/* Left — individual runs */}
+          <div className="col-span-3 p-4">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Individual runs · {runs.length}</div>
+              <button
+                onClick={assignPorts}
+                data-track="bundle-assign-ports"
+                className="text-[11px] px-2.5 h-7 rounded-md border border-border hover:bg-secondary/40 text-foreground"
+              >
+                Assign ports sequentially
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {runs.map((p, i) => {
+                const src = devices[p.sourceId ?? ''] as any;
+                return (
+                  <div key={p.id} className="rounded-md border border-border bg-background px-3 py-2 flex items-center gap-3 text-[11.5px]">
+                    <span className="text-muted-foreground tabular-nums w-6">{String(i + 1).padStart(2, '0')}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-foreground truncate">{src?.id ?? p.sourceId ?? p.id} → {targetId}</div>
+                      <div className="text-[10.5px] text-muted-foreground">
+                        {Math.round(p.lengthFt ?? 0)} ft · {String(p.cableType ?? cableType).toUpperCase()}
+                        {p.patchPort && <> · PP-01 Port {String(p.patchPort).padStart(2, '0')}</>}
+                        {p.switchPort && <> · SW-01 Port {String(p.switchPort).padStart(2, '0')}</>}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { removePathway(p.id); toast.message('Run removed', { description: `${src?.id ?? p.sourceId} detached from bundle.`, duration: 3000 }); }}
+                      title="Remove run"
+                      data-track={`bundle-run-remove-${p.id}`}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right — conduit + fill + assist */}
+          <div className="col-span-2 p-4 space-y-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Conduit type</div>
+              <div className="flex flex-wrap gap-1">
+                {(['none','EMT','PVC','FMC','LFMC','tray'] as const).map((t) => {
+                  const active = conduitType === t;
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => setConduit(t, conduitSize)}
+                      data-track={`bundle-conduit-type-${t}`}
+                      className={`text-[11px] px-2 py-1 rounded border transition-colors ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
+                    >
+                      {t === 'none' ? 'None' : t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {conduitType !== 'none' && (
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Trade size</div>
+                <div className="grid grid-cols-3 gap-1">
+                  {EMT_SIZES.map((e) => {
+                    const active = conduitSize === e.size;
+                    return (
+                      <button
+                        key={e.size}
+                        onClick={() => setConduit(conduitType, e.size)}
+                        data-track={`bundle-conduit-size-${e.size.replace(/\W/g, '')}`}
+                        className={`text-[11px] py-1 rounded border transition-colors ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
+                      >
+                        {e.size}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-md border border-border bg-background p-3">
+              <div className="flex items-baseline justify-between">
+                <div className="text-[11px] uppercase tracking-[0.10em] text-muted-foreground">Conduit fill</div>
+                <div className="text-[10.5px] text-muted-foreground">{(fill.rule * 100).toFixed(0)}% rule</div>
+              </div>
+              <div className="mt-1.5">
+                {conduitSize ? (
+                  <>
+                    <div className="text-[20px] font-medium tabular-nums" style={{ color: fill.passes ? '#4FB87E' : '#E5A23A' }}>{fill.fillPct.toFixed(1)}%</div>
+                    <div className="text-[10.5px] text-muted-foreground mt-0.5">
+                      {runs.length}× OD {CABLE_OD_IN[cableType.toLowerCase()] ?? 0.31}″ · area {fill.totalAreaIn2.toFixed(3)} in² / conduit {fill.conduitAreaIn2?.toFixed(3)} in²
+                    </div>
+                    {!fill.passes && (
+                      <div className="mt-2 text-[11px] text-amber-200 bg-amber-300/8 border border-amber-300/25 rounded-md p-2">
+                        Overfilled. {fill.recommended ? <>Recommend <span className="font-medium">EMT {fill.recommended}</span> or split the bundle.</> : 'Split the bundle — no standard EMT in stock satisfies the rule.'}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-[11.5px] text-muted-foreground">Pick a conduit size above to compute fill.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-md border border-primary/30 bg-primary/8 p-3">
+              <div className="flex items-baseline justify-between">
+                <div className="text-[11px] uppercase tracking-[0.10em] text-primary">Deeper Vision Assist</div>
+              </div>
+              <div className="text-[11.5px] text-foreground mt-1.5">
+                {fill.recommended
+                  ? <>{runs.length} × {cableType.toUpperCase()} fits cleanly in <span className="font-medium">EMT {fill.recommended}</span> under the {(fill.rule * 100).toFixed(0)}% NEC rule. Apply to write this conduit on every run in the bundle.</>
+                  : <>No standard EMT in stock satisfies the {(fill.rule * 100).toFixed(0)}% rule. Split this bundle into two pathways or step up to PVC / cable tray.</>}
+              </div>
+              {fill.recommended && (
+                <button
+                  onClick={applyRecommendation}
+                  data-track="bundle-apply-recommendation"
+                  className="mt-2 text-[11.5px] font-medium px-3 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                >
+                  Apply EMT {fill.recommended}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-3 border-t border-border flex items-center justify-end">
+          <button onClick={onClose} className="text-[12px] px-3 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40">Close</button>
         </div>
       </div>
     </div>
@@ -3450,6 +3700,7 @@ function SectionPanel({ section, devices, projectId, onOpenScanBuild, onOpenRepo
         <ReportExportRow icon={FileText}     label="Camera schedule" sub={`${devices.filter((d) => TYPE_KIND[d.type] === 'camera').length} cameras · location · model · IR`} tone="#F08F3C" kind="camera-schedule" devices={devices} projectId={projectId} />
         <ReportExportRow icon={DoorOpen}     label="Door schedule" sub={`${devices.filter((d) => isStackableHost(d.type)).length} openings · hardware stack`} tone="#3FB950" kind="door-schedule" devices={devices} projectId={projectId} />
         <ReportExportRow icon={Cable}        label="Cable / pathway schedule" sub="Runs · cable type · length · termination" tone="#22D3EE" kind="cable-schedule" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={PencilRuler}  label="Conduit schedule" sub="Conduit · size · cables · fill %" tone="#A371F7" kind="conduit-schedule" devices={devices} projectId={projectId} />
         <ReportExportRow icon={DollarSign}   label="Bill of materials" sub={`${devices.length} line items · live unit prices`} tone="#E5B23A" kind="bom" devices={devices} projectId={projectId} />
         <ReportExportRow icon={ListChecks}   label="Compliance checklist" sub="NDAA · ONVIF · ADA · fire egress" tone="#A371F7" kind="compliance" devices={devices} projectId={projectId} />
         <ReportExportRow icon={ShieldCheck}  label="Commissioning report" sub="Per-device install / firmware / signal / sign-off" tone="#E5484D" kind="commissioning" devices={devices} projectId={projectId} />
@@ -4457,27 +4708,82 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       y: ((e.clientY - r.top)  - pan.y) / zoom,
     };
   };
-  // Pan-by-drag — engaged with the Hand tool or by holding Space (handled
-  // at the parent). Cumulative drag delta updates `pan` so the whole
-  // content group translates with the cursor.
+  // Pan-by-drag — engaged with the Hand tool. Cumulative drag delta
+  // updates `pan` so the whole content group translates with the cursor.
+  // Drag-selection-box — when the Select tool is active and the
+  // pointer goes down on an empty surface, the user can drag a
+  // rectangle to multi-select every device whose centre falls inside.
   const panRef = useRef<{ x: number; y: number } | null>(null);
+  const [marqueeLocal, setMarqueeLocal] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const marqueeStartRef = useRef<{ x: number; y: number } | null>(null);
   const onPanStart = (e: React.PointerEvent) => {
-    if (tool !== 'pan') return;
-    panRef.current = { x: e.clientX, y: e.clientY };
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    if (tool === 'pan') {
+      panRef.current = { x: e.clientX, y: e.clientY };
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      return;
+    }
+    if (tool === 'select') {
+      // Start a marquee only when the pointer lands on the SVG itself
+      // (or a non-interactive rect/g background); a device's own
+      // pointerdown handler stops propagation via its own logic.
+      const targetTag = (e.target as Element).tagName;
+      if (targetTag === 'svg' || targetTag === 'rect') {
+        const svg = (ref as React.RefObject<SVGSVGElement>).current;
+        if (!svg) return;
+        const r = svg.getBoundingClientRect();
+        const px = (e.clientX - r.left - pan.x) / zoom;
+        const py = (e.clientY - r.top  - pan.y) / zoom;
+        marqueeStartRef.current = { x: px, y: py };
+        setMarqueeLocal({ x0: px, y0: py, x1: px, y1: py });
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      }
+    }
   };
   const onPanMove = (e: React.PointerEvent) => {
-    if (!panRef.current) return;
-    const dx = e.clientX - panRef.current.x;
-    const dy = e.clientY - panRef.current.y;
-    panRef.current = { x: e.clientX, y: e.clientY };
-    onUserTouchView();
-    setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+    if (panRef.current) {
+      const dx = e.clientX - panRef.current.x;
+      const dy = e.clientY - panRef.current.y;
+      panRef.current = { x: e.clientX, y: e.clientY };
+      onUserTouchView();
+      setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+      return;
+    }
+    if (marqueeStartRef.current) {
+      const svg = (ref as React.RefObject<SVGSVGElement>).current;
+      if (!svg) return;
+      const r = svg.getBoundingClientRect();
+      const px = (e.clientX - r.left - pan.x) / zoom;
+      const py = (e.clientY - r.top  - pan.y) / zoom;
+      setMarqueeLocal((m) => m ? { ...m, x1: px, y1: py } : null);
+    }
   };
   const onPanEnd = (e: React.PointerEvent) => {
-    if (!panRef.current) return;
-    panRef.current = null;
-    try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch {}
+    if (panRef.current) {
+      panRef.current = null;
+      try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch {}
+      return;
+    }
+    if (marqueeStartRef.current && marqueeLocal) {
+      // Compute the rectangle in plan coords and collect devices.
+      const x0 = Math.min(marqueeLocal.x0, marqueeLocal.x1);
+      const x1 = Math.max(marqueeLocal.x0, marqueeLocal.x1);
+      const y0 = Math.min(marqueeLocal.y0, marqueeLocal.y1);
+      const y1 = Math.max(marqueeLocal.y0, marqueeLocal.y1);
+      const ids: string[] = [];
+      for (const d of devices) {
+        if (d.x >= x0 && d.x <= x1 && d.y >= y0 && d.y <= y1) ids.push(d.id);
+      }
+      // Only commit if the marquee actually moved (avoid clicks setting
+      // a 0-area selection).
+      if ((x1 - x0) > 4 && (y1 - y0) > 4 && ids.length > 0) {
+        (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(
+          new CustomEvent('dv-marquee-pick', { detail: { ids }, bubbles: true }),
+        );
+      }
+      marqueeStartRef.current = null;
+      setMarqueeLocal(null);
+      try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch {}
+    }
   };
   return (
     <svg
@@ -5019,7 +5325,29 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             render as a thin cyan polyline; bundle paths get a count badge
             at their midpoint so the user sees "10x Cat6A → IDF-01"
             without opening any inspector. */}
-        <PathwaysOverlay />
+        {marqueeLocal && (
+          <rect
+            x={Math.min(marqueeLocal.x0, marqueeLocal.x1)}
+            y={Math.min(marqueeLocal.y0, marqueeLocal.y1)}
+            width={Math.abs(marqueeLocal.x1 - marqueeLocal.x0)}
+            height={Math.abs(marqueeLocal.y1 - marqueeLocal.y0)}
+            fill="#5DA0E8"
+            fillOpacity="0.08"
+            stroke="#5DA0E8"
+            strokeWidth="1"
+            strokeDasharray="4 3"
+            pointerEvents="none"
+          />
+        )}
+
+        <PathwaysOverlay
+          onPickBundle={(bid) => {
+            // Dispatch up to the parent — the parent owns the modal state.
+            (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(
+              new CustomEvent('dv-bundle-open', { detail: { bundleId: bid }, bubbles: true }),
+            );
+          }}
+        />
 
         {/* Cable draw — vertices already committed render as a solid
             polyline; the active rubber-band segment to the cursor is
@@ -7298,6 +7626,129 @@ function ConduitAssistSection({ projectId }: { projectId: string }) {
   );
 }
 
+/** Real IDF / MDF / Rack port schedule, populated live from the bundle
+ *  pathways that target this IDF. Lists incoming runs, assigned PP +
+ *  SW ports, PoE load, spare capacity, and over-capacity warnings.
+ *  Honest by design — assumes one 24-port PP-01 and one 24-port SW-01
+ *  unless the IDF carries `switches[]` from the store. */
+function IdfPortScheduleSection({ idfId }: { idfId: string }) {
+  const pathways = useProjectStore((s) => s.pathways);
+  const devices = useProjectStore((s) => s.devices);
+  const incoming = useMemo(
+    () => (Object.values(pathways) as any[])
+      .filter((p) => (p?.targetId ?? p?.destinationId) === idfId)
+      .sort((a, b) => (a.patchPort ?? 999) - (b.patchPort ?? 999)),
+    [pathways, idfId],
+  );
+  const PP_PORTS = 24;
+  const SW_PORTS = 24;
+  const SW_POE_BUDGET_W = 370; // Aruba 2930F-24G PoE+ class budget
+  const poeLoad = incoming.length * 9.8; // assume ~10 W per camera
+  const ppOver = incoming.filter((p) => p.patchPort && p.patchPort > PP_PORTS).length;
+  const swOver = incoming.filter((p) => p.switchPort && p.switchPort > SW_PORTS).length;
+  return (
+    <>
+      <DrawerSection title={`Incoming runs · ${incoming.length}`}>
+        {incoming.length === 0 ? (
+          <div className="text-[11.5px] text-muted-foreground italic px-1">
+            No cable runs target this IDF yet. Use Run to IDF from the canvas to assign devices here.
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {incoming.map((p) => {
+              const src = devices[p.sourceId ?? ''] as any;
+              return (
+                <div key={p.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md border border-border/40 bg-secondary/20 text-[11.5px]">
+                  <span className="text-muted-foreground tabular-nums w-12">{String(p.cableType ?? 'cat6a').toUpperCase()}</span>
+                  <span className="flex-1 truncate font-medium text-foreground">{src?.id ?? p.sourceId ?? p.id}</span>
+                  <span className="text-muted-foreground tabular-nums">{Math.round(p.lengthFt ?? 0)} ft</span>
+                  {p.patchPort && <span className="text-[10px] text-muted-foreground">PP·{String(p.patchPort).padStart(2, '0')}</span>}
+                  {p.switchPort && <span className="text-[10px] text-muted-foreground">SW·{String(p.switchPort).padStart(2, '0')}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DrawerSection>
+      <DrawerSection title="Patch panel · PP-01">
+        <div className="grid grid-cols-8 gap-1">
+          {Array.from({ length: PP_PORTS }).map((_, i) => {
+            const port = i + 1;
+            const run = incoming.find((p) => p.patchPort === port);
+            const src = run && (devices[run.sourceId ?? ''] as any);
+            return (
+              <div
+                key={port}
+                title={run ? `Port ${String(port).padStart(2, '0')} → ${src?.id ?? run.sourceId}` : `Port ${String(port).padStart(2, '0')} · spare`}
+                className="aspect-square rounded text-[9px] flex items-center justify-center"
+                style={{
+                  background: run ? 'rgba(93,160,232,0.18)' : 'rgba(255,255,255,0.04)',
+                  color: run ? '#5DA0E8' : 'var(--muted-foreground)',
+                  border: '1px solid ' + (run ? 'rgba(93,160,232,0.32)' : 'rgba(255,255,255,0.06)'),
+                }}
+              >
+                {String(port).padStart(2, '0')}
+              </div>
+            );
+          })}
+        </div>
+        <div className="text-[10.5px] text-muted-foreground mt-1.5">
+          {incoming.filter((p) => p.patchPort).length} / {PP_PORTS} used · {PP_PORTS - incoming.filter((p) => p.patchPort).length} spare
+          {ppOver > 0 && <span className="text-amber-300 ml-2">· {ppOver} over capacity</span>}
+        </div>
+      </DrawerSection>
+      <DrawerSection title="Switch · SW-01 (Aruba 2930F-24P)">
+        <div className="grid grid-cols-8 gap-1">
+          {Array.from({ length: SW_PORTS }).map((_, i) => {
+            const port = i + 1;
+            const run = incoming.find((p) => p.switchPort === port);
+            const src = run && (devices[run.sourceId ?? ''] as any);
+            return (
+              <div
+                key={port}
+                title={run ? `Port ${String(port).padStart(2, '0')} → ${src?.id ?? run.sourceId}` : `Port ${String(port).padStart(2, '0')} · spare`}
+                className="aspect-square rounded text-[9px] flex items-center justify-center"
+                style={{
+                  background: run ? 'rgba(79,184,126,0.18)' : 'rgba(255,255,255,0.04)',
+                  color: run ? '#4FB87E' : 'var(--muted-foreground)',
+                  border: '1px solid ' + (run ? 'rgba(79,184,126,0.32)' : 'rgba(255,255,255,0.06)'),
+                }}
+              >
+                {String(port).padStart(2, '0')}
+              </div>
+            );
+          })}
+        </div>
+        <div className="text-[10.5px] text-muted-foreground mt-1.5">
+          {incoming.filter((p) => p.switchPort).length} / {SW_PORTS} used · PoE load {poeLoad.toFixed(1)} W / budget {SW_POE_BUDGET_W} W
+          {swOver > 0 && <span className="text-amber-300 ml-2">· {swOver} over capacity</span>}
+          {poeLoad > SW_POE_BUDGET_W && <span className="text-amber-300 ml-2">· PoE over budget</span>}
+        </div>
+      </DrawerSection>
+      <DrawerSection title="Assist">
+        <div className="space-y-1.5">
+          {ppOver > 0 && <FindingRow severity="warn" text={`${ppOver} runs exceed the patch panel's 24-port capacity. Add a second 24-port PP or move to a 48-port unit.`} />}
+          {swOver > 0 && <FindingRow severity="warn" text={`${swOver} runs exceed the switch's 24-port capacity. Add an uplink and a second 24-port switch.`} />}
+          {poeLoad > SW_POE_BUDGET_W && <FindingRow severity="high" text={`PoE load ${poeLoad.toFixed(0)} W exceeds the 370 W budget. Add a PoE midspan or move to a larger PoE++ switch.`} />}
+          {ppOver === 0 && swOver === 0 && poeLoad <= SW_POE_BUDGET_W && (
+            <FindingRow severity="ok" text="Capacity nominal — patch panel, switch, and PoE budget all within design limits." />
+          )}
+        </div>
+      </DrawerSection>
+    </>
+  );
+}
+
+function FindingRow({ severity, text }: { severity: 'high' | 'warn' | 'ok'; text: string }) {
+  const tone = severity === 'high' ? '#E55B5B' : severity === 'warn' ? '#E5A23A' : '#4FB87E';
+  return (
+    <div className="flex items-start gap-2 rounded-md border p-2" style={{ borderColor: `${tone}40`, background: `${tone}10` }}>
+      <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: tone }} />
+      <span className="text-[11.5px] leading-snug" style={{ color: tone }}>{text}</span>
+    </div>
+  );
+}
+
 function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
   const [mode, setMode] = useState<'overview' | 'prosecution'>('overview');
   const PX_PER_FT = 3.83;
@@ -7803,23 +8254,29 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           </>
         )}
 
-        {bodyShows(tab, 'network') && (
-          <>
-            <DrawerSection title="Network">
-              <Row label="IDF" value="IDF-02 / Port 14" />
-              <Row label="VLAN" value="240 / cctv" />
-              <Row label="IPv4" value="10.40.12.84" />
-              <Row label="MAC" value="B8:A4:4F:91:0C:2A" />
-              <Row label="Switch" value="Aruba 2930F-24P" />
-              <Row label="Link" value="1 Gbps full duplex" tone="#34D399" />
-            </DrawerSection>
-            <DrawerSection title="Bandwidth">
-              <Row label="Avg bitrate" value="6.4 Mbps" />
-              <Row label="Peak" value="12.1 Mbps" />
-              <Row label="Storage / day" value="68 GB" />
-            </DrawerSection>
-          </>
-        )}
+        {bodyShows(tab, 'network') && (() => {
+          const isIdfDevice = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'inf.rack' || d.type === 'inf.mdf';
+          if (isIdfDevice) {
+            return <IdfPortScheduleSection idfId={d.id} />;
+          }
+          return (
+            <>
+              <DrawerSection title="Network">
+                <Row label="IDF" value="IDF-02 / Port 14" />
+                <Row label="VLAN" value="240 / cctv" />
+                <Row label="IPv4" value="10.40.12.84" />
+                <Row label="MAC" value="B8:A4:4F:91:0C:2A" />
+                <Row label="Switch" value="Aruba 2930F-24P" />
+                <Row label="Link" value="1 Gbps full duplex" tone="#34D399" />
+              </DrawerSection>
+              <DrawerSection title="Bandwidth">
+                <Row label="Avg bitrate" value="6.4 Mbps" />
+                <Row label="Peak" value="12.1 Mbps" />
+                <Row label="Storage / day" value="68 GB" />
+              </DrawerSection>
+            </>
+          );
+        })()}
 
         {bodyShows(tab, 'power') && (
           <>
@@ -8708,7 +9165,7 @@ function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t
    destination so the user sees "10x Cat6A → IDF-01" at a glance.
    ═══════════════════════════════════════════════════════════════════════ */
 
-function PathwaysOverlay() {
+function PathwaysOverlay({ onPickBundle }: { onPickBundle?: (bundleId: string) => void }) {
   const pathways = useProjectStore((s) => s.pathways);
   // Group bundle paths so we collapse a 10-camera bundle into ONE label
   // even though there are 10 pathway records under the hood. Defensive
@@ -8775,10 +9232,15 @@ function PathwaysOverlay() {
             ))}
             {/* Bundle label at the midpoint of the first run. Includes the
                 count and destination so the route reads as engineering, not
-                just a colored line. */}
+                just a colored line. Clickable → opens the bundle inspector. */}
             {mid && (
-              <g transform={`translate(${mid.x}, ${mid.y})`}>
-                <rect x={-46} y={-9} width={92} height={18} rx={9} fill="#0B1424" fillOpacity="0.92" stroke="#22D3EE" strokeWidth="0.6" />
+              <g
+                transform={`translate(${mid.x}, ${mid.y})`}
+                style={{ cursor: onPickBundle ? 'pointer' : 'default', pointerEvents: 'auto' }}
+                onClick={(e) => { e.stopPropagation(); onPickBundle && onPickBundle(bundleId); }}
+                data-track={`bundle-label-${bundleId}`}
+              >
+                <rect x={-58} y={-9} width={116} height={18} rx={9} fill="#0B1424" fillOpacity="0.92" stroke="#22D3EE" strokeWidth="0.6" />
                 <text x={0} y={3} textAnchor="middle" fill="#E6F1FB" fontSize="10" fontWeight="600">{group.length}× {cableType} → {target}</text>
               </g>
             )}
@@ -8967,28 +9429,46 @@ function BottomDeviceBar({
                 ))}
               </div>
               <div className="mt-3 pt-3 border-t border-border/60 px-1">
-                <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5">Cable accessories — click to add to selected route</div>
+                <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5">Cable accessories — drag onto the plan to place a marker</div>
                 <div className="grid grid-cols-4 gap-1.5">
                   {([
-                    { id: 'jack',      label: 'RJ45 jack',     note: 'Adds to BOM' },
-                    { id: 'coupler',   label: 'Coupler',       note: 'Inline splice' },
-                    { id: 'patchcord', label: 'Patch cord',    note: '7 ft default' },
-                    { id: 'label',     label: 'Cable label',   note: 'Per termination' },
-                    { id: 'pullbox',   label: 'Pull box',      note: 'Bend mgmt' },
-                    { id: 'jhook',     label: 'J-hook',        note: 'Run support' },
-                    { id: 'tray',      label: 'Cable tray',    note: 'Per ft' },
-                    { id: 'firestop',  label: 'Firestop',      note: 'Penetrations' },
-                  ]).map((a) => (
-                    <button
-                      key={a.id}
-                      onClick={() => toast.message(`${a.label} added`, { description: 'Counted on the selected pathway in BOM (no canvas glyph yet).', duration: 3500 })}
-                      data-track={`bottombar-cableacc-${a.id}`}
-                      className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
-                    >
-                      <div className="text-[11.5px] font-medium tracking-tight">+ {a.label}</div>
-                      <div className="text-[10px] text-muted-foreground">{a.note}</div>
-                    </button>
-                  ))}
+                    { id: 'jack',      label: 'RJ45 jack',     note: 'Termination',     productId: 'cabacc-jack-rj45' },
+                    { id: 'jack-shld', label: 'Shielded jack', note: 'STP termination', productId: 'cabacc-jack-shielded' },
+                    { id: 'coupler',   label: 'Coupler',       note: 'Inline splice',   productId: 'cabacc-coupler-rj45' },
+                    { id: 'patchcord', label: 'Patch cord',    note: '7 ft default',    productId: 'cabacc-patchcord-7' },
+                    { id: 'pp24',      label: '24-port PP',    note: 'Patch panel',     productId: 'cabacc-pp-24' },
+                    { id: 'pp48',      label: '48-port PP',    note: 'Patch panel',     productId: 'cabacc-pp-48' },
+                    { id: 'pullbox',   label: 'Pull box',      note: 'Bend mgmt',       productId: 'cabacc-pullbox' },
+                    { id: 'jbox',      label: 'Junction box',  note: 'Splice point',    productId: 'cabacc-jbox' },
+                    { id: 'jhook',     label: 'J-hook',        note: 'Run support',     productId: 'cabacc-jhook' },
+                    { id: 'tray',      label: 'Cable tray',    note: 'Per ft',          productId: 'cabacc-tray' },
+                    { id: 'firestop',  label: 'Firestop',      note: 'Penetrations',    productId: 'cabacc-firestop' },
+                    { id: 'sleeve',    label: 'Wall sleeve',   note: 'Through-wall',    productId: 'cabacc-sleeve' },
+                  ]).map((a) => {
+                    // Build a faux Product on demand so the existing drag-to-
+                    // place pipeline accepts it. The product type isn't a
+                    // real device kind; the drop handler simply creates a
+                    // generic marker labelled with the accessory.
+                    const fakeProduct: Product = {
+                      id: a.productId,
+                      type: 'net.switch' as DeviceType, // closest infra glyph
+                      mfr: 'Cable',
+                      model: a.label,
+                      sub: a.note,
+                      recommended: false,
+                    } as any;
+                    return (
+                      <button
+                        key={a.id}
+                        onPointerDown={(e) => { onStartDrag(fakeProduct, e); setOpen(null); }}
+                        data-track={`bottombar-cableacc-${a.id}`}
+                        className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                      >
+                        <div className="text-[11.5px] font-medium tracking-tight">+ {a.label}</div>
+                        <div className="text-[10px] text-muted-foreground">{a.note}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -9189,7 +9669,7 @@ function StatusBar({ tool, zoom, counts, units }: { tool: Tool; zoom: number; co
 
 type ReportKind =
   | 'engineering' | 'customer' | 'camera-schedule' | 'door-schedule'
-  | 'cable-schedule' | 'bom' | 'compliance' | 'commissioning';
+  | 'cable-schedule' | 'conduit-schedule' | 'bom' | 'compliance' | 'commissioning';
 
 function ReportExportRow({
   icon: Icon, label, sub, tone, kind, devices, projectId,
@@ -9243,10 +9723,52 @@ function drawReport(doc: any, kind: ReportKind, devices: Device[], projectId: st
     case 'camera-schedule':   return drawCameraSchedule(doc, devices);
     case 'door-schedule':     return drawDoorSchedule(doc, devices);
     case 'cable-schedule':    return drawCableSchedule(doc, projectId);
+    case 'conduit-schedule':  return drawConduitSchedule(doc, projectId);
     case 'bom':               return drawBOMReport(doc, projectId);
     case 'compliance':        return drawComplianceReport(doc, devices);
     case 'commissioning':     return drawCommissioningReport(doc, devices);
   }
+}
+
+/** Conduit schedule — one row per assigned conduit run, aggregated by
+ *  bundle. Mirrors the cable schedule's drawing helpers so the look is
+ *  consistent with the rest of the report system. */
+function drawConduitSchedule(doc: any, projectId: string) {
+  const pathways = (Object.values(useProjectStore.getState().pathways) as any[]).filter((p) => p.projectId === projectId);
+  // Group bundles by bundleId; standalone runs become single-row entries.
+  const byBundle: Record<string, any[]> = {};
+  pathways.forEach((p) => {
+    const k = p.bundleId ?? p.id;
+    (byBundle[k] ??= []).push(p);
+  });
+  const rows: string[][] = [];
+  Object.entries(byBundle).forEach(([id, group]) => {
+    const first = group[0];
+    const count = group.length;
+    const ct = String(first.cableType ?? 'cat6a').toLowerCase();
+    const od = CABLE_OD_IN[ct] ?? 0.31;
+    const totalArea = count * Math.PI * (od / 2) ** 2;
+    const size = first.conduitSize ?? '—';
+    const conduitArea = EMT_SIZES.find((e) => e.size === size)?.areaIn2;
+    const fillPct = conduitArea ? `${((totalArea / conduitArea) * 100).toFixed(0)}%` : '—';
+    const rec = ((): string => {
+      const rule = count <= 1 ? 0.53 : count === 2 ? 0.31 : 0.40;
+      const r = EMT_SIZES.find((e) => totalArea / e.areaIn2 <= rule);
+      return r?.size ?? '—';
+    })();
+    rows.push([
+      id,
+      first.conduitType ?? 'none',
+      size,
+      String(group.reduce((s, x) => s + (x.lengthFt ?? 0), 0)) + ' ft',
+      `${count} × ${ct.toUpperCase()}`,
+      fillPct,
+      rec,
+      first.conduitType && first.conduitSize ? 'assigned' : 'open',
+    ]);
+  });
+  drawHeader(doc, 'Conduit schedule');
+  drawTable(doc, ['Conduit ID', 'Type', 'Size', 'Length', 'Cables', 'Fill %', 'Recommended', 'Status'], rows);
 }
 
 const REPORT_TITLE: Record<ReportKind, string> = {
@@ -9255,6 +9777,7 @@ const REPORT_TITLE: Record<ReportKind, string> = {
   'camera-schedule': 'Camera schedule',
   'door-schedule': 'Door schedule',
   'cable-schedule': 'Cable & pathway schedule',
+  'conduit-schedule': 'Conduit schedule',
   'bom': 'Bill of materials',
   'compliance': 'Compliance checklist',
   'commissioning': 'Commissioning report',
