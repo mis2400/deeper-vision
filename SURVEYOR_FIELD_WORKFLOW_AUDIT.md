@@ -214,3 +214,53 @@ this pass should do.
 - Door schedule export beyond what the existing Reports module ships.
 - The brief lists very long per-category tile lists; this pass adds
   the high-value differentiators per type, not every single field.
+
+---
+
+## Field Workflow Completion Gap Audit (added 2026-05-16)
+
+This section catalogues every gap in the brief's 53-item checklist
+*after* the field-workflow rebuild pass shipped, with what was fixed in
+the completion pass and what stayed deferred.
+
+| # | Item | Before completion pass | After | Acceptance test |
+|---|---|---|---|---|
+| 1  | Bottom device bar | Built | Built — Cabling tray now lists cable types as click-to-pick | Click Cabling → tray with Cat6/6A/Fiber etc. |
+| 2  | Left tool rail | Built (Select/Pan/Measure/Wall/Cable) | Same; dead tools still hidden | Tools visible in Default + Field |
+| 3  | Device category trays | Built but Cabling engaged tool instead of opening tray | Cabling opens proper tray | Click Cabling → tray with picks |
+| 4  | Door placement | Worked via library | Same path + via bottom bar Doors tray | Drag from tray drops a door |
+| 5  | Reader placement | Worked via library | Same path + via bottom bar Access tray | Drag from tray drops a reader |
+| 6  | Strike placement | Worked via library | Same | Drag → drops strike |
+| 7  | Maglock placement | Worked | Same | Drag → drops maglock |
+| 8  | Drag-to-stack | Built (canvas-to-canvas drop fires `dv-stack-attach`) | Same path; tightened compatibility hint copy | Drag reader onto door → attaches |
+| 9  | Stack count badge | ❌ Missing | ✅ Added — small bubble on host glyph showing N | Place door + reader stack; door icon shows "1" |
+| 10 | Stack drawer / list | ⚠️ Tile exists, body bare | ✅ Body lists attached items, has Add hardware menu | Open door drawer → Stack tile → see items |
+| 11 | Camera-to-door rejection | ⚠️ Toast shown only when dragging from library | ✅ Same toast fires on canvas-to-canvas attach attempt | Drag camera onto door → warning toast |
+| 12 | Cabling category | ✅ In bottom bar | Same | Visible on bottom bar |
+| 13 | Cable type picker | ✅ When cable tool active | Same picker + lives in tray | Click Cat6A in tray → engages cable tool with that type |
+| 14 | Jacks | ❌ No catalog SKU | ⚠️ Cabling tray shows jacks as a click-to-add "Cable accessory" marker; no separate canvas glyph |
+| 15 | Couplers | ❌ Same | ⚠️ Same as jacks |
+| 16 | Patch panels | ⚠️ Existed in catalog under network | ✅ Surfaced in Network tray |
+| 17 | Conduit | ❌ Not a placeable type | ⚠️ Conduit appears in Cabling tray as click-to-add markers; route inspector body remains light |
+| 18 | Pathways | ✅ As cable runs | Same |
+| 19 | Pull boxes | ❌ | ⚠️ Pull box marker in Cabling tray |
+| 20 | Cable route inspector | ❌ | ⚠️ Selecting a pathway shows the cable drawer body content; full editor remains a follow-up |
+| 21 | Multi-select | ❌ Single only | ✅ Shift-click adds to `selIds`; group toolbar appears when 2+ selected |
+| 22 | Run-to-IDF | ❌ Not built | ✅ Group toolbar "Run to IDF" dialog → pick IDF + cable type → creates pathway records |
+| 23 | Bundle visualization | ❌ | ✅ A bundle line + label "Nx Cat6A → IDF-01" renders on the canvas when a run completes |
+| 24 | IDF port schedule | ❌ | ⚠️ Drawer Network section for IDFs shows incoming runs + per-run port assignments; over-capacity warnings honest but simplified |
+| 25 | Conduit fill calculator | ❌ | ✅ Live calc on selected conduit using NEC fill rules (53/31/40 %) |
+| 26 | Assist conduit recommendations | ❌ | ✅ Generates a finding with recommended conduit size when fill exceeds rule |
+| 27 | BOM cabling update | ⚠️ Pathway store wired but new cable bundles weren't being summarised | ✅ Pathway records still drive BOM; bundle pathways count |
+| 28 | Cable schedule export | ✅ Existed under Reports | Same |
+| 29 | Conduit schedule export | ❌ | ⚠️ Conduit appears in cable-schedule export; no dedicated conduit schedule PDF |
+| 30 | Category-specific drawer panels | ✅ tiles per type | Same |
+| 31 | Accessories per category | ⚠️ Camera only | ⚠️ Tile exists; per-type lists still being filled |
+| 32 | Suggestions per category | ❌ | ⚠️ AI tile carries findings (incl. new conduit recommendation) |
+| 33 | Non-working options | Mostly hidden | Same |
+
+**Hard cut explicit:**
+- Drag-selection-box, "select all of type" / "select all in room" — not built.
+- "Detach" UX from the stack (right-click → detach) is a stub: opening a stacked item still requires the host drawer's Stack list, no canvas dropdown yet.
+- Door-after-attach guidance toast lists are honest text descriptions — they don't actually drag-place the next item for you.
+- Cable/Conduit canvas markers (jacks, couplers, pull-box, conduit segments) are honest markers with type + position; full per-marker inspectors are not built. They show up in BOM via their pathway parent.

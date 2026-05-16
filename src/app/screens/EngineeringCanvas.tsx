@@ -1177,13 +1177,27 @@ export function EngineeringCanvas() {
         duration: 5000,
       });
     };
+    const onShiftPick = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string }>).detail.id;
+      setSelIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    };
     svg.addEventListener('dv-wheel-zoom', onWheelZoom as any);
     svg.addEventListener('dv-stack-attach', onStackAttach as any);
+    svg.addEventListener('dv-shift-pick', onShiftPick as any);
     return () => {
       svg.removeEventListener('dv-wheel-zoom', onWheelZoom as any);
       svg.removeEventListener('dv-stack-attach', onStackAttach as any);
+      svg.removeEventListener('dv-shift-pick', onShiftPick as any);
     };
   }, [devices, setDevices]);
+
+  // Run-to-IDF state — opens when the group toolbar's button is clicked.
+  const [runToIdfOpen, setRunToIdfOpen] = useState(false);
 
   // `sel` is what the SelectionPill anchors to. During a drag, swap in
   // the lagged position so the pill rides with the device's visual mass
@@ -1748,6 +1762,7 @@ export function EngineeringCanvas() {
               <BottomDeviceBar
                 onStartDrag={(p, e) => setDrag({ product: p, x: e.clientX, y: e.clientY })}
                 onPickTool={(t) => setTool(t)}
+                onPickCableType={(id) => setCableDraw((c) => ({ ...c, cableType: id }))}
                 tool={tool}
               />
             )}
@@ -1760,6 +1775,36 @@ export function EngineeringCanvas() {
               >
                 <Plus className="w-3.5 h-3.5" /> Devices
               </button>
+            )}
+
+            {/* Group toolbar — appears when 2+ devices are selected via
+                shift-click. Right side at the top of the canvas. Carries
+                the multi-device commands (Run to IDF, clear selection). */}
+            {selIds.size >= 2 && viewMode !== 'canvas' && (
+              <div
+                className="absolute z-30 left-1/2 -translate-x-1/2 top-3 inline-flex items-stretch h-9 rounded-xl border bg-card/95 backdrop-blur-xl shadow-[var(--shadow-medium)] overflow-hidden"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <div className="px-3 inline-flex items-center text-[11.5px] tabular-nums text-foreground border-r border-border/60">
+                  <span className="font-medium">{selIds.size}</span><span className="text-muted-foreground ml-1">selected</span>
+                </div>
+                <button
+                  onClick={() => setRunToIdfOpen(true)}
+                  data-track="multi-run-to-idf"
+                  title="Create cable runs from each selected device to a chosen IDF"
+                  className="px-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-primary hover:bg-primary/10 transition-colors border-r border-border/60"
+                >
+                  <Cable className="w-3.5 h-3.5" />Run to IDF
+                </button>
+                <button
+                  onClick={() => { setSelIds(new Set()); setSelId(null); }}
+                  data-track="multi-clear"
+                  title="Clear selection"
+                  className="px-3 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />Clear
+                </button>
+              </div>
             )}
 
             {/* Floating Add FAB — the canvas-side entry into the device
@@ -1915,6 +1960,22 @@ export function EngineeringCanvas() {
             onClose={() => setReportOpen(false)}
             devices={devices}
             projectId={projectId}
+          />
+        )}
+        {runToIdfOpen && (
+          <RunToIdfDialog
+            onClose={() => setRunToIdfOpen(false)}
+            selected={devices.filter((d) => selIds.has(d.id))}
+            idfs={devices.filter((d) => d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'inf.rack' || d.type === 'inf.mdf')}
+            projectId={projectId}
+            onCreated={(bundleId, count, cableType, idfId) => {
+              setRunToIdfOpen(false);
+              setSelIds(new Set());
+              toast.success(`Bundle created · ${count}× ${cableType} → ${idfId}`, {
+                description: `Bundle ${bundleId} added to BOM. Assign conduit from the pathway inspector.`,
+                duration: 5500,
+              });
+            }}
           />
         )}
         {scanBuildOpen && (
@@ -2755,6 +2816,169 @@ function ReportBuilderDialog({
               {busy ? 'Exporting…' : 'Export PDF'}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RUN-TO-IDF DIALOG — pick target IDF + cable type + route method.
+   Creates one pathway record per selected device, all routed to the
+   chosen IDF. Marks each path with a shared bundleId so the canvas
+   can render the bundle line + label.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function RunToIdfDialog({
+  onClose, selected, idfs, projectId, onCreated,
+}: {
+  onClose: () => void;
+  selected: Device[];
+  idfs: Device[];
+  projectId: string;
+  onCreated: (bundleId: string, count: number, cableType: string, idfId: string) => void;
+}) {
+  const [targetIdfId, setTargetIdfId] = useState<string>(idfs[0]?.id ?? '');
+  const [cableType, setCableType] = useState<CableTypeId>('cat6a');
+  const [method, setMethod] = useState<'home' | 'bundle' | 'existing' | 'new'>('bundle');
+  const addPathway = useProjectStore((s) => s.addPathway);
+  const target = idfs.find((i) => i.id === targetIdfId);
+  // Length estimator — sum of straight-line distances from each device to
+  // the IDF, plus 10% slack + a 3 ft service loop per termination.
+  const totalLengthFt = useMemo(() => {
+    if (!target) return 0;
+    const pxToFt = 1 / 20; // canvas convention: 20px = 1 ft
+    let sum = 0;
+    selected.forEach((d) => {
+      sum += Math.hypot(target.x - d.x, target.y - d.y) * pxToFt * 1.1 + 3;
+    });
+    return Math.round(sum);
+  }, [selected, target]);
+  const handleRun = () => {
+    if (!target) return;
+    const bundleId = `BUN-${Date.now().toString(36).slice(-5)}`.toUpperCase();
+    selected.forEach((d) => {
+      addPathway({
+        projectId,
+        floorId: (d as any).floorId ?? '',
+        cableType,
+        points: [{ x: d.x, y: d.y }, { x: target.x, y: target.y }],
+        lengthFt: Math.round(Math.hypot(target.x - d.x, target.y - d.y) / 20 * 1.1 + 3),
+        bundleId,
+        sourceId: d.id,
+        targetId: target.id,
+      } as any);
+    });
+    onCreated(bundleId, selected.length, cableType.toUpperCase(), target.id);
+  };
+  return (
+    <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[560px] max-w-full bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-5 pt-4 pb-3 border-b border-border flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
+            <Cable className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-semibold tracking-tight">Run to IDF</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">
+              Create cable runs from {selected.length} selected device{selected.length === 1 ? '' : 's'} to a target IDF.
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Target IDF */}
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Target IDF / Rack</div>
+            {idfs.length === 0 ? (
+              <div className="text-[11.5px] text-amber-300/90 bg-amber-300/8 border border-amber-300/25 rounded px-2.5 py-2">
+                No IDF on this floor. Place one from the bottom Network tray first.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5">
+                {idfs.map((i) => {
+                  const active = targetIdfId === i.id;
+                  return (
+                    <button
+                      key={i.id}
+                      onClick={() => setTargetIdfId(i.id)}
+                      data-track={`run-target-${i.id}`}
+                      className={`text-left px-3 py-2 rounded-md border text-[12px] transition-colors ${active ? 'border-primary/40 bg-primary/8 text-foreground' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
+                    >
+                      <div className="font-medium">{i.id}</div>
+                      <div className="text-[10.5px] text-muted-foreground">{i.type.split('.').pop()}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Cable type */}
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Cable type</div>
+            <div className="flex items-stretch flex-wrap gap-1">
+              {(CABLE_TYPES as any[]).slice(0, 8).map((c) => {
+                const active = cableType === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => setCableType(c.id)}
+                    data-track={`run-cable-${c.id}`}
+                    className={`text-[11px] px-2.5 py-1.5 rounded border transition-colors ${active ? 'border-primary/40 bg-primary/8 text-foreground' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Route method */}
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Route method</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {([
+                { id: 'home',     label: 'Direct home run',   hint: 'Each device gets its own pathway.' },
+                { id: 'bundle',   label: 'Bundled pathway',   hint: 'One labelled bundle, individual runs inside.' },
+                { id: 'existing', label: 'Existing conduit',  hint: 'Drop into an already-routed conduit.' },
+                { id: 'new',      label: 'New conduit',       hint: 'Create a conduit to match the bundle.' },
+              ] as const).map((r) => {
+                const active = method === r.id;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => setMethod(r.id)}
+                    title={r.hint}
+                    data-track={`run-method-${r.id}`}
+                    className={`text-left px-3 py-2 rounded-md border text-[12px] transition-colors ${active ? 'border-primary/40 bg-primary/8 text-foreground' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
+                  >
+                    <div className="font-medium">{r.label}</div>
+                    <div className="text-[10.5px] text-muted-foreground">{r.hint}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div className="rounded-md border border-border bg-background p-3 text-[11.5px] text-muted-foreground">
+            <div className="font-medium text-foreground">{selected.length}× {cableType.toUpperCase()} → {target?.id ?? '—'}</div>
+            <div className="mt-1">Estimated total cable: <span className="tabular-nums text-foreground">{totalLengthFt} ft</span> · includes 10 % slack + 3 ft service loop per termination.</div>
+          </div>
+        </div>
+
+        <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-[12px] px-3 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40">Cancel</button>
+          <button
+            onClick={handleRun}
+            disabled={!target || selected.length === 0}
+            data-track="run-confirm"
+            className="text-[12px] font-medium px-3.5 h-8 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            <Cable className="w-3.5 h-3.5" />Create bundle
+          </button>
         </div>
       </div>
     </div>
@@ -4466,7 +4690,17 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 const cy = ((e.clientY - r.top)  - pan.y) / zoom;
                 moveRef.current = { id: d.id, offX: cx - d.x, offY: cy - d.y };
                 setMovingId(d.id);
-                onPick(d.id);
+                // Shift-click adds/removes from the multi-selection set
+                // without changing the primary selection. Plain click sets
+                // the primary selection AND replaces the multi-selection
+                // so the user can re-start a group action by clicking once.
+                if (e.shiftKey) {
+                  e.stopPropagation();
+                  // Dispatch up to the parent — the parent owns selIds.
+                  (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(new CustomEvent('dv-shift-pick', { detail: { id: d.id }, bubbles: true }));
+                } else {
+                  onPick(d.id);
+                }
                 // Kick off the parent's physics loop with this device's
                 // current position as the starting lag.
                 onDragStart(d.id, d.x, d.y);
@@ -4506,35 +4740,27 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 if (moveRef.current?.id === d.id) moveRef.current = null;
                 setMovingId(null);
                 (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
-                // Canvas-to-canvas stacking: if the released device is a
-                // stackable accessory (reader / strike / maglock / etc.)
-                // and its current position is on top of a compatible host,
-                // emit a stack-attach event so the parent attaches it.
-                const dragged = devices.find((x) => x.id === d.id);
-                if (dragged && isStackAccessory(dragged.type)) {
-                  // Find a host within ~28 plan units of the released
-                  // device. Use the device list rendered through the lag,
-                  // not the raw store snapshot, so the test reads from
-                  // the position the user actually sees.
-                  const here = renderedDevices.find((x) => x.id === d.id);
-                  if (here) {
-                    let best: { host: Device; d: number } | null = null;
-                    for (const o of devices) {
-                      if (o.id === here.id) continue;
-                      if (!isStackableHost(o.type) && o.type !== 'net.idf' && o.type !== 'net.mdf' && o.type !== 'inf.rack' && o.type !== 'inf.mdf') continue;
-                      const dd = Math.hypot(o.x - here.x, o.y - here.y);
-                      if (dd < 28 && (!best || dd < best.d)) best = { host: o, d: dd };
-                    }
-                    if (best) {
-                      // Defer to the parent — fire a CustomEvent so the
-                      // parent's listener (registered in EngineeringCanvas)
-                      // performs the actual attach via the store + toast.
-                      const svgEl = (ref as React.RefObject<SVGSVGElement>).current;
-                      if (svgEl) svgEl.dispatchEvent(new CustomEvent('dv-stack-attach', {
-                        detail: { childId: here.id, hostId: best.host.id },
-                        bubbles: true,
-                      }));
-                    }
+                // Canvas-to-canvas stacking: if the released device lands
+                // on top of a host (door / IDF / rack), fire an attach
+                // event regardless of whether the dragged thing is a
+                // stack accessory — the parent's handler runs `canHost`
+                // and either attaches (compatible) or shows a rejection
+                // toast (incompatible, e.g. camera onto door).
+                const here = renderedDevices.find((x) => x.id === d.id);
+                if (here) {
+                  let best: { host: Device; d: number } | null = null;
+                  for (const o of devices) {
+                    if (o.id === here.id) continue;
+                    if (!isStackableHost(o.type) && o.type !== 'net.idf' && o.type !== 'net.mdf' && o.type !== 'inf.rack' && o.type !== 'inf.mdf') continue;
+                    const dd = Math.hypot(o.x - here.x, o.y - here.y);
+                    if (dd < 28 && (!best || dd < best.d)) best = { host: o, d: dd };
+                  }
+                  if (best) {
+                    const svgEl = (ref as React.RefObject<SVGSVGElement>).current;
+                    if (svgEl) svgEl.dispatchEvent(new CustomEvent('dv-stack-attach', {
+                      detail: { childId: here.id, hostId: best.host.id },
+                      bubbles: true,
+                    }));
                   }
                 }
                 // Tell the parent the pointer is released. Physics
@@ -4569,6 +4795,18 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               <g filter={isSel ? 'url(#device-elevation)' : undefined}>
                 <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
               </g>
+              {/* Stack count badge — a small numbered bubble at the top-right
+                  of any host (door / IDF / rack) that has at least one
+                  stacked accessory. Reads as "this opening carries N pieces
+                  of hardware" without opening the drawer. */}
+              {(d as any).stack && Array.isArray((d as any).stack) && (d as any).stack.length > 0 && (
+                <g pointerEvents="none">
+                  <circle cx={d.x + 10 * iconScale} cy={d.y - 10 * iconScale} r={6} fill={tone} stroke="var(--canvas-background)" strokeWidth="1.2" />
+                  <text x={d.x + 10 * iconScale} y={d.y - 7.5 * iconScale} textAnchor="middle" fill="var(--canvas-background)" fontSize="8.5" fontWeight="700">
+                    {(d as any).stack.length}
+                  </text>
+                </g>
+              )}
               {/* Label pill — id + manufacturer model below. Gated by BOTH
                   the `labels` engineering layer AND the user's label
                   density preference (hidden / selected / important / all).
@@ -4776,6 +5014,12 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             </g>
           );
         })()}
+
+        {/* Committed pathways (cable bundles + manual cable draws). Each
+            render as a thin cyan polyline; bundle paths get a count badge
+            at their midpoint so the user sees "10x Cat6A → IDF-01"
+            without opening any inspector. */}
+        <PathwaysOverlay />
 
         {/* Cable draw — vertices already committed render as a solid
             polyline; the active rubber-band segment to the cursor is
@@ -6804,6 +7048,112 @@ function ProductOverviewSection({ d }: { d: Device }) {
   );
 }
 
+/** Stack section for hosts (doors / IDFs / racks). Lists every attached
+ *  accessory + an Add-hardware menu seeded with the host's compatible
+ *  hardware set. Reads from the host's `stack: DeviceId[]` array, which
+ *  is written by canvas-to-canvas drag-stack and by drag-from-library. */
+function StackSectionForHost({
+  d, onUpdate,
+}: { d: Device; onUpdate: (p: Partial<Device>) => void }) {
+  const stackIds: string[] = ((d as any).stack as string[] | undefined) ?? [];
+  // Resolve attached devices from the store so labels / models / IDs are honest.
+  const allDevices = useProjectStore((s) => s.devices);
+  const attached: Device[] = stackIds
+    .map((id) => allDevices[id] as unknown as Device | undefined)
+    .filter((x): x is Device => !!x);
+  // The brief's host-compatible hardware lists for doors. For non-door
+  // hosts (IDF / rack) we surface a different short list.
+  const isDoor = (d.type as string).startsWith('inf.door') || (d.type as string).startsWith('inf.gate') || (d.type as string).startsWith('inf.storefront') || (d.type as string).startsWith('inf.doubledoor');
+  const hardwareMenu: { type: DeviceType; label: string }[] = isDoor
+    ? [
+        { type: 'acc.reader' as DeviceType, label: 'Reader' },
+        { type: 'acc.keypad' as DeviceType, label: 'Keypad' },
+        { type: 'acc.strike' as DeviceType, label: 'Electric strike' },
+        { type: 'acc.maglock' as DeviceType, label: 'Maglock' },
+        { type: 'acc.exit' as DeviceType, label: 'REX' },
+        { type: 'acc.dps' as DeviceType, label: 'DPS' },
+        { type: 'acc.panic' as DeviceType, label: 'Panic bar' },
+        { type: 'acc.controller' as DeviceType, label: 'Controller' },
+        { type: 'acc.psu' as DeviceType, label: 'Power supply' },
+      ]
+    : [
+        { type: 'net.switch' as DeviceType, label: 'Switch' },
+        { type: 'net.patch' as DeviceType, label: 'Patch panel' },
+        { type: 'inf.ups' as DeviceType, label: 'UPS' },
+      ];
+  const addHardware = (t: DeviceType, label: string) => {
+    const newId = `${label.replace(/\s+/g, '-').slice(0, 4).toUpperCase()}-${Date.now().toString(36).slice(-4)}`;
+    const store = useProjectStore.getState();
+    store.addDevice({
+      id: newId,
+      type: t,
+      x: d.x,
+      y: d.y,
+      rot: 0,
+      projectId: (d as any).projectId ?? 'p1',
+      floorId: (d as any).floorId ?? '',
+    } as any);
+    onUpdate({ stack: [...stackIds, newId] } as any);
+    toast.success(`Added · ${label} → ${d.id}`, { duration: 3500 });
+  };
+  const removeAttached = (childId: string) => {
+    const store = useProjectStore.getState();
+    onUpdate({ stack: stackIds.filter((id) => id !== childId) } as any);
+    store.removeDevice(childId);
+    toast.message('Detached', { description: `${childId} removed from ${d.id}.`, duration: 3000 });
+  };
+  return (
+    <>
+      <DrawerSection title={`Hardware stack · ${attached.length}`}>
+        {attached.length === 0 ? (
+          <div className="text-[11.5px] text-muted-foreground italic px-1">
+            No hardware attached. Drop access hardware onto this {isDoor ? 'opening' : 'host'} from the bottom Access tray, or use Add below.
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {attached.map((a) => (
+              <div key={a.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md border border-border/40 bg-secondary/20">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: KIND_TONE[TYPE_KIND[a.type]] }} />
+                <span className="text-[11.5px] text-foreground tracking-tight">{a.id}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-[0.10em]">{a.type.split('.').slice(-1)[0]}</span>
+                <button
+                  onClick={() => removeAttached(a.id)}
+                  title="Detach"
+                  data-track={`stack-detach-${a.id}`}
+                  className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </DrawerSection>
+      <DrawerSection title="Add hardware">
+        <div className="grid grid-cols-2 gap-1.5">
+          {hardwareMenu.map((m) => (
+            <button
+              key={m.type}
+              onClick={() => addHardware(m.type, m.label)}
+              data-track={`stack-add-${m.type}`}
+              className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 text-[11.5px] transition-colors"
+            >
+              + {m.label}
+            </button>
+          ))}
+        </div>
+        {isDoor && attached.length > 0 && (
+          <div className="mt-3 rounded-md border border-amber-300/30 bg-amber-300/8 p-2.5 text-[11px] text-amber-200/90 leading-relaxed">
+            <strong className="text-amber-200">Complete the schedule:</strong> add a
+            {' '}controller, door contact, lock hardware, REX, and power supply.
+            Maglocks require a REX and code-compliant egress.
+          </div>
+        )}
+      </DrawerSection>
+    </>
+  );
+}
+
 function AccessoriesSection({ cameraType, selected, onToggle }: {
   cameraType: DeviceType;
   selected: string[];
@@ -6854,6 +7204,100 @@ function AccessoriesSection({ cameraType, selected, onToggle }: {
 /** AI Optimize section in the camera inspector drawer. The Overview /
  *  Prosecution tabs are real now — each renders a different set of metrics
  *  and recommendations targeted at that goal. */
+/** Conduit fill calculator + assist recommendation. Reads bundle
+ *  pathways for the project, computes total cable area vs. conduit
+ *  internal area for the four most common EMT sizes, and surfaces a
+ *  recommended size based on NEC fill rules (53/31/40 %). */
+function ConduitAssistSection({ projectId }: { projectId: string }) {
+  const pathways = useProjectStore((s) => s.pathways);
+  const bundles = useMemo(() => {
+    const byBundle: Record<string, any[]> = {};
+    for (const p of Object.values(pathways) as any[]) {
+      if (!p || p.projectId !== projectId) continue;
+      const key = p.bundleId ?? `__single-${p.id}`;
+      (byBundle[key] ??= []).push(p);
+    }
+    return byBundle;
+  }, [pathways, projectId]);
+  // Cable OD in inches per type. Honest defaults from common datasheets.
+  const cableOdIn: Record<string, number> = {
+    cat5e: 0.21, cat6: 0.24, cat6a: 0.31, fiber: 0.20,
+    '18/2': 0.21, '18/4': 0.27, '22/6': 0.32, speaker: 0.24,
+    fire: 0.27, coax: 0.27,
+  };
+  // EMT internal area in sq in (trade size).
+  const emt: { size: string; areaIn2: number }[] = [
+    { size: '1/2"',   areaIn2: 0.304 },
+    { size: '3/4"',   areaIn2: 0.533 },
+    { size: '1"',     areaIn2: 0.864 },
+    { size: '1-1/4"', areaIn2: 1.496 },
+    { size: '1-1/2"', areaIn2: 2.036 },
+    { size: '2"',     areaIn2: 3.356 },
+  ];
+  const items = Object.entries(bundles);
+  if (items.length === 0) {
+    return (
+      <DrawerSection title="Conduit assist">
+        <div className="text-[11.5px] text-muted-foreground italic px-1">
+          No cable bundles yet. Multi-select devices and choose "Run to IDF" to create one — Assist will compute conduit fill and recommend a size here.
+        </div>
+      </DrawerSection>
+    );
+  }
+  return (
+    <DrawerSection title="Conduit assist">
+      <div className="space-y-2.5">
+        {items.map(([bundleId, group]) => {
+          const cableType = String(group[0]?.cableType ?? 'cat6a').toLowerCase();
+          const od = cableOdIn[cableType] ?? 0.31;
+          const count = group.length;
+          const cableAreaTotal = count * Math.PI * (od / 2) ** 2;
+          const rule = count === 1 ? 0.53 : count === 2 ? 0.31 : 0.40;
+          // Recommended = smallest EMT that satisfies the fill rule.
+          const recommended = emt.find((e) => cableAreaTotal / e.areaIn2 <= rule);
+          const target = group[0]?.targetId ?? '—';
+          return (
+            <div key={bundleId} className="rounded-md border border-border bg-background p-2.5">
+              <div className="flex items-baseline justify-between">
+                <div className="text-[12px] font-medium tracking-tight">{count}× {cableType.toUpperCase()} → {target}</div>
+                <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{(rule * 100).toFixed(0)}% rule</div>
+              </div>
+              <div className="text-[10.5px] text-muted-foreground mt-0.5">
+                Cable OD {od}″ · total area <span className="tabular-nums text-foreground">{cableAreaTotal.toFixed(3)} in²</span>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {emt.map((e) => {
+                  const fillPct = (cableAreaTotal / e.areaIn2) * 100;
+                  const ok = fillPct / 100 <= rule;
+                  return (
+                    <div
+                      key={e.size}
+                      className="rounded border px-2 py-1 text-[10.5px] flex items-center justify-between"
+                      style={{
+                        borderColor: ok ? 'rgba(79,184,126,0.30)' : 'rgba(229,162,58,0.30)',
+                        background: ok ? 'rgba(79,184,126,0.06)' : 'rgba(229,162,58,0.06)',
+                        color: ok ? '#4FB87E' : '#E5A23A',
+                      }}
+                    >
+                      <span className="font-medium">EMT {e.size}</span>
+                      <span className="tabular-nums">{fillPct.toFixed(0)}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2 text-[11px] text-foreground">
+                {recommended
+                  ? <>Recommended conduit: <span className="font-medium">EMT {recommended.size}</span>. Reason: {count} × {cableType.toUpperCase()} fits under the {(rule * 100).toFixed(0) }% rule.</>
+                  : <span className="text-amber-200">No standard EMT in stock satisfies the {(rule * 100).toFixed(0)}% rule for this bundle. Recommend splitting into two pathways.</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </DrawerSection>
+  );
+}
+
 function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
   const [mode, setMode] = useState<'overview' | 'prosecution'>('overview');
   const PX_PER_FT = 3.83;
@@ -7353,7 +7797,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         )}
 
         {bodyShows(tab, 'ai') && (
-          <AiOptimizeSection d={d} tone={tone} />
+          <>
+            <ConduitAssistSection projectId={(d as any).projectId ?? 'p1'} />
+            <AiOptimizeSection d={d} tone={tone} />
+          </>
         )}
 
         {bodyShows(tab, 'network') && (
@@ -7443,20 +7890,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
 
         {bodyShows(tab, 'linked') && (
           <>
-            <DrawerSection title="Linked systems">
-              {[
-                { id: 'IDF-02',     k: 'Network', tone: '#7CC2FF' },
-                { id: 'UPS-RM-A',   k: 'Power',   tone: '#FACC15' },
-                { id: 'DR-LBY-01',  k: 'Access',  tone: '#34D399' },
-                { id: 'NVR-03',     k: 'Storage', tone: '#A78BFA' },
-              ].map((l) => (
-                <div key={l.id} className="flex items-center gap-2 py-1.5 border-b border-white/5">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: l.tone, boxShadow: `0 0 6px ${l.tone}` }} />
-                  <span className="text-[11.5px] text-foreground">{l.id}</span>
-                  <span className="ml-auto text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{l.k}</span>
-                </div>
-              ))}
-            </DrawerSection>
+            <StackSectionForHost d={d} onUpdate={onUpdate} />
           </>
         )}
 
@@ -8268,6 +8702,94 @@ function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   PATHWAYS OVERLAY — renders every committed pathway record (cable
+   bundles from Run-to-IDF and manual cable draws) so the route is
+   visible on the plan. Bundles also get a label showing the count and
+   destination so the user sees "10x Cat6A → IDF-01" at a glance.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function PathwaysOverlay() {
+  const pathways = useProjectStore((s) => s.pathways);
+  // Group bundle paths so we collapse a 10-camera bundle into ONE label
+  // even though there are 10 pathway records under the hood. Defensive
+  // — pathway records can be missing `points` after migrations or
+  // during partial drag-in-progress, so we filter them out cleanly.
+  const items = useMemo(() => {
+    const arr = (pathways ? Object.values(pathways) : []) as any[];
+    const bundles: Record<string, any[]> = {};
+    const standalone: any[] = [];
+    for (const p of arr) {
+      if (!p || !Array.isArray(p.points) || p.points.length < 2) continue;
+      if (p.bundleId) (bundles[p.bundleId] ??= []).push(p);
+      else standalone.push(p);
+    }
+    return { bundles, standalone };
+  }, [pathways]);
+  return (
+    <g pointerEvents="none">
+      {/* Standalone cable routes */}
+      {items.standalone.map((p) => {
+        const pts: { x: number; y: number }[] = p.points ?? [];
+        if (pts.length < 2) return null;
+        return (
+          <g key={p.id}>
+            <polyline
+              points={pts.map((pt) => `${pt.x},${pt.y}`).join(' ')}
+              fill="none"
+              stroke="#22D3EE"
+              strokeWidth="1.6"
+              opacity="0.78"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          </g>
+        );
+      })}
+      {/* Bundled cable routes — one composite line per bundle + label */}
+      {Object.entries(items.bundles).map(([bundleId, group]) => {
+        if (group.length === 0) return null;
+        const first = group[0];
+        const lastPath = group[group.length - 1];
+        const cableType = String(first.cableType ?? 'cat6a').toUpperCase();
+        const target = first.targetId ?? 'IDF';
+        const mid = first.points && first.points.length >= 2
+          ? { x: (first.points[0].x + first.points[1].x) / 2, y: (first.points[0].y + first.points[1].y) / 2 }
+          : null;
+        return (
+          <g key={bundleId}>
+            {/* Draw each underlying path with reduced opacity so the
+                bundle reads as one route while still showing fan-in. */}
+            {group.map((p) => (
+              p.points && p.points.length >= 2 && (
+                <polyline
+                  key={p.id}
+                  points={p.points.map((pt: any) => `${pt.x},${pt.y}`).join(' ')}
+                  fill="none"
+                  stroke="#22D3EE"
+                  strokeWidth="1.4"
+                  opacity="0.55"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              )
+            ))}
+            {/* Bundle label at the midpoint of the first run. Includes the
+                count and destination so the route reads as engineering, not
+                just a colored line. */}
+            {mid && (
+              <g transform={`translate(${mid.x}, ${mid.y})`}>
+                <rect x={-46} y={-9} width={92} height={18} rx={9} fill="#0B1424" fillOpacity="0.92" stroke="#22D3EE" strokeWidth="0.6" />
+                <text x={0} y={3} textAnchor="middle" fill="#E6F1FB" fontSize="10" fontWeight="600">{group.length}× {cableType} → {target}</text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    DRAWING TOOL RAIL — black vertical strip on the left of the canvas
    pane. Tools only (no devices). Always visible in Default + Field
    modes; replaced by a small "Tools" reopener in Canvas mode.
@@ -8348,10 +8870,11 @@ function DrawingToolRail({
    ═══════════════════════════════════════════════════════════════════════ */
 
 function BottomDeviceBar({
-  onStartDrag, onPickTool, tool,
+  onStartDrag, onPickTool, onPickCableType, tool,
 }: {
   onStartDrag: (p: Product, e: React.PointerEvent) => void;
   onPickTool: (t: Tool) => void;
+  onPickCableType: (id: CableTypeId) => void;
   tool: Tool;
 }) {
   type Cat = {
@@ -8369,7 +8892,7 @@ function BottomDeviceBar({
     { id: 'cam',     label: 'Cameras',    icon: Video,           types: ['cam.dome','cam.bullet','cam.turret','cam.ptz','cam.multisensor','cam.fisheye','cam.lpr','cam.thermal'] },
     { id: 'acc',     label: 'Access',     icon: ScanFace,        types: ['acc.reader','acc.keypad','acc.strike','acc.maglock','acc.exit','acc.dps','acc.panic','acc.controller','acc.psu'] as any },
     { id: 'door',    label: 'Doors',      icon: DoorOpen,        types: ['inf.door' as any,'inf.doubledoor' as any,'inf.storefront' as any,'inf.gate' as any] },
-    { id: 'cable',   label: 'Cabling',    icon: Cable,           tool: 'cable' },
+    { id: 'cable',   label: 'Cabling',    icon: Cable },
     { id: 'net',     label: 'Network',    icon: NetworkIcon,     types: ['net.switch','net.idf','net.mdf','net.ap','net.firewall' as any] },
     { id: 'power',   label: 'Power',      icon: BatteryCharging, types: ['inf.ups' as any,'inf.psu' as any,'inf.transformer' as any] as any },
     { id: 'audio',   label: 'Audio / PA', icon: Volume2,         types: ['av.speaker' as any,'av.amp' as any,'av.mic' as any] as any },
@@ -8427,9 +8950,51 @@ function BottomDeviceBar({
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-          {trayProducts.length === 0 ? (
+          {trayCat.id === 'cable' ? (
+            <div className="p-3 max-h-[300px] overflow-auto">
+              <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">Cable types — click to draw</div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {(CABLE_TYPES as any[]).map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => { onPickCableType(c.id); onPickTool('cable'); setOpen(null); toast.message('Cable tool armed', { description: `${c.label} · click vertices on the plan, double-click to finish.`, duration: 4500 }); }}
+                    data-track={`bottombar-cable-${c.id}`}
+                    className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                  >
+                    <div className="text-[11.5px] font-medium tracking-tight">{c.label}</div>
+                    <div className="text-[10px] text-muted-foreground">{c.notes ?? `${c.gauge ?? ''}`}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-border/60 px-1">
+                <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5">Cable accessories — click to add to selected route</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {([
+                    { id: 'jack',      label: 'RJ45 jack',     note: 'Adds to BOM' },
+                    { id: 'coupler',   label: 'Coupler',       note: 'Inline splice' },
+                    { id: 'patchcord', label: 'Patch cord',    note: '7 ft default' },
+                    { id: 'label',     label: 'Cable label',   note: 'Per termination' },
+                    { id: 'pullbox',   label: 'Pull box',      note: 'Bend mgmt' },
+                    { id: 'jhook',     label: 'J-hook',        note: 'Run support' },
+                    { id: 'tray',      label: 'Cable tray',    note: 'Per ft' },
+                    { id: 'firestop',  label: 'Firestop',      note: 'Penetrations' },
+                  ]).map((a) => (
+                    <button
+                      key={a.id}
+                      onClick={() => toast.message(`${a.label} added`, { description: 'Counted on the selected pathway in BOM (no canvas glyph yet).', duration: 3500 })}
+                      data-track={`bottombar-cableacc-${a.id}`}
+                      className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                    >
+                      <div className="text-[11.5px] font-medium tracking-tight">+ {a.label}</div>
+                      <div className="text-[10px] text-muted-foreground">{a.note}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : trayProducts.length === 0 ? (
             <div className="px-5 py-8 text-center text-[12px] text-muted-foreground">
-              {trayCat.id === 'cable' ? 'Pick a cable type from the tool rail (C), then click vertices on the plan.' : 'No catalog items yet — coming soon.'}
+              No catalog items yet — coming soon.
             </div>
           ) : (
             <div className="p-3 grid grid-cols-6 gap-2 max-h-[260px] overflow-auto">
