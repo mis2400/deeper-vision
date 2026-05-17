@@ -336,6 +336,16 @@ const DEVICES: Device[] = [
   { id: 'RD-1',    projectId: 'p1', floorId: F_P1_GROUND, type: 'acc.reader',      label: 'Lobby in',   product: 'p-hid-signo20', x: 400, y: 130, rot:   0 },
   { id: 'DR-1',    projectId: 'p1', floorId: F_P1_GROUND, type: 'acc.strike',      label: 'Main entry', product: 'p-vd-6210',     x: 420, y: 130, rot:   0 },
   { id: 'AP-1',    projectId: 'p1', floorId: F_P1_GROUND, type: 'net.ap',          label: 'Floor 1 AP', product: 'p-cisco-ap',    x: 360, y: 320, rot:   0 },
+  // Seeded door so reviewers can test the door-assembly workflow without
+  // having to drag from the tray or call addDevice from the console.
+  // Coords intentionally clear of RD-1 (reader at 400,130) and DR-1
+  // (strike at 420,130) so the reviewer can independently select each.
+  // Pre-populated assembly covers a realistic compliant opening
+  // (reader + strike + REX + DPS + controller + PSU, fail-secure, mullion).
+  { id: 'DR-100',  projectId: 'p1', floorId: F_P1_GROUND, type: 'inf.door-single', label: 'Reception door', product: '',         x: 560, y: 220, rot:   0,
+    doorAssembly: ['reader', 'strike', 'rex', 'dps', 'controller', 'psu'],
+    doorElectrification: 'fail-secure',
+    doorReaderLocation: 'mullion' },
 
   // p5 — Lincoln High School ground floor (sample)
   { id: 'CAM-LH-1', projectId: 'p5', floorId: F_P5_GROUND, type: 'cam.dome',       label: 'Main entrance', product: 'p-axis-p3265', x: 320, y: 240, rot:  90 },

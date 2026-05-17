@@ -580,6 +580,76 @@ const STACK_ACCESSORY_TYPES = new Set<DeviceType>([
 function isStackableHost(t: DeviceType) { return STACKABLE_HOST_TYPES.has(t); }
 function isStackAccessory(t: DeviceType) { return STACK_ACCESSORY_TYPES.has(t); }
 
+/** Map a device/product type onto a door-assembly hardware slot. Doors
+ *  store their hardware as one persisted record (`doorAssembly[]`) on
+ *  the door device itself — NOT as a list of ghost accessory devices.
+ *  When the user drags a reader (or strike / REX / etc.) onto a door,
+ *  this mapping decides which `DoorHardware` value to add. Returns null
+ *  for types that aren't door-assembly hardware. */
+/** Pure synchronous host lookup for drop-time decisions. Replaces the
+ *  hoverHost React state for the actual mutation choice on pointerup —
+ *  hoverHost is set by pointermove and can be stale at pointerup
+ *  (the move handler might not have flushed for the final cursor
+ *  position, or the user could lift the pointer just outside the
+ *  hover-feedback range). Reads the live cursor coords + the live
+ *  devices array, so the decision matches what the user actually let
+ *  go of the cursor on.
+ *
+ *  Returns null when no host sits within HOST_RANGE of the pointer.
+ *  Otherwise returns the nearest host device + the result of canHost
+ *  for the dragged product against that host. */
+function findHostUnderPointer(
+  clientX: number,
+  clientY: number,
+  surfaceRect: DOMRect,
+  pan: { x: number; y: number },
+  zoom: number,
+  devices: Device[],
+  draggedType: DeviceType | string,
+): { host: Device; hostKind: 'door' | 'idf'; compat: ReturnType<typeof canHost> } | null {
+  const HOST_RANGE = 26;
+  const cx = (clientX - surfaceRect.left - pan.x) / zoom;
+  const cy = (clientY - surfaceRect.top  - pan.y) / zoom;
+  let best: { dev: Device; d: number } | null = null;
+  for (const dev of devices) {
+    const isHost = isStackableHost(dev.type)
+      || dev.type === 'net.idf' || dev.type === 'net.mdf'
+      || dev.type === 'inf.rack' || dev.type === 'inf.mdf';
+    if (!isHost) continue;
+    const d = Math.hypot(dev.x - cx, dev.y - cy);
+    if (d < HOST_RANGE && (!best || d < best.d)) best = { dev, d };
+  }
+  if (!best) return null;
+  const hostKind: 'door' | 'idf' = isStackableHost(best.dev.type) ? 'door' : 'idf';
+  const compat = canHost(hostKind, draggedType as DeviceType);
+  return { host: best.dev, hostKind, compat };
+}
+
+function productTypeToDoorHardware(t: DeviceType | string): DoorHardware | null {
+  switch (t) {
+    case 'acc.reader':
+    case 'acc.keypad':
+    case 'acc.biometric':
+      return 'reader';
+    case 'acc.strike':       return 'strike';
+    case 'acc.maglock':      return 'maglock';
+    case 'acc.exit':         return 'rex';
+    case 'acc.dps':          return 'dps';
+    case 'int.contact':
+    case 'sen.contact':      return 'contact';
+    case 'aud.intercom':
+    case 'acc.intercom':     return 'intercom';
+    case 'acc.panic':
+    case 'acc.panic-bar':
+    case 'sen.panic':        return 'panic';
+    case 'acc.autoop':       return 'autoop';
+    case 'acc.controller':   return 'controller';
+    case 'acc.psu':
+    case 'pwr.poe':          return 'psu';
+    default:                 return null;
+  }
+}
+
 const SEED_DEVICES: Device[] = [
   { id: 'CAM-101', type: 'cam.bullet',      label: 'Lobby NE',   product: 'p-axis-p1468',   x: 260, y: 220, rot:  35 },
   { id: 'CAM-102', type: 'cam.bullet',      label: 'Lobby SW',   product: 'p-axis-p1468',   x: 260, y: 460, rot: -35 },
@@ -1099,6 +1169,19 @@ export function EngineeringCanvas() {
 
   // Drag from library
   const [drag, setDrag] = useState<{ product: Product; x: number; y: number } | null>(null);
+  // Immutable starting client coordinates for the drag-vs-click distance
+  // check. `drag.x / drag.y` are mutated on every pointermove (so the
+  // floating ghost icon tracks the cursor), which means the pointerup
+  // handler can't use them to detect "didn't move." This ref records
+  // where the pointer landed at pointerdown and is never written
+  // anywhere else.
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Click-to-arm placement: if the user releases a product card without
+  // actually dragging onto the canvas, we treat the action as "arm
+  // placement" — the next surface click on the canvas places the device
+  // at that point. Avoids the old bug where pointerup-without-move
+  // placed the device wherever the cursor was (often inside the tray).
+  const [armedProduct, setArmedProduct] = useState<Product | null>(null);
 
   // Layers panel
   const [layersOpen, setLayersOpen] = useState(false);
@@ -1212,7 +1295,39 @@ export function EngineeringCanvas() {
         });
         return;
       }
-      // Attach: write child onto host.stack[], remove child as standalone.
+      // Door host: write the child onto host.doorAssembly[] (the canonical
+      // persisted hardware schedule). Remove the child device — door
+      // hardware lives as one record on the door, not as ghost accessory
+      // devices on the canvas. ALSO clear any legacy stack/linkedIds on
+      // the door so old data doesn't surface as the "Legacy stack" panel
+      // ever again. If the dropped product doesn't map onto a known
+      // DoorHardware slot we REJECT the drop (no fallthrough to legacy
+      // stack[] for doors — that's the user-visible confusion the prior
+      // pass left in place).
+      if (hostKind === 'door') {
+        const hw = productTypeToDoorHardware(child.type);
+        if (!hw) {
+          toast.warning(`${child.type.split('.').pop()} isn't door hardware`, {
+            description: 'Drop it on the canvas instead, or attach to an IDF / rack.',
+            duration: 5000,
+          });
+          return;
+        }
+        const cur = (host.doorAssembly ?? []) as DoorHardware[];
+        const next = cur.includes(hw) ? cur : [...cur, hw];
+        setDevices((ds) => ds
+          .map((d) => d.id === host.id ? { ...d, doorAssembly: next, stack: undefined, linkedIds: undefined } : d)
+          .filter((d) => d.id !== child.id)
+        );
+        setSelId(host.id);
+        setSelPathwayId(null);
+        toast.success(`Added ${hw} to ${host.id}`, {
+          description: hw === 'maglock' ? 'Maglocks require a REX for code-compliant egress.' : 'Door assembly updated.',
+          duration: 4500,
+        });
+        return;
+      }
+      // Non-door host (IDF / rack): keep the legacy stack[] flow.
       const nextStack = [...((host as any).stack ?? []), child.id];
       setDevices((ds) => ds
         .map((d) => d.id === host.id ? { ...d, stack: nextStack } as any : d)
@@ -1220,7 +1335,7 @@ export function EngineeringCanvas() {
       );
       setSelId(host.id);
       toast.success(`Stacked · ${child.type.split('.').pop()} → ${host.id}`, {
-        description: compat.requires ?? 'Hardware attached. Open the drawer to add the rest of the door schedule.',
+        description: compat.requires ?? 'Hardware attached.',
         duration: 5000,
       });
     };
@@ -1276,6 +1391,47 @@ export function EngineeringCanvas() {
   // the right-side PathwayDrawer. Set when the user clicks a pathway
   // line on canvas. Null when nothing pathway-related is selected.
   const [selPathwayId, setSelPathwayId] = useState<string | null>(null);
+
+  // Click-to-arm placement helper. Creates a new device of the given
+  // product at canvas-space (x, y), selects it, and clears any open
+  // pathway drawer. Mirrors the "normal floor drop" shape from the
+  // drag-and-drop path (no host-attach or cable-accessory auto-link —
+  // those remain drag-only). Returns the new device's id.
+  const placeProductAt = useCallback((product: Product, x: number, y: number): string => {
+    const kind = TYPE_KIND[product.type];
+    const typeStr = product.type as string;
+    const isDoor = typeStr.startsWith('inf.door')
+      || typeStr.startsWith('inf.gate')
+      || typeStr.startsWith('inf.storefront')
+      || typeStr.startsWith('inf.doubledoor');
+    const prefix = isDoor
+      ? 'DR'
+      : kind === 'camera'
+        ? 'CAM'
+        : kind === 'access'
+          ? (product.type === 'acc.reader' ? 'RD' : 'DR')
+          : 'NW';
+    const cohort = isDoor
+      ? Object.values(useProjectStore.getState().devices).filter((d) => {
+          const t = d.type as string;
+          return t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
+        })
+      : Object.values(useProjectStore.getState().devices).filter((d) => TYPE_KIND[d.type] === kind);
+    const id = `${prefix}-${100 + cohort.length + 1}`;
+    const newDevice: Device = {
+      id,
+      type: product.type,
+      label: product.model,
+      product: product.id,
+      x, y, rot: 0,
+    } as Device;
+    setDevices((ds) => [...ds, newDevice]);
+    setSelId(id);
+    setSelPathwayId(null);
+    toast.success(`Placed ${product.mfr} ${product.model}`, { description: `New device ${id}`, duration: 3500 });
+    return id;
+  }, [setDevices]);
+
   // Standalone conduit / pathway draw state — armed by the Cabling tray.
   // Carries the chosen kind + (for conduit) trade size so the cable
   // tool's commit handler writes the right fields onto the new pathway.
@@ -1329,6 +1485,8 @@ export function EngineeringCanvas() {
         if (viewMode === 'field')  { setViewMode('default'); return; }
         if (reportOpen)            { setReportOpen(false); return; }
         if (scanBuildOpen)         { setScanBuildOpen(false); return; }
+        // Cancel a pending click-to-arm placement before generic deselect.
+        if (armedProduct)          { setArmedProduct(null); toast.message('Placement cancelled', { duration: 2000 }); return; }
         setSelId(null); setDrag(null); setOpenCat(null); setOpenType(null);
         setWallStart(null);
         setMeasure({ start: null, end: null, cursor: null });
@@ -1351,7 +1509,7 @@ export function EngineeringCanvas() {
     // layer first (Canvas → Field → modal → selection). tool included so
     // Enter knows whether the cable tool is active.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selId, viewMode, scanBuildOpen, reportOpen, tool, cableDraw.points.length]);
+  }, [selId, viewMode, scanBuildOpen, reportOpen, tool, cableDraw.points.length, armedProduct]);
 
   /* Drag-to-place from the library --------------------------------------- */
   // hoverHost is the door / IDF currently under the cursor while a drag is
@@ -1398,31 +1556,98 @@ export function EngineeringCanvas() {
     };
     const onUp = (e: PointerEvent) => {
       const r = surfaceRef.current?.getBoundingClientRect();
-      if (!r) { setDrag(null); setHoverHost(null); return; }
+      if (!r || !drag) { setDrag(null); setHoverHost(null); dragStartRef.current = null; return; }
+      // Short release without meaningful drag → arm placement instead of
+      // dropping the device wherever the cursor happened to be (which used
+      // to land devices inside the tray overlay). Distance is measured
+      // against the IMMUTABLE start coords recorded at pointerdown, NOT
+      // drag.x/drag.y — those are overwritten on every pointermove to
+      // keep the ghost icon under the cursor.
+      const start = dragStartRef.current ?? { x: drag.x, y: drag.y };
+      const movedPx = Math.hypot(e.clientX - start.x, e.clientY - start.y);
       const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-      if (!inside || !drag) { setDrag(null); setHoverHost(null); return; }
+      if (movedPx < 8 || !inside) {
+        setArmedProduct(drag.product);
+        setDrag(null); setHoverHost(null); dragStartRef.current = null;
+        toast.message(`Click canvas to place ${drag.product.mfr} ${drag.product.model}`, {
+          description: 'Esc to cancel.',
+          duration: 4500,
+        });
+        return;
+      }
+      dragStartRef.current = null;
       // ── Drop on a host? ──
-      if (hoverHost) {
-        if (!hoverHost.allowed) {
-          // Clean rejection. No device created. Toast the reason and the
-          // suggested action — the user gets a real warning, not silence.
-          toast.warning(hoverHost.reason ?? 'Not compatible with that host', {
-            description: hoverHost.hint,
+      // Compute the host SYNCHRONOUSLY from the pointerup coords + the
+      // live devices array. hoverHost (React state set by pointermove)
+      // can lag: the move handler may not have flushed for the final
+      // cursor position, leading to the prior bug where a tray drop
+      // directly over a door created a loose accessory device. The
+      // pure helper bypasses that race entirely.
+      const dropHost = findHostUnderPointer(e.clientX, e.clientY, r, pan, zoom, devices, drag.product.type);
+      if (dropHost) {
+        const { host, hostKind, compat } = dropHost;
+        if (!compat.allowed) {
+          toast.warning(compat.reason ?? 'Not compatible with that host', {
+            description: compat.hint,
             duration: 6500,
           });
           setDrag(null); setHoverHost(null);
           return;
         }
-        // Compatible attach. Place the new device adjacent to the host
-        // and store the host↔device link via the existing linkedIds
-        // field. The host gets the new device's id appended; the new
-        // device carries the host's id. BOM (deriveBOM) treats the
-        // attached device as a normal line.
-        const host = devices.find((d) => d.id === hoverHost.id);
-        if (!host) { setDrag(null); setHoverHost(null); return; }
+        // Door host: drop the dropped product directly into the door's
+        // persisted doorAssembly[] instead of spawning a ghost accessory
+        // device. The door becomes one system element; the dropped
+        // product is consumed (no separate device created). ALSO clear
+        // any legacy stack/linkedIds on the door so old data doesn't
+        // surface as the "Legacy stack" panel ever again. If the dropped
+        // product doesn't map onto a known DoorHardware slot we REJECT
+        // the drop — no fallthrough to legacy stack[] for doors.
+        if (hostKind === 'door') {
+          const hw = productTypeToDoorHardware(drag.product.type);
+          if (!hw) {
+            toast.warning(`${drag.product.model} isn't door hardware`, {
+              description: 'Drop it on the canvas instead, or attach to an IDF / rack.',
+              duration: 5000,
+            });
+            setDrag(null); setHoverHost(null);
+            return;
+          }
+          const cur = (host.doorAssembly ?? []) as DoorHardware[];
+          const next = cur.includes(hw) ? cur : [...cur, hw];
+          setDevices((ds) => ds.map((d) => d.id === host.id ? { ...d, doorAssembly: next, stack: undefined, linkedIds: undefined } : d));
+          setSelId(host.id);
+          setSelPathwayId(null);
+          toast.success(`Added ${hw} to ${host.id}`, {
+            description: hw === 'maglock' ? 'Maglocks require a REX for code-compliant egress.' : 'Door assembly updated.',
+            duration: 4500,
+          });
+          setDrag(null); setHoverHost(null);
+          return;
+        }
         const kind = TYPE_KIND[drag.product.type];
-        const prefix = kind === 'camera' ? 'CAM' : kind === 'access' ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR') : 'NW';
-        const id = `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
+        // Door / opening types get the DR prefix regardless of TYPE_KIND
+        // (which maps them under infrastructure → NW). Mirrors the
+        // placeProductAt (click-to-arm) path so both placement flows
+        // produce the same id shape.
+        const dropType = drag.product.type as string;
+        const isOpening = dropType.startsWith('inf.door')
+          || dropType.startsWith('inf.gate')
+          || dropType.startsWith('inf.storefront')
+          || dropType.startsWith('inf.doubledoor');
+        const prefix = isOpening
+          ? 'DR'
+          : kind === 'camera'
+            ? 'CAM'
+            : kind === 'access'
+              ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR')
+              : 'NW';
+        const cohortCount = isOpening
+          ? devices.filter((d) => {
+              const t = d.type as string;
+              return t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
+            }).length
+          : devices.filter((d) => TYPE_KIND[d.type] === kind).length;
+        const id = `${prefix}-${100 + cohortCount + 1}`;
         // Offset the new device just outside the host so both glyphs are
         // visible. 22px adjacent to the host center reads as "attached".
         // When attaching to a stackable host (door / gate / elevator), the
@@ -1445,7 +1670,7 @@ export function EngineeringCanvas() {
           : d).concat(newDevice));
         setSelId(id);
         toast.success(`Attached ${drag.product.model} to ${host.id}`, {
-          description: hoverHost.reason ? undefined : 'Linked and added to BOM',
+          description: compat.reason ? undefined : 'Linked and added to BOM',
           duration: 3500,
         });
         if (drag.product.type === 'acc.maglock') {
@@ -1464,16 +1689,37 @@ export function EngineeringCanvas() {
       const x = snap ? Math.round(rawX / 20) * 20 : rawX;
       const y = snap ? Math.round(rawY / 20) * 20 : rawY;
       const kind = TYPE_KIND[drag.product.type];
-      const prefix = kind === 'camera' ? 'CAM' : kind === 'access' ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR') : 'NW';
+      // Door / opening types get the DR prefix regardless of TYPE_KIND
+      // (which buckets them as infrastructure → NW). Mirrors the
+      // placeProductAt (click-to-arm) path so both placement flows
+      // produce the same id shape.
+      const dropType = drag.product.type as string;
+      const isOpening = dropType.startsWith('inf.door')
+        || dropType.startsWith('inf.gate')
+        || dropType.startsWith('inf.storefront')
+        || dropType.startsWith('inf.doubledoor');
+      const prefix = isOpening
+        ? 'DR'
+        : kind === 'camera'
+          ? 'CAM'
+          : kind === 'access'
+            ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR')
+            : 'NW';
       // Cable accessory? The product id of a cable-tray accessory
       // starts with `cabacc-`; we surface a friendlier prefix and
       // try to auto-attach to the nearest pathway within 60 plan
       // units so the user gets immediate context.
       const isCableAcc = String(drag.product.id ?? '').startsWith('cabacc-');
       const accKind = isCableAcc ? (String(drag.product.id).split('-')[1] as any) : undefined;
+      const cohortCount = isOpening
+        ? devices.filter((d) => {
+            const t = d.type as string;
+            return t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
+          }).length
+        : devices.filter((d) => TYPE_KIND[d.type] === kind).length;
       const id = isCableAcc
         ? `${(accKind ?? 'ACC').toString().toUpperCase()}-${100 + devices.filter((d) => (d as any).accessoryKind).length + 1}`
-        : `${prefix}-${100 + devices.filter((d) => TYPE_KIND[d.type] === kind).length + 1}`;
+        : `${prefix}-${100 + cohortCount + 1}`;
       // Find nearest pathway midpoint within 60 units for cable accessories.
       // Patch panels are explicitly skipped here — they belong on an IDF
       // host, not on a pathway. The user can drag them onto the IDF/rack
@@ -1515,7 +1761,11 @@ export function EngineeringCanvas() {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
-  }, [drag, zoom, snap, devices, hoverHost]);
+  // NB: hoverHost intentionally OUT of the dep list — it's only used for
+  // visual hover feedback in CanvasSurface. The drop-mutation decision
+  // is now made by findHostUnderPointer at pointerup time, so the move
+  // and up handlers do not depend on it.
+  }, [drag, zoom, snap, devices, pan]);
 
   const updateSel = (patch: Partial<Device>) => sel && setDevices((ds) => ds.map((d) => d.id === sel.id ? { ...d, ...patch } : d));
   const deleteSel = () => { if (sel) { setDevices((ds) => ds.filter((d) => d.id !== sel.id)); setSelId(null); } };
@@ -1694,7 +1944,7 @@ export function EngineeringCanvas() {
               walls={allWalls}
               wallStart={wallStart}
               wallCursor={wallCursor}
-              onPick={(id) => { setSelId(id); }}
+              onPick={(id) => { setSelId(id); setSelPathwayId(null); }}
               onMoveDevice={(id, x, y) => setDevices((ds) => ds.map((d) => d.id === id ? { ...d, x, y } : d))}
               onRotateDevice={(id, rot) => setDevices((ds) => ds.map((d) => d.id === id ? { ...d, rot } : d))}
               onUpdateDevice={(id, patch) => setDevices((ds) => ds.map((d) => d.id === id ? { ...d, ...patch } : d))}
@@ -1713,7 +1963,14 @@ export function EngineeringCanvas() {
                 if (!currentFloorId || !floorBackground) return;
                 useProjectStore.getState().setFloorBackground(currentFloorId, { ...floorBackground, ...patch });
               }}
-              onBlank={() => setSelId(null)}
+              onBlank={() => { setSelId(null); setSelPathwayId(null); }}
+              onArmedClick={(x, y) => {
+                if (!armedProduct) return false;
+                placeProductAt(armedProduct, x, y);
+                setArmedProduct(null);
+                return true;
+              }}
+              currentFloorPxToFt={currentFloorPxToFt}
               snap={snap}
               dragging={!!drag}
               onSurfaceClick={(x, y) => {
@@ -1799,6 +2056,33 @@ export function EngineeringCanvas() {
                 setLensMode={setLensModeForSel}
                 onLensHover={setHoveredLens}
               />
+            )}
+
+            {/* Click-to-arm placement banner — visible state for the user
+                so they always know what the next canvas click will do. */}
+            {armedProduct && (
+              <div
+                className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2"
+                data-testid="armed-placement-banner"
+                style={{
+                  background: 'var(--popover)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: '6px 10px 6px 12px',
+                  boxShadow: '0 6px 20px -6px rgba(0,0,0,0.4)',
+                }}
+              >
+                <span className="text-[11.5px] text-foreground">
+                  Click canvas to place <span className="font-medium">{armedProduct.mfr} {armedProduct.model}</span>.
+                </span>
+                <button
+                  onClick={() => { setArmedProduct(null); toast.message('Placement cancelled', { duration: 2000 }); }}
+                  className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-0.5"
+                  data-testid="armed-placement-cancel"
+                >
+                  Cancel (Esc)
+                </button>
+              </div>
             )}
 
             {/* Right-side engineering inspector drawer */}
@@ -1889,7 +2173,11 @@ export function EngineeringCanvas() {
                 old bottom QuickTools capsule (cursor/hand/ruler/cable). */}
             {viewMode !== 'canvas' && (
               <BottomDeviceBar
-                onStartDrag={(p, e) => setDrag({ product: p, x: e.clientX, y: e.clientY })}
+                onStartDrag={(p, e) => {
+                  setArmedProduct(null);
+                  dragStartRef.current = { x: e.clientX, y: e.clientY };
+                  setDrag({ product: p, x: e.clientX, y: e.clientY });
+                }}
                 onPickTool={(t) => setTool(t)}
                 onPickCableType={(id) => { drawModeRef.current = { kind: 'cable' }; setCableDraw((c) => ({ ...c, cableType: id })); setTool('cable'); toast.message('Cable tool armed', { description: `Click vertices on the plan. Double-click or Enter to finish.`, duration: 4000 }); }}
                 onPickConduit={(type, size) => { drawModeRef.current = { kind: 'conduit', pathwayKind: 'conduit', conduitType: type, conduitSize: size }; setTool('conduit'); toast.message('Conduit tool armed', { description: `${type} ${size ?? ''} · click vertices on the plan. Double-click or Enter to finish.`, duration: 4500 }); }}
@@ -1916,7 +2204,7 @@ export function EngineeringCanvas() {
             {viewMode !== 'canvas' && (
               <SelectByMenu
                 devices={devices.filter((d) => !hiddenIds.has(d.id))}
-                onPick={(ids) => { setSelIds(new Set(ids)); setSelId(ids[0] ?? null); }}
+                onPick={(ids) => { setSelIds(new Set(ids)); setSelId(ids[0] ?? null); setSelPathwayId(null); }}
               />
             )}
 
@@ -4710,6 +4998,16 @@ interface SurfaceProps {
   wallCursor: { x: number; y: number } | null;
   onPick: (id: string) => void;
   onBlank: () => void;
+  /** Click-to-arm placement consumer. Receives the canvas-space coords
+   *  of a blank-surface click; returns true if the click was consumed
+   *  (a device was placed). Bypasses the deselect path. */
+  onArmedClick?: (x: number, y: number) => boolean;
+  /** Calibrated feet-per-pixel for the active floor. Used by every
+   *  on-canvas displayed-foot readout (drag HUD, nearest-distance label,
+   *  dimension chains, measure tool, live cable-draw running length).
+   *  Lives in the parent EngineeringCanvas; passed through here because
+   *  CanvasSurface has no store access of its own. */
+  currentFloorPxToFt: number;
   snap: boolean;
   dragging: boolean;
   onSurfaceClick: (x: number, y: number) => void;
@@ -4791,7 +5089,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -4850,7 +5148,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
   const onPanStart = (e: React.PointerEvent) => {
     if (tool === 'pan') {
       panRef.current = { x: e.clientX, y: e.clientY };
-      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* capture optional */ }
       return;
     }
     if (tool === 'select') {
@@ -4866,7 +5164,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         const py = (e.clientY - r.top  - pan.y) / zoom;
         marqueeStartRef.current = { x: px, y: py };
         setMarqueeLocal({ x0: px, y0: py, x1: px, y1: py });
-        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* capture optional */ }
       }
     }
   };
@@ -4949,7 +5247,22 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           onSurfaceClick(x, y);
           return;
         }
-        if (e.target === e.currentTarget || (e.target as Element).tagName === 'rect') onBlank();
+        // Armed click-to-place from the product tray. Runs BEFORE the
+        // blank-only check because real floorplans contain path / line /
+        // polygon / image geometry beneath the cursor — a user clicking
+        // inside a room must still be able to place. Device + pathway
+        // handlers already e.stopPropagation(), so this only fires on
+        // truly inert geometry (svg / rect / path / line / polygon /
+        // image / use).
+        if (onArmedClick) {
+          const { x, y } = coords(e);
+          if (onArmedClick(x, y)) return;
+        }
+        // Deselect path — still gated on inert background geometry so
+        // missed clicks on rotation rings / cone handles don't deselect.
+        const isBlank = e.target === e.currentTarget || (e.target as Element).tagName === 'rect';
+        if (!isBlank) return;
+        onBlank();
       }}
       onMouseMove={(e) => {
         if (tool !== 'wall') return;
@@ -5099,6 +5412,24 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           })}
         </g>
 
+        {/* PathwaysOverlay paints BEFORE devices so device hit-targets sit on
+            top in SVG paint order. A pathway's 12-px-wide transparent
+            hit-stroke used to cover devices that lived at the pathway's
+            endpoints (e.g. PW-1 starts at CAM-101's exact coords), which
+            stole every real click. Devices render next. */}
+        <PathwaysOverlay
+          onPickBundle={(bid) => {
+            (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(
+              new CustomEvent('dv-bundle-open', { detail: { bundleId: bid }, bubbles: true }),
+            );
+          }}
+          onPickPathway={(pid) => {
+            (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(
+              new CustomEvent('dv-pathway-pick', { detail: { pathwayId: pid }, bubbles: true }),
+            );
+          }}
+        />
+
         {/* Devices — real top-down hardware silhouettes with drag-to-move */}
         {renderedDevices.map((d) => {
           const multi = selIds.has(d.id);
@@ -5205,7 +5536,19 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               onPointerUp={(e) => {
                 if (moveRef.current?.id === d.id) moveRef.current = null;
                 setMovingId(null);
-                (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+                // releasePointerCapture throws InvalidPointerId if the
+                // element never captured this pointer (which is the case
+                // when setPointerCapture failed silently — synthetic
+                // events, browsers that lost the capture during a re-render,
+                // or click without a held drag). The throw unmounts the
+                // React root if it bubbles out of the synthetic event handler.
+                // Guard with hasPointerCapture + try/catch.
+                try {
+                  const el = e.currentTarget as Element;
+                  if ('hasPointerCapture' in el && el.hasPointerCapture(e.pointerId)) {
+                    el.releasePointerCapture(e.pointerId);
+                  }
+                } catch { /* pointer was never captured / already released */ }
                 // Canvas-to-canvas stacking: if the released device lands
                 // on top of a host (door / IDF / rack), fire an attach
                 // event regardless of whether the dragged thing is a
@@ -5273,18 +5616,27 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               <g filter={isSel ? 'url(#device-elevation)' : undefined} pointerEvents="none">
                 <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
               </g>
-              {/* Stack count badge — a small numbered bubble at the top-right
-                  of any host (door / IDF / rack) that has at least one
-                  stacked accessory. Reads as "this opening carries N pieces
-                  of hardware" without opening the drawer. */}
-              {(d as any).stack && Array.isArray((d as any).stack) && (d as any).stack.length > 0 && (
-                <g pointerEvents="none">
-                  <circle cx={d.x + 10 * iconScale} cy={d.y - 10 * iconScale} r={6} fill={tone} stroke="var(--canvas-background)" strokeWidth="1.2" />
-                  <text x={d.x + 10 * iconScale} y={d.y - 7.5 * iconScale} textAnchor="middle" fill="var(--canvas-background)" fontSize="8.5" fontWeight="700">
-                    {(d as any).stack.length}
-                  </text>
-                </g>
-              )}
+              {/* Host badge — a small numbered bubble at the top-right
+                  of any host that has hardware attached. For door / gate /
+                  opening hosts we read the canonical doorAssembly[]
+                  schedule (the persisted hardware record). For IDF / rack
+                  hosts we keep the legacy stack[] count. Reads as
+                  "this opening carries N components" without opening the drawer. */}
+              {(() => {
+                const isOpeningHost = isStackableHost(d.type);
+                const count = isOpeningHost
+                  ? (d.doorAssembly?.length ?? 0)
+                  : (d.stack?.length ?? 0);
+                if (count === 0) return null;
+                return (
+                  <g pointerEvents="none">
+                    <circle cx={d.x + 10 * iconScale} cy={d.y - 10 * iconScale} r={6} fill={tone} stroke="var(--canvas-background)" strokeWidth="1.2" />
+                    <text x={d.x + 10 * iconScale} y={d.y - 7.5 * iconScale} textAnchor="middle" fill="var(--canvas-background)" fontSize="8.5" fontWeight="700">
+                      {count}
+                    </text>
+                  </g>
+                );
+              })()}
               {/* Label pill — id + manufacturer model below. Gated by BOTH
                   the `labels` engineering layer AND the user's label
                   density preference (hidden / selected / important / all).
@@ -5512,19 +5864,9 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           />
         )}
 
-        <PathwaysOverlay
-          onPickBundle={(bid) => {
-            // Dispatch up to the parent — the parent owns the modal state.
-            (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(
-              new CustomEvent('dv-bundle-open', { detail: { bundleId: bid }, bubbles: true }),
-            );
-          }}
-          onPickPathway={(pid) => {
-            (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(
-              new CustomEvent('dv-pathway-pick', { detail: { pathwayId: pid }, bubbles: true }),
-            );
-          }}
-        />
+        {/* PathwaysOverlay used to be rendered here, AFTER devices. Moved
+            above the devices map (see comment there) so device clicks are
+            no longer stolen by pathway hit-strokes. */}
 
         {/* Cable draw — vertices already committed render as a solid
             polyline; the active rubber-band segment to the cursor is
@@ -6149,7 +6491,7 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, color, onU
 
   const startDrag = (apply: (cx: number, cy: number) => void) => (e: React.PointerEvent) => {
     e.stopPropagation();
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* capture optional */ }
     const onMove = (ev: PointerEvent) => {
       if (!svgRef.current) return;
       const rect = svgRef.current.getBoundingClientRect();
@@ -6212,7 +6554,7 @@ function RotationRing({ d, onRotate, svgRef, zoom, overrideColor }: { d: Device;
 
   const onDown = (e: React.PointerEvent) => {
     e.stopPropagation();
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* capture optional */ }
     dragging.current = true;
   };
   const onMove = (e: React.PointerEvent) => {
@@ -6223,7 +6565,15 @@ function RotationRing({ d, onRotate, svgRef, zoom, overrideColor }: { d: Device;
     const ang = Math.round((Math.atan2(cy - d.y, cx - d.x) * 180) / Math.PI);
     onRotate(((ang % 360) + 360) % 360);
   };
-  const onUp = (e: React.PointerEvent) => { dragging.current = false; (e.currentTarget as Element).releasePointerCapture?.(e.pointerId); };
+  const onUp = (e: React.PointerEvent) => {
+    dragging.current = false;
+    try {
+      const el = e.currentTarget as Element;
+      if ('hasPointerCapture' in el && el.hasPointerCapture(e.pointerId)) {
+        el.releasePointerCapture(e.pointerId);
+      }
+    } catch { /* never captured */ }
+  };
 
   return (
     <g pointerEvents="none">
@@ -7554,7 +7904,12 @@ function tilesForDevice(d: Device): { id: EditTab; label: string; icon: any; cov
   // Survey + Notes are now part of every kind — surveyors capture
   // object-linked field evidence regardless of category.
   if (isDoor) {
-    return includes(['overview','linked','mounting','accessories','network','power','compliance','survey','notes','media','ai']);
+    // Relabel the 'linked' tile to "Assembly" for doors — the section
+    // body is the DoorAssemblySection (one persisted hardware schedule),
+    // not the legacy device-stack picker. Keeps the icon + click target;
+    // only the visible label changes.
+    return includes(['overview','linked','mounting','accessories','network','power','compliance','survey','notes','media','ai'])
+      .map((t) => t.id === 'linked' ? { ...t, label: 'Assembly' } : t);
   }
   if (isReader) {
     return includes(['overview','mounting','network','power','accessories','compliance','survey','notes','media','ai']);
@@ -7838,45 +8193,12 @@ function StackSectionForHost({
     || (d.type as string).startsWith('inf.gate')
     || (d.type as string).startsWith('inf.storefront')
     || (d.type as string).startsWith('inf.doubledoor');
-  // Door / opening devices use the persisted DoorAssemblySection (one
-  // model, one record) rendered above this component. To avoid two
-  // competing door models, the legacy ghost-accessory "Add hardware"
-  // path is hidden for openings — even if a door somehow ended up with
-  // stack[] entries (from a pre-fix session) the panel only shows them
-  // read-only with a clear "legacy" disclosure and a detach button.
-  if (isDoor) {
-    if (attached.length === 0) return null;
-    return (
-      <DrawerSection title={`Legacy stack · ${attached.length}`}>
-        <div className="text-[11px] text-muted-foreground/85 mb-2">
-          Door hardware now lives in the Door assembly section above. These were attached as
-          separate devices in an earlier session — detach to clean them up.
-        </div>
-        <div className="space-y-1">
-          {attached.map((a) => (
-            <div key={a.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md border border-border/40 bg-secondary/20">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: KIND_TONE[TYPE_KIND[a.type]] }} />
-              <span className="text-[11.5px] text-foreground tracking-tight">{a.id}</span>
-              <span className="text-[10px] text-muted-foreground uppercase tracking-[0.10em]">{a.type.split('.').slice(-1)[0]}</span>
-              <button
-                onClick={() => {
-                  const store = useProjectStore.getState();
-                  onUpdate({ stack: stackIds.filter((id) => id !== a.id) });
-                  store.removeDevice(a.id);
-                  toast.message('Detached', { description: `${a.id} removed from ${d.id}.`, duration: 3000 });
-                }}
-                title="Detach legacy ghost accessory"
-                data-track={`stack-detach-${a.id}`}
-                className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </DrawerSection>
-    );
-  }
+  // Door / opening devices: the DoorAssemblySection above is the
+  // single source of truth. Render nothing in the stack panel — the
+  // drag/drop paths no longer write to stack[] for doors, so there
+  // shouldn't be any leftover data to surface. (Both attach paths
+  // clear `stack` / `linkedIds` on every door write.)
+  if (isDoor) return null;
   // Non-door hosts (IDF / rack / MDF) keep the stack workflow — they
   // really do carry separate switch / patch / UPS device records.
   const hardwareMenu: { type: DeviceType; label: string }[] = [
@@ -9583,7 +9905,7 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
   const heightPx = Math.round(pxPerM * 1.7);
 
   const onPointerDown = (e: React.PointerEvent) => {
-    (e.target as Element).setPointerCapture(e.pointerId);
+    try { (e.target as Element).setPointerCapture(e.pointerId); } catch { /* capture optional */ }
     e.stopPropagation();
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -10927,7 +11249,13 @@ function BottomDeviceBar({
     const m: Record<string, Product[]> = {};
     for (const c of cats) {
       if (!c.types) { m[c.id] = []; continue; }
-      const pool = PRODUCTS.filter((p) => c.types!.includes(p.type as any));
+      // Prefix match (not exact) so a category like Doors (`inf.door`) catches
+      // the real product types (`inf.door-single`, `inf.door-double`, etc.)
+      // that the catalog actually ships. Exact `includes` left the Doors,
+      // Gates, and Storefront trays empty.
+      const pool = PRODUCTS.filter((p) =>
+        c.types!.some((t) => p.type === t || (p.type as string).startsWith(t + '-')),
+      );
       // Deduplicate by type so each device type shows once in the tray
       // unless multiple manufacturers exist; show first 12 to keep the
       // tray scannable.
@@ -11286,7 +11614,7 @@ function BottomDeviceBar({
                         {(p as any).recommended ? (
                           <span className="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-500">Recommended</span>
                         ) : <span />}
-                        <span className="text-muted-foreground">Drag to place</span>
+                        <span className="text-muted-foreground">Drag or click to place</span>
                       </div>
                     </button>
                   );

@@ -161,9 +161,159 @@ the BOM, survey capture, or the measurement readouts.
 
 ---
 
+## Workflow usability (real user clicks)
+
+Manual regression for the canvas/surveyor selection + placement + door
+workflow. Use a real cursor or trackpad — do not rely on programmatic
+events. Open DevTools so you can verify persistence at each step.
+
+### 14. Click on CAM-101 selects CAM-101 (PathwaysOverlay no longer steals clicks; root must not unmount)
+- [ ] Fresh `localStorage.removeItem('deeperVisionStore')`. Open `/project/p1/canvas`.
+- [ ] Click CAM-101 directly with the cursor. The SelectionPill renders
+      above CAM-101 with an **Edit** button. **The canvas root must stay
+      mounted** — no white screen, no React error boundary, console clean.
+- [ ] Open DevTools and run
+      `document.elementsFromPoint(...CAM-101 center coords).slice(0,2)`.
+      The first element must be the transparent device hit-circle
+      (`<circle data-hit="device">`), **not** a pathway polyline.
+- [ ] Click **Edit**. The camera inspector drawer opens on the right
+      side scoped to CAM-101.
+
+### 15. PW-1 click opens pathway drawer; clicking a device hands off
+- [ ] Click PW-1 (the cable run from CAM-101 → IDF-1). The right-side
+      drawer opens with header `CAT6A · 10 ft · CAM-101 → IDF-1`.
+- [ ] With the pathway drawer open, click CAM-102. The pathway drawer
+      closes (or hands off); CAM-102's SelectionPill appears; the device
+      EditDrawer is the only drawer open (no stuck pathway drawer).
+
+### 15b. Blank canvas click clears both selected device and pathway
+- [ ] Click PW-1 → PathwayDrawer opens.
+- [ ] Click an empty corner of the canvas (no device, no pathway,
+      no floorplan geometry — e.g. top-left of the SVG). PathwayDrawer
+      closes; SelectionPill is gone; EditDrawer is gone.
+- [ ] Repeat with a device selected, then click blank. Device deselects.
+
+### 16. Doors tray is populated; placement via click-to-arm
+- [ ] Click the **Doors** category in the BottomDeviceBar. The tray
+      opens with 6 visible product cards: **Single door**,
+      **Double door**, **Storefront door**, **Sliding door**,
+      **Swing gate**, **Slide gate**. No empty tray.
+- [ ] Each card's hint line reads **"Drag or click to place"** (not
+      "Drag to place" — both flows work).
+- [ ] Click the **Single door** card without dragging (just a click).
+      A floating banner appears near the top reading
+      "Click canvas to place Generic Single door. Cancel (Esc)".
+- [ ] Click **inside an actual floorplan room** (over a `<path>` or
+      polygon, not just the empty SVG background). A new door device
+      lands at that point, the SelectionPill appears on it, and the
+      banner disappears. **The canvas root must stay mounted.**
+- [ ] DevTools: the new device exists in `state.devices` with
+      `type === 'inf.door-single'`, `x` / `y` matching the click point
+      in canvas space (within ±20 px of the snap grid).
+
+### 17. Cancel armed placement
+- [ ] Click a tray card to arm placement again.
+- [ ] Press **Esc**. The banner clears with a "Placement cancelled"
+      toast. No device is placed.
+- [ ] Arm again, then click the **Cancel (Esc)** button in the banner.
+      Same effect.
+
+### 18. Drag-from-tray still works (longer drag distance)
+- [ ] Click and **hold** a tray product card, drag the cursor onto the
+      canvas (at least ~8 px of movement measured from the *initial*
+      pointerdown coordinates), release. The device lands at the cursor
+      position. The arm-banner does NOT appear (drag wins).
+- [ ] After release, the new device is selected (SelectionPill on it).
+      Refresh → device persists.
+
+### 18a. Drag drop-on-host decision uses synchronous pointer coords
+- [ ] Open Access tray, click and **hold** a product card, drag with a
+      sparse / coarse cursor path that ends suddenly directly over a
+      door (don't dwell over the door before releasing — simulate a
+      hand that moves quickly the final inch).
+- [ ] The drop still resolves as a door-assembly attach, not a
+      floor-drop. No loose accessory device is created on the canvas.
+- [ ] This guards against a regression where the drop decision relied
+      on React `hoverHost` state set by pointermove. That state could
+      lag the cursor and miss the final position; the pure
+      `findHostUnderPointer` helper recomputes from pointerup coords.
+
+### 18b. Drag reader / strike / REX / DPS / maglock onto a door = door assembly
+- [ ] Place a door (or use seeded DR-100) on the canvas.
+- [ ] Open the Access tray, drag a reader product card (e.g. **Signo 20**)
+      onto the door glyph. Toast says **"Added reader to DR-…"**.
+- [ ] No new `device-RD-…` or `device-DR-…` accessory device appears on
+      the canvas. The door's badge increments by one.
+- [ ] Repeat for a strike (**6210**), maglock (**M62**), REX
+      (**REX-PIR**), DPS (**5816 Wireless**). Each adds the right slot
+      to `device.doorAssembly[]`, no ghost device created.
+- [ ] DevTools: `state.devices.<doorId>.doorAssembly` is the list of
+      slots in the order they were dragged. **`device.stack` and
+      `device.linkedIds` are undefined** on the door — neither legacy
+      field is written under any circumstance for door hosts. No device
+      in `state.devices` has `linkedIds` pointing at the door (no ghosts).
+- [ ] Drag an **incompatible** product (e.g. a camera) onto the door:
+      a toast warning appears, no device is created, no assembly mutation.
+- [ ] Drag an **unmapped** access product onto the door (e.g. anything
+      that's not in the reader/strike/maglock/rex/dps/contact/intercom/
+      panic/autoop/controller/psu set): toast warns "X isn't door
+      hardware"; no device is created; no assembly mutation; **no
+      legacy stack write**.
+- [ ] Canvas-to-canvas: drag the seeded `device-DR-1` (an `acc.strike`)
+      onto a door. The source device is removed; `strike` is added to
+      `doorAssembly[]` (or stays present if already there); door host
+      is selected.
+
+### 18b-2. Door inspector has Assembly tab, no Legacy stack
+- [ ] Select a door → Edit drawer. The Stack tab label is renamed to
+      **"Assembly"** for doors only. (Non-door hosts keep "Stack".)
+- [ ] Inside the Assembly tab there is exactly **one** section:
+      the DoorAssemblySection (checklist + electrification + reader
+      location). There is **no** "Legacy stack" panel.
+- [ ] DevTools: search the document for "Legacy stack" → 0 matches
+      on any door inspector.
+
+### 18c. Door host badge reflects assembly count
+- [ ] On a door with N hardware items, the canvas glyph shows a small
+      numbered chip (N) at the top-right of the door.
+- [ ] As you drag more hardware onto the door, the chip increments.
+
+### 19. Seeded door DR-100 + door assembly persists through real UI
+- [ ] DR-100 (Reception door) is visible on `/project/p1/canvas`
+      immediately on first load — no console injection required.
+- [ ] DR-100 must NOT overlap the seeded `RD-1` (reader) or `DR-1`
+      (strike). All three are independently selectable with the cursor.
+      Verify by clicking each in turn — the SelectionPill must show the
+      clicked id, not a neighbour's id.
+- [ ] Click DR-100 → **Edit** → **Stack** tab. The
+      **DoorAssemblySection** shows `reader / strike / rex / dps /
+      controller / psu` toggled ON, **Fail-secure**, **Mullion**.
+- [ ] On the **General/Overview** tile the **Door assembly impact**
+      block lists the 6 components with `Hardware subtotal $2,530`.
+- [ ] No legacy "+ Reader / + Strike …" Add hardware grid is visible
+      for doors (that path is door-suppressed).
+
+### 20. Place + toggle a brand-new door through the UI; BOM rolls up
+- [ ] Use the workflow from check 16 to place a fresh Single door
+      (e.g. DR-101 / DR-102 depending on cohort count).
+- [ ] On the Stack tab, toggle Reader + Strike + REX + DPS. Pick
+      Fail-secure. Refresh the browser.
+- [ ] Re-select the new door — all four hardware items + Fail-secure
+      survive.
+- [ ] Navigate to `/estimate/p1`. The **Access control · doors**
+      section contains one line per new-door hardware component
+      (description `<DR-id> · Card / mobile reader`, sku
+      `door-hw:reader`, etc.). Section subtotal matches Impact preview.
+
+### 21. No required workflow depends on console / store injection
+- [ ] Re-confirm: every check above was reached by clicking visible UI.
+      No `useProjectStore.getState().addDevice(...)` calls were needed.
+
+---
+
 ## Build / typecheck
 
-### 14. Production build is clean
+### 22. Production build is clean
 - [ ] `npm run build` — completes without TypeScript errors.
 
 ---
@@ -191,4 +341,37 @@ the BOM, survey capture, or the measurement readouts.
 | 11 | Object-linked survey note persists | |
 | 12 | Calibrated measurement readouts update | |
 | 13 | Scale-bar calibratedAt honesty | |
-| 14 | Build clean | |
+| 14 | Click CAM-101 selects + root stays mounted | |
+| 15 | PW-1 click + device hand-off | |
+| 15b | Blank click clears device AND pathway selection | |
+| 16 | Doors tray populated (6); click-to-arm on path geometry | |
+| 17 | Cancel armed placement (Esc + button) | |
+| 18 | Drag-from-tray still works | |
+| 19 | Seeded DR-100 + assembly visible | |
+| 20 | Place new door + assembly + BOM rollup | |
+| 21 | No console injection required | |
+| 22 | Build clean | |
+
+---
+
+## Known cosmetic / non-blocking issues (deferred — do not block on these)
+
+- **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already
+  has DR-100 (seeded). The next door placed (click-to-arm or drag) gets the
+  id `DR-102`, not `DR-101`. The cohort counter computes `100 + count + 1`
+  where `count` already includes DR-100. Functionally fine; numbering is
+  cosmetic. Not worth a fix without UX feedback.
+- **P2 — Legacy `Door` record duplication.** `state.doors['DOOR-101']`
+  (pre-existing from before the door-as-Device model) generates its own line
+  in the Estimator's *Access control · doors* section, separate from DR-100's
+  per-component lines. The two representations co-exist and double-count.
+  Documented risk; unification is a larger object-model change deliberately
+  deferred.
+- **P2 — `device-DR-1` is an `acc.strike`, not a door.** Pre-existing seed
+  uses the `DR-` prefix for a strike. Now that placed doors also use `DR-`,
+  the label namespace is overloaded. Confusing on read but doesn't break any
+  workflow. A future renaming pass should split the prefixes (e.g. door
+  openings get `OPN-` so `DR-` is unambiguously strike).
+- **P2 — Visual density.** Default `/project/p1/canvas` has overlapping FOV
+  cones because the seeded cameras cover a small floorplan. Pre-existing.
+  Mitigate by toggling the `fov` layer off in Layers if you need clarity.
