@@ -1843,7 +1843,6 @@ export function EngineeringCanvas() {
                 snap={snap} setSnap={setSnap}
                 layersOpen={layersOpen} onToggleLayers={() => setLayersOpen((v) => !v)}
                 onOpenScanBuild={() => setScanBuildOpen(true)}
-                onPickCableType={(id) => { drawModeRef.current = { kind: 'cable' }; setCableDraw((c) => ({ ...c, cableType: id })); setTool('cable'); toast.message('Cable tool armed', { description: `Click vertices on the plan. Double-click or Enter to finish.`, duration: 3500 }); }}
               />
             )}
             {viewMode === 'canvas' && (
@@ -9959,7 +9958,7 @@ function SelectByMenu({ devices, onPick }: { devices: Device[]; onPick: (ids: st
  *  Strict rule: TOOLS ONLY. No device categories. The panel shows tool
  *  name, shortcut, description, and tool-specific options. */
 function DrawingToolRail({
-  tool, setTool, snap, setSnap, layersOpen, onToggleLayers, onOpenScanBuild, onPickCableType,
+  tool, setTool, snap, setSnap, layersOpen, onToggleLayers, onOpenScanBuild,
 }: {
   tool: Tool;
   setTool: (t: Tool) => void;
@@ -9968,7 +9967,6 @@ function DrawingToolRail({
   layersOpen: boolean;
   onToggleLayers: () => void;
   onOpenScanBuild: () => void;
-  onPickCableType: (id: CableTypeId) => void;
 }) {
   type ItemId = Tool | 'snap' | 'layers' | 'map';
   type Item = { id: ItemId; icon: any; label: string; key?: string; hint: string; coming?: boolean };
@@ -9976,12 +9974,15 @@ function DrawingToolRail({
   // (Draw Room / Door Opening / Window / Text / Zone / Scale / Photo)
   // are shown as disabled "Coming soon" entries so the rail is complete
   // per the spec.
+  // VISIBLE left-rail tools. Cable is NOT here — cabling is an
+  // equipment category, not a left-side tool. The internal `tool ===
+  // 'cable'` state is still used by the engine, but it gets armed
+  // from the bottom Cabling tray, not from this rail.
   const items: Item[] = [
     { id: 'select',  icon: MousePointer2, label: 'Select',     key: 'V', hint: 'Select and edit objects on the plan.' },
     { id: 'pan',     icon: Hand,          label: 'Pan',        key: 'H', hint: 'Drag to pan the floorplan; cursor changes to a grab hand.' },
     { id: 'measure', icon: Ruler,         label: 'Measure',    key: 'M', hint: 'Two clicks to measure distance. Esc to cancel.' },
     { id: 'wall',    icon: WallIcon,      label: 'Wall',       key: 'W', hint: 'Draw wall segments. Click vertices, double-click to finish.' },
-    { id: 'cable',   icon: Cable,         label: 'Cable',      key: 'C', hint: 'Draw cable runs. Pick a cable type below to arm the tool.' },
   ];
   // Coming-soon tools — visible per the brief so the user sees the full
   // tool palette, disabled with a tooltip until they ship.
@@ -10012,13 +10013,13 @@ function DrawingToolRail({
 
   const onPick = (it: Item) => {
     if (it.coming) return;
-    if (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall' || it.id === 'cable') setTool(it.id as Tool);
+    if (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall') setTool(it.id as Tool);
     setPanelId(panelId === it.id ? null : it.id);
   };
 
   const Tile = ({ it, badge }: { it: Item; badge?: React.ReactNode }) => {
     const Icon = it.icon;
-    const isActiveTool = !it.coming && (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall' || it.id === 'cable') && tool === it.id;
+    const isActiveTool = !it.coming && (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall') && tool === it.id;
     const isActivePanel = panelId === it.id;
     const isDimmed = !!it.coming;
     return (
@@ -10081,7 +10082,6 @@ function DrawingToolRail({
             snap={snap} setSnap={setSnap}
             layersOpen={layersOpen} onToggleLayers={onToggleLayers}
             onOpenScanBuild={onOpenScanBuild}
-            onPickCableType={(id) => onPickCableType(id)}
           />
         </div>
       )}
@@ -10096,7 +10096,6 @@ function panelLabel(panelId: string): string {
     pan:     'Pan',
     measure: 'Measure',
     wall:    'Draw wall',
-    cable:   'Draw cable',
     snap:    'Snap',
     layers:  'Layers',
     map:     'Map / Floorplan',
@@ -10105,14 +10104,13 @@ function panelLabel(panelId: string): string {
 
 function ToolPanelHeader({ panelId, onClose }: { panelId: string; onClose: () => void }) {
   const shortcut = ({
-    select: 'V', pan: 'H', measure: 'M', wall: 'W', cable: 'C', snap: 'S',
+    select: 'V', pan: 'H', measure: 'M', wall: 'W', snap: 'S',
   } as Record<string, string>)[panelId];
   const sub = ({
     select:  'Click an object to edit it. Shift-click adds to a multi-selection.',
     pan:     'Click + drag to pan. Scroll to zoom.',
     measure: 'Two clicks → distance. Esc cancels.',
     wall:    'Click vertices to draw a wall. Double-click or Enter to finish.',
-    cable:   'Click a cable type below. Then click vertices on the plan.',
     snap:    'Magnetic alignment while drawing or moving objects.',
     layers:  'Toggle engineering overlays on the canvas.',
     map:     'Bring a floorplan in: scan, upload, satellite, or sketch.',
@@ -10134,13 +10132,12 @@ function ToolPanelHeader({ panelId, onClose }: { panelId: string; onClose: () =>
 }
 
 function ToolPanelBody({
-  panelId, snap, setSnap, layersOpen, onToggleLayers, onOpenScanBuild, onPickCableType,
+  panelId, snap, setSnap, layersOpen, onToggleLayers, onOpenScanBuild,
 }: {
   panelId: string;
   snap: boolean; setSnap: (v: boolean) => void;
   layersOpen: boolean; onToggleLayers: () => void;
   onOpenScanBuild: () => void;
-  onPickCableType: (id: CableTypeId) => void;
 }) {
   const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/30">
@@ -10183,26 +10180,6 @@ function ToolPanelBody({
         <Row label="Finish" value="Double-click or Enter" />
         <Row label="Snap" value={snap ? 'On' : 'Off'} />
         <div className="text-[10.5px] text-muted-foreground italic px-2 mt-2">Wall type, fire rating, and thickness pickers ship next pass.</div>
-      </div>
-    );
-  }
-  if (panelId === 'cable') {
-    return (
-      <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1">Cable type</div>
-        <div className="grid grid-cols-2 gap-1.5">
-          {(CABLE_TYPES as any[]).slice(0, 8).map((c) => (
-            <button
-              key={c.id}
-              onClick={() => onPickCableType(c.id)}
-              data-track={`toolpanel-cable-${c.id}`}
-              className="text-left px-2 py-1.5 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 text-[11.5px]"
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <div className="text-[10.5px] text-muted-foreground italic px-1 mt-1">Pick a type, then click vertices on the plan. Double-click or Enter to finish.</div>
       </div>
     );
   }
