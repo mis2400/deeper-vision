@@ -102,28 +102,42 @@ const SYMBOLS: Record<string, React.ReactNode> = {
     </g>
   ),
   'cam.lpr': (
+    // Bullet camera body + small plate-readout tick lines (vertical
+    // bars indicating the plate being read). Reads as "license-plate
+    // camera" in plan view without the LPR text label.
     <g>
       <rect x={4} y={9} width={12} height={6} rx={1} />
       <line x1={16} y1={9}  x2={21} y2={5} />
       <line x1={16} y1={15} x2={21} y2={19} />
       <line x1={21} y1={5}  x2={21} y2={19} />
-      <text x={10} y={13.5} textAnchor="middle" fontSize="4.2" fill="currentColor" stroke="none">LPR</text>
+      <line x1={6.5} y1={11} x2={6.5} y2={13} />
+      <line x1={8.5} y1={11} x2={8.5} y2={13} />
+      <line x1={10.5} y1={11} x2={10.5} y2={13} />
+      <line x1={12.5} y1={11} x2={12.5} y2={13} />
     </g>
   ),
   'cam.thermal': (
+    // Bullet body with a small lens + radiating dashes — classic
+    // thermal-camera plan glyph (the dashes evoke heat sensing).
     <g>
       <rect x={5} y={9} width={12} height={6} rx={1.2} />
       <line x1={16} y1={9}  x2={20} y2={6} />
       <line x1={16} y1={15} x2={20} y2={18} />
       <line x1={20} y1={6}  x2={20} y2={18} />
-      <text x={11} y={13.5} textAnchor="middle" fontSize="4.5" fontWeight="700" fill="currentColor" stroke="none">TH</text>
+      <circle cx={8.5} cy={12} r={1.5} />
+      <line x1={11} y1={11} x2={12.5} y2={11} />
+      <line x1={11} y1={12} x2={13.5} y2={12} />
+      <line x1={11} y1={13} x2={12.5} y2={13} />
     </g>
   ),
   'cam.body': (
+    // Worn / body-camera plan symbol: small rectangular body with a
+    // chest-mount clip + lens. Reads compactly without a mascot-style
+    // person silhouette.
     <g>
-      <rect x={9} y={4} width={6} height={14} rx={1.4} />
-      <circle cx={12} cy={8} r={1.6} />
-      <line x1={10} y1={14} x2={14} y2={14} />
+      <rect x={8} y={6} width={8} height={12} rx={1.2} />
+      <circle cx={12} cy={10} r={1.8} />
+      <rect x={10} y={4} width={4} height={3} rx={0.6} />
     </g>
   ),
 
@@ -165,9 +179,13 @@ const SYMBOLS: Record<string, React.ReactNode> = {
     </g>
   ),
   'acc.exit': (
+    // REX (request-to-exit) device: rounded oblong with an outward-
+    // pointing arrow, the conventional plan symbol for an egress
+    // device. Replaces the "EX" text label.
     <g>
       <rect x={3} y={9} width={18} height={6} rx={2.5} />
-      <text x={12} y={13.5} textAnchor="middle" fontSize="4.5" fontWeight="700" fill="currentColor" stroke="none">EX</text>
+      <line x1={8} y1={12} x2={16} y2={12} />
+      <path d="M 13 9.5 L 16 12 L 13 14.5" />
     </g>
   ),
   'acc.dps': (
@@ -193,9 +211,13 @@ const SYMBOLS: Record<string, React.ReactNode> = {
     </g>
   ),
   'acc.psu': (
+    // Power supply unit: enclosure with a battery cell motif inside.
+    // Two short bars (positive/negative terminals) replace the "+−"
+    // text — reads as a power-source plan symbol.
     <g>
       <rect x={5} y={7} width={14} height={10} rx={1} />
-      <text x={12} y={14} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="currentColor" stroke="none">+−</text>
+      <rect x={8} y={10} width={8} height={4} rx={0.4} />
+      <line x1={17} y1={11} x2={17} y2={13} />
     </g>
   ),
   'acc.intercom': (

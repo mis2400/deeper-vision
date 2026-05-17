@@ -226,6 +226,80 @@ events. Open DevTools so you can verify persistence at each step.
 - [ ] After release, the new device is selected (SelectionPill on it).
       Refresh → device persists.
 
+### 17b. Selected-object pill is Edit-first
+- [ ] Click any device (e.g. CAM-101). The floating pill exposes these
+      visible buttons in order: **More (Expand)** · **Edit** ·
+      **Duplicate** · **Delete**. No kind-specific buttons (Rotate / FOV /
+      Hardware / Electrify / Egress / Lens / Mode / Switches / PoE / etc.)
+      appear in the visible row — they live in the More popover or in
+      the Edit drawer.
+- [ ] DevTools: the pill container's `button[data-track]` set is
+      exactly `['pill-expand','pill-edit','pill-duplicate','pill-delete']`.
+- [ ] Open the More popover: it shows Color / Stack / More details only.
+      Duplicate and Delete are NOT duplicated inside More — they live in
+      the visible row.
+
+### 17c. Door assembly summary chip
+- [ ] Drop hardware onto a door (e.g. reader + strike on DR-102).
+- [ ] A compact chip appears at the top-right of the door glyph
+      containing: the assembly count + 5 small class dots in order
+      **R / L / X / M / P** (Reader / Lock / eXit / Monitor / Power).
+- [ ] Each dot is filled when the door's `doorAssembly[]` contains
+      any component in that class:
+  - R = reader
+  - L = strike OR maglock
+  - X = rex OR panic OR autoop
+  - M = dps OR contact
+  - P = controller OR psu
+- [ ] DevTools: `document.elementFromPoint(chipX, chipY)` returns
+      `rect[data-hit="device-chip"]` (transparent, `pointer-events=all`)
+      as the top element. Clicks at the chip area select the door,
+      they do NOT fall through to floorplan geometry.
+- [ ] The chip itself stays `pointer-events="none"`; selection comes
+      from the sibling hit-rect.
+
+### 17c-2. Door chip hit-target regression guard
+- [ ] Select CAM-101 (or any other device) first.
+- [ ] Click on the chip area of seeded DR-100 (the small chip at the
+      top-right of the door glyph). DR-100 must select — not CAM-101 and
+      not "nothing" (floorplan click-through).
+- [ ] Probe: `document.elementsFromPoint(chip x, chip y).slice(0,2)`
+      returns `[rect[data-hit="device-chip"], circle[data-hit="device"]]`.
+      Pathway / FOV / floorplan geometry must NOT appear before either
+      hit target.
+
+### 17d. Symbol text-letter replacements
+- [ ] cam.lpr now renders as a bullet camera body + plate-readout
+      tick lines (no "LPR" text).
+- [ ] cam.thermal renders with a small lens + radiating heat-dash
+      lines (no "TH" text).
+- [ ] acc.exit renders with a small outward-pointing arrow inside the
+      rounded oblong (no "EX" text).
+- [ ] acc.psu renders as a compact enclosure with a battery-cell
+      rectangle and terminal tick (no "+−" text).
+- [ ] All other plan symbols (cam.dome, cam.bullet, cam.turret, cam.ptz,
+      cam.multisensor, cam.fisheye, acc.reader, acc.keypad, acc.biometric,
+      acc.strike, acc.maglock, acc.dps, acc.panic, acc.controller,
+      acc.intercom, door variants) unchanged.
+
+### 17a. Canvas visual restraint
+- [ ] Open `/project/p1/canvas` fresh. The default canvas should read as
+      a calm survey plan:
+  - FOV cones render at the default `coverageOpacity: 38` — quieter
+    than the previous 55. They should look like translucent sightlines,
+    not bright colored blobs.
+  - Cable accessory and legacy fallback device glyphs render with a
+    single quiet knock-out behind the symbol, **not** a tone-colored
+    halo blob.
+  - The technical SurveyorSymbol glyphs (cameras, doors, readers,
+    strikes, etc.) read as restrained plan symbols with thin
+    1.4-px strokes.
+- [ ] Door host badge sits at top-right of the door symbol, radius 6,
+      with `pointer-events="none"`. `document.elementsFromPoint(badge x,
+      badge y).slice(0,1)` returns the device hit-circle (`fill=transparent`,
+      `pointer-events=all`), not the badge — clicks at the badge
+      position still select the door.
+
 ### 18a. Drag drop-on-host decision uses synchronous pointer coords
 - [ ] Open Access tray, click and **hold** a product card, drag with a
       sparse / coarse cursor path that ends suddenly directly over a

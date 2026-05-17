@@ -5610,23 +5610,87 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 pointerEvents="all"
                 data-hit="device"
               />
+              {/* Extended hit target for door-host assembly chips.
+                  The chip renders at (d.x + ~12 to d.x + ~26, d.y - 20
+                  to d.y - 7) — fully outside the 18-px hit circle above.
+                  Without this rect, clicks on the chip area fall through
+                  to floorplan geometry and the door isn't selectable
+                  from its own badge. The rect lives inside the same
+                  device `<g>`, so the existing onPointerDown / onClick
+                  selection handlers fire when it's clicked. Stays
+                  transparent so it doesn't paint anything visible. */}
+              {isDoorish && (d.doorAssembly?.length ?? 0) > 0 && (
+                <rect
+                  x={d.x + (12 * iconScale) - 16}
+                  y={d.y - (14 * iconScale) - 8}
+                  width={32}
+                  height={17}
+                  rx={3}
+                  fill="transparent"
+                  pointerEvents="all"
+                  data-hit="device-chip"
+                />
+              )}
               {/* When the device is selected, wrap the glyph in a filter
                   group that paints a soft drop shadow underneath. Reads
                   as gentle elevation rather than HUD selection glow. */}
               <g filter={isSel ? 'url(#device-elevation)' : undefined} pointerEvents="none">
                 <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
               </g>
-              {/* Host badge — a small numbered bubble at the top-right
-                  of any host that has hardware attached. For door / gate /
-                  opening hosts we read the canonical doorAssembly[]
-                  schedule (the persisted hardware record). For IDF / rack
-                  hosts we keep the legacy stack[] count. Reads as
-                  "this opening carries N components" without opening the drawer. */}
+              {/* Host badge.
+                  For door / gate / opening hosts we render a compact
+                  "assembly summary" chip: the component count + five
+                  small dots representing the major access-control
+                  classes (Reader, Lock, eXit/REX, Monitor, Power). Each
+                  dot is filled when the door's doorAssembly carries any
+                  component in that class, hollow otherwise. Gives an
+                  at-a-glance "what's on this opening" without opening
+                  the inspector. Chip sits at the top-right of the
+                  device hit-circle with pointerEvents="none" so it
+                  never blocks selection.
+                  For IDF / rack hosts we keep the legacy stack[] count. */}
               {(() => {
                 const isOpeningHost = isStackableHost(d.type);
-                const count = isOpeningHost
-                  ? (d.doorAssembly?.length ?? 0)
-                  : (d.stack?.length ?? 0);
+                if (isOpeningHost) {
+                  const asm = d.doorAssembly ?? [];
+                  if (asm.length === 0) return null;
+                  // Class buckets — surveyor shorthand RLXMP
+                  const has = {
+                    R: asm.includes('reader'),
+                    L: asm.includes('strike') || asm.includes('maglock'),
+                    X: asm.includes('rex') || asm.includes('panic') || asm.includes('autoop'),
+                    M: asm.includes('dps') || asm.includes('contact'),
+                    P: asm.includes('controller') || asm.includes('psu'),
+                  };
+                  const classes: Array<keyof typeof has> = ['R','L','X','M','P'];
+                  const chipX = d.x + 12 * iconScale;
+                  const chipY = d.y - 14 * iconScale;
+                  return (
+                    <g pointerEvents="none">
+                      <rect
+                        x={chipX - 14} y={chipY - 6}
+                        width={28} height={13} rx={3}
+                        fill="var(--card)" stroke={tone} strokeWidth="0.7" fillOpacity="0.96"
+                      />
+                      <text x={chipX - 9} y={chipY + 3.2} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={tone}>
+                        {asm.length}
+                      </text>
+                      {/* dots — one per class, filled when present */}
+                      {classes.map((cls, i) => (
+                        <circle
+                          key={cls}
+                          cx={chipX - 3 + i * 3.3}
+                          cy={chipY + 0.5}
+                          r={1.1}
+                          fill={has[cls] ? tone : 'transparent'}
+                          stroke={tone}
+                          strokeWidth="0.5"
+                        />
+                      ))}
+                    </g>
+                  );
+                }
+                const count = d.stack?.length ?? 0;
                 if (count === 0) return null;
                 return (
                   <g pointerEvents="none">
@@ -6652,8 +6716,9 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
   if (accKind) {
     return (
       <g transform={`translate(${d.x}, ${d.y}) scale(${scale})`}>
-        <circle r={15} fill={ink} opacity="0.10" />
-        <circle r={13} fill="var(--canvas-background)" opacity="0.94" stroke={ink} strokeWidth="0.9" />
+        {/* Quiet knock-out behind the glyph so the symbol stays legible
+            against the floorplan, no decorative tone halo. */}
+        <circle r={12} fill="var(--canvas-background)" opacity="0.96" stroke={ink} strokeOpacity="0.55" strokeWidth="0.7" />
         <g fill="none" stroke={ink} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round">
           {(accKind === 'jack' || accKind === 'jack-shld' || accKind === 'jack-outdoor' || accKind === 'biscuit') && (
             <g>
@@ -6785,9 +6850,11 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
 
   return (
     <g transform={`translate(${d.x}, ${d.y}) scale(${scale})`}>
-      {/* glass knock-out with tone glow — reads on the cinematic dark plan */}
-      <circle r={15} fill={ink} opacity="0.10" />
-      <circle r={13} fill="var(--canvas-background)" opacity="0.94" stroke={ink} strokeWidth="0.9" />
+      {/* Quiet knock-out behind the glyph. The cartoon `tone halo`
+          (opacity 0.10 colored blob) was removed — it read as a
+          decorative blob on the plan. The remaining knock-out keeps
+          the symbol legible against the floorplan rendering. */}
+      <circle r={12} fill="var(--canvas-background)" opacity="0.96" stroke={ink} strokeOpacity="0.55" strokeWidth="0.7" />
 
       <g transform={`rotate(${rot})`} fill="none" stroke={ink} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round">
         {kind === 'camera' && d.type === 'cam.bullet' && (
@@ -7399,105 +7466,79 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   // reader + egress). Less-used controls (link, note, schedule, target
   // sim, delete) move behind More so the toolbar stays calm.
   const actions: ToolbarAction[] = (() => {
-    // Toolbars follow the published canvas spec: max 5 visible actions
-    // per device kind. Everything else falls into the "More" overflow.
-    // Camera:      Edit · Rotate · FOV · Duplicate · More
-    // Multisensor: Edit · Lens · Mode · Target · More
-    // Door:        Edit · Hardware · Electrify · Egress · More
-    // Reader:      Edit · Link Door · Mount · Validate · More
-    // Pathway:     Edit Route · Add Bend · Add Pull Box · Cable · More
-    // IDF:         Edit · Switches · PoE · Links · More
+    // SelectionPill primary row is intentionally minimal — Edit / Duplicate /
+    // Delete + a "More" overflow. All kind-specialized actions (Rotate, FOV,
+    // Lens mode, Hardware, Electrify, Egress, Switches, PoE, Cable, etc.)
+    // are accessible from the overflow popover and from the EditDrawer
+    // tiles. This keeps the floating toolbar uncluttered and Edit-first so
+    // the surveyor reaches the deep settings via the right-side drawer
+    // instead of fighting a wide button row near the cursor.
+    const primary: ToolbarAction[] = [
+      { id: 'edit', icon: Settings2, label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
+      { id: 'dup',  icon: Copy,      label: 'Duplicate', onClick: onDuplicate },
+      { id: 'del',  icon: Trash2,    label: 'Delete',    onClick: onDelete, danger: true },
+    ];
+    // Per-kind overflow — what was previously in the visible row now lands
+    // here behind the "More" popover. Same handlers / labels; just one
+    // click further from the cursor.
+    const overflow: ToolbarAction[] = [];
     if (isMultisensor) {
-      return [
-        { id: 'edit',   icon: Settings2,     label: 'Edit',   onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'lens',   icon: Aperture,      label: 'Lens',   onClick: () => onOpenTab('lens') },
+      overflow.push(
+        { id: 'lens',   icon: Aperture,      label: 'Lens',         onClick: () => onOpenTab('lens'), overflow: true },
         { id: 'mode',   icon: lensMode === 'linked' ? Lock : Unlock,
           label: lensMode === 'linked' ? 'Linked' : 'Indep',
-          onClick: () => setLensMode(lensMode === 'linked' ? 'independent' : 'linked') },
-        { id: 'target', icon: ScanFace,      label: 'Target', onClick: onTargetSim },
-        // Overflow
-        { id: 'auto',   icon: Sparkles,      label: 'AI optimize', onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'dup',    icon: Copy,          label: 'Duplicate',   onClick: onDuplicate, overflow: true },
-        { id: 'note',   icon: MessageSquare, label: 'Note',        onClick: () => onOpenTab('notes'), overflow: true },
-        { id: 'del',    icon: Trash2,        label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
-      ];
+          onClick: () => setLensMode(lensMode === 'linked' ? 'independent' : 'linked'), overflow: true },
+        { id: 'target', icon: ScanFace,      label: 'Target sim',   onClick: onTargetSim, overflow: true },
+        { id: 'auto',   icon: Sparkles,      label: 'AI optimize',  onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'note',   icon: MessageSquare, label: 'Note',         onClick: () => onOpenTab('notes'), overflow: true },
+      );
+    } else if (isCam) {
+      overflow.push(
+        { id: 'rotate', icon: RotateCw,      label: 'Rotate 15°',   onClick: () => onRotate((d.rot + 15) % 360), overflow: true },
+        { id: 'fov',    icon: Aperture,      label: 'FOV',          onClick: () => onOpenTab('lens'), overflow: true },
+        { id: 'ai',     icon: Sparkles,      label: 'AI optimize',  onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'target', icon: ScanFace,      label: 'Target sim',   onClick: onTargetSim, overflow: true },
+        { id: 'link',   icon: GitBranch,     label: 'Link path',    onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'note',   icon: MessageSquare, label: 'Note',         onClick: () => onOpenTab('notes'), overflow: true },
+      );
+    } else if (isReader) {
+      overflow.push(
+        { id: 'linkdoor', icon: KeyRound,    label: 'Link door',    onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'mount',    icon: Crosshair,   label: 'Mount',        onClick: () => onOpenTab('mounting'), overflow: true },
+        { id: 'validate', icon: ShieldCheck, label: 'Validate',     onClick: () => onOpenTab('compliance'), overflow: true },
+        { id: 'ai',       icon: Sparkles,    label: 'AI hint',      onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'note',     icon: MessageSquare, label: 'Note',       onClick: () => onOpenTab('notes'), overflow: true },
+      );
+    } else if (isDoor) {
+      overflow.push(
+        { id: 'hardware', icon: KeyRound,    label: 'Hardware',     onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'elec',     icon: Zap,         label: 'Electrify',    onClick: () => onOpenTab('power'), overflow: true },
+        { id: 'egress',   icon: DoorOpen,    label: 'Egress',       onClick: () => onOpenTab('compliance'), overflow: true },
+        { id: 'validate', icon: ShieldCheck, label: 'Validate',     onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'link',     icon: GitBranch,   label: 'Pathway',      onClick: () => onOpenTab('linked'), overflow: true },
+      );
+    } else if (isIDF) {
+      overflow.push(
+        { id: 'switches', icon: Server,          label: 'Switches', onClick: () => onOpenTab('network'), overflow: true },
+        { id: 'poe',      icon: BatteryCharging, label: 'PoE',      onClick: () => onOpenTab('power'), overflow: true },
+        { id: 'links',    icon: GitBranch,       label: 'Links',    onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'ups',      icon: Zap,             label: 'UPS',      onClick: () => onOpenTab('power'), overflow: true },
+        { id: 'failure',  icon: AlertTriangle,   label: 'Failure analysis', onClick: () => onOpenTab('ai'), overflow: true },
+      );
+    } else if (isPathway) {
+      overflow.push(
+        { id: 'bend',    icon: CircleDot, label: 'Add bend',      onClick: () => onOpenTab('linked'), overflow: true },
+        { id: 'pull',    icon: Hash,      label: 'Add pull box',  onClick: () => onOpenTab('mounting'), overflow: true },
+        { id: 'cable',   icon: Cable,     label: 'Cable',         onClick: () => onOpenTab('network'), overflow: true },
+        { id: 'ai-path', icon: Sparkles,  label: 'AI optimize',   onClick: () => onOpenTab('ai'), overflow: true },
+        { id: 'fill',    icon: BarChart3, label: 'Fill %',        onClick: () => onOpenTab('telemetry'), overflow: true },
+      );
+    } else {
+      overflow.push(
+        { id: 'note', icon: MessageSquare, label: 'Note', onClick: () => onOpenTab('notes'), overflow: true },
+      );
     }
-    if (isCam) {
-      return [
-        { id: 'edit',   icon: Settings2, label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'rotate', icon: RotateCw,  label: 'Rotate',    onClick: () => onRotate((d.rot + 15) % 360) },
-        { id: 'fov',    icon: Aperture,  label: 'FOV',       onClick: () => onOpenTab('lens') },
-        { id: 'dup',    icon: Copy,      label: 'Duplicate', onClick: onDuplicate },
-        // Overflow
-        { id: 'ai',     icon: Sparkles,      label: 'AI optimize', onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'target', icon: ScanFace,      label: 'Target sim',  onClick: onTargetSim, overflow: true },
-        { id: 'link',   icon: GitBranch,     label: 'Link path',   onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'note',   icon: MessageSquare, label: 'Note',        onClick: () => onOpenTab('notes'), overflow: true },
-        { id: 'del',    icon: Trash2,        label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
-      ];
-    }
-    if (isReader) {
-      return [
-        { id: 'edit',     icon: Settings2,   label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'linkdoor', icon: KeyRound,    label: 'Link door', onClick: () => onOpenTab('linked') },
-        { id: 'mount',    icon: Crosshair,   label: 'Mount',     onClick: () => onOpenTab('mounting') },
-        { id: 'validate', icon: ShieldCheck, label: 'Validate',  onClick: () => onOpenTab('compliance') },
-        // Overflow
-        { id: 'ai',     icon: Sparkles,      label: 'AI hint', onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'dup',    icon: Copy,          label: 'Duplicate', onClick: onDuplicate, overflow: true },
-        { id: 'note',   icon: MessageSquare, label: 'Note',      onClick: () => onOpenTab('notes'), overflow: true },
-        { id: 'del',    icon: Trash2,        label: 'Delete',    onClick: onDelete, overflow: true, danger: true },
-      ];
-    }
-    if (isDoor) {
-      return [
-        { id: 'edit',     icon: Settings2,   label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'hardware', icon: KeyRound,    label: 'Hardware',  onClick: () => onOpenTab('linked') },
-        { id: 'elec',     icon: Zap,         label: 'Electrify', onClick: () => onOpenTab('power') },
-        { id: 'egress',   icon: DoorOpen,    label: 'Egress',    onClick: () => onOpenTab('compliance') },
-        // Overflow
-        { id: 'validate', icon: ShieldCheck, label: 'Validate',    onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'sched',    icon: Calendar,    label: 'Schedule',    onClick: () => onOpenTab('notes'), overflow: true },
-        { id: 'link',     icon: GitBranch,   label: 'Pathway',     onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'explode',  icon: Layers,      label: 'Exploded view', onClick: () => onOpenTab('mounting'), overflow: true },
-        { id: 'del',      icon: Trash2,      label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
-      ];
-    }
-    if (isIDF) {
-      return [
-        { id: 'edit',     icon: Settings2,       label: 'Edit',     onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'switches', icon: Server,          label: 'Switches', onClick: () => onOpenTab('network') },
-        { id: 'poe',      icon: BatteryCharging, label: 'PoE',      onClick: () => onOpenTab('power') },
-        { id: 'links',    icon: GitBranch,       label: 'Links',    onClick: () => onOpenTab('linked') },
-        // Overflow
-        { id: 'thermal', icon: Thermometer,    label: 'Thermal',  onClick: () => onOpenTab('telemetry'), overflow: true },
-        { id: 'ups',     icon: Zap,            label: 'UPS',      onClick: () => onOpenTab('power'), overflow: true },
-        { id: 'fiber',   icon: Cable,          label: 'Fiber',    onClick: () => onOpenTab('network'), overflow: true },
-        { id: 'failure', icon: AlertTriangle,  label: 'Failure analysis', onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'del',     icon: Trash2,         label: 'Delete',   onClick: onDelete, overflow: true, danger: true },
-      ];
-    }
-    if (isPathway) {
-      return [
-        { id: 'edit',   icon: Settings2, label: 'Edit route',   onClick: () => onOpenTab('overview'), primary: true },
-        { id: 'bend',   icon: CircleDot, label: 'Add bend',     onClick: () => onOpenTab('linked') },
-        { id: 'pull',   icon: Hash,      label: 'Add pull box', onClick: () => onOpenTab('mounting') },
-        { id: 'cable',  icon: Cable,     label: 'Cable',        onClick: () => onOpenTab('network') },
-        // Overflow
-        { id: 'fiber',  icon: Cable,     label: 'Fiber',       onClick: () => onOpenTab('network'), overflow: true },
-        { id: 'emt',    icon: Slash,     label: 'EMT',         onClick: () => onOpenTab('compliance'), overflow: true },
-        { id: 'bridge', icon: Wifi,      label: 'Wireless',    onClick: () => onOpenTab('network'), overflow: true },
-        { id: 'ai',     icon: Sparkles,  label: 'AI optimize', onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'fill',   icon: BarChart3, label: 'Fill %',      onClick: () => onOpenTab('telemetry'), overflow: true },
-        { id: 'del',    icon: Trash2,    label: 'Delete',      onClick: onDelete, overflow: true, danger: true },
-      ];
-    }
-    return [
-      { id: 'edit', icon: Settings2,     label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
-      { id: 'dup',  icon: Copy,          label: 'Duplicate', onClick: onDuplicate },
-      { id: 'note', icon: MessageSquare, label: 'Note',      onClick: () => onOpenTab('notes'), overflow: true },
-      { id: 'del',  icon: Trash2,        label: 'Delete',    onClick: onDelete, overflow: true, danger: true },
-    ];
+    return [...primary, ...overflow];
   })();
   const primaryActions = actions.filter((a) => !a.overflow);
   const overflowActions = actions.filter((a) => a.overflow);
@@ -7586,6 +7627,27 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
           <Settings2 className="w-3.5 h-3.5" style={{ color: tone }} />
           Edit
         </button>
+        {/* Duplicate — promoted to a visible pill button (was inside the
+            More popover). Matches the "minimal Edit-first toolbar" spec:
+            identity · Edit · Duplicate · Delete · More. */}
+        <button
+          onClick={onDuplicate}
+          title="Duplicate"
+          data-track="pill-duplicate"
+          className="px-2.5 inline-flex items-center justify-center border-l border-border/60 text-muted-foreground hover:bg-secondary/30 hover:text-foreground transition-colors"
+        >
+          <Copy className="w-3.5 h-3.5" />
+        </button>
+        {/* Delete — promoted to a visible pill button (was inside the
+            More popover). Destructive-tone hover. */}
+        <button
+          onClick={onDelete}
+          title="Delete"
+          data-track="pill-delete"
+          className="px-2.5 inline-flex items-center justify-center border-l border-border/60 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Stack popover — opens when the user clicks the stack chip on a
@@ -7644,15 +7706,20 @@ function ExpandMenu({
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
   }, [open]);
 
-  // Lock is intentionally absent — the underlying action isn't wired through
-  // the store yet, and the durable rule is "if it doesn't work, don't show it."
-  // Re-add when updateDevice gains a `locked` flag + the canvas respects it.
+  // Duplicate + Delete + Lock removed from this overflow popover:
+  //  - Duplicate is promoted to a visible pill button (matches the
+  //    "minimal Edit-first toolbar" spec).
+  //  - Delete is promoted to a visible pill button (destructive tone).
+  //  - Lock is intentionally absent — not wired through the store yet,
+  //    and the durable rule is "if it doesn't work, don't show it."
+  // What remains in More: color / stack / more-details. Specialized
+  // kind actions (Rotate / FOV / Lens / Hardware / Electrify / Egress)
+  // belong in the Edit drawer; surfacing them here would re-clutter the
+  // pill the user explicitly asked to keep minimal.
   const items: Array<{ id: string; label: string; icon: any; onClick: () => void; danger?: boolean }> = [
-    { id: 'duplicate', label: 'Duplicate',    icon: Copy,       onClick: () => { onDuplicate(); setOpen(false); } },
-    { id: 'color',     label: 'Color',        icon: PaintBucket, onClick: () => { setColorOpen((v) => !v); } },
-    { id: 'stack',     label: 'Stack',        icon: Layers,     onClick: () => { onOpenTab('compliance'); setOpen(false); } },
-    { id: 'details',   label: 'More details', icon: FileText,   onClick: () => { onOpenTab('overview'); setOpen(false); } },
-    { id: 'delete',    label: 'Delete',       icon: Trash2,     onClick: () => { onDelete(); setOpen(false); }, danger: true },
+    { id: 'color',   label: 'Color',        icon: PaintBucket, onClick: () => { setColorOpen((v) => !v); } },
+    { id: 'stack',   label: 'Stack',        icon: Layers,     onClick: () => { onOpenTab('compliance'); setOpen(false); } },
+    { id: 'details', label: 'More details', icon: FileText,   onClick: () => { onOpenTab('overview'); setOpen(false); } },
   ];
 
   return (

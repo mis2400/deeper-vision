@@ -113,7 +113,10 @@ export const DEFAULT_DISPLAY_PREFS: CanvasDisplayPrefs = {
   // glance; users opt into more visual density via the Layers panel.
   labelDensity:    'selected',
   // 55% reads as a quiet architectural overlay rather than a neon HUD.
-  coverageOpacity: 55,
+  // Default FOV cone opacity. Quieter than the original 55 so dense
+  // canvases read more like a surveyor's plan than a cartoon heatmap.
+  // Users can still dial it up via canvas display preferences.
+  coverageOpacity: 38,
   baseMap:         'blueprint',
 };
 
