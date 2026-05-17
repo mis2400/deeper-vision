@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { useProjectStore, selectors as storeSelectors, deriveBOM, deriveDoorAssemblyLines } from '../store/projectStore';
@@ -1077,24 +1077,23 @@ export function EngineeringCanvas() {
     rafRef.current = requestAnimationFrame(stepPhysics);
   }, []);
 
-  /** Called from CanvasSurface when a device drag begins. */
-  const onDragStart = useCallback((id: string, x: number, y: number) => {
+  /** Called from CanvasSurface when a device drag begins.
+   *  The spring-lag pass was removed — surveyors found the bounce
+   *  imprecise for plotting. The device now renders directly from
+   *  its store position (updated synchronously by pointermove), so
+   *  the glyph tracks the cursor 1:1 with no settle. dragLag stays
+   *  null forever; the existing render code falls through to the
+   *  un-lagged path. We still track isDraggingRef for any consumer
+   *  that wants to know "is something being dragged right now". */
+  const onDragStart = useCallback((_id: string, _x: number, _y: number) => {
     isDraggingRef.current = true;
-    dragLagRef.current = { id, x, y };
-    dragVelRef.current = { x: 0, y: 0 };
-    setDragLag({ id, x, y });
-    if (rafRef.current == null) {
-      rafRef.current = requestAnimationFrame(stepPhysics);
-    }
-  }, [stepPhysics]);
-
-  /** Called from CanvasSurface on pointer release. Marks the
-   *  drag as no longer active; the physics loop continues running
-   *  until the device settles, then stops itself. */
+  }, []);
   const onDragEnd = useCallback(() => {
     isDraggingRef.current = false;
-    // RAF will detect (no longer dragging) and settle.
   }, []);
+  // The physics loop is dead code now; keep stepPhysics declared so the
+  // identifier is satisfied but never schedule it.
+  void stepPhysics;
 
   useEffect(() => () => {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
@@ -1495,6 +1494,16 @@ export function EngineeringCanvas() {
       if (e.key === 'Enter' && (tool === 'cable' || tool === 'conduit' || tool === 'pathway') && cableDraw.points.length >= 2) {
         finishCableDraw();
       }
+      // Enter while drawing walls: commit the in-flight chain, clear all
+      // wall draw state, and drop the user back to Select. Without the
+      // setTool('select') the app stays in Wall mode and the next blank
+      // canvas click starts a fresh chain — which is the user's complaint.
+      // Mirrors finishCableDraw (line 876) which already returns to Select.
+      if (e.key === 'Enter' && tool === 'wall') {
+        setWallStart(null);
+        setWallCursor(null);
+        setTool('select');
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selId) {
         setDevices((ds) => ds.filter((d) => d.id !== selId));
         setSelId(null);
@@ -1509,7 +1518,7 @@ export function EngineeringCanvas() {
     // layer first (Canvas → Field → modal → selection). tool included so
     // Enter knows whether the cable tool is active.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selId, viewMode, scanBuildOpen, reportOpen, tool, cableDraw.points.length, armedProduct]);
+  }, [selId, viewMode, scanBuildOpen, reportOpen, tool, cableDraw.points.length, armedProduct, wallStart]);
 
   /* Drag-to-place from the library --------------------------------------- */
   // hoverHost is the door / IDF currently under the cursor while a drag is
@@ -1833,7 +1842,7 @@ export function EngineeringCanvas() {
              devices don't double-up the transform (they already have the
              spotlight) — handled via the .dv-device:not(.dv-selected) rule. */
           .dv-device { transform: translate(0,0); transform-origin: center; }
-          .dv-device:hover:not(.dv-selected) { transform: translate(0,-1px); filter: drop-shadow(0 4px 12px rgba(0,0,0,0.45)); }
+          .dv-device:hover:not(.dv-selected) { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.18)); }
           @media (prefers-reduced-motion: reduce) {
             @keyframes pill-in { from { opacity: 1; transform: translateX(-50%); } to { opacity: 1; transform: translateX(-50%); } }
             @keyframes soft-fade-in { from { opacity: 1; } to { opacity: 1; } }
@@ -2021,8 +2030,19 @@ export function EngineeringCanvas() {
                 }
               }}
               onSurfaceDblClick={() => {
-                if (tool === 'wall') setWallStart(null);
-                if (tool === 'measure') setMeasure({ start: null, end: null, cursor: null });
+                // Finish the in-flight drawing AND drop back to Select so
+                // the next blank-canvas click doesn't accidentally start a
+                // fresh chain. finishCableDraw already calls setTool('select')
+                // internally; wall + measure handle the transition here.
+                if (tool === 'wall') {
+                  setWallStart(null);
+                  setWallCursor(null);
+                  setTool('select');
+                }
+                if (tool === 'measure') {
+                  setMeasure({ start: null, end: null, cursor: null });
+                  setTool('select');
+                }
                 if (tool === 'cable' || tool === 'conduit' || tool === 'pathway') finishCableDraw();
               }}
               measure={measure}
@@ -2043,6 +2063,7 @@ export function EngineeringCanvas() {
               <SelectionPill
                 d={sel}
                 zoom={zoom}
+                pan={pan}
                 onRotate={(r) => updateSel({ rot: r })}
                 onDelete={deleteSel}
                 onUpdate={updateSel}
@@ -2057,6 +2078,104 @@ export function EngineeringCanvas() {
                 onLensHover={setHoveredLens}
               />
             )}
+
+            {/* Tool status banner — wall / measure / cable draw modes get
+                a visible top-center indicator with explicit Done and Cancel
+                buttons so the user always knows the canvas is in a
+                drawing mode and has a one-click exit. Hidden when no
+                drawing tool is engaged. */}
+            {(() => {
+              const isWall    = tool === 'wall';
+              const isMeasure = tool === 'measure';
+              const isCable   = tool === 'cable' || tool === 'conduit' || tool === 'pathway';
+              if (!isWall && !isMeasure && !isCable) return null;
+              const wallSegments = walls.length;
+              const measurePhase: 'idle' | 'awaiting-end' | 'locked' =
+                !measure.start ? 'idle' : !measure.end ? 'awaiting-end' : 'locked';
+              let title = '';
+              let subtitle = '';
+              let canFinish = false;
+              if (isWall) {
+                title = wallStart ? 'Drawing walls' : 'Wall tool';
+                subtitle = wallStart
+                  ? `${wallSegments} segment${wallSegments === 1 ? '' : 's'} so far · click next vertex · Enter or double-click to finish`
+                  : `Click on the plan to start a wall chain · ${wallSegments} placed`;
+                canFinish = !!wallStart;
+              } else if (isMeasure) {
+                title = 'Measure';
+                if (measurePhase === 'idle')          subtitle = 'Click the first point on the plan';
+                if (measurePhase === 'awaiting-end')  subtitle = 'Click the second point to lock the distance · Esc cancels';
+                if (measurePhase === 'locked')        subtitle = 'Distance locked · click again to remeasure · Clear to reset';
+                canFinish = measurePhase === 'locked';
+              } else if (isCable) {
+                title = tool === 'cable' ? 'Drawing cable' : tool === 'conduit' ? 'Drawing conduit' : 'Drawing pathway';
+                const n = cableDraw.points.length;
+                subtitle = n === 0
+                  ? 'Click the first vertex'
+                  : `${n} vertex${n === 1 ? '' : 'es'} · click to add · Enter or double-click to finish · Esc cancels`;
+                canFinish = n >= 2;
+              }
+              const onFinish = () => {
+                // Finish drops out of the drawing tool back to Select for
+                // EVERY tool, so the banner disappears and the next canvas
+                // click doesn't accidentally extend the chain. Cable
+                // already returns to Select inside finishCableDraw.
+                if (isWall) {
+                  setWallStart(null);
+                  setWallCursor(null);
+                  setTool('select');
+                }
+                if (isMeasure) {
+                  setMeasure({ start: null, end: null, cursor: null });
+                  setTool('select');
+                }
+                if (isCable) finishCableDraw();
+              };
+              const onCancel = () => {
+                if (isWall) { setWallStart(null); setWallCursor(null); }
+                if (isMeasure) setMeasure({ start: null, end: null, cursor: null });
+                if (isCable) setCableDraw({ points: [], cursor: null, cableType: cableDraw.cableType });
+                setTool('select');
+              };
+              return (
+                <div
+                  className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3"
+                  data-testid="tool-status-banner"
+                  data-tool={tool}
+                  style={{
+                    background: 'var(--popover)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: '6px 10px 6px 12px',
+                    boxShadow: '0 4px 12px -6px rgba(0,0,0,0.25)',
+                  }}
+                >
+                  <div className="flex flex-col">
+                    <span className="text-[11.5px] font-medium text-foreground leading-tight">{title}</span>
+                    <span className="text-[10.5px] text-muted-foreground leading-tight">{subtitle}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={onFinish}
+                      disabled={!canFinish}
+                      data-testid="tool-status-done"
+                      className="text-[10.5px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={isWall ? 'Finish wall chain (Enter)' : isMeasure ? 'Clear measurement' : 'Finish run (Enter)'}
+                    >
+                      Done
+                    </button>
+                    <button
+                      onClick={onCancel}
+                      data-testid="tool-status-cancel"
+                      className="text-[10.5px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
+                      title="Cancel and return to Select (Esc)"
+                    >
+                      Cancel (Esc)
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Click-to-arm placement banner — visible state for the user
                 so they always know what the next canvas click will do. */}
@@ -2292,24 +2411,28 @@ export function EngineeringCanvas() {
             {/* Minimap (bottom-right) */}
             <MiniMap devices={devices} />
 
-            {/* North indicator — assumes canvas-up = north. This is an
-                indicator, not an interactive compass. Site orientation can't
-                be edited from here yet; the tooltip is explicit about that
-                so users don't expect to drag it. */}
+            {/* Static North indicator — drafting-style: a needle inside a
+                thin circle with a single "N" tick. It is not interactive;
+                site orientation is not editable yet. We keep it small and
+                quiet so it reads as a plan annotation, not a HUD widget. */}
             <div className="absolute top-16 right-3 z-20 pointer-events-none select-none">
               <div
-                className="w-9 h-9 rounded-full flex items-center justify-center"
+                className="w-8 h-8 rounded-full flex items-center justify-center"
                 style={{
                   background: 'var(--panel-background)',
-                  backdropFilter: 'blur(12px)',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  boxShadow: '0 6px 16px -8px rgba(0,0,0,0.5)',
+                  backdropFilter: 'blur(8px)',
+                  border: '1px solid var(--border)',
                 }}
-                title="North indicator only · canvas-up = North"
+                title="North indicator · canvas-up = North"
               >
-                <svg viewBox="-12 -12 24 24" width="22" height="22">
-                  <path d="M 0 -8 L 3 5 L 0 2 L -3 5 Z" fill="var(--foreground)" />
-                  <text y="-9" textAnchor="middle" fill="rgba(226,232,240,0.55)" fontSize="6" fontFamily="ui-sans-serif">N</text>
+                <svg viewBox="-12 -16 24 28" width="20" height="22" aria-hidden>
+                  {/* Tick at the top of the dial */}
+                  <line x1="0" y1="-11" x2="0" y2="-9" stroke="var(--muted-foreground)" strokeWidth="0.8" />
+                  {/* North label sits above the tick */}
+                  <text y="-13" textAnchor="middle" fill="var(--muted-foreground)" fontSize="5.5" fontWeight="600" fontFamily="ui-sans-serif" letterSpacing="0.3">N</text>
+                  {/* Two-tone arrow head: dark north half, hairline south half */}
+                  <path d="M 0 -8 L 3 6 L 0 3 Z" fill="var(--foreground)" />
+                  <path d="M 0 -8 L -3 6 L 0 3 Z" fill="none" stroke="var(--foreground)" strokeWidth="0.6" />
                 </svg>
               </div>
             </div>
@@ -5242,7 +5365,12 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         e.preventDefault();
       }}
       onClick={(e) => {
-        if (tool === 'wall') {
+        // Drawing tools (wall, measure, cable/conduit/pathway) forward
+        // every click to the parent's onSurfaceClick so the chain / vertex
+        // / point accumulation flows the way each tool expects. Without
+        // this branch, measure and cable clicks fall through and the tool
+        // appears unresponsive.
+        if (tool === 'wall' || tool === 'measure' || tool === 'cable' || tool === 'conduit' || tool === 'pathway') {
           const { x, y } = coords(e);
           onSurfaceClick(x, y);
           return;
@@ -5265,7 +5393,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         onBlank();
       }}
       onMouseMove={(e) => {
-        if (tool !== 'wall') return;
+        // Live rubber-band cursor for all drawing tools. Required so the
+        // measure tool's mid-draw distance preview and the cable preview
+        // line track the pointer in real time.
+        if (tool !== 'wall' && tool !== 'measure' && tool !== 'cable' && tool !== 'conduit' && tool !== 'pathway') return;
         const { x, y } = coords(e);
         onSurfaceMove(x, y);
       }}
@@ -5580,24 +5711,24 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             >
               {isSel && (
                 <circle
-                  cx={d.x} cy={d.y} r={20 * iconScale} fill={tone}
-                  opacity="0.16"
-                  style={{ animation: 'soft-fade-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both' }}
+                  cx={d.x} cy={d.y} r={13 * iconScale} fill="none"
+                  stroke={tone} strokeWidth="0.75"
+                  opacity="0.85"
+                  style={{ animation: 'soft-fade-in 200ms ease-out both' }}
                 />
               )}
               {/* Multisensor signature — when the camera is the selected
                   multisensor, a subtle inner ring breathes at the body's
-                  edge. Slow, quiet, only visible on the active device.
-                  Communicates the multisensor as an orchestrated whole. */}
+                  edge. Slow, quiet, only visible on the active device. */}
               {isSel && d.type === 'cam.multisensor' && (
                 <circle
-                  cx={d.x} cy={d.y} r={14.5 * iconScale}
-                  fill="none" stroke={tone} strokeWidth="0.7"
-                  opacity="0.55"
+                  cx={d.x} cy={d.y} r={10.5 * iconScale}
+                  fill="none" stroke={tone} strokeWidth="0.45"
+                  opacity="0.4"
                   style={{ animation: 'glow-breathe 3.2s ease-in-out infinite' }}
                 />
               )}
-              {multi && !isSel && <circle cx={d.x} cy={d.y} r={18 * iconScale} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
+              {multi && !isSel && <circle cx={d.x} cy={d.y} r={12 * iconScale} fill="none" stroke={tone} strokeWidth="0.8" strokeDasharray="2 2" opacity="0.45" />}
               {/* Transparent hit-circle — guarantees the device is clickable
                   even when the underlying glyph is a thin line or a small
                   shape. Sized roughly at touch-target radius so the user
@@ -5787,6 +5918,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                       rangeFt={L.range}
                       svgRef={ref as React.RefObject<SVGSVGElement>}
                       zoom={zoom}
+                      pan={pan}
                       color={LENS_TONE[k]}
                       onUpdate={(p) => onUpdateDevice(s.id, { lenses: { ...ls, [k]: { ...L, ...p } } })}
                     />
@@ -5804,6 +5936,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                     rangeFt={s.range ?? defaultRangeFt}
                     svgRef={ref as React.RefObject<SVGSVGElement>}
                     zoom={zoom}
+                    pan={pan}
                     color={KIND_TONE.camera}
                     onUpdate={(p) => onUpdateDevice(s.id, p)}
                   />
@@ -6285,14 +6418,9 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
   // Crisp, obvious building outline with paper-fill interior so you SEE the floor plan
   return (
     <g>
-      {/* North arrow */}
-      <g transform="translate(740, 90)">
-        <circle r="18" fill="#161B22" stroke="#30363D" strokeWidth="1" />
-        <path d="M 0 -10 L 4 6 L 0 2 L -4 6 Z" fill="var(--foreground)" />
-        <text y="-22" textAnchor="middle" fill="#7D8590" fontSize="10">N</text>
-      </g>
-
-      {/* Floor plan — theme-aware paper + charcoal wall lines */}
+      {/* Floor plan — theme-aware paper + charcoal wall lines.
+          The in-plan North arrow was removed: the HTML compass at the
+          top-right of the canvas is the single source of orientation. */}
       <g>
         <rect x="80" y="80" width="640" height="480" fill="url(#plan-paper)" rx="3" />
         <rect x="80" y="80" width="640" height="480" fill="none" stroke="var(--foreground)" strokeWidth="2" opacity="0.7" rx="3" />
@@ -6532,11 +6660,12 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
  *  Used by both single-lens cameras and the active lens of a multisensor —
  *  the caller wires `onUpdate` to write to either d.fov/d.range OR
  *  d.lenses[activeLens].fov/.range. */
-function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, color, onUpdate }: {
+function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, pan, color, onUpdate }: {
   cx: number; cy: number;
   rotDeg: number; fovDeg: number; rangeFt: number;
   svgRef: React.RefObject<SVGSVGElement>;
   zoom: number;
+  pan: { x: number; y: number };
   color: string;
   onUpdate: (patch: { fov?: number; range?: number }) => void;
 }) {
@@ -6559,7 +6688,11 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, color, onU
     const onMove = (ev: PointerEvent) => {
       if (!svgRef.current) return;
       const rect = svgRef.current.getBoundingClientRect();
-      apply((ev.clientX - rect.left) / zoom, (ev.clientY - rect.top) / zoom);
+      // Convert client (viewport-CSS-px) → SVG canvas coords. Must subtract
+      // the active pan offset before dividing by zoom, otherwise dragging a
+      // FOV/range handle while the canvas is panned makes the handle "shoot
+      // forward" by exactly the pan distance.
+      apply(((ev.clientX - rect.left) - pan.x) / zoom, ((ev.clientY - rect.top) - pan.y) / zoom);
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -6830,20 +6963,27 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
   // legacy per-type SVG below so devices without a symbol stay visible.
   // No filled tone halo — the symbol IS the plan glyph.
   if (SURVEYOR_SYMBOL_HAS(d.type)) {
+    // Drafting-restraint pass: the plan-symbol bodies render at 0.72x of
+    // their natural 24-unit viewBox (≈ 17 px instead of 24 px) with a
+    // 1.1-px hairline stroke. This matches the user-supplied benchmark
+    // ("looks like a low-voltage construction drawing, not a SaaS HUD").
+    // The hit-circle stays at its full 16-px touch radius — only the
+    // visual glyph shrinks. Selected state replaces the dashed circle
+    // with a thin solid outline at r=10.
     return (
       <g transform={`translate(${d.x}, ${d.y}) scale(${scale})`} style={{ color: ink }}>
         <g transform={`rotate(${rot})`}>
-          <SurveyorSymbolBody id={d.type} scale={1.0} stroke={1.4} />
+          <SurveyorSymbolBody id={d.type} scale={0.72} stroke={1.1} />
         </g>
         {isStackableHost(d.type) && (d.stack?.length ?? 0) > 0 && (
-          <g transform="translate(11, -11)" pointerEvents="none">
-            <circle r={6} fill="var(--card)" stroke={ink} strokeWidth={0.9} />
-            <text textAnchor="middle" dominantBaseline="central" fontSize={7.5} fill={ink} fontWeight={600}>
+          <g transform="translate(8, -8)" pointerEvents="none">
+            <circle r={4.4} fill="var(--card)" stroke={ink} strokeWidth={0.7} />
+            <text textAnchor="middle" dominantBaseline="central" fontSize={5.8} fill={ink} fontWeight={600}>
               {d.stack!.length}
             </text>
           </g>
         )}
-        {selected && <circle r={14} fill="none" stroke={tone} strokeWidth="1.4" strokeDasharray="3 2" />}
+        {selected && <circle r={10} fill="none" stroke={tone} strokeWidth="0.7" opacity="0.85" />}
       </g>
     );
   }
@@ -7427,8 +7567,8 @@ function MultisensorLensChips({
   );
 }
 
-function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode, onLensHover }: {
-  d: Device; zoom: number;
+function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode, onLensHover }: {
+  d: Device; zoom: number; pan: { x: number; y: number };
   onRotate: (r: number) => void;
   onDelete: () => void;
   onUpdate: (p: Partial<Device>) => void;
@@ -7458,6 +7598,102 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
   const isIDF = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'net.switch';
   const isPathway = kind === 'network' && !isIDF && !isReader;
   const [colorOpen, setColorOpen] = useState(false);
+
+  // Edge-clamping against a *safe rect*, not the raw canvas container.
+  // The canvas surface div sits behind the left tool rail and the bottom
+  // device tray (and, when open, the right edit drawer). Clamping to the
+  // raw container would let the pill hide under those overlays — exactly
+  // what the surveyor was complaining about. So we measure the chrome
+  // elements (`[data-canvas-chrome]`) and subtract their footprint from
+  // the container rect to get the area where the pill is actually
+  // visible. Anchor includes `pan` because the canvas SVG's group is
+  // translated by pan — the HTML pill is not, so we compose by hand.
+  const pillRef = useRef<HTMLDivElement | null>(null);
+  const [pillBox, setPillBox] = useState<{ w: number; h: number }>({ w: 220, h: 32 });
+  // Safe rect in container-local coordinates (origin = parent's top-left).
+  const [safeRect, setSafeRect] = useState<{ left: number; right: number; top: number; bottom: number }>({ left: 0, right: 1200, top: 0, bottom: 800 });
+  useLayoutEffect(() => {
+    if (!pillRef.current) return;
+    const el = pillRef.current;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setPillBox({ w: r.width, h: r.height });
+      const parent = el.parentElement;
+      if (!parent) return;
+      const cRect = parent.getBoundingClientRect();
+      // Start with the whole container in container-local coords.
+      let safeLeft = 0;
+      let safeRight = cRect.width;
+      let safeTop = 0;
+      let safeBottom = cRect.height;
+      // Subtract every chrome overlay that overlaps the container.
+      const chrome = document.querySelectorAll('[data-canvas-chrome]');
+      chrome.forEach((node) => {
+        const r2 = (node as HTMLElement).getBoundingClientRect();
+        if (r2.width === 0 || r2.height === 0) return;
+        // Translate chrome rect into container-local coords.
+        const cl = r2.left - cRect.left;
+        const cr = r2.right - cRect.left;
+        const ct = r2.top - cRect.top;
+        const cb = r2.bottom - cRect.top;
+        // Only consider overlays that overlap the container rect.
+        if (cr <= 0 || cl >= cRect.width || cb <= 0 || ct >= cRect.height) return;
+        const kind = (node as HTMLElement).getAttribute('data-canvas-chrome');
+        if (kind === 'rail') {
+          // Left rail occupies the left edge — push safeLeft to its right edge.
+          safeLeft = Math.max(safeLeft, cr);
+        } else if (kind === 'tray') {
+          // Bottom tray (and any tray panel above the bar) — push safeBottom up.
+          safeBottom = Math.min(safeBottom, ct);
+        } else if (kind === 'drawer') {
+          // Right edit drawer — push safeRight to its left edge.
+          safeRight = Math.min(safeRight, cl);
+        } else if (kind === 'topbar') {
+          safeTop = Math.max(safeTop, cb);
+        }
+      });
+      setSafeRect({ left: safeLeft, right: safeRight, top: safeTop, bottom: safeBottom });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.parentElement) ro.observe(el.parentElement);
+    // Re-measure when canvas chrome appears / resizes (tray opens, drawer slides in).
+    const chromeNodes = document.querySelectorAll('[data-canvas-chrome]');
+    chromeNodes.forEach((n) => ro.observe(n as Element));
+    window.addEventListener('resize', measure);
+    // Re-measure on every animation frame for a short window after mount so
+    // we catch the bottom tray's mount-time layout shifts.
+    let raf = 0;
+    let ticks = 0;
+    const tick = () => { measure(); if (++ticks < 6) raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure); cancelAnimationFrame(raf); };
+  }, [d.id, d.type]);
+  // Screen-space anchor of the device (top-center of the pill points at the device).
+  const anchorX = d.x * zoom + pan.x;
+  const anchorY = d.y * zoom + pan.y;
+  const PAD = 10;
+  const GAP = 22; // distance from device glyph to pill body
+  // Try placing pill ABOVE the device first; flip below if it would crash
+  // into the top of the safe rect (top bar / above-canvas chrome).
+  const wantsBelow = anchorY - pillBox.h - GAP < safeRect.top + PAD;
+  let topPx = wantsBelow ? anchorY + GAP : anchorY - pillBox.h - GAP;
+  // If the below placement also crashes into the bottom tray, push the
+  // pill up just inside the safe-bottom and accept overlap with the glyph.
+  if (topPx + pillBox.h > safeRect.bottom - PAD) {
+    topPx = Math.max(safeRect.top + PAD, safeRect.bottom - PAD - pillBox.h);
+  }
+  // Clamp left so the pill body stays fully inside the safe rect, never
+  // behind the left rail.
+  const halfW = pillBox.w / 2;
+  const minLeft = safeRect.left + PAD + halfW;
+  const maxLeft = Math.max(minLeft, safeRect.right - PAD - halfW);
+  const leftPx = Math.min(Math.max(anchorX, minLeft), maxLeft);
+  // Tether offset (signed) — where the device sits horizontally relative to
+  // the pill's center. We move the tether to follow the device so it still
+  // points at the glyph after a clamp.
+  const tetherDx = anchorX - leftPx;
 
   // Build toolbar actions per device kind. Each kind exposes at most 5
   // primary actions; the rest fall into the "More" overflow popover. The
@@ -7548,21 +7784,31 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
 
   return (
     <div
+      ref={pillRef}
       className="absolute z-30 pointer-events-auto select-none"
       style={{
-        left: d.x * zoom,
-        top: d.y * zoom - 70,
+        left: leftPx,
+        top: topPx,
         transform: 'translateX(-50%)',
-        animation: 'pill-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        animation: 'pill-in 180ms ease-out both',
       }}
     >
-      {/* Subtle tether — single hairline pencil from pill to device. No
-          gradient, no glow dot. Lets the strip feel like a quiet annotation
-          rather than a HUD beacon. */}
-      <div
-        className="absolute left-1/2 top-full h-[18px] w-px -translate-x-1/2"
-        style={{ background: 'rgba(255,255,255,0.14)' }}
-      />
+      {/* Subtle tether — single hairline pencil from pill to device. Tether
+          follows the device horizontally so that clamping the pill at a
+          viewport edge still points back at the glyph. Hidden when the pill
+          flipped below the device (visual would be inverted). */}
+      {!wantsBelow && (
+        <div
+          className="absolute top-full w-px"
+          style={{
+            left: `calc(50% + ${tetherDx}px)`,
+            transform: 'translateX(-0.5px)',
+            height: GAP - 2,
+            background: 'var(--border)',
+            opacity: 0.55,
+          }}
+        />
+      )}
 
       {/* Multisensor lens chips sit above the strip when applicable. */}
       {isMultisensor && (
@@ -7583,10 +7829,10 @@ function SelectionPill({ d, zoom, onRotate, onDelete, onUpdate, onEdit, onTarget
         className="flex items-stretch h-8 rounded-md overflow-hidden"
         style={{
           background: 'var(--panel-background)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
           border: '1px solid var(--border)',
-          boxShadow: '0 8px 22px -12px rgba(0,0,0,0.45)',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
         }}
       >
         {/* Identity */}
@@ -7726,19 +7972,28 @@ function ExpandMenu({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        title="More actions"
+        title="More actions — color, stack, details"
+        aria-haspopup="menu"
+        aria-expanded={open}
         data-track="pill-expand"
+        data-testid="pill-expand"
         className={`px-2.5 h-full inline-flex items-center gap-1 text-[12px] border-r border-border/60 transition-colors ${open ? 'bg-secondary/40 text-foreground' : 'text-muted-foreground hover:bg-secondary/30 hover:text-foreground'}`}
       >
-        <ChevronDown className="w-3.5 h-3.5" />
+        <span className="text-[11px] font-medium tracking-tight">More</span>
+        <ChevronDown
+          className="w-3 h-3 transition-transform"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+        />
       </button>
       {open && (
         <div
+          role="menu"
+          data-testid="pill-expand-menu"
           className="absolute left-0 top-full mt-1 z-40 w-[180px] rounded-md overflow-hidden"
           style={{
             background: 'var(--popover)',
             border: '1px solid var(--border)',
-            boxShadow: '0 14px 32px -14px rgba(0,0,0,0.5)',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
           }}
         >
           {items.map((it) => (
@@ -9452,6 +9707,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
 
   return (
     <div
+      data-canvas-chrome={open ? 'drawer' : undefined}
       className={`absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 pointer-events-auto ${open ? 'translate-x-0' : 'translate-x-full'}`}
       style={{
         width: 400,
@@ -10921,12 +11177,8 @@ function DrawingToolRail({
   onActual: () => void;
   onSelectAll: (kind: 'cameras' | 'doors' | 'readers' | 'idfs') => void;
 }) {
-  type ItemId = Tool | 'snap' | 'layers' | 'map' | 'more';
+  type ItemId = Tool | 'snap' | 'layers' | 'map';
   type Item = { id: ItemId; icon: any; label: string; key?: string; hint: string; coming?: boolean };
-  // TOOLS only. Items the brief lists but that aren't wired today
-  // (Draw Room / Door Opening / Window / Text / Zone / Scale / Photo)
-  // are shown as disabled "Coming soon" entries so the rail is complete
-  // per the spec.
   // VISIBLE left-rail tools. Cable is NOT here — cabling is an
   // equipment category, not a left-side tool. The internal `tool ===
   // 'cable'` state is still used by the engine, but it gets armed
@@ -10937,16 +11189,10 @@ function DrawingToolRail({
     { id: 'measure', icon: Ruler,         label: 'Measure',    key: 'M', hint: 'Two clicks to measure distance. Esc to cancel.' },
     { id: 'wall',    icon: WallIcon,      label: 'Wall',       key: 'W', hint: 'Draw wall segments. Click vertices, double-click to finish.' },
   ];
-  // Coming-soon tools — visible per the brief so the user sees the full
-  // tool palette, disabled with a tooltip until they ship.
-  const coming: Item[] = [
-    { id: 'select', icon: Type,        label: 'Text',      hint: 'Text labels and callouts.', coming: true },
-    { id: 'select', icon: Grid3x3,     label: 'Room',      hint: 'Draw a room polygon and label it.', coming: true },
-    { id: 'select', icon: DoorOpen,    label: 'Door Opg',  hint: 'Place a door opening on a wall.', coming: true },
-    { id: 'select', icon: AppWindow,   label: 'Window',    hint: 'Place a window opening on a wall.', coming: true },
-    { id: 'select', icon: Crosshair,   label: 'Scale',     hint: 'Two-point scale calibration.', coming: true },
-    { id: 'select', icon: ImageIcon,   label: 'Photo',     hint: 'Pin a field photo to a location.', coming: true },
-  ];
+  // Coming-soon tools — removed per "If a control doesn't work, hide it".
+  // Text / Room / Door-opening / Window / Scale / Photo will reappear when
+  // their wiring lands. Until then they don't get a visible slot.
+  const coming: Item[] = [];
 
   // Expand-on-click: clicking a tool also opens the side panel; the
   // panel persists with the chosen tool's id. Clicking the same icon
@@ -10998,7 +11244,7 @@ function DrawingToolRail({
   };
 
   return (
-    <div className="absolute z-30 top-3 left-3 flex items-start" ref={railRef}>
+    <div className="absolute z-40 top-3 left-3 flex items-start" ref={railRef} data-canvas-chrome="rail">
       {/* Slim black rail — working tools only. Coming-soon tools live
           inside the "More" panel so they don't clutter the default view. */}
       <div
@@ -11010,14 +11256,15 @@ function DrawingToolRail({
         <Tile it={{ id: 'snap',   icon: Magnet,    label: 'Snap',   hint: snap ? 'Magnetic snap is ON.' : 'Magnetic snap is OFF.' }} />
         <Tile it={{ id: 'layers', icon: Layers,    label: 'Layers', hint: 'Toggle engineering overlays on the canvas.' }} />
         <Tile it={{ id: 'map',    icon: MapIcon,   label: 'Map',    hint: 'Bring a floorplan in: scan / upload / satellite / sketch.' }} />
-        <div className="w-7 h-px bg-white/10 my-1.5" />
-        <Tile it={{ id: 'more',   icon: MoreHorizontal, label: 'More', hint: 'Additional drawing tools (Text / Room / Door Opening / Window / Scale / Photo).' } as any} />
       </div>
 
-      {/* Expanded side panel */}
+      {/* Expanded side panel — z-50 so it always paints above the canvas
+          surface chrome (selection pill z-30, intelligence layer z-30,
+          armed-placement banner z-30). Without this the panel was
+          occluded by floating canvas overlays. */}
       {panelId && (
         <div
-          className="ml-2 w-[260px] rounded-2xl border bg-[var(--card)] backdrop-blur-md p-3 shadow-[var(--shadow-floating)] text-[var(--card-foreground)]"
+          className="relative z-50 ml-2 w-[260px] rounded-2xl border bg-[var(--card)] backdrop-blur-md p-3 shadow-[var(--shadow-floating)] text-[var(--card-foreground)]"
           style={{ borderColor: 'var(--border)' }}
         >
           {(() => {
@@ -11055,7 +11302,6 @@ function panelLabel(panelId: string): string {
     snap:    'Snap',
     layers:  'Layers',
     map:     'Map / Floorplan',
-    more:    'More tools',
   } as Record<string, string>)[panelId] ?? panelId;
 }
 
@@ -11071,7 +11317,6 @@ function ToolPanelHeader({ panelId, onClose }: { panelId: string; onClose: () =>
     snap:    'Magnetic alignment while drawing or moving objects.',
     layers:  'Toggle engineering overlays on the canvas.',
     map:     'Bring a floorplan in: scan, upload, satellite, or sketch.',
-    more:    'Additional drawing tools — coming soon.',
   } as Record<string, string>)[panelId];
   return (
     <div className="flex items-start gap-2 mb-3">
@@ -11194,25 +11439,7 @@ function ToolPanelBody({
       </div>
     );
   }
-  if (panelId === 'more') {
-    const items = [
-      'Text / Label', 'Draw Room', 'Door Opening', 'Window Opening',
-      'Zone / Separator', 'Scale / Calibrate', 'Photo / Note',
-    ];
-    return (
-      <div className="space-y-1">
-        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1 mb-1">Coming soon</div>
-        {items.map((label) => (
-          <div key={label} className="flex items-center justify-between py-2 px-2.5 rounded-md bg-secondary/15 text-[12px] text-muted-foreground">
-            <span>{label}</span>
-            <span className="text-[9.5px] uppercase tracking-[0.10em] px-1.5 py-0.5 rounded bg-secondary/40">Soon</span>
-          </div>
-        ))}
-        <Hint>These drawing tools are disabled until they're wired end-to-end. They live here so they don't clutter the main rail.</Hint>
-      </div>
-    );
-  }
-  return <div className="text-[11.5px] text-muted-foreground italic">Coming soon.</div>;
+  return <div className="text-[11.5px] text-muted-foreground italic">No panel for this tool.</div>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -11335,7 +11562,7 @@ function BottomDeviceBar({
   const trayProducts = open ? (productsByCat[open] ?? []) : [];
 
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-30" ref={trayRef}>
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-30" ref={trayRef} data-canvas-chrome="tray">
       {/* Tray (renders above the bar when a category is open) */}
       {open && trayCat && (
         <div

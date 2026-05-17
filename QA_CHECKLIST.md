@@ -428,6 +428,162 @@ events. Open DevTools so you can verify persistence at each step.
 
 ---
 
+## Surveyor usability pass (2026-05-17)
+
+Run after any change to `EngineeringCanvas.tsx`, `SurveyorSymbols.tsx`, or
+canvas chrome. The 11 defects below were called out in the 2026-05-17
+surveyor-pass brief; each row is a UI regression check.
+
+### S1. Compass (single, professional, static)
+- [x] Only ONE compass on screen, anchored top-right of the canvas
+      (`title="North indicator · canvas-up = North"`).
+- [x] No duplicate North arrow inside the placeholder building SVG.
+- [x] Compass is calm: thin border, small ~28 px circle, "N" label legible
+      against the dial.
+
+### S2. Wall tool finish flow (revised after reviewer rejection)
+The first version of this fix cleared `wallStart` on finish but left the
+tool armed, so the next blank-canvas click started a new wall chain.
+Reviewer reproduced that — corrected behaviour now:
+
+- [x] Activating Wall (rail click or `W`) shows the **Tool status banner**
+      top-center.
+- [x] First canvas click → subtitle reports "Drawing walls · 1 segment so
+      far · click next vertex · Enter or double-click to finish", Done is
+      enabled.
+- [x] **Enter** finish → `setWallStart(null)`, `setWallCursor(null)`,
+      `setTool('select')`. Banner disappears, active tool flips to Select,
+      next canvas click does NOT start a new wall.
+- [x] **Double-click on the canvas** finish behaves the same as Enter.
+- [x] **Done button** finish behaves the same as Enter.
+- [x] **Cancel button / Esc** clears the wall state and returns to Select.
+
+### S2a. Line tools (cable / conduit / pathway) finish to Select
+- [x] `finishCableDraw` already calls `setTool('select')` after committing
+      the run. Verified by arming Cabling (any cable type), drawing two
+      vertices, pressing Enter → active tool flips to Select, banner gone,
+      and subsequent canvas click does NOT start a new vertex chain.
+
+### S3. Tool rail z-index
+- [x] Click any rail tile (e.g. Pan). The expanded 260 px side panel
+      opens with `z-index: 50` and is fully readable over the canvas
+      surface (no overlay clips it).
+- [x] The rail wrapper itself sits at `z-index: 40` so the rail + panel
+      paint above the canvas chrome.
+
+### S4. No coming-soon controls in the tool rail
+- [x] The "More" tile is gone from the rail; only 7 tiles remain
+      (Select / Pan / Measure / Wall / Snap / Layers / Map).
+- [x] No occurrence of the string `Coming soon` on `/project/p1/canvas`
+      after load (`document.body.innerText` check).
+
+### S5. Selection pill safe-rect clamp (revised after reviewer rejection)
+Original fix clamped only to the canvas container, which let the pill
+hide behind the left tool rail, bottom tray, and right edit drawer.
+Now the pill computes a **safe rect** from `[data-canvas-chrome]`
+overlays and clamps inside that rect.
+
+- [x] Pan content rightward so a device lands off-canvas to the right;
+      select it — pill clamps with 10 px right margin (= `PAD`).
+- [x] Pan content leftward so a device lands under the left rail; select
+      it — pill stays fully clear of the rail (left margin = rail-right
+      + 10 px). Verified left edge 332 → pill 342 (10 px gap).
+- [x] Pan content downward so a device sits under the bottom tray; select
+      it — pill flips above the tray with 10 px gap. Verified
+      tray-top 828 → pill bottom 818 (10 px gap).
+- [x] Pill anchor honours `pan` — drag-pan the canvas, re-select; pill
+      still anchored over the device's screen position.
+- [x] When the right Edit drawer is open
+      (`[data-canvas-chrome="drawer"]`), the pill clamps inside the
+      drawer's left edge.
+- [x] Tether line follows the device horizontally after a clamp.
+
+### S6. Drag without bounce
+- [x] Drag a device across the canvas. Max per-frame lag between cursor
+      and glyph is ≤ 2 px through the move (no spring lag).
+- [x] On pointerup the glyph is already at the cursor (no settle).
+
+### S7. Symbols + halos restrained (revised after reviewer rejection)
+Reviewer flagged that shrinking halos alone wasn't enough — the plotted
+symbols still read as cartoonish. Now `HardwareGlyph` renders symbol
+bodies at **0.72×** their natural viewBox with a **1.1-px** hairline
+stroke (down from `scale(1.0)` / `stroke 1.4`), and the selected-state
+inner ring is **r=10 solid** (down from r=14 dashed). Hit-target radius
+is unchanged.
+
+- [x] Symbol `<g>` carries `transform="scale(0.72) translate(-12, -12)"`
+      verified in DOM.
+- [x] Selected device's outer halo is a hairline ring at `r="13"`
+      (was `r="20"` filled).
+- [x] Selected device's inner symbol ring is `r="10"` solid (was r=14
+      dashed).
+- [x] Stack-count chip on door hosts moved to (8, -8) with r=4.4
+      (was (11, -11) with r=6).
+- [x] Hover lift filter is a soft `drop-shadow(0 1px 2px rgba(0,0,0,0.18))`
+      (down from `0 4px 12px ... 0.45`).
+- [x] Hit-circle radius (`Math.max(16, 18 * iconScale)`) unchanged so
+      touch targets stay comfortable.
+
+### S8. Selection pill More menu
+- [x] Pill's expand button shows label "**More**" + chevron; chevron
+      rotates `180deg` on open (`aria-expanded` flips).
+- [x] Click opens a 180 px popover with 3 items (Color · Stack · More
+      details).
+- [x] Click outside or Esc closes it.
+
+### S9. Measure tool affordances
+- [x] Activating Measure shows the banner: title "Measure", subtitle
+      "Click the first point on the plan".
+- [x] First click → subtitle "Click the second point to lock the distance
+      · Esc cancels".
+- [x] Second click → subtitle "Distance locked · click again to remeasure
+      · Clear to reset", Done enabled.
+- [x] **Done** clears the measurement, returns the active tool to Select,
+      and dismisses the banner. Measure mode is NOT left armed — a
+      subsequent canvas click does not start a new measurement.
+- [x] Esc / Cancel also clears the measurement and returns to Select.
+
+### S10. Coverage / FOV handle math respects pan
+- [x] Pan the canvas, select a camera, drag the cone tip handle radially
+      outward 80 px. Range label increases by ~80 px / 3.83 px-per-ft (no
+      shoot-forward).
+- [x] Both `ConeHandles` call sites pass the same `pan` prop used inside
+      `EngineeringCanvas` (no stale closure).
+
+### S11. Overall calmer chrome
+- [x] Pill body uses `box-shadow: 0 2px 6px rgba(0,0,0,0.18)` (was
+      `0 8px 22px -12px rgba(0,0,0,0.45)`).
+- [x] Pill backdrop blur reduced to 10 px.
+- [x] Multisensor's "all" coverage ring is r=10.5 with `stroke-opacity ~ 0.4`
+      (was r=14.5, opacity 0.55 + breathing).
+- [x] Non-selected multi-camera dash ring is `r=12` `strokeWidth=0.8`
+      `opacity=0.45` (was r=18 / strokeWidth=1.5 / opacity=0.7).
+
+### Verification matrix (Pass 2 — 2026-05-17, post-reviewer)
+| Defect | Status | How verified |
+|--------|--------|--------------|
+| 1 Compass | Fixed | DOM check: 1 compass top-right, 1 SVG "N" inside it |
+| 2 Wall finish | Fixed | Enter / dblclick / Done each flip active tool to Select, banner disappears, next blank click does NOT extend |
+| 3 Rail z-index | Fixed | Panel computedStyle.zIndex === '50', rail '40' |
+| 4 Coming-soon | Fixed | 7 tools listed, no "coming soon" text on canvas |
+| 5 Pill safe-rect | Fixed | Off-canvas-left device → pill left=342, rail right=332 (10 px gap); off-canvas-bottom device → pill bottom=818, tray top=828 (10 px gap) |
+| 6 Drag bounce | Fixed | Max lag during drag ≤ 3 px; final position == cursor exactly |
+| 7 Symbol restraint | Fixed | Symbol `<g scale(0.72)`, selected inner ring r=10, stack chip r=4.4 |
+| 8 Pill dropdown | Fixed | More button opens 3-item menu, chevron rotates 180° |
+| 9 Measure flow | Fixed | idle / awaiting-end / locked / Done returns to Select (banner dismissed, tool unarmed) |
+| 10 FOV handle | Fixed | Range label changes monotonically (62 → 63 → 66 → 68 → 70 → 73 → 75 ft) under radial tip drag with `pan != 0`; no jumps |
+| 11 Chrome | Fixed | Pill shadow `0 2px 6px / .18`, blur 10 px, halo opacities reduced |
+| Line tools finish | Fixed | Cable Enter finish → active tool Select, subsequent canvas click does NOT add vertex |
+| Door drag-to-attach | Working | dv-stack-attach event still fires; verified by direct event dispatch — DR-100's `doorAssembly` is preserved; pipeline untouched by this pass |
+
+### Known pre-existing console warning (NOT introduced by this pass)
+`Warning: Cannot update a component (PathwaysOverlay) while rendering a different component (EngineeringCanvas).`
+Verified pre-existing by `git stash` + reload: same warning fires on the untouched main branch. PathwaysOverlay was not modified in this pass.
+
+`npm run build` exits `0` for this pass.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already
