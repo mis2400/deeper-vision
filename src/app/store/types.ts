@@ -385,6 +385,17 @@ export interface Floor {
   source: 'blueprint' | 'satellite' | 'sketch' | 'blank';
   /** Scale: 1 canvas pixel = scalePxToFt feet. Set by /calibrate. */
   scalePxToFt: number;
+  /** When the user last confirmed the scale via /calibrate. Presence (not
+   *  the numeric value of scalePxToFt) is what marks a floor as "really
+   *  calibrated" — a seeded default of 0.05 ft/px with no calibratedAt is
+   *  *not* the same as a user who measured and got 0.05 ft/px back. */
+  calibratedAt?: number;
+  /** Real-world feet the user entered during calibration. */
+  calibrationReferenceFt?: number;
+  /** Measured pixel distance between the two reference points at
+   *  calibration time. Persisted so future re-renders / re-calibrations
+   *  can show the user what they previously measured. */
+  calibrationMeasuredPx?: number;
   /** User-drawn walls (in canvas px). */
   walls: Wall[];
   /** Floorplan polygon (corners) — survives reload via the floorplanGeometry
@@ -515,12 +526,36 @@ export interface Device {
     signedOff?: boolean;
     notes?: string;
   };
+  // ── Door-as-device assembly (only meaningful when type starts with 'inf.door',
+  //    'inf.gate', 'inf.storefront', 'inf.doubledoor'). Persists the access-control
+  //    components attached to this opening as one coherent record, instead of
+  //    spawning separate accessory devices on the canvas. The legacy `stack[]`
+  //    field is kept for visual-stack flows but is no longer the source of truth
+  //    for door hardware schedules / BOM rollups.
+  doorAssembly?: DoorHardware[];
+  /** Door electrification, when relevant. */
+  doorElectrification?: 'fail-safe' | 'fail-secure';
+  /** Where the reader physically sits on the opening. */
+  doorReaderLocation?: 'mullion' | 'wall';
+  /** Survey status — used by the Survey tile + project rollups. */
+  surveyStatus?: 'todo' | 'verified' | 'issue' | 'skip';
 }
 
 // ─────────────────────────── Doors & hardware ─────────────────────
 export type DoorType = 'single' | 'double' | 'storefront' | 'roll-up' | 'gate' | 'elevator' | 'vestibule';
 export type DoorMaterial = 'hollow-metal' | 'wood' | 'aluminum' | 'glass';
-export type DoorHardware = 'reader' | 'strike' | 'maglock' | 'rex' | 'contact' | 'intercom' | 'panic' | 'autoop' | 'controller' | 'psu';
+export type DoorHardware =
+  | 'reader'
+  | 'strike'
+  | 'maglock'
+  | 'rex'
+  | 'dps'           // door position switch — distinct from a "contact" sensor pair
+  | 'contact'
+  | 'intercom'
+  | 'panic'
+  | 'autoop'
+  | 'controller'
+  | 'psu';
 
 export interface Door {
   id: string;
@@ -538,6 +573,49 @@ export interface Door {
   readerLocation?: 'mullion' | 'wall';
   notes?: string;
   media?: string[];         // urls to attached photos
+}
+
+// ─────────────────────────── Survey capture ──────────────────────
+// One note / checklist item attached to a specific object on a floor.
+// Surveyors capture these on-site as they walk; engineering reads them
+// back from the inspector while validating placement and BOM. Photo
+// blobs aren't stored inline yet — only honest metadata placeholders
+// pointing at a pending upload. Persists with the rest of the project.
+export type SurveyObjectType = 'device' | 'door' | 'pathway' | 'idf' | 'floor';
+export type SurveyItemStatus = 'todo' | 'verified' | 'issue' | 'skip';
+export type SurveyItemKind = 'note' | 'check';
+
+export interface SurveyPhotoPlaceholder {
+  /** Original filename the surveyor named the photo (best-effort). */
+  fileName: string;
+  /** Bytes — only when known. */
+  sizeBytes?: number;
+  /** When the photo was captured / queued (ms epoch). */
+  capturedAt?: number;
+  /** Honest disclosure: real blob upload pending. */
+  pendingUpload: true;
+  /** Optional free-form caption. */
+  caption?: string;
+}
+
+export interface SurveyItem {
+  id: string;
+  projectId: string;
+  /** Floor the surveyed object lives on. Optional for project-level items. */
+  floorId?: string;
+  /** Type of the object this note hangs off. */
+  objectType: SurveyObjectType;
+  /** ID of the object — Device.id / Door.id / Pathway.id / IDF.id / Floor.id. */
+  objectId: string;
+  kind: SurveyItemKind;
+  text: string;
+  status: SurveyItemStatus;
+  /** Display name of the surveyor / engineer (demo data uses 'Field demo'). */
+  author?: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Optional photo metadata — real upload pending. */
+  photo?: SurveyPhotoPlaceholder;
 }
 
 // ─────────────────────────── Pathways ─────────────────────────────

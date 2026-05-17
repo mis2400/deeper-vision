@@ -1,8 +1,29 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { toast } from 'sonner';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { ArrowRight, ArrowLeft, Check, Users, Building2, Shield, Scale, FileCheck } from 'lucide-react';
+import { useProjectStore } from '../store/projectStore';
+import type { Address, Customer, Industry, Project, Site, Building, Floor, Contact } from '../store/types';
+
+// Map the intake's freeform "building type" picker onto the store's Industry
+// enum. Anything we don't recognise falls back to 'other' so the Customer
+// record still validates.
+const INDUSTRY_BY_BUILDING_TYPE: Record<string, Industry> = {
+  'Office': 'commercial_re',
+  'Healthcare': 'healthcare',
+  'K-12 School': 'education',
+  'University': 'education',
+  'Retail': 'retail',
+  'Warehouse': 'logistics',
+  'Data center': 'data_center',
+  'Government': 'government',
+  'Critical infrastructure': 'other',
+  'Multifamily': 'multifamily',
+  'Hospitality': 'hospitality',
+  'Industrial': 'manufacturing',
+};
 
 type Step = 'client' | 'site' | 'threat' | 'compliance' | 'review';
 
@@ -35,7 +56,130 @@ export function SiteIntake() {
     { id: 'review', label: 'Review', icon: FileCheck },
   ];
   const idx = steps.findIndex((s) => s.id === step);
-  const finish = () => navigate(`/calibrate/${projectId ?? 'new'}`);
+
+  const addCustomer = useProjectStore((s) => s.addCustomer);
+  const addContact = useProjectStore((s) => s.addContact);
+  const addProject = useProjectStore((s) => s.addProject);
+  const addSite = useProjectStore((s) => s.addSite);
+  const addBuilding = useProjectStore((s) => s.addBuilding);
+  const addFloor = useProjectStore((s) => s.addFloor);
+  const updateCustomer = useProjectStore((s) => s.updateCustomer);
+
+  // If we were invoked with an existing projectId we just hop straight to
+  // calibration without creating duplicate records. The intake screen is only
+  // a create flow today; "edit project" is a separate (future) surface.
+  const finish = () => {
+    if (projectId && projectId !== 'new') {
+      navigate(`/calibrate/${projectId}`);
+      return;
+    }
+    try {
+      const now = Date.now();
+      const suffix = `${now.toString(36).slice(-5)}${Math.random().toString(36).slice(2, 5)}`;
+      const customerId = `c-${suffix}`;
+      const contactId = `ct-${suffix}`;
+      const newProjectId = `p-${suffix}`;
+      const siteId = `s-${suffix}`;
+      const buildingId = `b-${suffix}`;
+      const floorId = `f-${suffix}`;
+
+      const address: Address = {
+        street: site.address,
+        city: site.city,
+        state: site.state || undefined,
+        postal: site.zip || undefined,
+      };
+      const customer: Customer = {
+        id: customerId,
+        companyName: client.company || site.address || 'New customer',
+        addresses: [address],
+        industry: INDUSTRY_BY_BUILDING_TYPE[site.type],
+        primaryContactId: contactId,
+        createdAt: now,
+        updatedAt: now,
+      };
+      addCustomer(customer);
+
+      const nameParts = client.contact.trim().split(/\s+/);
+      const contact: Contact = {
+        id: contactId,
+        customerId,
+        firstName: nameParts[0] || client.contact || 'Primary',
+        lastName: nameParts.slice(1).join(' ') || '',
+        email: client.email || undefined,
+        phone: client.phone || undefined,
+        isPrimary: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      addContact(contact);
+
+      // Stamp the customer's primaryContactId now that the contact exists —
+      // belt-and-braces in case the customer write landed before the contact.
+      updateCustomer(customerId, { primaryContactId: contactId });
+
+      const projectName = client.company
+        ? `${client.company}${site.address ? ` — ${site.address}` : ''}`
+        : site.address || 'New project';
+      const nextAction = ahj.kickoff
+        ? `Site walk · kickoff ${ahj.kickoff}`
+        : 'Schedule the site walk';
+      const dueDate = ahj.target ? new Date(ahj.target).getTime() : undefined;
+      const newProject: Project = {
+        id: newProjectId,
+        name: projectName,
+        customerId,
+        siteId,
+        status: 'design',
+        lifecyclePhase: 'survey',
+        createdAt: now,
+        updatedAt: now,
+        phaseStartedAt: now,
+        nextAction,
+        dueDate: Number.isFinite(dueDate) ? dueDate : undefined,
+        healthStatus: 'on_track',
+        priority: threat.level === 'critical' || threat.level === 'high' ? 'high' : 'normal',
+        progress: 0,
+      };
+      addProject(newProject);
+
+      const siteAddressLine = [site.address, site.city, site.state, site.zip]
+        .filter(Boolean)
+        .join(', ');
+      const newSite: Site = {
+        id: siteId,
+        projectId: newProjectId,
+        name: site.address || client.company || 'Main Site',
+        address: siteAddressLine,
+      };
+      addSite(newSite);
+
+      const newBuilding: Building = {
+        id: buildingId,
+        siteId,
+        name: 'Main Building',
+      };
+      addBuilding(newBuilding);
+
+      const newFloor: Floor = {
+        id: floorId,
+        projectId: newProjectId,
+        buildingId,
+        name: 'Floor 1',
+        level: 0,
+        source: 'blank',
+        scalePxToFt: 0,
+        walls: [],
+      };
+      addFloor(newFloor);
+
+      toast.success(`Project created: ${projectName}`);
+      navigate(`/calibrate/${newProjectId}`);
+    } catch (err) {
+      console.error('SiteIntake.finish failed', err);
+      toast.error('Could not create the project. Check the console.');
+    }
+  };
 
   return (
     <AppShell crumbs={[{ label: 'Projects', to: '/projects' }, { label: 'New project' }]} title="Site intake" subtitle={`Step ${idx + 1} of ${steps.length}`}>

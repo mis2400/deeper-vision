@@ -148,6 +148,46 @@ export function distance(a: Vec2, b: Vec2): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+// ---------- Pathway length ----------
+// Single source of truth: BOM, canvas labels, and inspector drawer must all
+// agree. Uses the calibrated per-floor scalePxToFt when set, otherwise falls
+// back to the canvas default (20 px / ft, i.e. 0.05 ft per px) so seeded
+// pathways render a sensible length even before /calibrate.
+const DEFAULT_FT_PER_PX = 1 / 20;
+
+export function ftPerPxForFloor(floor?: { scalePxToFt?: number } | null | undefined): number {
+  const v = floor?.scalePxToFt;
+  return typeof v === 'number' && v > 0 ? v : DEFAULT_FT_PER_PX;
+}
+
+export function pathwayLengthPx(points: ReadonlyArray<Vec2>): number {
+  if (!points || points.length < 2) return 0;
+  let len = 0;
+  for (let i = 1; i < points.length; i++) {
+    len += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  return len;
+}
+
+/**
+ * Derived foot length for a pathway. Always trusts persisted `lengthFt` when
+ * it is a real positive number; otherwise derives from `points` using the
+ * floor's calibrated scale. The fallback intentionally ignores `lengthFt === 0`
+ * since seeded pathways may omit the field (which JSON deserializes as
+ * undefined) but canvas-saved pathways may have left it 0 from an earlier bug.
+ */
+export function pathwayLengthFt(
+  pathway: { points?: ReadonlyArray<Vec2>; lengthFt?: number } | null | undefined,
+  floor?: { scalePxToFt?: number } | null | undefined,
+): number {
+  if (!pathway) return 0;
+  if (typeof pathway.lengthFt === 'number' && pathway.lengthFt > 0) {
+    return Math.round(pathway.lengthFt);
+  }
+  const lenPx = pathwayLengthPx(pathway.points ?? []);
+  return Math.round(lenPx * ftPerPxForFloor(floor));
+}
+
 // Returns whether point p is inside an FOV cone originating at origin with
 // rotation (deg, 0 = +x) and fov (deg), within range (px).
 export function pointInCone(p: Vec2, origin: Vec2, rotationDeg: number, fovDeg: number, rangePx: number): boolean {
@@ -245,7 +285,7 @@ export function buildBom(objects: CanvasObject[], scaleFtPerPx: number): BomLine
       lines.push({ sku: 'RACK-42U', desc: '42U enclosed rack', qty: 1, unit: 1200, category: 'network', objectId: o.id } as any);
     }
     if (o.kind === 'pathway') {
-      const len = pathwayLengthFt(o, scaleFtPerPx);
+      const len = pathwayObjLengthFt(o, scaleFtPerPx);
       const per = o.pathType === 'conduit' ? 4.2 : o.pathType === 'tray' ? 6.5 : 1.1;
       lines.push({
         sku: o.pathType.toUpperCase(),
@@ -272,7 +312,10 @@ export function buildBom(objects: CanvasObject[], scaleFtPerPx: number): BomLine
   return lines;
 }
 
-export function pathwayLengthFt(p: PathwayObj, scaleFtPerPx: number): number {
+// Internal helper for the legacy CanvasObject taxonomy used by buildBom.
+// Kept private and named differently from the public pathwayLengthFt above
+// (which is the store-aware version exported to the canvas + projectStore).
+function pathwayObjLengthFt(p: PathwayObj, scaleFtPerPx: number): number {
   let px = 0;
   for (let i = 1; i < p.points.length; i++) {
     px += distance(p.points[i - 1], p.points[i]);

@@ -15,9 +15,11 @@ import {
   Opportunity, OpportunityStage, Touch, Task,
   ProjectMode, UserRole, EngineeringLayer, CanvasLayerState, DEFAULT_CANVAS_LAYERS,
   CanvasDisplayPrefs, DEFAULT_DISPLAY_PREFS, ProjectTechModel,
+  SurveyItem, SurveyObjectType,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
+import { pathwayLengthFt, ftPerPxForFloor } from '../lib/engineering';
 
 /** Map a lifecycle phase to its default operational mode. Used when no
  *  user override is set on a project. */
@@ -78,6 +80,9 @@ interface ProjectState {
   touches:       Record<string, Touch>;
   tasks:         Record<string, Task>;
   activity:      Record<string, ActivityItem>;
+  /** Object-linked survey notes / checklist items captured on-site.
+   *  Each item points at a Device / Door / Pathway / IDF / Floor. */
+  surveyItems:   Record<string, SurveyItem>;
 
   // ── UX preferences ──
   /** Per-project mode override. When unset, mode is derived from
@@ -100,6 +105,10 @@ interface ProjectState {
   canvasTheme: 'light' | 'slate' | 'dark';
 
   // ── Project actions ──
+  /** Create a new project. Caller supplies the full record (including id +
+   *  createdAt/updatedAt). Use alongside addSite/addBuilding/addFloor when
+   *  spinning up a project from intake. */
+  addProject:    (p: Project) => void;
   updateProject: (id: string, patch: Partial<Project>) => void;
 
   // ── UX preference actions ──
@@ -116,6 +125,9 @@ interface ProjectState {
   setProjectTechModel: (projectId: string, model: ProjectTechModel) => void;
 
   // ── CRM actions ──
+  /** Create a customer. Caller supplies id + addresses; createdAt/updatedAt
+   *  are stamped if omitted. */
+  addCustomer:       (c: Customer) => void;
   updateCustomer:    (id: string, patch: Partial<Customer>) => void;
 
   addContact:        (c: Contact, opts?: { userName?: string }) => void;
@@ -171,8 +183,19 @@ interface ProjectState {
   updateIDF: (id: string, patch: Partial<IDF>) => void;
   removeIDF: (id: string) => void;
 
-  // ── Floor / walls ──
+  // ── Site / Building / Floor / walls ──
+  /** Create a site under a project. */
+  addSite:     (s: Site) => void;
+  /** Create a building under a site. */
+  addBuilding: (b: Building) => void;
   updateFloor: (id: string, patch: Partial<Floor>) => void;
+
+  // ── Survey capture ──
+  /** Add a survey note / checklist item bound to a canvas object.
+   *  When `id` is omitted, the store generates one. Returns the id. */
+  addSurveyItem:    (item: Omit<SurveyItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => string;
+  updateSurveyItem: (id: string, patch: Partial<SurveyItem>) => void;
+  removeSurveyItem: (id: string) => void;
 
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
@@ -284,6 +307,8 @@ export const useProjectStore = create<ProjectState>()(
           projectTechModels: { ...s.projectTechModels, [projectId]: model },
         })),
 
+      addProject: (p) =>
+        set((s) => ({ projects: { ...s.projects, [p.id]: p } })),
       updateProject: (id, patch) =>
         set((s) => ({
           projects: s.projects[id]
@@ -388,6 +413,8 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       // ── CRM: Customer ──
+      addCustomer: (c) =>
+        set((s) => ({ customers: { ...s.customers, [c.id]: c } })),
       updateCustomer: (id, patch) =>
         set((s) => s.customers[id] ? ({
           customers: { ...s.customers, [id]: { ...s.customers[id], ...patch, updatedAt: Date.now() } },
@@ -622,6 +649,10 @@ export const useProjectStore = create<ProjectState>()(
       removeIDF: (id) =>
         set((s) => { const { [id]: _, ...rest } = s.idfs; return { idfs: rest }; }),
 
+      addSite: (st) =>
+        set((s) => ({ sites: { ...s.sites, [st.id]: st } })),
+      addBuilding: (b) =>
+        set((s) => ({ buildings: { ...s.buildings, [b.id]: b } })),
       updateFloor: (id, patch) =>
         set((s) => (s.floors[id] ? { floors: { ...s.floors, [id]: { ...s.floors[id], ...patch } } } : s)),
       addFloor: (floor) => set((s) => ({ floors: { ...s.floors, [floor.id]: floor } })),
@@ -629,6 +660,35 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => (s.floors[floorId] ? { floors: { ...s.floors, [floorId]: { ...s.floors[floorId], walls } } } : s)),
       setFloorBackground: (floorId, bg) =>
         set((s) => (s.floors[floorId] ? { floors: { ...s.floors, [floorId]: { ...s.floors[floorId], background: bg ?? undefined } } } : s)),
+
+      // ── Survey capture ──────────────────────────────────────────
+      addSurveyItem: (input) => {
+        _activityCounter += 1;
+        const now = Date.now();
+        const id = input.id ?? `srv-${now.toString(36).slice(-5)}-${_activityCounter}`;
+        const item: SurveyItem = {
+          id,
+          projectId: input.projectId,
+          floorId: input.floorId,
+          objectType: input.objectType,
+          objectId: input.objectId,
+          kind: input.kind ?? 'note',
+          text: input.text,
+          status: input.status ?? 'todo',
+          author: input.author,
+          createdAt: now,
+          updatedAt: now,
+          photo: input.photo,
+        };
+        set((s) => ({ surveyItems: { ...s.surveyItems, [id]: item } }));
+        return id;
+      },
+      updateSurveyItem: (id, patch) =>
+        set((s) => s.surveyItems[id]
+          ? { surveyItems: { ...s.surveyItems, [id]: { ...s.surveyItems[id], ...patch, updatedAt: Date.now() } } }
+          : s),
+      removeSurveyItem: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.surveyItems; return { surveyItems: rest }; }),
 
       // ── Threat Drill ─────────────────────────────────────────────
       addScenario: (sc) => set((s) => ({ scenarios: { ...s.scenarios, [sc.id]: sc } })),
@@ -720,7 +780,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'deeperVisionStore',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -780,6 +840,22 @@ export const useProjectStore = create<ProjectState>()(
             persisted.canvasTheme = 'light';
           }
         }
+        if (version < 5) {
+          // v4 → v5: introduce the object-linked surveyItems slice + the
+          // earlier-pass calibration fix that inverted scalePxToFt for users
+          // who calibrated before the fix. Walk every floor and if its
+          // stored scale is > 1 (suspiciously px-per-ft instead of ft-per-px),
+          // invert it. New value is ft-per-px = 1 / old; default seed (0.05)
+          // is untouched. Then ensure the surveyItems slice exists.
+          persisted.surveyItems ??= {};
+          if (persisted.floors) {
+            for (const [fid, f] of Object.entries(persisted.floors as Record<string, any>)) {
+              if (typeof f?.scalePxToFt === 'number' && f.scalePxToFt > 1) {
+                persisted.floors[fid] = { ...f, scalePxToFt: 1 / f.scalePxToFt };
+              }
+            }
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -828,6 +904,7 @@ export const useProjectStore = create<ProjectState>()(
         busCableRoutes:    s.busCableRoutes,
         busEvents:         s.busEvents,
         busChecks:         s.busChecks,
+        surveyItems:       s.surveyItems,
       }),
     },
   ),
@@ -890,6 +967,24 @@ export const selectors = {
 
   estimateForProject: (s: ProjectState, projectId: string): Estimate | null =>
     Object.values(s.estimates).find((e) => e.projectId === projectId) ?? null,
+
+  // ── Survey selectors ──────────────────────────────────────────
+  /** Survey items attached to a specific canvas object (device, door, pathway,
+   *  IDF, or floor), newest first. */
+  surveyItemsForObject: (
+    s: ProjectState,
+    objectType: SurveyObjectType,
+    objectId: string,
+  ): SurveyItem[] =>
+    Object.values(s.surveyItems)
+      .filter((i) => i.objectType === objectType && i.objectId === objectId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+
+  /** All survey items for a project, newest first. */
+  surveyItemsForProject: (s: ProjectState, projectId: string): SurveyItem[] =>
+    Object.values(s.surveyItems)
+      .filter((i) => i.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt),
 
   /** Project activity feed, newest first. */
   activityForProject: (s: ProjectState, projectId: string, limit = 50): ActivityItem[] =>
@@ -1076,6 +1171,57 @@ const UNIT_PRICE: Record<string, { price: number; labor: number; desc: string }>
   'dis.kiosk':       { price: 2200, labor: 2.0,  desc: 'Kiosk' },
 };
 
+/** Canonical price / labor map for door-assembly hardware components.
+ *  Source of truth for both deriveBOM's door rollup and the canvas
+ *  Impact preview. Prices and labor units are reasonable defaults for
+ *  preview purposes — they should be calibrated against the integrator's
+ *  current pricebook before any customer-facing estimate goes out. */
+export const DOOR_HARDWARE_PRICE: Record<
+  import('./types').DoorHardware,
+  { price: number; labor: number; desc: string }
+> = {
+  reader:     { price: 285,  labor: 0.75, desc: 'Card / mobile reader' },
+  strike:     { price: 540,  labor: 1.5,  desc: 'Electric strike' },
+  maglock:    { price: 245,  labor: 1.0,  desc: 'Magnetic lock' },
+  rex:        { price: 215,  labor: 0.5,  desc: 'REX motion / button' },
+  dps:        { price:  85,  labor: 0.3,  desc: 'Door position switch' },
+  contact:    { price:  22,  labor: 0.25, desc: 'Door contact' },
+  intercom:   { price: 720,  labor: 1.5,  desc: 'Intercom station' },
+  panic:      { price: 845,  labor: 1.5,  desc: 'Panic bar / crash device' },
+  autoop:     { price:1850,  labor: 4.0,  desc: 'Auto-operator / push-plate' },
+  controller: { price: 980,  labor: 2.0,  desc: 'Access controller input' },
+  psu:        { price: 425,  labor: 0.75, desc: '12/24 VDC power supply' },
+};
+
+/** Roll a Device's doorAssembly[] into BOM-shaped lines. Returns one line
+ *  per selected hardware component plus a labor-hour summary. Pure / safe
+ *  to call from render. Used by both ImpactPreviewSection (per-device
+ *  preview) and deriveBOM (project-wide rollup). */
+export function deriveDoorAssemblyLines(device: import('./types').Device): {
+  lines: { id: string; hw: import('./types').DoorHardware; description: string; unitPrice: number; qty: number; uom: 'ea'; laborHours: number }[];
+  laborHours: number;
+  hardwareTotal: number;
+} {
+  const items = device.doorAssembly ?? [];
+  const lines = items.map((hw) => {
+    const meta = DOOR_HARDWARE_PRICE[hw];
+    return {
+      id: `door-${device.id}-${hw}`,
+      hw,
+      description: meta.desc,
+      unitPrice: meta.price,
+      qty: 1,
+      uom: 'ea' as const,
+      laborHours: meta.labor,
+    };
+  });
+  return {
+    lines,
+    laborHours: lines.reduce((s, l) => s + l.laborHours, 0),
+    hardwareTotal: lines.reduce((s, l) => s + l.unitPrice * l.qty, 0),
+  };
+}
+
 const CABLE_UNIT_PRICE: Record<string, number> = {
   'cat6':       0.42,
   'cat6a':      0.78,
@@ -1186,10 +1332,15 @@ export function deriveBOM(state: ProjectState, projectId: string): {
     });
   });
 
-  // Doors → one line each (so hardware can vary). Sum hardware unit prices.
+  // Doors → one line each. The canonical Door records (state.doors) and
+  // the in-canvas door-as-Device records (devices with doorAssembly[])
+  // are summarised through the same DOOR_HARDWARE_PRICE table. Each
+  // selected hardware component becomes one BOM line so the Estimator can
+  // group them under "Access control · doors" and the per-device Impact
+  // preview can show the same numbers.
   for (const door of doors) {
     const hwSum = door.hardware.reduce((acc, h) => {
-      const meta = UNIT_PRICE[(`acc.${h}`) as keyof typeof UNIT_PRICE] ?? { price: 0, labor: 0 };
+      const meta = DOOR_HARDWARE_PRICE[h] ?? { price: 0, labor: 0 };
       return { price: acc.price + meta.price, labor: acc.labor + meta.labor };
     }, { price: 0, labor: 0 });
     lines.push({
@@ -1204,14 +1355,39 @@ export function deriveBOM(state: ProjectState, projectId: string): {
     });
   }
 
-  // Pathways → cable feet + small conduit allocation.
-  const pxPerFt = 20; // matches canvas scale; will be replaced when /calibrate is wired.
-  for (const p of pathways) {
-    let lengthPx = 0;
-    for (let i = 1; i < p.points.length; i++) {
-      lengthPx += Math.hypot(p.points[i].x - p.points[i - 1].x, p.points[i].y - p.points[i - 1].y);
+  // Door-as-Device with doorAssembly[] — produced by the canvas inspector
+  // (DoorAssemblySection). Each selected component generates its own BOM
+  // line, so the Estimator shows reader / strike / rex / etc. broken out
+  // rather than rolled into one mystery total.
+  for (const dev of devices as any[]) {
+    const t = String(dev?.type ?? '');
+    const isOpening = t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
+    if (!isOpening) continue;
+    const assembly = (dev.doorAssembly ?? []) as import('./types').DoorHardware[];
+    if (assembly.length === 0) continue;
+    for (const hw of assembly) {
+      const meta = DOOR_HARDWARE_PRICE[hw];
+      if (!meta) continue;
+      lines.push({
+        id: `door-asm-${dev.id}-${hw}`,
+        sourceKind: 'door',
+        sourceId: dev.id,
+        sku: `door-hw:${hw}`,
+        description: `${dev.id} · ${meta.desc}`,
+        qty: 1, uom: 'ea',
+        unitPrice: meta.price,
+        laborHours: meta.labor,
+      });
     }
-    const ft = p.lengthFt ?? Math.round(lengthPx / pxPerFt);
+  }
+
+  // Pathways → cable feet + small conduit allocation.
+  // Uses pathwayLengthFt (lib/engineering) so the BOM, canvas labels, and
+  // PathwayDrawer all agree. Per-floor calibration via floor.scalePxToFt;
+  // fallback is the canvas default (1 / 20 ft per px) until /calibrate runs.
+  for (const p of pathways) {
+    const floor = p.floorId ? state.floors[p.floorId] : undefined;
+    const ft = pathwayLengthFt(p, floor);
     const unitFt = CABLE_UNIT_PRICE[p.cableType] ?? 0.5;
     lines.push({
       id: `pw-${p.id}-cable`,

@@ -1,11 +1,11 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
-import { useProjectStore, selectors as storeSelectors, deriveBOM } from '../store/projectStore';
+import { useProjectStore, selectors as storeSelectors, deriveBOM, deriveDoorAssemblyLines } from '../store/projectStore';
 import { SAMPLE_PRODUCTS as CATALOG, accessoriesFor as catalogAccessoriesFor, type Product as CatalogProduct } from '../lib/productCatalog';
 import type {
   EngineeringLayer, CanvasLayerState, CanvasDisplayPrefs, IconSize,
-  LabelDensity, BaseMapMode,
+  LabelDensity, BaseMapMode, DoorHardware, SurveyItemStatus,
 } from '../store/types';
 import { DEFAULT_CANVAS_LAYERS, DEFAULT_DISPLAY_PREFS } from '../store/types';
 import type { Device as StoreDevice } from '../store/types';
@@ -23,12 +23,14 @@ import {
   Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink,
   PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
+  ClipboardList,
 } from 'lucide-react';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 const SURVEYOR_SYMBOL_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
 function SURVEYOR_SYMBOL_HAS(t: string): boolean { return SURVEYOR_SYMBOL_SET.has(t); }
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { canHost } from '../lib/compatibility';
+import { pathwayLengthFt, ftPerPxForFloor } from '../lib/engineering';
 import { buildLabel, COMMIT_HASH } from '../../build-info';
 import { toast } from 'sonner';
 
@@ -650,6 +652,19 @@ export function EngineeringCanvas() {
   const floorBackground = useProjectStore((s) =>
     currentFloorId ? s.floors[currentFloorId]?.background : undefined,
   );
+  // Calibrated ft-per-px for every displayed-foot readout on this canvas.
+  // Falls back to the canvas default (1/20) when the floor is missing or
+  // has not been calibrated yet. Use this single value at every site
+  // that converts canvas pixels to feet — never hardcode `/ 20`.
+  const currentFloorPxToFt = useProjectStore((s) =>
+    ftPerPxForFloor(currentFloorId ? s.floors[currentFloorId] : undefined),
+  );
+  // Subscribe to the floor's explicit calibration marker so the scale bar
+  // re-renders when the user calibrates / un-calibrates. Reading via
+  // `useProjectStore.getState()` from an inline IIFE would not subscribe.
+  const currentFloorCalibratedAt = useProjectStore((s) =>
+    currentFloorId ? s.floors[currentFloorId]?.calibratedAt : undefined,
+  );
 
   // Devices in scope for this canvas: project + current floor. Memoized so
   // we don't re-allocate on every parent render.
@@ -760,20 +775,19 @@ export function EngineeringCanvas() {
       const mode = drawModeRef.current;
       const prefix = mode.kind === 'conduit' ? 'CD' : mode.kind === 'pathway' ? 'PT' : 'PW';
       const id = `${prefix}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
-      // Length: sum the segment distances (px) and divide by the canvas
-      // scale (20 px = 1 ft, matching deriveBOM in the store).
-      let lengthPx = 0;
-      for (let i = 1; i < prev.points.length; i++) {
-        lengthPx += Math.hypot(prev.points[i].x - prev.points[i - 1].x, prev.points[i].y - prev.points[i - 1].y);
-      }
-      const lengthFt = Math.round(lengthPx / 20);
-      const fid = useProjectStore.getState().sites[projectId.replace(/^p/, 's') + ''] ? '' : (storeSelectors.firstFloorOfProject(useProjectStore.getState(), projectId)?.id ?? '');
+      // Length: derive from points + the floor's calibrated scale via the
+      // shared pathwayLengthFt helper so the BOM, canvas labels, and inspector
+      // drawer all agree.
+      const _state = useProjectStore.getState();
+      const _floor = storeSelectors.firstFloorOfProject(_state, projectId);
+      const lengthFt = pathwayLengthFt({ points: prev.points }, _floor);
+      const fid = _state.sites[projectId.replace(/^p/, 's') + ''] ? '' : (_floor?.id ?? '');
       const isConduit = mode.kind === 'conduit';
       const isPathway = mode.kind === 'pathway';
       addPathway({
         id,
         projectId,
-        floorId: fid || (storeSelectors.firstFloorOfProject(useProjectStore.getState(), projectId)?.id ?? ''),
+        floorId: fid || (_floor?.id ?? ''),
         type: isConduit ? 'conduit' : isPathway ? 'open' : 'conduit',
         cableType: prev.cableType,
         cableCount: 1,
@@ -2014,14 +2028,16 @@ export function EngineeringCanvas() {
 
             {/* Scale bar — honest about calibration. The default
                 "20 px = 1 ft" canvas constant is a starter scale, not a
-                measurement. If the user hasn't run the /calibrate workflow
-                we say so. Once the floor's `scalePxToFt` is set by a real
-                two-point calibration, this bar reads the calibrated value. */}
+                measurement. Calibrated state is now driven by explicit
+                metadata (`floor.calibratedAt`) instead of comparing to
+                the seed default — a user who measured and got exactly
+                0.05 ft/px is still calibrated. */}
             {(() => {
-              const fid = currentFloorId;
-              const floorRec = fid ? useProjectStore.getState().floors[fid] : undefined;
-              const isCalibrated = !!(floorRec && (floorRec as any).scalePxToFt && (floorRec as any).scalePxToFt !== 0.05);
-              const ftPerPx = isCalibrated ? (floorRec as any).scalePxToFt : (1 / 20);
+              // Both values are subscribed at the component level so the
+              // scale bar re-renders whenever the floor's scale or its
+              // calibration marker changes.
+              const isCalibrated = !!currentFloorCalibratedAt;
+              const ftPerPx = currentFloorPxToFt;
               const ft = Math.round(zoom * 100 * ftPerPx * 10) / 10;
               return (
                 <div
@@ -2997,6 +3013,7 @@ function computeBundleFill(count: number, cableType: string, conduitSize?: strin
 function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClose: () => void }) {
   const pathways = useProjectStore((s) => s.pathways);
   const devices = useProjectStore((s) => s.devices);
+  const floors = useProjectStore((s) => s.floors);
   const updatePathway = useProjectStore((s) => s.updatePathway);
   const removePathway = useProjectStore((s) => s.removePathway);
   const runs = useMemo(
@@ -3006,7 +3023,7 @@ function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClos
   const first = runs[0];
   const cableType = String(first?.cableType ?? 'cat6a');
   const targetId = first?.targetId ?? first?.destinationId ?? '—';
-  const totalLen = runs.reduce((s, p) => s + (p.lengthFt ?? 0), 0);
+  const totalLen = runs.reduce((s, p) => s + pathwayLengthFt(p, floors[p.floorId ?? '']), 0);
   const conduitType = first?.conduitType ?? 'none';
   const conduitSize = first?.conduitSize;
   const fill = computeBundleFill(runs.length, cableType, conduitSize);
@@ -3066,7 +3083,7 @@ function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClos
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-foreground truncate">{src?.id ?? p.sourceId ?? p.id} → {targetId}</div>
                       <div className="text-[10.5px] text-muted-foreground">
-                        {Math.round(p.lengthFt ?? 0)} ft · {String(p.cableType ?? cableType).toUpperCase()}
+                        {pathwayLengthFt(p, floors[p.floorId ?? ''])} ft · {String(p.cableType ?? cableType).toUpperCase()}
                         {p.patchPort && <> · PP-01 Port {String(p.patchPort).padStart(2, '0')}</>}
                         {p.switchPort && <> · SW-01 Port {String(p.switchPort).padStart(2, '0')}</>}
                       </div>
@@ -3206,15 +3223,20 @@ function RunToIdfDialog({
   // the IDF, plus 10% slack + a 3 ft service loop per termination.
   const totalLengthFt = useMemo(() => {
     if (!target) return 0;
-    const pxToFt = 1 / 20; // canvas convention: 20px = 1 ft
+    const _state = useProjectStore.getState();
+    const _floor = storeSelectors.firstFloorOfProject(_state, projectId);
+    const pxToFt = ftPerPxForFloor(_floor);
     let sum = 0;
     selected.forEach((d) => {
       sum += Math.hypot(target.x - d.x, target.y - d.y) * pxToFt * 1.1 + 3;
     });
     return Math.round(sum);
-  }, [selected, target]);
+  }, [selected, target, projectId]);
   const handleRun = () => {
     if (!target) return;
+    const _state = useProjectStore.getState();
+    const _floor = storeSelectors.firstFloorOfProject(_state, projectId);
+    const pxToFt = ftPerPxForFloor(_floor);
     const bundleId = `BUN-${Date.now().toString(36).slice(-5)}`.toUpperCase();
     selected.forEach((d) => {
       addPathway({
@@ -3222,7 +3244,7 @@ function RunToIdfDialog({
         floorId: (d as any).floorId ?? '',
         cableType,
         points: [{ x: d.x, y: d.y }, { x: target.x, y: target.y }],
-        lengthFt: Math.round(Math.hypot(target.x - d.x, target.y - d.y) / 20 * 1.1 + 3),
+        lengthFt: Math.round(Math.hypot(target.x - d.x, target.y - d.y) * pxToFt * 1.1 + 3),
         bundleId,
         sourceId: d.id,
         targetId: target.id,
@@ -5090,14 +5112,43 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           // own opacity calc) so the user can still locate inactive devices
           // and click to switch focus.
           const spotlightDim = selId && !isSel ? 0.42 : 1;
+          // Stable test-id namespace per the MVP spec: door-* for doors,
+          // device-* for everything else (cameras, readers, IDFs, sensors).
+          const isDoorish = (d.type as string).startsWith('inf.door')
+            || (d.type as string).startsWith('inf.gate')
+            || (d.type as string).startsWith('inf.storefront')
+            || (d.type as string).startsWith('inf.doubledoor');
+          const testId = isDoorish ? `door-${d.id}` : `device-${d.id}`;
           return (
             <g
               key={d.id}
+              data-testid={testId}
+              data-track={testId}
+              data-object-kind={isDoorish ? 'door' : 'device'}
+              data-device-id={d.id}
+              data-device-type={d.type}
               className={`cursor-move dv-device ${isSel ? 'dv-selected' : ''}`}
               style={{ opacity: spotlightDim, transition: 'opacity 160ms ease, transform 200ms cubic-bezier(0.22,1,0.36,1)' }}
+              // Click handler in parallel with onPointerDown so a plain
+              // native click() (mobile tap, screen reader, automated test)
+              // still selects the device. Drag is governed by pointer events
+              // below; this stays a one-line "if it ended as a click, pick it"
+              // path that doesn't fight the drag flow.
+              onClick={(e) => {
+                e.stopPropagation();
+                if (e.shiftKey) {
+                  (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(new CustomEvent('dv-shift-pick', { detail: { id: d.id }, bubbles: true }));
+                } else {
+                  onPick(d.id);
+                }
+              }}
               onPointerDown={(e) => {
                 e.stopPropagation();
-                (e.currentTarget as Element).setPointerCapture(e.pointerId);
+                // Pointer capture is best-effort — synthetic events without a
+                // real pointerId throw InvalidPointerId, which used to swallow
+                // the whole handler and silently lose the click. Wrap so the
+                // selection path still runs.
+                try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
                 const svg = (ref as React.RefObject<SVGSVGElement>).current;
                 if (!svg) return;
                 const r = svg.getBoundingClientRect();
@@ -5204,10 +5255,22 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 />
               )}
               {multi && !isSel && <circle cx={d.x} cy={d.y} r={18 * iconScale} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />}
+              {/* Transparent hit-circle — guarantees the device is clickable
+                  even when the underlying glyph is a thin line or a small
+                  shape. Sized roughly at touch-target radius so the user
+                  doesn't pixel-hunt the icon. */}
+              <circle
+                cx={d.x}
+                cy={d.y}
+                r={Math.max(16, 18 * iconScale)}
+                fill="transparent"
+                pointerEvents="all"
+                data-hit="device"
+              />
               {/* When the device is selected, wrap the glyph in a filter
                   group that paints a soft drop shadow underneath. Reads
                   as gentle elevation rather than HUD selection glow. */}
-              <g filter={isSel ? 'url(#device-elevation)' : undefined}>
+              <g filter={isSel ? 'url(#device-elevation)' : undefined} pointerEvents="none">
                 <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
               </g>
               {/* Stack count badge — a small numbered bubble at the top-right
@@ -5353,7 +5416,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             <g transform={`translate(${(movingDev.x + nearest.x) / 2}, ${(movingDev.y + nearest.y) / 2})`}>
               <rect x={-20} y={-7} width={40} height={14} rx={3} fill="var(--panel-background)" fillOpacity="0.9" stroke="#FACC15" strokeWidth="0.5" />
               <text textAnchor="middle" y={3} fontSize="9" fontFamily="ui-monospace, monospace" fill="#FACC15" fontWeight="700">
-                {(nearest.d / 20).toFixed(1)} ft
+                {(nearest.d * currentFloorPxToFt).toFixed(1)} ft
               </text>
             </g>
           </g>
@@ -5365,10 +5428,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             <rect x={0} y={-12} width={108} height={36} rx={4} fill="var(--panel-background)" fillOpacity="0.92" stroke="rgba(124,194,255,0.45)" strokeWidth="0.7" />
             <text x={6} y={0} fontSize="8" fontFamily="ui-monospace, monospace" fill="#94A3B8" letterSpacing="0.6">X · Y · NEAR</text>
             <text x={6} y={11} fontSize="10" fontFamily="ui-monospace, monospace" fill="var(--foreground)" fontWeight="700">
-              {(movingDev.x / 20).toFixed(1)} · {(movingDev.y / 20).toFixed(1)} ft
+              {(movingDev.x * currentFloorPxToFt).toFixed(1)} · {(movingDev.y * currentFloorPxToFt).toFixed(1)} ft
             </text>
             <text x={6} y={21} fontSize="9" fontFamily="ui-monospace, monospace" fill="#7CC2FF">
-              {nearest ? `${nearest.id} · ${(nearest.d / 20).toFixed(1)} ft` : 'isolated'}
+              {nearest ? `${nearest.id} · ${(nearest.d * currentFloorPxToFt).toFixed(1)} ft` : 'isolated'}
             </text>
           </g>
         )}
@@ -5389,7 +5452,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 <line x1={p.a.x} y1={p.a.y} x2={p.b.x} y2={p.b.y} stroke="#94A3B8" strokeWidth="0.4" strokeDasharray="1 3" />
                 <rect x={mx - 18} y={my - 7} width={36} height={12} rx={2} fill="var(--panel-background)" fillOpacity="0.85" stroke="rgba(148,163,184,0.45)" strokeWidth="0.4" />
                 <text x={mx} y={my + 3} textAnchor="middle" fontSize="8" fontFamily="ui-monospace, monospace" fill="#CBD5E1">
-                  {(dist / 20).toFixed(1)}′
+                  {(dist * currentFloorPxToFt).toFixed(1)}′
                 </text>
               </g>
             );
@@ -5404,7 +5467,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           const dx = end.x - measure.start.x;
           const dy = end.y - measure.start.y;
           const distPx = Math.hypot(dx, dy);
-          const ft = distPx / 20;
+          const ft = distPx * currentFloorPxToFt;
           const mx = (measure.start.x + end.x) / 2;
           const my = (measure.start.y + end.y) / 2;
           const committed = !!measure.end;
@@ -5479,7 +5542,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           if (cableDraw.cursor && pts.length > 0) {
             lengthPx += Math.hypot(cursor.x - pts[pts.length - 1].x, cursor.y - pts[pts.length - 1].y);
           }
-          const ft = lengthPx / 20;
+          const ft = lengthPx * currentFloorPxToFt;
           const tipX = cursor.x;
           const tipY = cursor.y;
           return (
@@ -6828,7 +6891,9 @@ type EditTab =
   | 'overview' | 'lens' | 'ai' | 'network' | 'power' | 'mounting'
   | 'compliance' | 'telemetry' | 'linked' | 'notes'
   // V18 surveyor redesign — new sections rendered in the 3-icon grid
-  | 'accessories' | 'media' | 'history';
+  | 'accessories' | 'media' | 'history'
+  // MVP foundation pass — object-linked survey capture
+  | 'survey';
 
 interface ToolbarAction {
   id: string;
@@ -7229,10 +7294,12 @@ function ExpandMenu({
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
   }, [open]);
 
+  // Lock is intentionally absent — the underlying action isn't wired through
+  // the store yet, and the durable rule is "if it doesn't work, don't show it."
+  // Re-add when updateDevice gains a `locked` flag + the canvas respects it.
   const items: Array<{ id: string; label: string; icon: any; onClick: () => void; danger?: boolean }> = [
     { id: 'duplicate', label: 'Duplicate',    icon: Copy,       onClick: () => { onDuplicate(); setOpen(false); } },
     { id: 'color',     label: 'Color',        icon: PaintBucket, onClick: () => { setColorOpen((v) => !v); } },
-    { id: 'lock',      label: 'Lock',         icon: Lock,       onClick: () => { /* hook from caller in v2 */ setOpen(false); } },
     { id: 'stack',     label: 'Stack',        icon: Layers,     onClick: () => { onOpenTab('compliance'); setOpen(false); } },
     { id: 'details',   label: 'More details', icon: FileText,   onClick: () => { onOpenTab('overview'); setOpen(false); } },
     { id: 'delete',    label: 'Delete',       icon: Trash2,     onClick: () => { onDelete(); setOpen(false); }, danger: true },
@@ -7468,6 +7535,7 @@ const EDIT_TABS: { id: EditTab; label: string; icon: any; covers: EditTab[] }[] 
   { id: 'history',    label: 'History',       icon: HistoryIcon,     covers: ['history'] },
   { id: 'linked',     label: 'Stack',         icon: Layers,          covers: ['linked'] },
   { id: 'ai',         label: 'AI',            icon: Sparkles,        covers: ['ai'] },
+  { id: 'survey',     label: 'Survey',        icon: ClipboardList,    covers: ['survey'] },
 ];
 
 /** Return the tile set the drawer should expose for a given device.
@@ -7483,17 +7551,19 @@ function tilesForDevice(d: Device): { id: EditTab; label: string; icon: any; cov
   const isIdf      = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'inf.rack' || d.type === 'inf.mdf';
   const isCable    = (d.type as string).startsWith('cab.') || (d.type as string).startsWith('cable');
   const includes = (ids: EditTab[]) => EDIT_TABS.filter((t) => ids.includes(t.id));
+  // Survey + Notes are now part of every kind — surveyors capture
+  // object-linked field evidence regardless of category.
   if (isDoor) {
-    return includes(['overview','linked','mounting','accessories','network','power','compliance','notes','media','ai']);
+    return includes(['overview','linked','mounting','accessories','network','power','compliance','survey','notes','media','ai']);
   }
   if (isReader) {
-    return includes(['overview','mounting','network','power','accessories','compliance','notes','media','ai']);
+    return includes(['overview','mounting','network','power','accessories','compliance','survey','notes','media','ai']);
   }
   if (isIdf) {
-    return includes(['overview','network','power','accessories','compliance','linked','notes','media','ai']);
+    return includes(['overview','network','power','accessories','compliance','linked','survey','notes','media','ai']);
   }
   if (isCable) {
-    return includes(['overview','network','accessories','notes','media','ai']);
+    return includes(['overview','network','accessories','survey','notes','media','ai']);
   }
   if (isCamera) {
     return EDIT_TABS;
@@ -7555,6 +7625,9 @@ function DrawerSection({ title, children }: { title: string; children: React.Rea
  *  the device was seeded without a catalog product. */
 function ProductOverviewSection({ d }: { d: Device }) {
   const cat = CATALOG.find((p) => p.id === d.product);
+  // Calibrated px → ft for the device's own floor. Falls back to the
+  // canvas default when the floor has no calibration recorded.
+  const pxToFt = useProjectStore((s) => ftPerPxForFloor(d.floorId ? s.floors[d.floorId] : undefined));
   const Row2 = ({ label, value, tone }: { label: string; value: any; tone?: string }) =>
     value == null || value === '' ? null : (
       <div className="flex items-center justify-between text-[12px] py-1 border-b border-white/5 last:border-b-0">
@@ -7620,7 +7693,7 @@ function ProductOverviewSection({ d }: { d: Device }) {
       )}
 
       <DrawerSection title="Location">
-        <Row2 label="Position" value={`${(d.x / 20).toFixed(1)}, ${(d.y / 20).toFixed(1)} ft`} />
+        <Row2 label="Position" value={`${(d.x * pxToFt).toFixed(1)}, ${(d.y * pxToFt).toFixed(1)} ft`} />
         {d.mountFt != null && <Row2 label="Mount AFF" value={`${d.mountFt} ft`} />}
       </DrawerSection>
     </>
@@ -7631,35 +7704,186 @@ function ProductOverviewSection({ d }: { d: Device }) {
  *  accessory + an Add-hardware menu seeded with the host's compatible
  *  hardware set. Reads from the host's `stack: DeviceId[]` array, which
  *  is written by canvas-to-canvas drag-stack and by drag-from-library. */
+/** DoorAssemblySection — checklist editor for the door hardware "assembly"
+ *  persisted on the Device record itself (one model, not a stack of ghost
+ *  accessory devices). Renders only for opening-type devices; otherwise
+ *  emits nothing so the Stack tile retains its current StackSectionForHost
+ *  body for non-doors. Persists `doorAssembly`, `doorElectrification`, and
+ *  `doorReaderLocation` directly on the Device via onUpdate. */
+function DoorAssemblySection({
+  d, onUpdate,
+}: { d: Device; onUpdate: (p: Partial<Device>) => void }) {
+  const isDoorish =
+    (d.type as string).startsWith('inf.door')
+    || (d.type as string).startsWith('inf.gate')
+    || (d.type as string).startsWith('inf.storefront')
+    || (d.type as string).startsWith('inf.doubledoor');
+  if (!isDoorish) return null;
+  const assembly: DoorHardware[] = d.doorAssembly ?? [];
+  const electrification = d.doorElectrification;
+  const readerLocation = d.doorReaderLocation;
+  const ITEMS: { id: DoorHardware; label: string; hint: string }[] = [
+    { id: 'reader',     label: 'Reader',       hint: 'Card / mobile credential.' },
+    { id: 'strike',     label: 'Electric strike', hint: 'Fail-secure release at the latch.' },
+    { id: 'maglock',    label: 'Maglock',      hint: 'Magnetic hold. Requires REX + fire release.' },
+    { id: 'rex',        label: 'REX',          hint: 'Request-to-exit motion / button.' },
+    { id: 'dps',        label: 'DPS',          hint: 'Door position switch (contact).' },
+    { id: 'contact',    label: 'Door contact', hint: 'Monitors open / closed state.' },
+    { id: 'intercom',   label: 'Intercom',     hint: 'Audio / video call station.' },
+    { id: 'panic',      label: 'Panic bar',    hint: 'Crash bar / panic device.' },
+    { id: 'autoop',     label: 'Auto-operator',hint: 'ADA push-plate / automatic open.' },
+    { id: 'controller', label: 'Controller',   hint: 'Access-control panel input.' },
+    { id: 'psu',        label: 'Power supply', hint: '12 / 24 VDC PSU + transformer.' },
+  ];
+  // Read the freshest assembly from the store each tick so rapid clicks /
+  // automated toggles compose instead of clobbering one another. The
+  // closure's `assembly` variable is from the last render and lags behind.
+  const toggle = (h: DoorHardware) => {
+    const current = useProjectStore.getState().devices[d.id]?.doorAssembly ?? [];
+    const set = new Set<DoorHardware>(current);
+    if (set.has(h)) set.delete(h); else set.add(h);
+    onUpdate({ doorAssembly: Array.from(set) });
+  };
+  const hasMag = assembly.includes('maglock');
+  const hasRex = assembly.includes('rex');
+  return (
+    <>
+      <DrawerSection title={`Door assembly · ${assembly.length}/${ITEMS.length}`}>
+        <div className="text-[11px] text-muted-foreground/85 mb-2">
+          One persisted hardware schedule per opening. Toggle the components actually present.
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {ITEMS.map((it) => {
+            const on = assembly.includes(it.id);
+            return (
+              <button
+                key={it.id}
+                onClick={() => toggle(it.id)}
+                title={it.hint}
+                data-testid={`door-assembly-${it.id}`}
+                data-track={`door-assembly-${it.id}`}
+                className={`text-left px-2.5 py-2 rounded-md border text-[11.5px] transition-colors ${
+                  on
+                    ? 'border-primary/60 bg-primary/10 text-foreground'
+                    : 'border-border text-muted-foreground hover:border-border-strong hover:text-foreground'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center ${on ? 'border-primary bg-primary/30' : 'border-border'}`}>
+                    {on && <Check className="w-2.5 h-2.5" />}
+                  </span>
+                  {it.label}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {hasMag && !hasRex && (
+          <div className="mt-3 rounded-md border border-amber-300/30 bg-amber-300/8 p-2.5 text-[11px] text-amber-200/90 leading-relaxed">
+            <strong className="text-amber-200">Code:</strong> maglocks require a REX for compliant egress.
+          </div>
+        )}
+      </DrawerSection>
+      <DrawerSection title="Electrification & reader location">
+        <div className="grid grid-cols-2 gap-1.5">
+          {(['fail-safe', 'fail-secure'] as const).map((opt) => {
+            const on = electrification === opt;
+            return (
+              <button
+                key={opt}
+                onClick={() => onUpdate({ doorElectrification: opt })}
+                data-testid={`door-elec-${opt}`}
+                className={`text-left px-2.5 py-2 rounded-md border text-[11.5px] transition-colors ${
+                  on ? 'border-primary/60 bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {opt === 'fail-safe' ? 'Fail-safe' : 'Fail-secure'}
+              </button>
+            );
+          })}
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 mt-2">
+          {(['mullion', 'wall'] as const).map((opt) => {
+            const on = readerLocation === opt;
+            return (
+              <button
+                key={opt}
+                onClick={() => onUpdate({ doorReaderLocation: opt })}
+                data-testid={`door-readerloc-${opt}`}
+                className={`text-left px-2.5 py-2 rounded-md border text-[11.5px] transition-colors ${
+                  on ? 'border-primary/60 bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Reader · {opt === 'mullion' ? 'Mullion' : 'Wall'}
+              </button>
+            );
+          })}
+        </div>
+      </DrawerSection>
+    </>
+  );
+}
+
 function StackSectionForHost({
   d, onUpdate,
 }: { d: Device; onUpdate: (p: Partial<Device>) => void }) {
-  const stackIds: string[] = ((d as any).stack as string[] | undefined) ?? [];
+  const stackIds: string[] = (d.stack ?? []);
   // Resolve attached devices from the store so labels / models / IDs are honest.
   const allDevices = useProjectStore((s) => s.devices);
   const attached: Device[] = stackIds
-    .map((id) => allDevices[id] as unknown as Device | undefined)
+    .map((id) => allDevices[id])
     .filter((x): x is Device => !!x);
-  // The brief's host-compatible hardware lists for doors. For non-door
-  // hosts (IDF / rack) we surface a different short list.
-  const isDoor = (d.type as string).startsWith('inf.door') || (d.type as string).startsWith('inf.gate') || (d.type as string).startsWith('inf.storefront') || (d.type as string).startsWith('inf.doubledoor');
-  const hardwareMenu: { type: DeviceType; label: string }[] = isDoor
-    ? [
-        { type: 'acc.reader' as DeviceType, label: 'Reader' },
-        { type: 'acc.keypad' as DeviceType, label: 'Keypad' },
-        { type: 'acc.strike' as DeviceType, label: 'Electric strike' },
-        { type: 'acc.maglock' as DeviceType, label: 'Maglock' },
-        { type: 'acc.exit' as DeviceType, label: 'REX' },
-        { type: 'acc.dps' as DeviceType, label: 'DPS' },
-        { type: 'acc.panic' as DeviceType, label: 'Panic bar' },
-        { type: 'acc.controller' as DeviceType, label: 'Controller' },
-        { type: 'acc.psu' as DeviceType, label: 'Power supply' },
-      ]
-    : [
-        { type: 'net.switch' as DeviceType, label: 'Switch' },
-        { type: 'net.patch' as DeviceType, label: 'Patch panel' },
-        { type: 'inf.ups' as DeviceType, label: 'UPS' },
-      ];
+  const isDoor =
+    (d.type as string).startsWith('inf.door')
+    || (d.type as string).startsWith('inf.gate')
+    || (d.type as string).startsWith('inf.storefront')
+    || (d.type as string).startsWith('inf.doubledoor');
+  // Door / opening devices use the persisted DoorAssemblySection (one
+  // model, one record) rendered above this component. To avoid two
+  // competing door models, the legacy ghost-accessory "Add hardware"
+  // path is hidden for openings — even if a door somehow ended up with
+  // stack[] entries (from a pre-fix session) the panel only shows them
+  // read-only with a clear "legacy" disclosure and a detach button.
+  if (isDoor) {
+    if (attached.length === 0) return null;
+    return (
+      <DrawerSection title={`Legacy stack · ${attached.length}`}>
+        <div className="text-[11px] text-muted-foreground/85 mb-2">
+          Door hardware now lives in the Door assembly section above. These were attached as
+          separate devices in an earlier session — detach to clean them up.
+        </div>
+        <div className="space-y-1">
+          {attached.map((a) => (
+            <div key={a.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md border border-border/40 bg-secondary/20">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: KIND_TONE[TYPE_KIND[a.type]] }} />
+              <span className="text-[11.5px] text-foreground tracking-tight">{a.id}</span>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-[0.10em]">{a.type.split('.').slice(-1)[0]}</span>
+              <button
+                onClick={() => {
+                  const store = useProjectStore.getState();
+                  onUpdate({ stack: stackIds.filter((id) => id !== a.id) });
+                  store.removeDevice(a.id);
+                  toast.message('Detached', { description: `${a.id} removed from ${d.id}.`, duration: 3000 });
+                }}
+                title="Detach legacy ghost accessory"
+                data-track={`stack-detach-${a.id}`}
+                className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </DrawerSection>
+    );
+  }
+  // Non-door hosts (IDF / rack / MDF) keep the stack workflow — they
+  // really do carry separate switch / patch / UPS device records.
+  const hardwareMenu: { type: DeviceType; label: string }[] = [
+    { type: 'net.switch' as DeviceType, label: 'Switch' },
+    { type: 'net.patch' as DeviceType, label: 'Patch panel' },
+    { type: 'inf.ups' as DeviceType, label: 'UPS' },
+  ];
   const addHardware = (t: DeviceType, label: string) => {
     const newId = `${label.replace(/\s+/g, '-').slice(0, 4).toUpperCase()}-${Date.now().toString(36).slice(-4)}`;
     const store = useProjectStore.getState();
@@ -7669,15 +7893,15 @@ function StackSectionForHost({
       x: d.x,
       y: d.y,
       rot: 0,
-      projectId: (d as any).projectId ?? 'p1',
-      floorId: (d as any).floorId ?? '',
-    } as any);
-    onUpdate({ stack: [...stackIds, newId] } as any);
+      projectId: d.projectId,
+      floorId: d.floorId ?? '',
+    } as Device);
+    onUpdate({ stack: [...stackIds, newId] });
     toast.success(`Added · ${label} → ${d.id}`, { duration: 3500 });
   };
   const removeAttached = (childId: string) => {
     const store = useProjectStore.getState();
-    onUpdate({ stack: stackIds.filter((id) => id !== childId) } as any);
+    onUpdate({ stack: stackIds.filter((id) => id !== childId) });
     store.removeDevice(childId);
     toast.message('Detached', { description: `${childId} removed from ${d.id}.`, duration: 3000 });
   };
@@ -7686,7 +7910,7 @@ function StackSectionForHost({
       <DrawerSection title={`Hardware stack · ${attached.length}`}>
         {attached.length === 0 ? (
           <div className="text-[11.5px] text-muted-foreground italic px-1">
-            No hardware attached. Drop access hardware onto this {isDoor ? 'opening' : 'host'} from the bottom Access tray, or use Add below.
+            No hardware attached. Use Add below.
           </div>
         ) : (
           <div className="space-y-1">
@@ -7721,14 +7945,300 @@ function StackSectionForHost({
             </button>
           ))}
         </div>
-        {isDoor && attached.length > 0 && (
-          <div className="mt-3 rounded-md border border-amber-300/30 bg-amber-300/8 p-2.5 text-[11px] text-amber-200/90 leading-relaxed">
-            <strong className="text-amber-200">Complete the schedule:</strong> add a
-            {' '}controller, door contact, lock hardware, REX, and power supply.
-            Maglocks require a REX and code-compliant egress.
+      </DrawerSection>
+    </>
+  );
+}
+
+/** SurveySection — object-linked survey notes / checklist items.
+ *  Reads/writes via the projectStore `surveyItems` slice; every entry
+ *  persists across refresh and remains tied to its (objectType, objectId).
+ *  Used inside the device EditDrawer and (via SurveyPanel) the
+ *  PathwayDrawer. Photos are intentionally pending — we capture metadata
+ *  honestly and label the upload itself as not yet wired. */
+function SurveySection({
+  device, onUpdate,
+}: { device: Device; onUpdate: (p: Partial<Device>) => void }) {
+  const objectType: 'device' | 'door' =
+    ((device.type as string).startsWith('inf.door')
+      || (device.type as string).startsWith('inf.gate')
+      || (device.type as string).startsWith('inf.storefront')
+      || (device.type as string).startsWith('inf.doubledoor'))
+      ? 'door' : 'device';
+  return (
+    <SurveyPanel
+      projectId={(device as any).projectId}
+      floorId={(device as any).floorId}
+      objectType={objectType}
+      objectId={device.id}
+      deviceStatus={device.surveyStatus}
+      onDeviceStatusChange={(s) => onUpdate({ surveyStatus: s })}
+    />
+  );
+}
+
+/** Reusable survey panel — used inside both the device EditDrawer and the
+ *  PathwayDrawer's Notes/Survey block. */
+function SurveyPanel({
+  projectId, floorId, objectType, objectId,
+  deviceStatus, onDeviceStatusChange,
+}: {
+  projectId: string;
+  floorId?: string;
+  objectType: 'device' | 'door' | 'pathway' | 'idf' | 'floor';
+  objectId: string;
+  /** Optional — only devices/doors carry the headline surveyStatus chip. */
+  deviceStatus?: SurveyItemStatus;
+  onDeviceStatusChange?: (s: SurveyItemStatus) => void;
+}) {
+  // Pull the raw map (stable ref) and filter+sort inside useMemo. Returning
+  // a fresh array from the selector each render triggers React's
+  // "getSnapshot should be cached" infinite-loop warning under
+  // useSyncExternalStore — Zustand's underlying machinery.
+  const allItems = useProjectStore((s) => s.surveyItems);
+  const items = useMemo(
+    () => Object.values(allItems)
+      .filter((i) => i.objectType === objectType && i.objectId === objectId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+    [allItems, objectType, objectId],
+  );
+  const addSurveyItem = useProjectStore((s) => s.addSurveyItem);
+  const updateSurveyItem = useProjectStore((s) => s.updateSurveyItem);
+  const removeSurveyItem = useProjectStore((s) => s.removeSurveyItem);
+  const [text, setText] = useState('');
+  const [kind, setKind] = useState<'note' | 'check'>('note');
+  const submit = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    addSurveyItem({
+      projectId,
+      floorId,
+      objectType,
+      objectId,
+      kind,
+      text: trimmed,
+      status: kind === 'check' ? 'todo' : 'verified',
+      author: 'Field demo',
+    });
+    setText('');
+    toast.success(kind === 'check' ? 'Checklist item added' : 'Survey note added', { duration: 2500 });
+  };
+  return (
+    <>
+      {onDeviceStatusChange && (
+        <DrawerSection title="Survey status">
+          <div className="grid grid-cols-4 gap-1.5">
+            {(['todo', 'verified', 'issue', 'skip'] as const).map((opt) => {
+              const on = (deviceStatus ?? 'todo') === opt;
+              return (
+                <button
+                  key={opt}
+                  onClick={() => onDeviceStatusChange(opt)}
+                  data-testid={`survey-status-${opt}`}
+                  className={`text-center px-2 py-1.5 rounded-md border text-[11px] capitalize transition-colors ${
+                    on ? 'border-primary/60 bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        </DrawerSection>
+      )}
+      <DrawerSection title={`Survey notes · ${items.length}`}>
+        {items.length === 0 ? (
+          <div className="text-[11.5px] text-muted-foreground italic mb-2">
+            No survey notes yet. Add one below — they save against this object and persist on refresh.
+          </div>
+        ) : (
+          <div className="space-y-1.5 mb-3">
+            {items.map((it) => (
+              <div key={it.id} className="rounded-md border border-border bg-secondary/15 px-2.5 py-2" data-testid={`survey-item-${it.id}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[9.5px] uppercase tracking-[0.10em] px-1.5 py-0.5 rounded-sm ${
+                    it.status === 'verified' ? 'bg-emerald-400/15 text-emerald-300'
+                    : it.status === 'issue'   ? 'bg-rose-400/15 text-rose-300'
+                    : it.status === 'skip'    ? 'bg-amber-300/15 text-amber-200'
+                    : 'bg-muted text-muted-foreground'
+                  }`}>{it.kind === 'check' ? 'Check' : 'Note'} · {it.status}</span>
+                  <span className="text-[10px] text-muted-foreground">{new Date(it.createdAt).toLocaleString()}</span>
+                  <button
+                    onClick={() => removeSurveyItem(it.id)}
+                    title="Remove"
+                    data-testid={`survey-remove-${it.id}`}
+                    className="ml-auto text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="text-[12px] text-foreground whitespace-pre-wrap">{it.text}</div>
+                {it.author && <div className="text-[10px] text-muted-foreground mt-1">— {it.author}</div>}
+                {it.kind === 'check' && (
+                  <div className="mt-1.5 flex gap-1.5">
+                    {(['todo', 'verified', 'issue', 'skip'] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => updateSurveyItem(it.id, { status: s })}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border capitalize ${
+                          it.status === s ? 'border-primary/60 text-primary bg-primary/10' : 'border-border text-muted-foreground hover:text-foreground'
+                        }`}
+                      >{s}</button>
+                    ))}
+                  </div>
+                )}
+                {it.photo && (
+                  <div className="mt-1.5 text-[10.5px] text-amber-200/85">
+                    Photo · {it.photo.fileName} {it.photo.sizeBytes ? `(${Math.round(it.photo.sizeBytes / 1024)} KB)` : ''} — upload pending
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
+        <div className="flex items-center gap-1.5 mb-2">
+          {(['note', 'check'] as const).map((opt) => (
+            <button
+              key={opt}
+              onClick={() => setKind(opt)}
+              data-testid={`survey-kind-${opt}`}
+              className={`text-[11px] px-2 py-1 rounded border capitalize ${kind === opt ? 'border-primary/60 text-primary bg-primary/10' : 'border-border text-muted-foreground hover:text-foreground'}`}
+            >{opt}</button>
+          ))}
+        </div>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(); }}
+          placeholder={kind === 'check' ? 'Verify exterior PoE injector is in stock…' : 'On-site observation, blocking, GC handoff…'}
+          data-testid="survey-input"
+          className="dv-input text-[12px] resize-none min-h-[64px] w-full"
+        />
+        <div className="flex items-center justify-between mt-2">
+          <span className="text-[10.5px] text-muted-foreground">⌘/Ctrl+Enter to save</span>
+          <button
+            onClick={submit}
+            disabled={!text.trim()}
+            data-testid="survey-add-btn"
+            className="text-[11.5px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+          >Add</button>
+        </div>
+        <div className="mt-2 text-[10.5px] text-muted-foreground/85">
+          Photos can be added — only the filename + size persists today; image upload is pending.
+        </div>
       </DrawerSection>
+    </>
+  );
+}
+
+/** ImpactPreviewSection — small material/labor preview pulled live from
+ *  deriveBOM and the per-device labor catalog. Used inside the Overview
+ *  tile so the engineer sees the cost ripple of the selected object before
+ *  jumping to the full Estimator. Honest about its scope: it summarizes,
+ *  it doesn't redo the BOM. */
+function ImpactPreviewSection({ device }: { device: Device }) {
+  const projectId = device.projectId;
+  // Subscribe to only the slices that affect the BOM so deriveBOM stays
+  // accurate without forcing a full-state re-render snapshot.
+  const devices = useProjectStore((s) => s.devices);
+  const doors = useProjectStore((s) => s.doors);
+  const pathways = useProjectStore((s) => s.pathways);
+  const idfs = useProjectStore((s) => s.idfs);
+  const floors = useProjectStore((s) => s.floors);
+  const estimates = useProjectStore((s) => s.estimates);
+  const projects = useProjectStore((s) => s.projects);
+  const bom = useMemo(
+    () => deriveBOM({ devices, doors, pathways, idfs, floors, estimates, projects } as any, projectId),
+    [devices, doors, pathways, idfs, floors, estimates, projects, projectId],
+  );
+  const isDoorish =
+    device.type.startsWith('inf.door')
+    || device.type.startsWith('inf.gate')
+    || device.type.startsWith('inf.storefront')
+    || device.type.startsWith('inf.doubledoor');
+  const isCam = TYPE_KIND[device.type] === 'camera';
+  // Match BOM lines to this specific device. Doors emit per-component
+  // lines keyed by `sourceId === device.id`; camera lines are aggregated
+  // by catalog product so we also match on sku === device.product.
+  const matched = bom.lines.filter((l) => {
+    if (l.sourceId === device.id) return true;
+    if (l.sourceKind === 'device' && device.product && l.sku === device.product) return true;
+    return false;
+  });
+  const poeW = isCam ? Math.round((device as any).poeW ?? 9.8) : null;
+  const labelLines = matched.map((l) => ({
+    label: l.description,
+    qty: `${l.qty} ${l.uom ?? 'ea'}`,
+    ext: l.qty * l.unitPrice,
+    hrs: l.laborHours ?? 0,
+  }));
+  // For door-class devices the same DOOR_HARDWARE_PRICE helper that feeds
+  // deriveBOM also drives this preview, so the numbers here always match
+  // the Estimator BOM lines for the same opening.
+  const doorRollup = isDoorish ? deriveDoorAssemblyLines(device) : null;
+  return (
+    <>
+      <DrawerSection title="Impact preview">
+        {labelLines.length === 0 ? (
+          <div className="text-[11.5px] text-muted-foreground italic">
+            {isDoorish
+              ? 'No door hardware selected yet. Open the Stack tab and toggle reader / strike / REX / etc. to populate this opening.'
+              : "No BOM line yet — this object hasn't generated a material/labor entry. Assign a catalog product on the Overview tile."}
+          </div>
+        ) : (
+          <div className="space-y-1 text-[11.5px]">
+            {labelLines.map((l, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-2 py-1 border-b border-border/40 last:border-b-0">
+                <div className="flex-1 min-w-0 truncate text-foreground">{l.label}</div>
+                <div className="tabular-nums text-muted-foreground">{l.qty}</div>
+                <div className="tabular-nums text-foreground">${Math.round(l.ext).toLocaleString()}</div>
+              </div>
+            ))}
+            <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground pt-1">
+              <span>Labor</span>
+              <span className="tabular-nums">{labelLines.reduce((s, l) => s + (l.hrs || 0), 0).toFixed(1)} hr</span>
+            </div>
+            {poeW !== null && (
+              <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground">
+                <span>PoE draw</span>
+                <span className="tabular-nums">~{poeW} W</span>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="mt-2 text-[10.5px] text-muted-foreground/85">
+          Preview only — derived from DV's internal price/labor defaults. Recalibrate against your pricebook before sending a customer estimate.
+        </div>
+      </DrawerSection>
+
+      {doorRollup && doorRollup.lines.length > 0 && (
+        <DrawerSection title={`Door assembly impact · ${doorRollup.lines.length}`}>
+          <div className="text-[10.5px] text-muted-foreground/85 mb-2">
+            Per-component preview from the active door assembly. Same numbers flow into the Estimator's
+            <span className="text-foreground"> Access control · doors </span> section.
+          </div>
+          <div className="space-y-1 text-[11.5px]">
+            {doorRollup.lines.map((l) => (
+              <div key={l.hw} className="flex items-baseline justify-between gap-2 py-1 border-b border-border/40 last:border-b-0" data-testid={`impact-door-${l.hw}`}>
+                <div className="flex-1 min-w-0 truncate">
+                  <span className="text-foreground">{l.description}</span>
+                  <span className="text-[9.5px] uppercase tracking-[0.10em] text-muted-foreground ml-2">{l.hw}</span>
+                </div>
+                <div className="tabular-nums text-muted-foreground">{l.laborHours.toFixed(2)} hr</div>
+                <div className="tabular-nums text-foreground">${l.unitPrice.toLocaleString()}</div>
+              </div>
+            ))}
+            <div className="flex items-baseline justify-between pt-1.5 text-[11px] font-medium">
+              <span>Hardware subtotal</span>
+              <span className="tabular-nums">${doorRollup.hardwareTotal.toLocaleString()}</span>
+            </div>
+            <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground">
+              <span>Labor</span>
+              <span className="tabular-nums">{doorRollup.laborHours.toFixed(2)} hr</span>
+            </div>
+          </div>
+        </DrawerSection>
+      )}
     </>
   );
 }
@@ -7885,6 +8395,7 @@ function ConduitAssistSection({ projectId }: { projectId: string }) {
 function IdfPortScheduleSection({ idfId }: { idfId: string }) {
   const pathways = useProjectStore((s) => s.pathways);
   const devices = useProjectStore((s) => s.devices);
+  const floors = useProjectStore((s) => s.floors);
   const incoming = useMemo(
     () => (Object.values(pathways) as any[])
       .filter((p) => (p?.targetId ?? p?.destinationId) === idfId)
@@ -7912,7 +8423,7 @@ function IdfPortScheduleSection({ idfId }: { idfId: string }) {
                 <div key={p.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md border border-border/40 bg-secondary/20 text-[11.5px]">
                   <span className="text-muted-foreground tabular-nums w-12">{String(p.cableType ?? 'cat6a').toUpperCase()}</span>
                   <span className="flex-1 truncate font-medium text-foreground">{src?.id ?? p.sourceId ?? p.id}</span>
-                  <span className="text-muted-foreground tabular-nums">{Math.round(p.lengthFt ?? 0)} ft</span>
+                  <span className="text-muted-foreground tabular-nums">{pathwayLengthFt(p, floors[p.floorId ?? ''])} ft</span>
                   {p.patchPort && <span className="text-[10px] text-muted-foreground">PP·{String(p.patchPort).padStart(2, '0')}</span>}
                   {p.switchPort && <span className="text-[10px] text-muted-foreground">SW·{String(p.switchPort).padStart(2, '0')}</span>}
                 </div>
@@ -8119,6 +8630,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
 }) {
   const pathways = useProjectStore((s) => s.pathways);
   const devices  = useProjectStore((s) => s.devices);
+  const floors   = useProjectStore((s) => s.floors);
   const updatePathway = useProjectStore((s) => s.updatePathway);
   const removePathway = useProjectStore((s) => s.removePathway);
   const p = (pathways as any)[pathwayId];
@@ -8151,7 +8663,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
   }, [pathways, pathwayId, isConduit]);
   const fill = isConduit ? computeBundleFill(cablesInside.length || 0, String(cablesInside[0]?.cableType ?? 'cat6a'), p.conduitSize) : null;
   // Cable distance assist: > 295 ft on copper Ethernet is over spec
-  const lenFt = Math.round(p.lengthFt ?? 0);
+  const lenFt = pathwayLengthFt(p, floors[p.floorId ?? '']);
   const overDistance = isCable && !cableType.includes('fiber') && lenFt > 295;
 
   const SUB_TABS: { id: Sub; label: string; icon: any }[] = isCable
@@ -8196,8 +8708,8 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
           <div className="text-[14px] font-semibold tracking-tight">{p.id}</div>
           <div className="text-[11px] text-muted-foreground">
             {isConduit
-              ? `${p.conduitType ?? p.pathwayKind?.toUpperCase()}${p.conduitSize ? ' ' + p.conduitSize : ''} · ${Math.round(p.lengthFt ?? 0)} ft`
-              : `${cableType.toUpperCase()} · ${Math.round(p.lengthFt ?? 0)} ft${src ? ` · ${src.id ?? p.sourceId} →` : ''} ${tgt?.id ?? p.targetId ?? p.destinationId ?? '—'}`}
+              ? `${p.conduitType ?? p.pathwayKind?.toUpperCase()}${p.conduitSize ? ' ' + p.conduitSize : ''} · ${lenFt} ft`
+              : `${cableType.toUpperCase()} · ${lenFt} ft${src ? ` · ${src.id ?? p.sourceId} →` : ''} ${tgt?.id ?? p.targetId ?? p.destinationId ?? '—'}`}
           </div>
           {p.bundleId && (
             <button onClick={() => onOpenBundle(p.bundleId)} data-track="pathway-open-bundle" className="mt-1 text-[10.5px] text-primary hover:underline">
@@ -8417,22 +8929,30 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
         )}
 
         {sub === 'notes' && (
-          <DrawerSection title="Notes">
-            <textarea
-              key={pathwayId}
-              value={p.notes ?? ''}
-              onChange={(e) => updatePathway(pathwayId, { notes: e.target.value } as any)}
-              placeholder="Pathway notes — pulling strategy, firestop ratings, route deviations, etc."
-              className="dv-input text-[12px] resize-none min-h-[120px]"
+          <>
+            <DrawerSection title="Notes">
+              <textarea
+                key={pathwayId}
+                value={p.notes ?? ''}
+                onChange={(e) => updatePathway(pathwayId, { notes: e.target.value } as any)}
+                placeholder="Pathway notes — pulling strategy, firestop ratings, route deviations, etc."
+                className="dv-input text-[12px] resize-none min-h-[120px]"
+              />
+              <button
+                onClick={() => { removePathway(pathwayId); onClose(); toast.message('Pathway removed', { duration: 2500 }); }}
+                data-track="pathwaydrawer-remove"
+                className="mt-3 text-[11px] px-3 h-8 rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10"
+              >
+                Delete pathway
+              </button>
+            </DrawerSection>
+            <SurveyPanel
+              projectId={p.projectId}
+              floorId={p.floorId}
+              objectType="pathway"
+              objectId={pathwayId}
             />
-            <button
-              onClick={() => { removePathway(pathwayId); onClose(); toast.message('Pathway removed', { duration: 2500 }); }}
-              data-track="pathwaydrawer-remove"
-              className="mt-3 text-[11px] px-3 h-8 rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10"
-            >
-              Delete pathway
-            </button>
-          </DrawerSection>
+          </>
         )}
       </div>
     </div>
@@ -8615,7 +9135,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           gets the breathing room it needs. */}
       <div className="px-5 py-5 overflow-y-auto" style={{ maxHeight: 'calc(100% - 150px)' }}>
         {bodyShows(tab, 'overview') && (
-          <ProductOverviewSection d={d} />
+          <>
+            <ProductOverviewSection d={d} />
+            <ImpactPreviewSection device={d} />
+          </>
         )}
 
         {bodyShows(tab, 'lens') && (
@@ -8935,6 +9458,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
 
         {bodyShows(tab, 'linked') && (
           <>
+            <DoorAssemblySection d={d} onUpdate={onUpdate} />
             <StackSectionForHost d={d} onUpdate={onUpdate} />
           </>
         )}
@@ -8949,6 +9473,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
               className="dv-input text-[12px] resize-none min-h-[140px]"
             />
           </DrawerSection>
+        )}
+
+        {bodyShows(tab, 'survey') && (
+          <SurveySection device={d} onUpdate={onUpdate} />
         )}
 
         {bodyShows(tab, 'accessories') && (
@@ -9021,10 +9549,12 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
   // standard. We render those next to the live px/m calculation so the user
   // sees, at distance X, which threshold the camera achieves.
   const tone = deviceTone(d);
+  // Convert pixel distance to feet via the camera's own floor calibration.
+  const pxToFt = useProjectStore((s) => ftPerPxForFloor(d.floorId ? s.floors[d.floorId] : undefined));
   const dx = pos.x - d.x;
   const dy = pos.y - d.y;
   const dist = Math.hypot(dx, dy);
-  const distFt = dist / 20;
+  const distFt = dist * pxToFt;
   const distM  = distFt * 0.3048;
   const angleToCam = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
   const camAim = ((d.rot + 360) % 360);
@@ -9789,7 +10319,14 @@ function PathwaysOverlay({ onPickBundle, onPickPathway }: {
           ? `${p.conduitType ?? p.pathwayKind?.toUpperCase()}${p.conduitSize ? ' ' + p.conduitSize : ''}`
           : `${String(p.cableType ?? 'cat6').toUpperCase()}`;
         return (
-          <g key={p.id} style={{ cursor: onPickPathway ? 'pointer' : 'default' }} onClick={(e) => { e.stopPropagation(); onPickPathway && onPickPathway(p.id); }} data-track={`pathway-${p.id}`}>
+          <g
+            key={p.id}
+            style={{ cursor: onPickPathway ? 'pointer' : 'default' }}
+            onClick={(e) => { e.stopPropagation(); onPickPathway && onPickPathway(p.id); }}
+            data-track={`pathway-${p.id}`}
+            data-testid={`pathway-${p.id}`}
+            data-object-kind="pathway"
+          >
             {/* Hit-area: invisible thick stroke so clicks register on a
                 line that's otherwise 1.6 px wide. */}
             <polyline
@@ -9837,7 +10374,14 @@ function PathwaysOverlay({ onPickBundle, onPickPathway }: {
                 right-side PathwayDrawer on its specific pathway. */}
             {group.map((p) => (
               p.points && p.points.length >= 2 && (
-                <g key={p.id} style={{ cursor: onPickPathway ? 'pointer' : 'default' }} onClick={(e) => { e.stopPropagation(); onPickPathway && onPickPathway(p.id); }}>
+                <g
+                  key={p.id}
+                  style={{ cursor: onPickPathway ? 'pointer' : 'default' }}
+                  onClick={(e) => { e.stopPropagation(); onPickPathway && onPickPathway(p.id); }}
+                  data-testid={`pathway-${p.id}`}
+                  data-track={`pathway-${p.id}`}
+                  data-object-kind="pathway"
+                >
                   <polyline
                     points={p.points.map((pt: any) => `${pt.x},${pt.y}`).join(' ')}
                     fill="none"
@@ -11010,7 +11554,9 @@ function drawReport(doc: any, kind: ReportKind, devices: Device[], projectId: st
  *  bundle. Mirrors the cable schedule's drawing helpers so the look is
  *  consistent with the rest of the report system. */
 function drawConduitSchedule(doc: any, projectId: string) {
-  const pathways = (Object.values(useProjectStore.getState().pathways) as any[]).filter((p) => p.projectId === projectId);
+  const _state = useProjectStore.getState();
+  const pathways = (Object.values(_state.pathways) as any[]).filter((p) => p.projectId === projectId);
+  const floors = _state.floors;
   // Group bundles by bundleId; standalone runs become single-row entries.
   const byBundle: Record<string, any[]> = {};
   pathways.forEach((p) => {
@@ -11036,7 +11582,7 @@ function drawConduitSchedule(doc: any, projectId: string) {
       id,
       first.conduitType ?? 'none',
       size,
-      String(group.reduce((s, x) => s + (x.lengthFt ?? 0), 0)) + ' ft',
+      String(group.reduce((s, x) => s + pathwayLengthFt(x, floors[x.floorId ?? '']), 0)) + ' ft',
       `${count} × ${ct.toUpperCase()}`,
       fillPct,
       rec,
@@ -11183,11 +11729,12 @@ function drawDoorSchedule(doc: any, devices: Device[]) {
 function drawCableSchedule(doc: any, projectId: string) {
   drawHeader(doc, 'Cable & pathway schedule', 2);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('Cable & pathway schedule', 56, 76);
-  // Read pathways live from the store
-  const pathways = (Object.values(useProjectStore.getState().pathways) as any[]).filter((p) => p.projectId === projectId);
+  // Read pathways live from the store; use the calibrated per-floor scale.
+  const _state = useProjectStore.getState();
+  const pathways = (Object.values(_state.pathways) as any[]).filter((p) => p.projectId === projectId);
   drawTable(doc, 100,
     ['ID', 'Type', 'Cable', 'Count', 'Length ft'],
-    pathways.map((p) => [p.id, p.type ?? '—', p.cableType ?? '—', String(p.cableCount ?? 1), String(p.lengthFt ?? 0)]),
+    pathways.map((p) => [p.id, p.type ?? '—', p.cableType ?? '—', String(p.cableCount ?? 1), String(pathwayLengthFt(p, _state.floors[p.floorId ?? '']))]),
     [80, 80, 100, 60, 80],
   );
 }

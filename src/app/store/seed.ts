@@ -433,5 +433,8 @@ export function buildSeed() {
     busCableRoutes:{},
     busEvents:     {},
     busChecks:     {},
+    // Object-linked survey notes start empty per project; users add them
+    // from the canvas inspector while walking the site.
+    surveyItems:   {},
   };
 }

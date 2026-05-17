@@ -5,12 +5,35 @@
 
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
+import { toast } from 'sonner';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { FileDown, ChevronRight } from 'lucide-react';
 import { useProjectStore, deriveBOM, selectors as sel } from '../store/projectStore';
 import type { EstimateLine } from '../store/types';
 import { PhaseGateBanner } from '../lifecycle/PhaseGate';
+
+// Quote a CSV field — wraps in double quotes when the value contains a comma,
+// quote, or newline; escapes internal quotes by doubling them per RFC 4180.
+function csvField(v: unknown): string {
+  const s = v == null ? '' : String(v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function downloadCsv(filename: string, rows: ReadonlyArray<ReadonlyArray<unknown>>) {
+  const body = rows.map((r) => r.map(csvField).join(',')).join('\r\n');
+  // BOM keeps Excel from mangling UTF-8 currency symbols.
+  const blob = new Blob(['﻿' + body], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 /** Group every BOM line under a presentable section heading. */
 const SECTION_FOR: Record<EstimateLine['sourceKind'], string> = {
@@ -66,12 +89,54 @@ export function EstimatorView() {
   const margin = subtotal * markup;
   const total = subtotal + margin;
 
+  const handleExportCsv = () => {
+    if (bom.lines.length === 0) {
+      toast.message('Nothing to export', { description: 'Place some hardware on the canvas first.' });
+      return;
+    }
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const safeName = projectName.replace(/[^a-z0-9-_]+/gi, '_').slice(0, 40) || 'project';
+    const rows: (string | number)[][] = [];
+    rows.push(['Section', 'SKU', 'Description', 'Qty', 'Unit', 'Unit price USD', 'Extension USD', 'Labor hr']);
+    for (const l of bom.lines) {
+      rows.push([
+        SECTION_FOR[l.sourceKind] ?? 'Other',
+        l.sku ?? '',
+        l.description,
+        l.qty,
+        l.uom ?? 'ea',
+        l.unitPrice.toFixed(2),
+        (l.qty * l.unitPrice).toFixed(2),
+        (l.laborHours ?? 0).toFixed(2),
+      ]);
+    }
+    rows.push([]);
+    rows.push(['', '', 'Hardware subtotal', '', '', '', bom.hardwareTotal.toFixed(2), '']);
+    rows.push(['', '', 'Cable & pathway subtotal', '', '', '', bom.cableTotal.toFixed(2), '']);
+    rows.push(['', '', `Labor (${bom.laborHours.toFixed(1)} hr)`, '', '', '', bom.laborTotal.toFixed(2), '']);
+    rows.push(['', '', 'Subtotal', '', '', '', subtotal.toFixed(2), '']);
+    rows.push(['', '', `Margin (${(markup * 100).toFixed(0)}%)`, '', '', '', margin.toFixed(2), '']);
+    rows.push(['', '', 'Total', '', '', '', total.toFixed(2), '']);
+    downloadCsv(`${safeName}-bom-${dateStr}.csv`, rows);
+    toast.success(`Exported ${bom.lines.length} line${bom.lines.length === 1 ? '' : 's'} to CSV`);
+  };
+
   return (
     <AppShell
       crumbs={[{ label: 'Projects', to: '/projects' }, { label: projectName, to: `/project/${projectId}/canvas` }, { label: 'Estimator' }]}
       title="Estimator"
       subtitle={`Live BOM derived from the engineering canvas · ${bom.lines.length} line items`}
-      actions={<Button size="sm" variant="outline"><FileDown className="w-3.5 h-3.5 mr-1" />Export CSV</Button>}
+      actions={
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExportCsv}
+          disabled={bom.lines.length === 0}
+          data-testid="estimator-export-csv"
+        >
+          <FileDown className="w-3.5 h-3.5 mr-1" />Export CSV
+        </Button>
+      }
     >
       {/* Soft gate — surfaces when the user lands here before engineering
           has anything to roll up. Doesn't block; just orients them. */}
