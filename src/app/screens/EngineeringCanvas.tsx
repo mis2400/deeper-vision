@@ -10289,6 +10289,34 @@ function ToolPanelBody({
    reused without changes.
    ═══════════════════════════════════════════════════════════════════════ */
 
+function TraySection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1.5 px-1">
+        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">{title}</div>
+        {hint && <div className="text-[10px] text-muted-foreground/80 italic ml-3 truncate">{hint}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const TRAY_DESCRIPTION: Record<string, string> = {
+  cam:      'Place CCTV and video devices on the floorplan.',
+  acc:      'Place access-control hardware. Readers, strikes, and maglocks can stack onto door assemblies.',
+  door:     'Place door openings — single, double, storefront, sliding, gates, and elevators.',
+  cable:    'Cable, terminations, couplers, patch panels, conduit, pathways, pull boxes, and firestop.',
+  conduit:  'Conduit, raceway, pathways, pull boxes, sleeves, and firestop. Pick a type to draw a route.',
+  net:      'Network infrastructure — IDF, MDF, racks, switches, patch panels, NVRs.',
+  power:    'Power supplies, UPS, transformers, PoE injectors, batteries.',
+  intercom: 'Door and station intercoms. Link to a door from the drawer.',
+  audio:    'Speakers, amplifiers, microphones for PA + BGM systems.',
+  intrusion:'Intrusion sensors — glassbreak, contacts, panic buttons, vibration.',
+  sensor:   'Environmental + safety sensors — motion, glass-break, smoke, temp.',
+  fire:     'Fire-alarm devices — pull stations, smoke detectors, horns, strobes.',
+  inf:      'Infrastructure — racks, MDFs, windows, walls.',
+};
+
 function BottomDeviceBar({
   onStartDrag, onPickTool, onPickCableType, onPickConduit, onPickPathway, tool,
 }: {
@@ -10315,15 +10343,27 @@ function BottomDeviceBar({
     { id: 'acc',     label: 'Access',     icon: ScanFace,        types: ['acc.reader','acc.keypad','acc.strike','acc.maglock','acc.exit','acc.dps','acc.panic','acc.controller','acc.psu'] as any },
     { id: 'door',    label: 'Doors',      icon: DoorOpen,        types: ['inf.door' as any,'inf.doubledoor' as any,'inf.storefront' as any,'inf.gate' as any] },
     { id: 'cable',   label: 'Cabling',    icon: Cable },
+    { id: 'conduit', label: 'Conduit',    icon: PencilRuler },
     { id: 'net',     label: 'Network',    icon: NetworkIcon,     types: ['net.switch','net.idf','net.mdf','net.ap','net.firewall' as any] },
     { id: 'power',   label: 'Power',      icon: BatteryCharging, types: ['inf.ups' as any,'inf.psu' as any,'inf.transformer' as any] as any },
-    { id: 'audio',   label: 'Audio / PA', icon: Volume2,         types: ['av.speaker' as any,'av.amp' as any,'av.mic' as any] as any },
     { id: 'intercom',label: 'Intercom',   icon: Phone,           types: ['acc.intercom' as any,'av.intercom' as any] as any },
-    { id: 'sensor',  label: 'Sensors',    icon: Thermometer,     types: ['sen.motion' as any,'sen.glassbreak' as any,'sen.smoke' as any,'sen.temp' as any] as any },
+    { id: 'audio',   label: 'Audio / PA', icon: Volume2,         types: ['av.speaker' as any,'av.amp' as any,'av.mic' as any] as any },
+    { id: 'intrusion', label: 'Intrusion', icon: ShieldAlert,    types: ['sen.glassbreak' as any,'sen.contact' as any,'sen.panic' as any,'int.contact' as any] as any },
     { id: 'fire',    label: 'Fire',       icon: Flame,           types: ['fire.pull' as any,'fire.detector' as any,'fire.horn' as any,'fire.strobe' as any] as any },
+    { id: 'sensor',  label: 'Sensors',    icon: Thermometer,     types: ['sen.motion' as any,'sen.glassbreak' as any,'sen.smoke' as any,'sen.temp' as any] as any },
     { id: 'inf',     label: 'Infrastructure', icon: Server,      types: ['inf.rack','inf.mdf','inf.window' as any,'inf.wall' as any] as any },
   ];
-  const [open, setOpen] = useState<string | null>(null);
+  // Open a tray on mount if the URL carries `?openTray=<id>` — used by
+  // the headless screenshot capture script to reach sub-states cleanly.
+  const initialOpen = (() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const id = sp.get('openTray');
+      if (id && cats.some((c) => c.id === id)) return id;
+    } catch {}
+    return null;
+  })();
+  const [open, setOpen] = useState<string | null>(initialOpen);
   const trayRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -10363,13 +10403,16 @@ function BottomDeviceBar({
           className="mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden"
           style={{ borderColor: 'var(--border)' }}
         >
-          <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
-            <trayCat.icon className="w-4 h-4 text-primary" />
-            <div className="text-[12px] font-medium tracking-tight">{trayCat.label}</div>
-            <div className="text-[10.5px] text-muted-foreground">·  {trayProducts.length} items</div>
-            <div className="flex-1" />
-            <button onClick={() => setOpen(null)} className="text-muted-foreground hover:text-foreground">
-              <X className="w-3.5 h-3.5" />
+          <div className="px-4 pt-3 pb-2.5 border-b border-border flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-primary/12 text-primary shrink-0">
+              <trayCat.icon className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13.5px] font-semibold tracking-tight text-foreground">{trayCat.label}</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">{TRAY_DESCRIPTION[trayCat.id] ?? `Place ${trayCat.label.toLowerCase()} on the floorplan.`}</div>
+            </div>
+            <button onClick={() => setOpen(null)} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40">
+              <X className="w-4 h-4" />
             </button>
           </div>
           {trayCat.id === 'cable' ? (
@@ -10574,34 +10617,147 @@ function BottomDeviceBar({
                 ));
               })()}
             </div>
+          ) : trayCat.id === 'conduit' ? (
+            <div className="p-3 max-h-[360px] overflow-auto space-y-3">
+              <TraySection title="Conduit · per foot" hint="Pick a type + trade size — click to arm the Conduit draw tool.">
+                <div className="grid grid-cols-6 gap-1">
+                  {(['EMT','PVC','FMC','LFMC','raceway'] as const).flatMap((t) =>
+                    ['1/2"','3/4"','1"','1-1/4"','1-1/2"','2"'].map((sz) => (
+                      <button
+                        key={`${t}-${sz}`}
+                        onClick={() => { onPickConduit(t, sz); setOpen(null); }}
+                        data-track={`bottombar-conduit-${t}-${sz.replace(/\W/g, '')}`}
+                        className="text-left px-2 py-1.5 rounded border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors text-[10.5px]"
+                      >
+                        <div className="font-medium tracking-tight text-foreground">{t} {sz}</div>
+                        <div className="text-[9.5px] text-muted-foreground">Per ft</div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </TraySection>
+              <TraySection title="Pathways · per foot" hint="Cable tray, J-hooks, surface raceway, underground duct, wall sleeve.">
+                <div className="grid grid-cols-4 gap-1.5">
+                  {([
+                    { kind: 'tray' as const,    label: 'Cable tray' },
+                    { kind: 'jhook' as const,   label: 'J-hooks' },
+                    { kind: 'raceway' as const, label: 'Surface raceway' },
+                    { kind: 'duct' as const,    label: 'Underground duct' },
+                    { kind: 'sleeve' as const,  label: 'Wall sleeve' },
+                  ]).map((p) => (
+                    <button
+                      key={p.kind}
+                      onClick={() => { onPickPathway(p.kind, p.label); setOpen(null); }}
+                      data-track={`bottombar-pathway-${p.kind}`}
+                      className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
+                    >
+                      <div className="text-[11.5px] font-medium tracking-tight">{p.label}</div>
+                      <div className="text-[10px] text-muted-foreground">Pathway · per ft</div>
+                    </button>
+                  ))}
+                </div>
+              </TraySection>
+              <TraySection title="Pull / Junction boxes · each" hint="Drag near a conduit/pathway route to auto-attach.">
+                {(() => {
+                  const fake = (id: string, label: string, note: string): Product => ({
+                    id, type: 'net.switch' as DeviceType, mfr: 'Cable', model: label, sub: note, recommended: false,
+                  } as any);
+                  return (
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {([
+                        { id: 'pullbox', label: 'Pull box',     pid: 'cabacc-pullbox' },
+                        { id: 'jbox',    label: 'Junction box', pid: 'cabacc-jbox' },
+                      ]).map((a) => (
+                        <button
+                          key={a.id}
+                          onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Conduit accessory · each'), e); setOpen(null); }}
+                          data-track={`bottombar-cableacc-${a.id}`}
+                          className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
+                        >
+                          <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                          <div className="text-[10px] text-muted-foreground">Each</div>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </TraySection>
+              <TraySection title="Sleeves & firestop · each" hint="Penetrations and rated-wall sealing.">
+                {(() => {
+                  const fake = (id: string, label: string, note: string): Product => ({
+                    id, type: 'net.switch' as DeviceType, mfr: 'Cable', model: label, sub: note, recommended: false,
+                  } as any);
+                  return (
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {([
+                        { id: 'firestop', label: 'Firestop',    pid: 'cabacc-firestop' },
+                        { id: 'sleeve',   label: 'Wall sleeve', pid: 'cabacc-sleeve' },
+                      ]).map((a) => (
+                        <button
+                          key={a.id}
+                          onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Penetration · each'), e); setOpen(null); }}
+                          data-track={`bottombar-cableacc-${a.id}`}
+                          className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
+                        >
+                          <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                          <div className="text-[10px] text-muted-foreground">Each</div>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </TraySection>
+            </div>
           ) : trayProducts.length === 0 ? (
             <div className="px-5 py-8 text-center text-[12px] text-muted-foreground">
               No catalog items yet — coming soon.
             </div>
           ) : (
-            <div className="p-3 grid grid-cols-6 gap-2 max-h-[260px] overflow-auto">
-              {trayProducts.map((p) => (
-                <button
-                  key={p.id}
-                  onPointerDown={(e) => { onStartDrag(p, e); setOpen(null); }}
-                  data-track={`bottombar-${trayCat.id}-${p.id}`}
-                  className="text-left rounded-xl border border-border bg-background hover:border-primary/40 hover:bg-secondary/20 p-2.5 transition-colors flex flex-col gap-1.5"
-                >
-                  <div className="w-8 h-8 rounded-md bg-secondary/40 text-foreground flex items-center justify-center mb-0.5">
-                    <DeviceGlyph type={p.type} size={18} tone={KIND_TONE[TYPE_KIND[p.type]]} />
-                  </div>
-                  <div className="text-[10.5px] font-medium tracking-tight truncate">{p.mfr}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{p.model}</div>
-                </button>
-              ))}
+            // Default product-grid tray for cam / acc / door / net / power / intercom / etc.
+            // Cards carry an icon, manufacturer + model, and a per-card hint line.
+            <div className="p-3 max-h-[360px] overflow-auto">
+              <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">{trayProducts.length} item{trayProducts.length === 1 ? '' : 's'}</div>
+              <div className="grid grid-cols-4 gap-2">
+                {trayProducts.map((p) => {
+                  const tone = KIND_TONE[TYPE_KIND[p.type]] ?? 'var(--primary)';
+                  return (
+                    <button
+                      key={p.id}
+                      onPointerDown={(e) => { onStartDrag(p, e); setOpen(null); }}
+                      data-track={`bottombar-${trayCat.id}-${p.id}`}
+                      className="group text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-[var(--shadow-low)] hover:-translate-y-[1px] transition-all p-3 flex flex-col gap-2"
+                      style={{ transitionDuration: 'var(--motion-fast)' }}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-md flex items-center justify-center shrink-0" style={{ background: `${tone}14`, color: tone, boxShadow: `inset 0 0 0 1px ${tone}55` }}>
+                          <DeviceGlyph type={p.type} size={20} tone={tone} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11.5px] font-medium tracking-tight truncate text-foreground">{p.model}</div>
+                          <div className="text-[10px] text-muted-foreground truncate">{p.mfr}</div>
+                        </div>
+                      </div>
+                      <div className="text-[10.5px] text-muted-foreground line-clamp-2">{p.sub ?? p.notes ?? '—'}</div>
+                      <div className="flex items-center justify-between text-[10px]">
+                        {(p as any).recommended ? (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-500">Recommended</span>
+                        ) : <span />}
+                        <span className="text-muted-foreground">Drag to place</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* The bar itself */}
+      {/* The bar itself — premium light surface, fixed item width, active
+          underline + tint so the click target reads as a real selection
+          rather than a generic toolbar button. */}
       <div
-        className="rounded-2xl border bg-card/90 backdrop-blur-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.55)] flex items-stretch overflow-hidden"
+        className="rounded-2xl border bg-[var(--card)] backdrop-blur-xl shadow-[var(--shadow-floating)] flex items-stretch overflow-hidden"
         style={{ borderColor: 'var(--border)' }}
       >
         {cats.map((c) => {
@@ -10609,7 +10765,11 @@ function BottomDeviceBar({
           const isToolCat = !!c.tool;
           const active = isToolCat ? tool === c.tool : open === c.id;
           const count = productsByCat[c.id]?.length ?? 0;
-          const dead = !isToolCat && count === 0;
+          const isConduitCat = c.id === 'conduit';
+          const isCableCat   = c.id === 'cable';
+          // Cable + Conduit have their own tray bodies (no PRODUCTS catalog
+          // gating); never mark them disabled.
+          const dead = !isToolCat && !isConduitCat && !isCableCat && count === 0;
           return (
             <button
               key={c.id}
@@ -10620,10 +10780,24 @@ function BottomDeviceBar({
               disabled={dead}
               title={dead ? `${c.label} — coming soon` : c.label}
               data-track={`bottombar-cat-${c.id}`}
-              className={`flex flex-col items-center justify-center gap-0.5 w-[64px] py-2 border-r border-border/60 last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : dead ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'}`}
+              className={`group relative flex flex-col items-center justify-center gap-1 w-[78px] py-2.5 transition-colors ${
+                active
+                  ? 'text-primary'
+                  : dead
+                    ? 'text-muted-foreground/40 cursor-not-allowed'
+                    : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
-              <Icon className="w-4 h-4" strokeWidth={1.7} />
-              <span className="text-[9.5px] tracking-tight">{c.label}</span>
+              <span className="absolute inset-x-2 top-1.5 bottom-1.5 rounded-md -z-10 transition-colors"
+                style={{ background: active ? 'rgba(45,111,184,0.10)' : 'transparent' }}
+              />
+              <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
+              <span className="text-[10px] tracking-tight font-medium">{c.label}</span>
+              {/* Active underline */}
+              <span
+                className="absolute left-3 right-3 bottom-0 h-[2px] rounded-full transition-opacity"
+                style={{ background: 'var(--primary)', opacity: active ? 1 : 0 }}
+              />
             </button>
           );
         })}
