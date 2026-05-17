@@ -1843,6 +1843,20 @@ export function EngineeringCanvas() {
                 snap={snap} setSnap={setSnap}
                 layersOpen={layersOpen} onToggleLayers={() => setLayersOpen((v) => !v)}
                 onOpenScanBuild={() => setScanBuildOpen(true)}
+                onFit={() => { applyFit();   userTouchedViewRef.current = false; }}
+                onCenter={() => { applyCenter(); userTouchedViewRef.current = true; }}
+                onActual={() => { applyActualScale(); userTouchedViewRef.current = true; }}
+                onSelectAll={(kind) => {
+                  const visible = devices.filter((d) => !hiddenIds.has(d.id));
+                  let list: Device[] = [];
+                  if (kind === 'cameras') list = visible.filter((d) => TYPE_KIND[d.type] === 'camera');
+                  if (kind === 'doors')   list = visible.filter((d) => (d.type as string).startsWith('inf.door') || (d.type as string).startsWith('inf.gate') || (d.type as string).startsWith('inf.storefront') || (d.type as string).startsWith('inf.doubledoor'));
+                  if (kind === 'readers') list = visible.filter((d) => d.type === 'acc.reader' || d.type === 'acc.keypad');
+                  if (kind === 'idfs')    list = visible.filter((d) => d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'inf.rack' || d.type === 'inf.mdf');
+                  setSelIds(new Set(list.map((d) => d.id)));
+                  if (list[0]) setSelId(list[0].id);
+                  toast.message(`Selected ${list.length} · ${kind} on floor`, { duration: 2500 });
+                }}
               />
             )}
             {viewMode === 'canvas' && (
@@ -9959,6 +9973,8 @@ function SelectByMenu({ devices, onPick }: { devices: Device[]; onPick: (ids: st
  *  name, shortcut, description, and tool-specific options. */
 function DrawingToolRail({
   tool, setTool, snap, setSnap, layersOpen, onToggleLayers, onOpenScanBuild,
+  onFit, onCenter, onActual,
+  onSelectAll,
 }: {
   tool: Tool;
   setTool: (t: Tool) => void;
@@ -9967,8 +9983,12 @@ function DrawingToolRail({
   layersOpen: boolean;
   onToggleLayers: () => void;
   onOpenScanBuild: () => void;
+  onFit: () => void;
+  onCenter: () => void;
+  onActual: () => void;
+  onSelectAll: (kind: 'cameras' | 'doors' | 'readers' | 'idfs') => void;
 }) {
-  type ItemId = Tool | 'snap' | 'layers' | 'map';
+  type ItemId = Tool | 'snap' | 'layers' | 'map' | 'more';
   type Item = { id: ItemId; icon: any; label: string; key?: string; hint: string; coming?: boolean };
   // TOOLS only. Items the brief lists but that aren't wired today
   // (Draw Room / Door Opening / Window / Text / Zone / Scale / Photo)
@@ -10046,18 +10066,19 @@ function DrawingToolRail({
 
   return (
     <div className="absolute z-30 top-3 left-3 flex items-start" ref={railRef}>
-      {/* Slim black rail */}
+      {/* Slim black rail — working tools only. Coming-soon tools live
+          inside the "More" panel so they don't clutter the default view. */}
       <div
-        className="flex flex-col items-center gap-1 rounded-2xl border bg-[#0B0F19]/95 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)] select-none"
+        className="flex flex-col items-center gap-0.5 rounded-2xl border bg-[#0B0F19]/95 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)] select-none"
         style={{ borderColor: 'rgba(255,255,255,0.08)' }}
       >
         {items.map((it) => <Tile key={it.label} it={it} />)}
-        <div className="w-7 h-px bg-white/8 my-1" />
-        <Tile it={{ id: 'snap',   icon: Magnet,    label: 'Snap',   hint: snap ? 'Magnetic snap is ON. Click to toggle.' : 'Magnetic snap is OFF. Click to toggle.' }} />
-        <Tile it={{ id: 'layers', icon: Layers,    label: 'Layers', hint: 'Show / hide engineering overlays (FOV, cables, pathways, warnings).' }} />
-        <Tile it={{ id: 'map',    icon: MapIcon,   label: 'Map',    hint: 'Scan / build / upload / draw a floorplan.' }} />
-        <div className="w-7 h-px bg-white/8 my-1" />
-        {coming.map((it) => <Tile key={it.label} it={it} />)}
+        <div className="w-7 h-px bg-white/10 my-1.5" />
+        <Tile it={{ id: 'snap',   icon: Magnet,    label: 'Snap',   hint: snap ? 'Magnetic snap is ON.' : 'Magnetic snap is OFF.' }} />
+        <Tile it={{ id: 'layers', icon: Layers,    label: 'Layers', hint: 'Toggle engineering overlays on the canvas.' }} />
+        <Tile it={{ id: 'map',    icon: MapIcon,   label: 'Map',    hint: 'Bring a floorplan in: scan / upload / satellite / sketch.' }} />
+        <div className="w-7 h-px bg-white/10 my-1.5" />
+        <Tile it={{ id: 'more',   icon: MoreHorizontal, label: 'More', hint: 'Additional drawing tools (Text / Room / Door Opening / Window / Scale / Photo).' } as any} />
       </div>
 
       {/* Expanded side panel */}
@@ -10082,6 +10103,8 @@ function DrawingToolRail({
             snap={snap} setSnap={setSnap}
             layersOpen={layersOpen} onToggleLayers={onToggleLayers}
             onOpenScanBuild={onOpenScanBuild}
+            onFit={onFit} onCenter={onCenter} onActual={onActual}
+            onSelectAll={onSelectAll}
           />
         </div>
       )}
@@ -10099,6 +10122,7 @@ function panelLabel(panelId: string): string {
     snap:    'Snap',
     layers:  'Layers',
     map:     'Map / Floorplan',
+    more:    'More tools',
   } as Record<string, string>)[panelId] ?? panelId;
 }
 
@@ -10114,6 +10138,7 @@ function ToolPanelHeader({ panelId, onClose }: { panelId: string; onClose: () =>
     snap:    'Magnetic alignment while drawing or moving objects.',
     layers:  'Toggle engineering overlays on the canvas.',
     map:     'Bring a floorplan in: scan, upload, satellite, or sketch.',
+    more:    'Additional drawing tools — coming soon.',
   } as Record<string, string>)[panelId];
   return (
     <div className="flex items-start gap-2 mb-3">
@@ -10133,85 +10158,124 @@ function ToolPanelHeader({ panelId, onClose }: { panelId: string; onClose: () =>
 
 function ToolPanelBody({
   panelId, snap, setSnap, layersOpen, onToggleLayers, onOpenScanBuild,
+  onFit, onCenter, onActual, onSelectAll,
 }: {
   panelId: string;
   snap: boolean; setSnap: (v: boolean) => void;
   layersOpen: boolean; onToggleLayers: () => void;
   onOpenScanBuild: () => void;
+  onFit: () => void;
+  onCenter: () => void;
+  onActual: () => void;
+  onSelectAll: (kind: 'cameras' | 'doors' | 'readers' | 'idfs') => void;
 }) {
-  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
-    <div className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-secondary/30">
-      <span className="text-[11.5px] text-muted-foreground">{label}</span>
-      <span className="text-[11.5px] text-foreground">{value}</span>
-    </div>
+  const Btn = ({ children, onClick, track, primary }: { children: React.ReactNode; onClick: () => void; track: string; primary?: boolean }) => (
+    <button
+      onClick={onClick}
+      data-track={track}
+      className={`w-full text-left px-3 py-2 rounded-md text-[12px] transition-colors ${primary ? 'bg-primary text-primary-foreground hover:opacity-90 font-medium' : 'bg-secondary/30 hover:bg-secondary/60 text-foreground'}`}
+    >
+      {children}
+    </button>
+  );
+  const Hint = ({ children }: { children: React.ReactNode }) => (
+    <div className="text-[10.5px] text-muted-foreground leading-snug px-1">{children}</div>
   );
   if (panelId === 'select') {
     return (
-      <div className="space-y-1">
-        <Row label="Mode" value="Single (shift+click → multi)" />
-        <Row label="Drag-box" value="Drag empty area to marquee-select" />
-        <Row label="Select by" value="floor / type via top-left Select chip" />
+      <div className="space-y-1.5">
+        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1">Select by</div>
+        <Btn track="toolpanel-select-cams"    onClick={() => onSelectAll('cameras')}>All cameras on floor</Btn>
+        <Btn track="toolpanel-select-doors"   onClick={() => onSelectAll('doors')}>All doors on floor</Btn>
+        <Btn track="toolpanel-select-readers" onClick={() => onSelectAll('readers')}>All readers on floor</Btn>
+        <Btn track="toolpanel-select-idfs"    onClick={() => onSelectAll('idfs')}>All IDFs / racks on floor</Btn>
+        <Hint>Single-click selects · Shift-click adds · drag the empty surface for a marquee.</Hint>
       </div>
     );
   }
   if (panelId === 'pan') {
     return (
-      <div className="space-y-1">
-        <Row label="Mouse" value="Drag to pan · scroll to zoom" />
-        <Row label="Keyboard" value="Hold space to pan with any tool" />
-        <Row label="Reset" value="Use ZoomDock Fit / Center / 1:1" />
+      <div className="space-y-1.5">
+        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1">Viewport</div>
+        <Btn track="toolpanel-pan-fit"    onClick={onFit}    primary>Fit plan to viewport</Btn>
+        <Btn track="toolpanel-pan-center" onClick={onCenter}>Center plan</Btn>
+        <Btn track="toolpanel-pan-actual" onClick={onActual}>Actual scale (1:1)</Btn>
+        <Hint>Drag to pan · scroll to zoom · hold Space with any tool to pan.</Hint>
       </div>
     );
   }
   if (panelId === 'measure') {
     return (
       <div className="space-y-1">
-        <Row label="Click 1" value="Start point" />
-        <Row label="Click 2" value="End point" />
-        <Row label="Esc" value="Cancel measurement" />
-        <Row label="Units" value="Toggle ft / m from TopBar" />
+        <Hint>Click two points on the plan to measure distance. Esc cancels.</Hint>
+        <div className="rounded-md border border-border bg-secondary/20 p-2.5 mt-2 text-[11.5px]">
+          <div className="flex items-center justify-between"><span className="text-muted-foreground">Scale</span><span className="text-foreground">20 px / 1 ft</span></div>
+          <div className="flex items-center justify-between mt-0.5"><span className="text-muted-foreground">Units</span><span className="text-foreground">Toggle ft / m on TopBar</span></div>
+        </div>
       </div>
     );
   }
   if (panelId === 'wall') {
     return (
-      <div className="space-y-1">
-        <Row label="Vertices" value="Click on the plan" />
-        <Row label="Finish" value="Double-click or Enter" />
-        <Row label="Snap" value={snap ? 'On' : 'Off'} />
-        <div className="text-[10.5px] text-muted-foreground italic px-2 mt-2">Wall type, fire rating, and thickness pickers ship next pass.</div>
+      <div className="space-y-1.5">
+        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1">Wall settings</div>
+        <label className="flex items-center justify-between py-2 px-2.5 rounded-md bg-secondary/20 cursor-pointer">
+          <span className="text-[12px]">Snap to grid + walls</span>
+          <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} className="accent-primary" />
+        </label>
+        <Hint>Click vertices on the plan. Double-click or Enter finishes the wall. Esc cancels.</Hint>
+        <div className="text-[10.5px] text-muted-foreground italic px-1 mt-2">Wall type, fire-rating, and orthogonal-lock controls ship next pass.</div>
       </div>
     );
   }
   if (panelId === 'snap') {
     return (
-      <div className="space-y-1">
-        <label className="flex items-center justify-between py-2 px-2 rounded-md hover:bg-secondary/30 cursor-pointer">
-          <span className="text-[12px]">Magnetic snap</span>
+      <div className="space-y-1.5">
+        <label className="flex items-center justify-between py-2 px-2.5 rounded-md bg-secondary/20 cursor-pointer">
+          <span className="text-[12px] font-medium">Magnetic snap</span>
           <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} className="accent-primary" />
         </label>
-        <Row label="Grid" value="20 px / 1 ft" />
-        <Row label="Tolerance" value="5 px" />
+        <div className="rounded-md border border-border bg-secondary/20 p-2.5 text-[11.5px] space-y-1">
+          <div className="flex items-center justify-between"><span className="text-muted-foreground">Grid</span><span className="text-foreground">20 px / 1 ft</span></div>
+          <div className="flex items-center justify-between"><span className="text-muted-foreground">Tolerance</span><span className="text-foreground">5 px</span></div>
+        </div>
+        <Hint>Snap pulls drag + draw points to the grid and to other devices within tolerance.</Hint>
       </div>
     );
   }
   if (panelId === 'layers') {
     return (
-      <div className="space-y-1">
-        <Row label="Layers panel" value={layersOpen ? 'Open' : 'Closed'} />
-        <button onClick={onToggleLayers} data-track="toolpanel-layers-toggle" className="w-full mt-2 text-[12px] font-medium px-3 h-8 rounded-md bg-primary text-primary-foreground hover:opacity-90">
+      <div className="space-y-1.5">
+        <Btn track="toolpanel-layers-toggle" onClick={onToggleLayers} primary>
           {layersOpen ? 'Close layers panel' : 'Open layers panel'}
-        </button>
+        </Btn>
+        <Hint>Layers panel controls FOV / coverage / labels / cables / conduit / pathways / warnings / floorplan / satellite overlays.</Hint>
       </div>
     );
   }
   if (panelId === 'map') {
     return (
       <div className="space-y-1.5">
-        <div className="text-[11.5px] text-muted-foreground leading-snug">Bring a floorplan into this canvas: scan with a camera, upload a PDF/PNG, trace satellite imagery, or draw from scratch.</div>
-        <button onClick={onOpenScanBuild} data-track="toolpanel-map-scanbuild" className="w-full mt-2 text-[12px] font-medium px-3 h-8 rounded-md bg-primary text-primary-foreground hover:opacity-90">
-          Scan / Build Floorplan…
-        </button>
+        <Btn track="toolpanel-map-scanbuild" onClick={onOpenScanBuild} primary>Scan / Build Floorplan…</Btn>
+        <Hint>One workflow with four options: scan with camera, upload a PDF/PNG, trace satellite imagery, or sketch from scratch. Calibrate scale at the end.</Hint>
+      </div>
+    );
+  }
+  if (panelId === 'more') {
+    const items = [
+      'Text / Label', 'Draw Room', 'Door Opening', 'Window Opening',
+      'Zone / Separator', 'Scale / Calibrate', 'Photo / Note',
+    ];
+    return (
+      <div className="space-y-1">
+        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1 mb-1">Coming soon</div>
+        {items.map((label) => (
+          <div key={label} className="flex items-center justify-between py-2 px-2.5 rounded-md bg-secondary/15 text-[12px] text-muted-foreground">
+            <span>{label}</span>
+            <span className="text-[9.5px] uppercase tracking-[0.10em] px-1.5 py-0.5 rounded bg-secondary/40">Soon</span>
+          </div>
+        ))}
+        <Hint>These drawing tools are disabled until they're wired end-to-end. They live here so they don't clutter the main rail.</Hint>
       </div>
     );
   }
