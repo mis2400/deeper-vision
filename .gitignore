@@ -1,1 +1,8 @@
 .vercel
+
+# Local Vite / npm caches — regenerated automatically; not deploy artifacts.
+node_modules/.vite/
+node_modules/.package-lock.json
+
+# Local Claude Code config (preview server entries, etc.) — machine-specific.
+.claude/
