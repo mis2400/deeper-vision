@@ -21,7 +21,7 @@ import {
   ShieldCheck, Antenna, Volume2, Megaphone, Mic, Speaker, HardDrive, Database, Cloud, Monitor,
   Tv2, AppWindow, MonitorSmartphone, BatteryCharging, Zap, ShieldAlert, Sun, Thermometer, CloudFog,
   Droplets, Users2, Wind, Crosshair as CrosshairIcon, Calendar, ListChecks, Wrench, FileBarChart,
-  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown,
+  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown, Presentation,
   PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
   ClipboardList,
@@ -1984,6 +1984,7 @@ export function EngineeringCanvas() {
               setEditOpen(false);
               setCanvasBomOpen(true);
             }}
+            onOpenReview={() => nav(`/project/${projectId}/review`)}
             compact={viewMode === 'field'}
             intelOpen={intelOpen}
             setIntelOpen={setIntelOpen}
@@ -2977,6 +2978,8 @@ function TopBar(props: {
   onOpenScanBuild: () => void;
   onOpenReport: () => void;
   onOpenBom: () => void;
+  /** Opens the customer / reviewer presentation route. */
+  onOpenReview: () => void;
   /** Compact = render only the essentials. Used in Field view so the bar
    *  is a thin operations strip rather than a full chrome row. */
   compact?: boolean;
@@ -3024,6 +3027,14 @@ function TopBar(props: {
           data-track="topbar-bom"
         >
           <BarChart3 className="w-3.5 h-3.5" />BOM & Estimate
+        </button>
+        <button
+          onClick={props.onOpenReview}
+          title="Open the customer / reviewer presentation view of this project"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-500 transition-colors"
+          data-track="topbar-review"
+        >
+          <Presentation className="w-3.5 h-3.5" />Present
         </button>
       </div>
 

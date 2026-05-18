@@ -3,6 +3,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import { ProjectHub } from './screens/ProjectHub';
 import { ProjectCenter } from './screens/ProjectCenter';
 import { EngineeringCanvas } from './screens/EngineeringCanvas';
+import { ReviewMode } from './screens/ReviewMode';
 import { VisionScan } from './screens/VisionScan';
 import { DeviceLibrary } from './screens/DeviceLibrary';
 import { SiteWalk } from './screens/SiteWalk';
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="/catalog" element={<ProductCatalog />} />
           <Route path="/project/:projectId" element={<ProjectCenter />} />
           <Route path="/project/:projectId/canvas" element={<EngineeringCanvas />} />
+          <Route path="/project/:projectId/review" element={<ReviewMode />} />
           <Route path="/visionscan" element={<VisionScan />} />
           <Route path="/devices" element={<DeviceLibrary />} />
           <Route path="/sitewalk/:projectId" element={<SiteWalk />} />

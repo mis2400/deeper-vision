@@ -1627,6 +1627,131 @@ live URL + the source + build commit hashes.
 
 ---
 
+## Presentation / Review Mode Pass (2026-05-17, after BOM / Estimate pass)
+
+**Goal.** Customer / reviewer / district-stakeholder-facing presentation of
+a project. Read-only. No engineering tools, no edit drawers, no internal
+cost by default. New route `/project/:projectId/review`.
+
+### What shipped this pass
+
+- New route `/project/:projectId/review` → `screens/ReviewMode.tsx`.
+- New "Present" entry button on the Engineering Canvas TopBar (emerald
+  pill, `Presentation` icon, sits to the right of *BOM & Estimate*).
+- Three-column layout: 240 px layer rail · canvas · 340 px review panel.
+- Read-only SVG canvas. Renders floor-plan image background, walls,
+  pathway lines, device glyphs (via the shared `SurveyorSymbolBody` from
+  `components/canvas/SurveyorSymbols.tsx`), and optional camera FOV cones
+  using the same `PX_PER_FT` math as the engineering canvas.
+- Pan/zoom: wheel = zoom (cursor-centred), shift-drag or right-drag = pan,
+  middle-button = pan. Auto-fits content on floor change.
+- Layer toggles with live counts: Cameras, Doors, Access, Network,
+  Pathways, Coverage (FOV cones), Notes (sensors / alarm points).
+- BOM summary card (toggled off by default). High-level qty per category;
+  cost gated behind an explicit *Show cost* button so a reviewer who
+  hasn't been briefed on dollars doesn't see them by accident. Uses the
+  `deriveCanvasBomRows` helper added in the previous pass.
+- Click any device or pathway → read-only detail card in the right
+  panel.
+  - Camera: model (manufacturer · model), coverage (`fov° × range ft`
+    for single-lens, omnidirectional for fisheye), mount height, IR /
+    NDAA flags, location in calibrated feet.
+  - Door: opening type, proposed-hardware list with Proposed / Existing
+    pill per item, electrification, reader location.
+  - Pathway: cable type, length (uses calibrated `pathwayLengthFt`),
+    conductor count, conduit size, bundle id if any.
+- Review panel:
+  - Project name + status pill (Draft / Ready / Approved) with quick
+    inline toggle.
+  - 2 seed comments + reviewer-name input + comment composer + Send
+    button (⌘/Ctrl+Enter shortcut).
+  - **Approve** / **Request changes** buttons that flip the status pill.
+  - Explicit *"Preview only · session-scoped"* badge + footer disclaimer
+    so users know status + comments don't sync to a backend yet.
+- **Copy review link** button: real `navigator.clipboard.writeText` of
+  the current URL + success toast. Verified end-to-end.
+- **Open in Engineering** button returns to `/project/:id/canvas` for
+  the original designer.
+
+### What is honest vs preview-only
+
+- **Honest, real**:
+  - All canvas data is read from the same Zustand store the engineering
+    canvas writes to. Edits made on the canvas appear here on next load
+    with no extra export step.
+  - Layer counts, BOM rollup, pathway lengths, door hardware lists are
+    derived live; nothing is hardcoded.
+  - Copy review link writes the real URL to the system clipboard.
+- **Preview-only, labelled in UI**:
+  - Comments + reviewer-name input are session-scoped. Each added
+    comment carries a "SESSION ONLY · NOT PERSISTED" tag.
+  - Status (Draft / Ready / Approved) is session-only; toast on every
+    flip says "Status is session-scoped until approval workflow is wired".
+  - Two seed comments are intentionally there so the panel reads as a
+    realistic UI rather than empty chrome; they're clearly attributed
+    and remain seeded across reloads.
+
+### What the reviewer can verify in the browser
+
+1. Open `/project/p1/canvas` → click **Present** in the TopBar (emerald
+   button next to *BOM & Estimate*).
+2. Land on `/project/p1/review`. Header reads "Deeper Vision · Review"
+   + project name + status pill.
+3. Toggle layers in the left rail — counts and visible glyphs update.
+4. Toggle Coverage — camera FOV cones appear in pink/red over the canvas.
+5. Toggle BOM summary — a card opens top-right showing qty per category.
+   Click *Show cost* to reveal the project sell total; click again to
+   hide.
+6. Click any camera glyph → right panel shows model, coverage, mount
+   height, location.
+7. Click a door (e.g. DR-100) → right panel shows the proposed-hardware
+   list with Proposed / Existing pills.
+8. Click a pathway line → right panel shows cable type, length, bundle.
+9. Type a comment → click Send → comment appears with the
+   "SESSION ONLY · NOT PERSISTED" badge + toast.
+10. Click **Approve** → status pill flips to Approved (emerald) + toast
+    notes the preview-only status.
+11. Click **Copy review link** → toast shows the URL was copied.
+12. Click **Open in Engineering** → returns to `/canvas`; all engineering
+    workflows still work.
+
+### Regression checks (Engineering Canvas)
+
+- TopBar **Add plan**, **BOM & Estimate**, and **Present** all visible
+  and clickable — verified.
+- BOM drawer still opens with the same 25-line / $30,642 / 18%-markup
+  numbers as the previous pass — verified.
+- Drawing tool rail still mounts — verified.
+- Camera / door click + EditDrawer still works — verified prior pass.
+
+### Remaining risks
+
+- Comments + status are intentionally session-only. Real persistence
+  needs a backend (or a new persisted slice in the Zustand store with a
+  version bump). The UI is clearly labelled.
+- The review canvas uses its own pan/zoom — independent of the canvas
+  state. That's intentional (reviewer's framing shouldn't move the
+  engineer's view), but means zoom and pan don't carry across routes.
+- Coverage cone rendering reuses the single-lens / fisheye / multisensor
+  math from the engineering canvas but is intentionally calmer (single
+  opacity tier, no overlap/blind-spot HUD). For a closer engineering
+  audit, the engineer should use `/canvas`.
+- The BOM summary card hides cost by default to protect the reviewer
+  conversation; the warning under "Show cost" remains preview-grade as
+  in the BOM pass.
+
+### Build result
+
+`npm run build` → exit 0, 2.35 s. New bundle hash captured in the
+deploy commit below.
+
+### Deployment
+
+This pass DOES deploy to Vercel production. See the final report for the
+live URL + the source + build commit hashes.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already
