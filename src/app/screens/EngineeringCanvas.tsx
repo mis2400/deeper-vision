@@ -1844,6 +1844,19 @@ export function EngineeringCanvas() {
         e.preventDefault();
         duplicateSelectionRef.current();
       }
+      // Pass 1.6 — arrow nudge. 1 canvas unit per press, 10 with Shift.
+      // Works on either the multi selection or the primary sel. Single
+      // grouped undo step because each press is one setDevices call.
+      // Cmd / Ctrl arrow keys are reserved for browser history nav so
+      // we ignore them here.
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.metaKey && !e.ctrlKey) {
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp'   ? -step : e.key === 'ArrowDown'  ? step : 0;
+        if (dx === 0 && dy === 0) return;
+        nudgeSelectionRef.current(dx, dy);
+        e.preventDefault();
+      }
       // Canvas V2 Pass 1.1 — undo / redo. Cmd-Z undo, Cmd-Shift-Z redo.
       // Ctrl-Y also redos (Windows convention). Esc earlier in this
       // handler cancels in-flight edits and pushes nothing to history.
@@ -2281,6 +2294,19 @@ export function EngineeringCanvas() {
   useEffect(() => { copySelectionRef.current = copySelection; }, [copySelection]);
   useEffect(() => { pasteClipboardRef.current = pasteClipboard; }, [pasteClipboard]);
   useEffect(() => { duplicateSelectionRef.current = duplicateSelection; }, [duplicateSelection]);
+
+  // Canvas V2 Pass 1.6 — arrow nudge. Moves every selected device by
+  // (dx, dy) canvas units in a single setDevices call so the history
+  // facade groups it as one undo step.
+  const nudgeSelection = useCallback((dx: number, dy: number) => {
+    const targets = selIds.size > 0
+      ? new Set(selIds)
+      : (sel ? new Set([sel.id]) : new Set<string>());
+    if (targets.size === 0) return;
+    setDevices((ds) => ds.map((d) => (targets.has(d.id) ? { ...d, x: d.x + dx, y: d.y + dy } : d)));
+  }, [selIds, sel, setDevices]);
+  const nudgeSelectionRef = useRef(nudgeSelection);
+  useEffect(() => { nudgeSelectionRef.current = nudgeSelection; }, [nudgeSelection]);
   /** Open the engineering inspector to a specific tab. Used by toolbar
    *  buttons (Note, Link, FOV, AI Optimize, etc.) so they all jump straight
    *  to the relevant panel instead of silently doing nothing. */
