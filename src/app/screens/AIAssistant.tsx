@@ -17,8 +17,9 @@ import { useProjectStore } from '../store/projectStore';
 import { streamAnswer, suggestPrompts } from '../lib/assistantEngine';
 import {
   Sparkles, Send, User, Plus, Trash2, MessageSquare, Lightbulb, X as XIcon,
-  Crosshair,
+  Crosshair, Info,
 } from 'lucide-react';
+import type { AiCitation, AiMsg } from '../store/types';
 
 export function AIAssistant() {
   const { projectId = 'p1' } = useParams();
@@ -205,7 +206,12 @@ export function AIAssistant() {
             {active && active.messages.length > 0 ? (
               <>
                 {active.messages.map((m) => (
-                  <MessageBubble key={m.id} role={m.role} text={m.text} streaming={!!m.streaming} />
+                  <MessageBubble
+                    key={m.id}
+                    msg={m}
+                    projectId={projectId}
+                    onOpenCitation={(c) => nav(citationHref(c, projectId))}
+                  />
                 ))}
                 <div ref={endRef} />
               </>
@@ -277,8 +283,35 @@ export function AIAssistant() {
   );
 }
 
-function MessageBubble({ role, text, streaming }: { role: 'user' | 'assistant'; text: string; streaming: boolean }) {
-  const isUser = role === 'user';
+/** Resolve a citation to its target route. Future passes may add a
+ *  `?focus=` query param so the destination surface highlights the
+ *  exact entity; today the link opens the owning surface, which is
+ *  honest scope-wise but doesn't auto-select. */
+function citationHref(c: AiCitation, projectId: string): string {
+  if (c.href) return c.href;
+  switch (c.kind) {
+    case 'project':   return `/project/${projectId}`;
+    case 'report':    return `/project/${projectId}/reports`;
+    case 'workorder': return `/project/${projectId}/deployment?focus=${encodeURIComponent(c.refId)}`;
+    case 'device':    return `/project/${projectId}/canvas?focus=${encodeURIComponent(c.refId)}`;
+    case 'pathway':   return `/project/${projectId}/canvas?focus=${encodeURIComponent(c.refId)}`;
+    case 'idf':       return `/project/${projectId}/canvas?focus=${encodeURIComponent(c.refId)}`;
+    case 'door':      return `/door/${encodeURIComponent(c.refId)}`;
+    case 'floor':     return `/project/${projectId}/canvas?floor=${encodeURIComponent(c.refId)}`;
+    default:          return `/project/${projectId}`;
+  }
+}
+
+function MessageBubble({ msg, projectId, onOpenCitation }: {
+  msg: AiMsg;
+  projectId: string;
+  onOpenCitation: (c: AiCitation) => void;
+}) {
+  const isUser = msg.role === 'user';
+  const text = msg.text;
+  const streaming = !!msg.streaming;
+  const citations = isUser ? undefined : msg.citations;
+  const showInference = !isUser && msg.inference && !streaming;
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center ${isUser ? 'bg-secondary text-muted-foreground' : 'bg-primary/15 text-primary'}`}>
@@ -289,7 +322,67 @@ function MessageBubble({ role, text, streaming }: { role: 'user' | 'assistant'; 
           {text || (streaming ? <span className="text-muted-foreground italic">…</span> : '')}
           {streaming && text && <span className="inline-block w-1.5 h-3.5 ml-0.5 align-text-bottom bg-current animate-pulse opacity-60" aria-hidden />}
         </div>
+        {/* V1 2A.3 — inline source chips. Each is clickable and opens
+            the source surface; canvas / deployment honor ?focus= so
+            the chip deep-selects. Citations beyond a glanceable
+            window (CITATION_VISIBLE_MAX) collapse into a "+N more"
+            chip that expands the full list on click. Truncation is
+            never silent. */}
+        {!streaming && citations && citations.length > 0 && (
+          <CitationsRow citations={citations} onOpen={onOpenCitation} />
+        )}
+        {/* V1 2A.3 — inference label. Renders when the engine flagged
+            the answer as derived from a rule of thumb rather than
+            direct data. Honesty contract. */}
+        {showInference && (
+          <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-amber-600">
+            <Info className="w-3 h-3" />
+            Inference. Specific data not directly available.
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+const CITATION_VISIBLE_MAX = 8;
+
+function CitationsRow({ citations, onOpen }: { citations: AiCitation[]; onOpen: (c: AiCitation) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? citations : citations.slice(0, CITATION_VISIBLE_MAX);
+  const overflow = citations.length - visible.length;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1 items-center" data-testid="ai-citations">
+      <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground/70 mr-0.5">Sources</span>
+      {visible.map((c, i) => (
+        <button
+          key={`${c.kind}-${c.refId}-${i}`}
+          onClick={() => onOpen(c)}
+          title={`Open ${c.kind} ${c.label}`}
+          className="inline-flex items-center gap-1 h-5 px-1.5 rounded-full border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary text-[10.5px] transition-colors"
+        >
+          <span className="opacity-70">{c.kind}</span>
+          <span className="font-medium">{c.label}</span>
+        </button>
+      ))}
+      {overflow > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="inline-flex items-center h-5 px-1.5 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground text-[10.5px] transition-colors"
+          title={`Show all ${citations.length} sources`}
+        >
+          +{overflow} more
+        </button>
+      )}
+      {expanded && citations.length > CITATION_VISIBLE_MAX && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="inline-flex items-center h-5 px-1.5 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground text-[10.5px] transition-colors"
+          title="Collapse the source list"
+        >
+          Show less
+        </button>
+      )}
     </div>
   );
 }

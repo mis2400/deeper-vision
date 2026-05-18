@@ -951,6 +951,23 @@ export function EngineeringCanvas() {
     });
   }, [addPathway, projectId]);
   const [selId, setSelId] = useState<string | null>(null);
+  // V1 2A.3 — honor ?focus=<deviceId> from the URL so an assistant
+  // citation chip that links here actually selects the device. Only
+  // applies on first arrival; clearing the param prevents re-firing.
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const focus = sp.get('focus');
+      if (focus) {
+        setSelId(focus);
+        sp.delete('focus');
+        const newSearch = sp.toString();
+        window.history.replaceState({}, '', `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`);
+      }
+    } catch { /* no-op */ }
+    // Run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // V1 2A.2 — broadcast canvas context to the AI Assistant. Fires
   // when project / site / floor / selection changes; the Assistant
   // picks this up implicitly so a question asked from a selected

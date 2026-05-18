@@ -216,7 +216,7 @@ function answerCounts(state: ProjectState, projectId: string, scope: ResolvedSco
   // Cite the project + each floor so the operator can drill in.
   const citations: AiCitation[] = [
     { label: state.projects[projectId].name, kind: 'project', refId: projectId },
-    ...floors.slice(0, 6).map((f): AiCitation => ({ label: f.name, kind: 'floor', refId: f.id })),
+    ...floors.map((f): AiCitation => ({ label: f.name, kind: 'floor', refId: f.id })),
   ];
 
   return {
@@ -273,7 +273,7 @@ function answerCoverage(state: ProjectState, projectId: string, scope: ResolvedS
   lines.push('Open the canvas to see the live FOV overlay. That is the authoritative gap view.');
 
   const citations: AiCitation[] = [
-    ...cameras.slice(0, 8).map((c): AiCitation => ({ label: c.label || c.id, kind: 'device', refId: c.id })),
+    ...cameras.map((c): AiCitation => ({ label: c.label || c.id, kind: 'device', refId: c.id })),
   ];
 
   return {
@@ -349,7 +349,7 @@ function answerPower(state: ProjectState, projectId: string, _scope: ResolvedSco
   lines.push(`Camera side PoE estimate: ${standardCount} standard cameras x 8 W + ${ptzCount} PTZ x 25.5 W = ${totalWatts.toFixed(0)} W.`);
   lines.push('Real switch budget depends on the SKU placed at each IDF. Open the canvas to see per-IDF assignments.');
 
-  const citations: AiCitation[] = idfs.slice(0, 6).map((i): AiCitation => ({ label: i.name ?? i.id, kind: 'idf', refId: i.id }));
+  const citations: AiCitation[] = idfs.map((i): AiCitation => ({ label: i.name ?? i.id, kind: 'idf', refId: i.id }));
 
   return {
     text: lines.join(' '),
@@ -380,7 +380,7 @@ function answerSchedule(state: ProjectState, projectId: string, _scope: Resolved
   if (open.length) lines.push(`Open labor estimate: ${hours.toFixed(0)} hours.`);
   if (blocked.length) lines.push(`${blocked.length} work order${blocked.length === 1 ? '' : 's'} blocked. Review on the deployment screen.`);
 
-  const citations: AiCitation[] = wos.slice(0, 6).map((w): AiCitation => ({ label: w.title, kind: 'workorder', refId: w.id }));
+  const citations: AiCitation[] = wos.map((w): AiCitation => ({ label: w.title, kind: 'workorder', refId: w.id }));
   return {
     text: lines.join(' '),
     meta: {
@@ -398,11 +398,13 @@ function answerHelp(_state: ProjectState, _projectId: string, _scope: ResolvedSc
   };
 }
 
-function answerUnknown(state: ProjectState, projectId: string, _scope: ResolvedScope): ComputedAnswer {
-  const devices = selectors.devicesForProject(state, projectId).length;
-  const floors  = selectors.floorsForProject(state, projectId).length;
+function answerUnknown(_state: ProjectState, _projectId: string, _scope: ResolvedScope): ComputedAnswer {
+  // Honesty contract — when we can't answer, we refuse cleanly. We
+  // used to surface device + floor counts here as a "by the way",
+  // but those were ungrounded numeric claims with no citation, which
+  // violates the rule that every project-data claim is sourced.
   return {
-    text: `I cannot answer that yet. I am grounded in the live project data only. ${devices} devices across ${floors} floor${floors === 1 ? '' : 's'}. Try a question about device counts, coverage gaps, BOM totals, PoE budgets, or work order status.`,
+    text: 'I cannot answer that yet. I am grounded in the live project data only. Try a question about device counts, coverage gaps, BOM totals, PoE budgets, or work order status.',
     meta: { confidence: 'low', confidenceWhy: 'No matching capability for this question.' },
   };
 }
