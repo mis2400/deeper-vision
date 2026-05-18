@@ -1282,30 +1282,56 @@ export function EngineeringCanvas() {
    *  surface with comfortable padding. Used by the Fit button, the
    *  auto-fit effect on first mount + viewport resize + background swap.
    *  Plan extents default to the seed building (80,80 → 720,560 → 640×480)
-   *  unless an imported floor background overrides the bounds. */
+   *  unless an imported floor background overrides the bounds. V1 P0.7
+   *  also unions in any devices + walls that sit outside the background
+   *  rectangle so a device dragged into the gutter is still in view, and
+   *  pads more aggressively for breathing room. */
   const computeFit = useCallback((): { zoom: number; pan: { x: number; y: number } } | null => {
     const surf = surfaceRef.current;
     if (!surf) return null;
     const r = surf.getBoundingClientRect();
     if (r.width < 40 || r.height < 40) return null;
     // Floor extents in plan coordinates.
-    let planX = 80, planY = 80, planW = 640, planH = 480;
+    let minX = 80, minY = 80, maxX = 720, maxY = 560;
     if (floorBackground) {
-      planW = floorBackground.naturalWidth * floorBackground.scale;
-      planH = floorBackground.naturalHeight * floorBackground.scale;
-      planX = floorBackground.x;
-      planY = floorBackground.y;
+      minX = floorBackground.x;
+      minY = floorBackground.y;
+      maxX = floorBackground.x + floorBackground.naturalWidth * floorBackground.scale;
+      maxY = floorBackground.y + floorBackground.naturalHeight * floorBackground.scale;
     }
-    const padding = 64; // px on each side in viewport space
+    // Union devices + walls so the fit always includes anything the user
+    // actually placed. Margin per device so glyphs don't kiss the edge.
+    const DEV_MARGIN = 36;
+    for (const d of devices) {
+      if (typeof d.x !== 'number' || typeof d.y !== 'number') continue;
+      if (d.x - DEV_MARGIN < minX) minX = d.x - DEV_MARGIN;
+      if (d.y - DEV_MARGIN < minY) minY = d.y - DEV_MARGIN;
+      if (d.x + DEV_MARGIN > maxX) maxX = d.x + DEV_MARGIN;
+      if (d.y + DEV_MARGIN > maxY) maxY = d.y + DEV_MARGIN;
+    }
+    for (const w of allWalls) {
+      const wxL = Math.min(w.x1, w.x2), wxR = Math.max(w.x1, w.x2);
+      const wyT = Math.min(w.y1, w.y2), wyB = Math.max(w.y1, w.y2);
+      if (wxL < minX) minX = wxL;
+      if (wyT < minY) minY = wyT;
+      if (wxR > maxX) maxX = wxR;
+      if (wyB > maxY) maxY = wyB;
+    }
+    const planW = maxX - minX;
+    const planH = maxY - minY;
+    if (planW <= 0 || planH <= 0) return null;
+    // P0.7: padding bumped 64 → 96 so the plan breathes inside the
+    // viewport instead of crashing into the chrome.
+    const padding = 96;
     const zx = (r.width  - padding * 2) / planW;
     const zy = (r.height - padding * 2) / planH;
     const z  = Math.max(0.25, Math.min(4, Math.min(zx, zy)));
     // Pan so the plan center lands at the viewport center, accounting for
     // the SVG group's `translate(pan) scale(zoom)` order.
-    const px = (r.width  / 2) - (planX + planW / 2) * z;
-    const py = (r.height / 2) - (planY + planH / 2) * z;
+    const px = (r.width  / 2) - (minX + planW / 2) * z;
+    const py = (r.height / 2) - (minY + planH / 2) * z;
     return { zoom: z, pan: { x: px, y: py } };
-  }, [floorBackground]);
+  }, [floorBackground, devices, allWalls]);
   const applyFit = useCallback(() => {
     const fit = computeFit();
     if (!fit) return;
@@ -1321,30 +1347,55 @@ export function EngineeringCanvas() {
     const surf = surfaceRef.current;
     if (!surf) return;
     const r = surf.getBoundingClientRect();
-    let planX = 80, planY = 80, planW = 640, planH = 480;
+    // P0.7: match computeFit by unioning devices + walls so Center
+    // recenters on the same bounds the Fit button uses.
+    let minX = 80, minY = 80, maxX = 720, maxY = 560;
     if (floorBackground) {
-      planW = floorBackground.naturalWidth * floorBackground.scale;
-      planH = floorBackground.naturalHeight * floorBackground.scale;
-      planX = floorBackground.x;
-      planY = floorBackground.y;
+      minX = floorBackground.x;
+      minY = floorBackground.y;
+      maxX = floorBackground.x + floorBackground.naturalWidth * floorBackground.scale;
+      maxY = floorBackground.y + floorBackground.naturalHeight * floorBackground.scale;
     }
+    const DEV_MARGIN = 36;
+    for (const d of devices) {
+      if (typeof d.x !== 'number' || typeof d.y !== 'number') continue;
+      if (d.x - DEV_MARGIN < minX) minX = d.x - DEV_MARGIN;
+      if (d.y - DEV_MARGIN < minY) minY = d.y - DEV_MARGIN;
+      if (d.x + DEV_MARGIN > maxX) maxX = d.x + DEV_MARGIN;
+      if (d.y + DEV_MARGIN > maxY) maxY = d.y + DEV_MARGIN;
+    }
+    for (const w of allWalls) {
+      const wxL = Math.min(w.x1, w.x2), wxR = Math.max(w.x1, w.x2);
+      const wyT = Math.min(w.y1, w.y2), wyB = Math.max(w.y1, w.y2);
+      if (wxL < minX) minX = wxL;
+      if (wyT < minY) minY = wyT;
+      if (wxR > maxX) maxX = wxR;
+      if (wyB > maxY) maxY = wyB;
+    }
+    const planW = maxX - minX, planH = maxY - minY;
     setPan({
-      x: (r.width  / 2) - (planX + planW / 2) * zoom,
-      y: (r.height / 2) - (planY + planH / 2) * zoom,
+      x: (r.width  / 2) - (minX + planW / 2) * zoom,
+      y: (r.height / 2) - (minY + planH / 2) * zoom,
     });
-  }, [floorBackground, zoom]);
+  }, [floorBackground, zoom, devices, allWalls]);
   // Auto-fit on mount + on viewport resize. Only auto-fits before the
   // user has manually adjusted (we set a sentinel ref after first user
-  // pan / zoom so we don't keep snapping their view back).
+  // pan / zoom so we don't keep snapping their view back). V1 P0.7:
+  // capture the latest applyFit through a ref so we don't re-run the
+  // auto-fit every time a device is added or moved — the dep used to
+  // include `applyFit`, which changed reference every time devices /
+  // walls changed, causing the camera to snap mid-drag.
   const userTouchedViewRef = useRef(false);
+  const applyFitRef = useRef(applyFit);
+  applyFitRef.current = applyFit;
   useEffect(() => {
     let raf = 0;
-    const run = () => { raf = requestAnimationFrame(() => { if (!userTouchedViewRef.current) applyFit(); }); };
+    const run = () => { raf = requestAnimationFrame(() => { if (!userTouchedViewRef.current) applyFitRef.current(); }); };
     run();
     const ro = new ResizeObserver(run);
     if (surfaceRef.current) ro.observe(surfaceRef.current);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-  }, [applyFit, floorBackground?.dataUrl]);
+  }, [floorBackground?.dataUrl]);
   // Wheel-zoom + canvas-to-canvas stack-attach are dispatched by the
   // CanvasSurface as CustomEvents on the SVG element. We listen here so
   // they touch the parent state (zoom + setDevices + toasts).
