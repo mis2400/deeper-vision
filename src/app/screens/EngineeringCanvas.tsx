@@ -6940,6 +6940,7 @@ function EngineeringLayersSection({ layers, onToggle }: { layers: CanvasLayerSta
   const rows: { id: EngineeringLayer; label: string; hint: string }[] = [
     { id: 'fov',         label: 'FOV cones',     hint: 'Camera coverage cones' },
     { id: 'coverage',    label: 'Coverage',      hint: 'Motion / reader / AP / speaker ranges' },
+    { id: 'heatmap',     label: 'Gap heat map',  hint: 'Red = no device covers this spot' },
     { id: 'labels',      label: 'Device labels', hint: 'IDs under each device' },
     { id: 'pathways',    label: 'Pathways',      hint: 'Cable runs and tray' },
     { id: 'dimensions',  label: 'Dimensions',    hint: 'Spacing between cameras' },
@@ -7456,6 +7457,88 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} />;
           })}
         </g>
+
+        {/* Canvas V2 Pass 2B.3 — coverage gap detection heat map.
+            Rasterises the plan into a coarse grid; each cell paints
+            green when covered by at least one device, red when not.
+            Camera lenses + non camera profiles both contribute.
+            Off by default (heatmap layer); recompute is memoised on
+            devices so pan / zoom does not trigger work. */}
+        {layers.heatmap && currentFloorPxToFt > 0 && (() => {
+          const w = (floorBackground?.naturalWidth ?? 800);
+          const h = (floorBackground?.naturalHeight ?? 600);
+          const COLS = 36;
+          const cellW = w / COLS;
+          const cellH = cellW;
+          const ROWS = Math.max(8, Math.round(h / cellH));
+          const cells: React.ReactNode[] = [];
+          // Pre-build device shape data so the per cell loop stays
+          // arithmetic only.
+          type ShapeRec =
+            | { kind: 'circle'; cx: number; cy: number; r: number }
+            | { kind: 'cone'; cx: number; cy: number; r: number; halfRad: number; rotRad: number };
+          const shapes: ShapeRec[] = [];
+          for (const d of renderedDevices) {
+            if (TYPE_KIND[d.type] === 'camera') {
+              // Use the device's primary lens for camera coverage
+              // contribution. Multi sensor lenses A/B/C/D approximated
+              // as one cone — good enough for a gap heat map.
+              const lens = (d.lenses as any)?.a ?? null;
+              const fov = lens?.fov ?? 90;
+              const range = lens?.range ?? 30;
+              const rPx = range / currentFloorPxToFt;
+              if (rPx < 1) continue;
+              const half = (fov / 2) * Math.PI / 180;
+              const rotRad = ((d.rot ?? 0) - 90) * Math.PI / 180;
+              shapes.push({ kind: 'cone', cx: d.x, cy: d.y, r: rPx, halfRad: half, rotRad });
+              continue;
+            }
+            const profile = coverageForDevice(d as any);
+            if (profile.shape === 'radius' && profile.rangeFt) {
+              shapes.push({ kind: 'circle', cx: d.x, cy: d.y, r: profile.rangeFt / currentFloorPxToFt });
+            } else if (profile.shape === 'cone' && profile.rangeFt && profile.fovDeg) {
+              shapes.push({
+                kind: 'cone', cx: d.x, cy: d.y,
+                r: profile.rangeFt / currentFloorPxToFt,
+                halfRad: (profile.fovDeg / 2) * Math.PI / 180,
+                rotRad: ((d.rot ?? 0) - 90) * Math.PI / 180,
+              });
+            }
+          }
+          const covered = (px: number, py: number): boolean => {
+            for (const s of shapes) {
+              const dx = px - s.cx; const dy = py - s.cy;
+              const d2 = dx * dx + dy * dy;
+              const r2 = s.r * s.r;
+              if (d2 > r2) continue;
+              if (s.kind === 'circle') return true;
+              // Cone — also check the bearing.
+              const ang = Math.atan2(dy, dx) - s.rotRad;
+              // Normalise to [-pi, pi].
+              const norm = Math.atan2(Math.sin(ang), Math.cos(ang));
+              if (Math.abs(norm) <= s.halfRad) return true;
+            }
+            return false;
+          };
+          for (let row = 0; row < ROWS; row += 1) {
+            for (let col = 0; col < COLS; col += 1) {
+              const cx = col * cellW + cellW / 2;
+              const cy = row * cellH + cellH / 2;
+              const isCov = covered(cx, cy);
+              cells.push(
+                <rect
+                  key={`hm-${row}-${col}`}
+                  x={col * cellW} y={row * cellH}
+                  width={cellW} height={cellH}
+                  fill={isCov ? '#22c55e' : '#ef4444'}
+                  fillOpacity={isCov ? 0.18 : 0.18}
+                  pointerEvents="none"
+                />,
+              );
+            }
+          }
+          return <g pointerEvents="none" style={{ mixBlendMode: 'multiply' }}>{cells}</g>;
+        })()}
 
         {/* Canvas V2 Pass 2B.2 — non camera coverage. One overlay per
             device whose CoverageProfile shape is not 'none'. Radius
