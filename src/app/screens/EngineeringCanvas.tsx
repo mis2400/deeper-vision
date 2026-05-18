@@ -3241,7 +3241,7 @@ function TopBar(props: {
               <Magnet className="w-3.5 h-3.5 text-muted-foreground" />
               <div className="flex-1 min-w-0">
                 <div className="text-[12px]">Snap to grid</div>
-                <div className="text-[10.5px] text-muted-foreground">{props.snap ? 'Vertices round to the 20 px grid.' : 'Free placement, sub-grid precision.'}</div>
+                <div className="text-[10.5px] text-muted-foreground">{props.snap ? 'Vertices round to the 20 px grid.' : 'Free placement at sub grid precision.'}</div>
               </div>
               <span className={`text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded ${props.snap ? 'bg-primary/15 text-primary' : 'bg-secondary/40 text-muted-foreground'}`}>
                 {props.snap ? 'On' : 'Off'}
@@ -13081,6 +13081,10 @@ function BottomDeviceBar({
   // V1 P0.5 — count badges. The dock subscribes directly to devices +
   // pathways for the active floor so the parent's prop surface stays
   // clean and every store change flows in without extra plumbing.
+  // TODO(multi-floor): mirrors the parent's "first floor of project"
+  // shortcut (EngineeringCanvas line ~720). Once the floor selector
+  // becomes state-driven, swap this for the selected floor id —
+  // otherwise these badges will silently count the wrong floor.
   const { projectId: routeProjectId = 'p1' } = useParams();
   const projectIdForCounts = routeProjectId;
   const currentFloorIdForCounts = useProjectStore((s) =>

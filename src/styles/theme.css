@@ -36,6 +36,23 @@
   --text-base: 1rem;
   --text-sm: 0.875rem;
   --text-xs: 0.75rem;
+
+  /* ── Chrome type scale ────────────────────────────────────────────
+     The canvas + inspector + popovers live BELOW the base 14 px scale.
+     Five values, no half-steps. Use these for ANY new in-chrome label,
+     hint, count, or value chip. Half-step Tailwind arbitrary values
+     (text-[10.5px] / text-[11.5px] / text-[12.5px]) are getting
+     normalized to the nearest token over time.
+       --chrome-2xs  9 px   tally / shortcut letter / overline dot
+       --chrome-xs  10 px   tile label / chip / status word
+       --chrome-sm  11 px   inspector row / hint
+       --chrome-md  12 px   button text / inline value
+       --chrome-lg  13 px   strong button / section header */
+  --chrome-2xs: 9px;
+  --chrome-xs:  10px;
+  --chrome-sm:  11px;
+  --chrome-md:  12px;
+  --chrome-lg:  13px;
 }
 
 [data-theme="slate"] {
@@ -410,22 +427,6 @@
   --ease-out:        cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  /* ── Chrome type scale ────────────────────────────────────────────
-     The canvas + inspector + popovers live BELOW the base 14 px scale.
-     Five values, no half-steps. Use these for ANY new in-chrome label,
-     hint, count, or value chip. Half-step Tailwind arbitrary values
-     (text-[10.5px] / text-[11.5px] / text-[12.5px]) are getting
-     normalized to the nearest token over time.
-       --chrome-2xs  9 px   tally / shortcut letter / overline dot
-       --chrome-xs  10 px   tile label / chip / status word
-       --chrome-sm  11 px   inspector row / hint
-       --chrome-md  12 px   button text / inline value
-       --chrome-lg  13 px   strong button / section header */
-  --chrome-2xs: 9px;
-  --chrome-xs:  10px;
-  --chrome-sm:  11px;
-  --chrome-md:  12px;
-  --chrome-lg:  13px;
 }
 
 @layer base {
