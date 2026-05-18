@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { Search, Plus, MapPin, Users, Calendar, ChevronRight, LayoutGrid, List as ListIcon, RotateCcw, ArrowRight } from 'lucide-react';
+import { Search, Plus, MapPin, Users, Calendar, ChevronRight, LayoutGrid, List as ListIcon, RotateCcw, ArrowRight, Columns3, ArrowUpDown } from 'lucide-react';
 import { useProjectStore, selectors as sel } from '../store/projectStore';
 import { PHASES, quickActionFor, healthTone, progressPctFor } from '../lifecycle/phases';
 import type { LifecyclePhase } from '../store/types';
@@ -24,6 +24,10 @@ interface Project {
   nextAction?: string;
   health?: 'on_track' | 'at_risk' | 'blocked' | 'complete';
   ownerName?: string;
+  /** Sorting + kanban metadata. */
+  updatedAt: number;
+  contractValue?: number;
+  dueDate?: number;
 }
 
 const STATUS_META = {
@@ -51,7 +55,12 @@ export function ProjectHub() {
     service:      ['completed', 'managed_service', 'support'],
     blocked:      [],
   };
-  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [view, setView] = useState<'grid' | 'list' | 'kanban'>('grid');
+  // V1 1E.1 — sort options. Default still "most recent" to preserve
+  // the prior implicit behavior; the others (alphabetical, highest
+  // value, next-action soonest) are the dropdown choices.
+  type SortKey = 'recent' | 'name' | 'value' | 'nextAction';
+  const [sortKey, setSortKey] = useState<SortKey>('recent');
 
   // Subscribe to raw maps (stable identity until mutated). Sorting / mapping
   // is done in useMemo below — selectors that returned new arrays per call
@@ -92,18 +101,63 @@ export function ProjectHub() {
       nextAction: p.nextAction,
       health: p.healthStatus,
       ownerName: owner?.replace(/^u-/, ''),
+      updatedAt: p.updatedAt,
+      contractValue: p.contractValue,
+      dueDate: p.dueDate,
     };
   }), [storeProjects, storeCustomers, storeDevices]);
 
-  const filtered = projects.filter((p) => {
-    if (filter === 'blocked') {
-      if (p.health !== 'blocked' && p.health !== 'at_risk') return false;
-    } else if (filter !== 'all') {
-      if (!BUCKET_PHASES[filter].includes(p.phase)) return false;
+  const filtered = useMemo(() => {
+    const matched = projects.filter((p) => {
+      if (filter === 'blocked') {
+        if (p.health !== 'blocked' && p.health !== 'at_risk') return false;
+      } else if (filter !== 'all') {
+        if (!BUCKET_PHASES[filter].includes(p.phase)) return false;
+      }
+      if (q && !`${p.name} ${p.client} ${p.address}`.toLowerCase().includes(q.toLowerCase())) return false;
+      return true;
+    });
+    // V1 1E.1 — apply sort. Nullish values land at the tail so the
+    // sort never hides a project, just orders the ones with data.
+    const TAIL = Number.POSITIVE_INFINITY;
+    const NEG_TAIL = Number.NEGATIVE_INFINITY;
+    const arr = [...matched];
+    switch (sortKey) {
+      case 'name':
+        arr.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case 'value':
+        arr.sort((a, b) => (b.contractValue ?? NEG_TAIL) - (a.contractValue ?? NEG_TAIL));
+        break;
+      case 'nextAction':
+        arr.sort((a, b) => (a.dueDate ?? TAIL) - (b.dueDate ?? TAIL));
+        break;
+      case 'recent':
+      default:
+        arr.sort((a, b) => b.updatedAt - a.updatedAt);
+        break;
     }
-    if (q && !`${p.name} ${p.client} ${p.address}`.toLowerCase().includes(q.toLowerCase())) return false;
-    return true;
-  });
+    return arr;
+  }, [projects, filter, q, sortKey]);
+  // Last updated stamp across all projects — replaces the dev-flavored
+  // "live from project store" line with a real timestamp.
+  const lastTouched = useMemo(() => {
+    if (projects.length === 0) return null;
+    const t = Math.max(...projects.map((p) => p.updatedAt));
+    return new Date(t);
+  }, [projects]);
+  const relativeUpdated = (() => {
+    if (!lastTouched) return null;
+    const diff = Date.now() - lastTouched.getTime();
+    const min = Math.round(diff / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.round(min / 60);
+    if (hr < 24) return `${hr} hr ago`;
+    const days = Math.round(hr / 24);
+    if (days < 30) return `${days}d ago`;
+    return lastTouched.toLocaleDateString();
+  })();
 
   return (
     <AppShell
@@ -135,7 +189,12 @@ export function ProjectHub() {
         <div className="flex items-end justify-between mb-5">
           <div>
             <h1 className="text-2xl font-medium tracking-tight">Projects</h1>
-            <p className="text-sm text-muted-foreground mt-1">{filtered.length} of {projects.length} · live from project store</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {filtered.length === projects.length
+                ? `${projects.length} ${projects.length === 1 ? 'project' : 'projects'}`
+                : `${filtered.length} of ${projects.length} projects`}
+              {relativeUpdated && <> · last updated {relativeUpdated}</>}
+            </p>
           </div>
         </div>
 
@@ -162,9 +221,30 @@ export function ProjectHub() {
             ))}
           </div>
 
-          <div className="flex items-center border border-border rounded-md p-0.5 bg-background ml-auto">
-            <button onClick={() => setView('grid')} className={`p-1 rounded ${view === 'grid' ? 'bg-secondary text-foreground' : 'text-muted-foreground'}`}><LayoutGrid className="w-3.5 h-3.5" /></button>
-            <button onClick={() => setView('list')} className={`p-1 rounded ${view === 'list' ? 'bg-secondary text-foreground' : 'text-muted-foreground'}`}><ListIcon className="w-3.5 h-3.5" /></button>
+          {/* V1 1E.1 — sort dropdown. Native select keeps the chrome
+              calm and a11y-clean; the brief lists 4 sort options so we
+              ship those four. */}
+          <div className="ml-auto flex items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>Sort</span>
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as SortKey)}
+                className="bg-background border border-border rounded px-1.5 py-0.5 text-xs text-foreground focus:outline-none focus:border-primary"
+              >
+                <option value="recent">Most recent</option>
+                <option value="value">Highest value</option>
+                <option value="name">Alphabetical</option>
+                <option value="nextAction">By next action date</option>
+              </select>
+            </label>
+
+            <div className="flex items-center border border-border rounded-md p-0.5 bg-background">
+              <button onClick={() => setView('grid')} title="Grid" className={`p-1 rounded ${view === 'grid' ? 'bg-secondary text-foreground' : 'text-muted-foreground'}`}><LayoutGrid className="w-3.5 h-3.5" /></button>
+              <button onClick={() => setView('list')} title="List" className={`p-1 rounded ${view === 'list' ? 'bg-secondary text-foreground' : 'text-muted-foreground'}`}><ListIcon className="w-3.5 h-3.5" /></button>
+              <button onClick={() => setView('kanban')} title="Kanban" className={`p-1 rounded ${view === 'kanban' ? 'bg-secondary text-foreground' : 'text-muted-foreground'}`}><Columns3 className="w-3.5 h-3.5" /></button>
+            </div>
           </div>
         </div>
 
@@ -245,6 +325,12 @@ export function ProjectHub() {
               );
             })}
           </div>
+        ) : view === 'kanban' ? (
+          // V1 1E.1 — kanban view. Columns by lifecycle phase (Lead →
+          // Live), one card per project in the column. Drag-to-reorder
+          // / drag-between-columns is a follow-up; for V1 the kanban
+          // makes the pipeline glanceable at a project level.
+          <KanbanBoard projects={filtered} onOpen={(id) => navigate(`/project/${id}`)} />
         ) : (
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
@@ -295,5 +381,71 @@ export function ProjectHub() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// KanbanBoard — phase-grouped columns of project cards. V1 1E.1
+// ships read-only (no drag); phase changes happen from the project
+// detail screen for now. Columns mirror the canonical PHASES order.
+// ─────────────────────────────────────────────────────────────────
+function KanbanBoard({ projects, onOpen }: { projects: Project[]; onOpen: (id: string) => void }) {
+  // Bucket the lifecycle phases into the same six the filter row uses,
+  // so the kanban columns match the filters the user already knows.
+  const COLUMNS: { id: string; label: string; phases: LifecyclePhase[] }[] = [
+    { id: 'sales',       label: 'Sales',        phases: ['lead', 'discovery', 'walk_scheduled'] },
+    { id: 'survey',      label: 'Survey',       phases: ['survey'] },
+    { id: 'engineering', label: 'Engineering',  phases: ['engineering'] },
+    { id: 'estimate',    label: 'Estimate',     phases: ['estimate'] },
+    { id: 'proposal',    label: 'Proposal',     phases: ['proposal', 'customer_review', 'approved'] },
+    { id: 'deployment',  label: 'Deployment',   phases: ['deployment', 'commissioning'] },
+    { id: 'service',     label: 'Service',      phases: ['completed', 'managed_service', 'support'] },
+  ];
+  const columnFor = (phase: LifecyclePhase) =>
+    COLUMNS.find((c) => c.phases.includes(phase))?.id ?? 'sales';
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-3 -mx-2 px-2">
+      {COLUMNS.map((col) => {
+        const items = projects.filter((p) => columnFor(p.phase) === col.id);
+        return (
+          <div key={col.id} className="shrink-0 w-[260px] bg-secondary/30 border border-border/60 rounded-lg flex flex-col">
+            <div className="px-3 py-2 flex items-center justify-between text-[11px] uppercase tracking-[0.10em] text-muted-foreground border-b border-border/60">
+              <span className="font-medium">{col.label}</span>
+              <span className="tabular-nums">{items.length}</span>
+            </div>
+            <div className="flex-1 p-2 space-y-2 min-h-[120px]">
+              {items.length === 0 ? (
+                <div className="text-[11px] text-muted-foreground/70 text-center py-6">Empty</div>
+              ) : (
+                items.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => onOpen(p.id)}
+                    className="w-full text-left bg-card hover:bg-card/90 border border-border rounded-md p-2.5 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-medium leading-tight truncate">{p.name}</div>
+                        <div className="text-[10.5px] text-muted-foreground truncate mt-0.5">{p.client}</div>
+                      </div>
+                      <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${PHASES[p.phase].tone.dot}`} />
+                    </div>
+                    {p.nextAction && (
+                      <div className="text-[10.5px] text-muted-foreground line-clamp-1 mt-1">{p.nextAction}</div>
+                    )}
+                    <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
+                      <span>{p.devices} device{p.devices === 1 ? '' : 's'}</span>
+                      {p.contractValue ? (
+                        <span className="tabular-nums">${(p.contractValue / 1000).toFixed(0)}k</span>
+                      ) : null}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
