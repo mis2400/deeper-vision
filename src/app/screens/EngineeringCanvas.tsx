@@ -25,6 +25,9 @@ import {
   PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
   ClipboardList, Paperclip,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+  AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+  AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
 } from 'lucide-react';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 import { ProjectStateMenu } from '../components/canvas/ProjectStateMenu';
@@ -2213,6 +2216,46 @@ export function EngineeringCanvas() {
     setSelId(clones[0]?.id ?? null);
     toast.success(`Pasted ${clones.length} ${clones.length === 1 ? 'device' : 'devices'}`, { duration: 1800 });
   }, [clipboard, zoom, cloneDevice, setDevices]);
+  // Canvas V2 Pass 1.5 — alignment + distribute. All ops route through
+  // setDevices so the existing facade derives one history label per
+  // call ("Edited devices" or "Moved N devices") and one undo step.
+  type AlignMode = 'left' | 'right' | 'top' | 'bottom' | 'center-h' | 'center-v';
+  type DistMode = 'h' | 'v';
+  const alignSelection = useCallback((mode: AlignMode) => {
+    const src = selIds.size > 0 ? devices.filter((d) => selIds.has(d.id)) : (sel ? [sel] : []);
+    if (src.length < 2) return;
+    const xs = src.map((d) => d.x); const ys = src.map((d) => d.y);
+    const minX = Math.min(...xs); const maxX = Math.max(...xs);
+    const minY = Math.min(...ys); const maxY = Math.max(...ys);
+    const cx = (minX + maxX) / 2; const cy = (minY + maxY) / 2;
+    setDevices((ds) => ds.map((d) => {
+      if (!selIds.has(d.id) && d.id !== sel?.id) return d;
+      switch (mode) {
+        case 'left':     return { ...d, x: minX };
+        case 'right':    return { ...d, x: maxX };
+        case 'top':      return { ...d, y: minY };
+        case 'bottom':   return { ...d, y: maxY };
+        case 'center-h': return { ...d, x: cx };
+        case 'center-v': return { ...d, y: cy };
+      }
+    }));
+  }, [devices, selIds, sel, setDevices]);
+  const distributeSelection = useCallback((axis: DistMode) => {
+    const src = (selIds.size > 0 ? devices.filter((d) => selIds.has(d.id)) : []);
+    if (src.length < 3) return; // need at least 3 for distribute to make sense
+    const sorted = [...src].sort((a, b) => axis === 'h' ? a.x - b.x : a.y - b.y);
+    const first = sorted[0]; const last = sorted[sorted.length - 1];
+    const total = axis === 'h' ? (last.x - first.x) : (last.y - first.y);
+    const step = total / (sorted.length - 1);
+    // Build the new position for each id and apply in one setDevices call.
+    const updates: Record<string, number> = {};
+    sorted.forEach((d, i) => { updates[d.id] = (axis === 'h' ? first.x : first.y) + step * i; });
+    setDevices((ds) => ds.map((d) => {
+      if (!(d.id in updates)) return d;
+      return axis === 'h' ? { ...d, x: updates[d.id] } : { ...d, y: updates[d.id] };
+    }));
+  }, [devices, selIds, setDevices]);
+
   const duplicateSelection = useCallback(() => {
     const src = currentSelectionDevices();
     if (!src.length) return;
@@ -3027,6 +3070,22 @@ export function EngineeringCanvas() {
                 <div className="px-3 inline-flex items-center text-[11.5px] tabular-nums text-foreground border-r border-border/60">
                   <span className="font-medium">{selIds.size}</span><span className="text-muted-foreground ml-1">selected</span>
                 </div>
+                {/* Canvas V2 Pass 1.5 — alignment + distribute. One click
+                    per axis. Distribute needs ≥3 selected so we hide
+                    those two buttons below the threshold. Single grouped
+                    undo because each helper calls setDevices once. */}
+                <button onClick={() => alignSelection('left')}     title="Align left edges"           className="px-1.5 inline-flex items-center text-muted-foreground hover:text-foreground hover:bg-secondary/40 border-r border-border/60"><AlignStartVertical className="w-3.5 h-3.5" /></button>
+                <button onClick={() => alignSelection('center-h')} title="Align horizontal centres"   className="px-1.5 inline-flex items-center text-muted-foreground hover:text-foreground hover:bg-secondary/40 border-r border-border/60"><AlignCenterVertical className="w-3.5 h-3.5" /></button>
+                <button onClick={() => alignSelection('right')}    title="Align right edges"          className="px-1.5 inline-flex items-center text-muted-foreground hover:text-foreground hover:bg-secondary/40 border-r border-border/60"><AlignEndVertical className="w-3.5 h-3.5" /></button>
+                <button onClick={() => alignSelection('top')}      title="Align top edges"            className="px-1.5 inline-flex items-center text-muted-foreground hover:text-foreground hover:bg-secondary/40 border-r border-border/60"><AlignStartHorizontal className="w-3.5 h-3.5" /></button>
+                <button onClick={() => alignSelection('center-v')} title="Align vertical centres"     className="px-1.5 inline-flex items-center text-muted-foreground hover:text-foreground hover:bg-secondary/40 border-r border-border/60"><AlignCenterHorizontal className="w-3.5 h-3.5" /></button>
+                <button onClick={() => alignSelection('bottom')}   title="Align bottom edges"         className="px-1.5 inline-flex items-center text-muted-foreground hover:text-foreground hover:bg-secondary/40 border-r border-border/60"><AlignEndHorizontal className="w-3.5 h-3.5" /></button>
+                {selIds.size >= 3 && (
+                  <>
+                    <button onClick={() => distributeSelection('h')} title="Distribute horizontally" className="px-1.5 inline-flex items-center text-muted-foreground hover:text-foreground hover:bg-secondary/40 border-r border-border/60"><AlignHorizontalSpaceAround className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => distributeSelection('v')} title="Distribute vertically"   className="px-1.5 inline-flex items-center text-muted-foreground hover:text-foreground hover:bg-secondary/40 border-r border-border/60"><AlignVerticalSpaceAround className="w-3.5 h-3.5" /></button>
+                  </>
+                )}
                 <button
                   onClick={() => setRunToIdfOpen(true)}
                   data-track="multi-run-to-idf"
