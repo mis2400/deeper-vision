@@ -150,6 +150,10 @@ export interface ProjectState {
   /** Object-linked survey notes / checklist items captured on-site.
    *  Each item points at a Device / Door / Pathway / IDF / Floor. */
   surveyItems:   Record<string, SurveyItem>;
+  /** Pre-design site walk captures — Phase 4D. Each carries a room
+   *  label + optional photo + voice note + GPS fix. Photos and audio
+   *  are inline base64 because there's no upload backend. */
+  siteCaptures:  Record<string, import('./types').SiteCapture>;
 
   // ── UX preferences ──
   /** Per-project mode override. When unset, mode is derived from
@@ -263,6 +267,13 @@ export interface ProjectState {
   addSurveyItem:    (item: Omit<SurveyItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => string;
   updateSurveyItem: (id: string, patch: Partial<SurveyItem>) => void;
   removeSurveyItem: (id: string) => void;
+
+  // ── Site walk captures (Phase 4D) ──
+  /** Add a pre-design site walk capture. When `id` is omitted, the
+   *  store generates one. Returns the id. */
+  addSiteCapture:    (item: Omit<import('./types').SiteCapture, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => string;
+  updateSiteCapture: (id: string, patch: Partial<import('./types').SiteCapture>) => void;
+  removeSiteCapture: (id: string) => void;
 
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
@@ -447,6 +458,7 @@ export const useProjectStore = create<ProjectState>()(
       notificationPrefs: {},
       security:          { ...DEFAULT_SECURITY },
       workspaceSettings: { ...DEFAULT_WORKSPACE_SETTINGS },
+      siteCaptures:      {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -876,6 +888,37 @@ export const useProjectStore = create<ProjectState>()(
           : s),
       removeSurveyItem: (id) =>
         set((s) => { const { [id]: _, ...rest } = s.surveyItems; return { surveyItems: rest }; }),
+
+      // ── Site walk captures (Phase 4D) ────────────────────────────
+      addSiteCapture: (input) => {
+        _activityCounter += 1;
+        const now = Date.now();
+        const id = input.id ?? `cap-${now.toString(36).slice(-5)}-${_activityCounter}`;
+        const item: import('./types').SiteCapture = {
+          id,
+          projectId: input.projectId,
+          label: input.label,
+          note: input.note,
+          photoDataUrl: input.photoDataUrl,
+          photoBytes: input.photoBytes,
+          audioDataUrl: input.audioDataUrl,
+          audioDurationMs: input.audioDurationMs,
+          audioBytes: input.audioBytes,
+          lat: input.lat,
+          lng: input.lng,
+          author: input.author,
+          createdAt: now,
+          updatedAt: now,
+        };
+        set((s) => ({ siteCaptures: { ...s.siteCaptures, [id]: item } }));
+        return id;
+      },
+      updateSiteCapture: (id, patch) =>
+        set((s) => s.siteCaptures[id]
+          ? { siteCaptures: { ...s.siteCaptures, [id]: { ...s.siteCaptures[id], ...patch, updatedAt: Date.now() } } }
+          : s),
+      removeSiteCapture: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.siteCaptures; return { siteCaptures: rest }; }),
 
       // ── Threat Drill ─────────────────────────────────────────────
       addScenario: (sc) => set((s) => ({ scenarios: { ...s.scenarios, [sc.id]: sc } })),
@@ -1549,11 +1592,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security, workspaceSettings: s.workspaceSettings })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security, workspaceSettings: s.workspaceSettings, siteCaptures: {} })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 16,
+      version: 17,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1743,6 +1786,17 @@ export const useProjectStore = create<ProjectState>()(
           const prev = persisted.workspaceSettings && typeof persisted.workspaceSettings === 'object' ? persisted.workspaceSettings : {};
           persisted.workspaceSettings = { ...DEFAULT_WORKSPACE_SETTINGS, ...prev };
         }
+        if (version < 17) {
+          // v16 → v17: introduce the site walk captures slice (Phase 4D).
+          // Empty default is safe — the SiteWalk screen renders an empty
+          // state when no captures exist for the active project. Guard
+          // against null / array / non-object so a tampered persisted
+          // blob does not crash later `Object.values(siteCaptures)`.
+          const raw = persisted.siteCaptures;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            persisted.siteCaptures = {};
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1803,6 +1857,7 @@ export const useProjectStore = create<ProjectState>()(
         notificationPrefs: s.notificationPrefs,
         security:          s.security,
         workspaceSettings: s.workspaceSettings,
+        siteCaptures:      s.siteCaptures,
       }),
     },
   ),
@@ -1882,6 +1937,12 @@ export const selectors = {
   surveyItemsForProject: (s: ProjectState, projectId: string): SurveyItem[] =>
     Object.values(s.surveyItems)
       .filter((i) => i.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+
+  /** All site walk captures for a project, newest first (Phase 4D). */
+  siteCapturesForProject: (s: ProjectState, projectId: string): import('./types').SiteCapture[] =>
+    Object.values(s.siteCaptures)
+      .filter((c) => c.projectId === projectId)
       .sort((a, b) => b.createdAt - a.createdAt),
 
   /** Project activity feed, newest first. */

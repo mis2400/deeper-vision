@@ -638,6 +638,44 @@ export interface SurveyItem {
   photo?: SurveyPhotoPlaceholder;
 }
 
+// ─────────────────────────── Site walk captures ───────────────────
+// Mobile-first field captures the operator takes BEFORE there's a canvas
+// object to attach to. A SurveyItem hangs off a placed device / door /
+// pathway / IDF / floor; a SiteCapture is the raw pre-design observation
+// (photo + voice memo + room label) gathered during the site walk. They
+// can be promoted to SurveyItems later once devices are placed.
+//
+// Honesty: photo + audio are inline base64 because there's no upload
+// backend. The store is local-storage backed, so a single project's
+// captures are practically capped at a few dozen items before the
+// browser quota bites. The UI shows the operator a running quota meter
+// and offers PDF export so nothing has to live in the browser forever.
+export interface SiteCapture {
+  id: string;
+  projectId: string;
+  /** Room or area label, e.g. "Lobby NE", "IDF-A closet", "Loading dock". */
+  label: string;
+  /** Optional free-form note typed or dictated by the operator. */
+  note?: string;
+  /** Optional inline photo data URL (downscaled JPEG). */
+  photoDataUrl?: string;
+  /** Approx bytes of the photo for the storage meter. */
+  photoBytes?: number;
+  /** Optional inline voice memo data URL (audio/webm or audio/mp4). */
+  audioDataUrl?: string;
+  /** Voice memo runtime in milliseconds. */
+  audioDurationMs?: number;
+  /** Approx bytes of the audio for the storage meter. */
+  audioBytes?: number;
+  /** Optional GPS fix if the operator granted geolocation. */
+  lat?: number;
+  lng?: number;
+  /** Who captured it (display name from userPrefs at capture time). */
+  author?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ─────────────────────────── Pathways ─────────────────────────────
 export type PathwayType = 'conduit' | 'tray' | 'open' | 'fiber' | 'wireless' | 'underground' | 'flex';
 export type CableType = 'cat6' | 'cat6a' | 'fiber-sm' | 'fiber-mm' | 'coax' | 'power' | 'composite';
