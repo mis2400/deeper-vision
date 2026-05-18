@@ -1418,6 +1418,10 @@ export function EngineeringCanvas() {
   useEffect(() => {
     try { localStorage.setItem(`canvas:${projectId}:hidden`, JSON.stringify([...hiddenIds])); } catch {}
   }, [hiddenIds, projectId]);
+  // Ref mirror so the keyboard handler (bound once) sees live values
+  // without re-binding on every state change. Pairs with lockedIdsRef.
+  const hiddenIdsRef = useRef<Set<string>>(hiddenIds);
+  useEffect(() => { hiddenIdsRef.current = hiddenIds; }, [hiddenIds]);
   useEffect(() => {
     try { localStorage.setItem(`canvas:${projectId}:locked`, JSON.stringify([...lockedIds])); } catch {}
   }, [lockedIds, projectId]);
@@ -1801,14 +1805,41 @@ export function EngineeringCanvas() {
       if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); setZoom((z) => Math.max(0.25, z / 1.2)); }
       // Pass 1.3 — Cmd / Ctrl + A selects every visible device on the
       // current canvas surface. Locked items are skipped unless Shift
-      // is held (Cmd-Shift-A = include locked).
+      // is held (Cmd-Shift-A = include locked). Read devices straight
+      // from the store and the locked / hidden sets from refs so the
+      // bound handler does not need to re-register on every change.
       if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault();
         const includeLocked = e.shiftKey;
-        const visible = devices.filter((d) => !hiddenIds.has(d.id) && (includeLocked || !lockedIds.has(d.id)));
+        const pid = projectId ?? 'p1';
+        const fid = currentFloorId;
+        const liveDevices = (Object.values(useProjectStore.getState().devices) as unknown as Device[])
+          .filter((d: any) => d.projectId === pid && (fid === '' || d.floorId === fid));
+        const hidden = hiddenIdsRef.current;
+        const locked = lockedIdsRef.current;
+        const visible = liveDevices.filter((d) => !hidden.has(d.id) && (includeLocked || !locked.has(d.id)));
         setSelIds(new Set(visible.map((d) => d.id)));
         if (visible[0]) setSelId(visible[0].id);
         toast.message(`Selected ${visible.length} ${visible.length === 1 ? 'device' : 'devices'}`, { duration: 1800 });
+      }
+      // Pass 1.4 — Cmd / Ctrl + C copy, V paste, D duplicate in place.
+      // Refs let the handler (bound once) call the latest helper
+      // closures without re-binding on every devices update.
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C')) {
+        // Don't fight the browser's native copy when there's a real
+        // text selection in the page (input fields already early
+        // returned above; this is for the canvas context).
+        if (window.getSelection?.()?.toString()) return;
+        e.preventDefault();
+        copySelectionRef.current();
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        pasteClipboardRef.current();
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        duplicateSelectionRef.current();
       }
       // Canvas V2 Pass 1.1 — undo / redo. Cmd-Z undo, Cmd-Shift-Z redo.
       // Ctrl-Y also redos (Windows convention). Esc earlier in this
@@ -2128,6 +2159,85 @@ export function EngineeringCanvas() {
     setDevices((ds) => [...ds, clone]);
     setSelId(newId);
   };
+
+  // Canvas V2 Pass 1.4 — copy / paste / multi duplicate.
+  // The clipboard is in-memory only; clearing it on reload keeps the
+  // user from pasting stale state into a different project.
+  const [clipboard, setClipboard] = useState<Device[]>([]);
+  const cloneDevice = useCallback((src: Device, offsetX: number, offsetY: number): Device => {
+    const tail = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 6)
+      : `${Date.now().toString(36).slice(-3)}${Math.random().toString(36).slice(2, 5)}`;
+    return {
+      ...src,
+      id: `${src.id}-c${tail}`,
+      x: src.x + offsetX,
+      y: src.y + offsetY,
+      label: src.label ? `${src.label} copy` : src.label,
+      lenses: src.lenses ? {
+        a: { ...src.lenses.a },
+        b: { ...src.lenses.b },
+        c: { ...src.lenses.c },
+        d: { ...src.lenses.d },
+      } : undefined,
+      // Drop linkedIds + stack on clones — they point at the originals
+      // which would create cross wired references. Operators rewire by
+      // dragging accessories onto the new host.
+      linkedIds: undefined,
+      stack: undefined,
+    };
+  }, []);
+  // Selection helper — multi if selIds is non-empty, otherwise just sel.
+  const currentSelectionDevices = useCallback((): Device[] => {
+    if (selIds.size > 0) return devices.filter((d) => selIds.has(d.id));
+    return sel ? [sel] : [];
+  }, [devices, selIds, sel]);
+  const copySelection = useCallback(() => {
+    const src = currentSelectionDevices();
+    if (!src.length) return;
+    setClipboard(src.map((d) => ({ ...d })));
+    toast.message(`Copied ${src.length} ${src.length === 1 ? 'device' : 'devices'}`, { duration: 1500 });
+  }, [currentSelectionDevices]);
+  const pasteClipboard = useCallback(() => {
+    if (!clipboard.length) {
+      toast.message('Clipboard is empty', { duration: 1500 });
+      return;
+    }
+    // Paste at a small offset from the original. The first item anchors
+    // the offset; subsequent items keep their relative spacing.
+    const offsetX = 36 / zoom;
+    const offsetY = 36 / zoom;
+    const clones = clipboard.map((d) => cloneDevice(d, offsetX, offsetY));
+    setDevices((ds) => [...ds, ...clones]);
+    setSelIds(new Set(clones.map((c) => c.id)));
+    setSelId(clones[0]?.id ?? null);
+    toast.success(`Pasted ${clones.length} ${clones.length === 1 ? 'device' : 'devices'}`, { duration: 1800 });
+  }, [clipboard, zoom, cloneDevice, setDevices]);
+  const duplicateSelection = useCallback(() => {
+    const src = currentSelectionDevices();
+    if (!src.length) return;
+    const offsetX = 24 / zoom;
+    const offsetY = 24 / zoom;
+    const clones = src.map((d) => cloneDevice(d, offsetX, offsetY));
+    setDevices((ds) => [...ds, ...clones]);
+    if (clones.length > 1) {
+      setSelIds(new Set(clones.map((c) => c.id)));
+      setSelId(clones[0].id);
+    } else {
+      setSelId(clones[0].id);
+      setSelIds(new Set());
+    }
+    toast.success(`Duplicated ${clones.length} ${clones.length === 1 ? 'device' : 'devices'}`, { duration: 1800 });
+  }, [currentSelectionDevices, zoom, cloneDevice, setDevices]);
+  // Refs so the keyboard handler (bound once via the existing useEffect)
+  // can call the latest version of each helper without re-binding the
+  // listener on every devices update.
+  const copySelectionRef = useRef(copySelection);
+  const pasteClipboardRef = useRef(pasteClipboard);
+  const duplicateSelectionRef = useRef(duplicateSelection);
+  useEffect(() => { copySelectionRef.current = copySelection; }, [copySelection]);
+  useEffect(() => { pasteClipboardRef.current = pasteClipboard; }, [pasteClipboard]);
+  useEffect(() => { duplicateSelectionRef.current = duplicateSelection; }, [duplicateSelection]);
   /** Open the engineering inspector to a specific tab. Used by toolbar
    *  buttons (Note, Link, FOV, AI Optimize, etc.) so they all jump straight
    *  to the relevant panel instead of silently doing nothing. */
