@@ -606,6 +606,124 @@ declare global {
   var __projectStore: any;
 }
 
+/* ─────────────────────────────────────────────────────────────────
+   SC.1.5 cross model integrity sweep
+   ─────────────────────────────────────────────────────────────────
+   Called from both the persist `migrate` hook (so version bumps
+   stamp orphans) and the `merge` hook (so steady state loads on
+   the current version still get checked).
+
+   Cascade policy: ORPHAN, NEVER DELETE.
+
+   Deleting a Device should NOT silently destroy the Asset that
+   recorded what got installed there, NOR the Warranty backing
+   that Asset, NOR the Service Tickets that referenced it. Real
+   business records have to outlive the cause for their existence
+   so an operator (or a customer asking "what happened to the
+   camera by the loading dock") can still see the history. This
+   sweep marks them; SC.6 surfaces them in the inspector; later
+   passes can add a deliberate purge action behind a confirm.
+
+   Required parent set (record is flagged orphaned when any is
+   missing):
+
+     Asset       deviceId, projectId, customerId          → status = 'orphaned'
+     Warranty    assetId                                   → isOrphaned = true
+     Ticket      customerId, projectId                     → isOrphaned = true
+     Ticket      (deviceId | assetId | warrantyId)         → optional; missing
+                                                              parent does NOT
+                                                              flag the ticket
+                                                              (still useful to
+                                                              track the issue
+                                                              even when the
+                                                              specific asset is
+                                                              gone). Counted in
+                                                              the log so the
+                                                              operator sees it.
+
+   The sweep is idempotent: a previously flagged record whose
+   parent has been restored gets the flag cleared in the same
+   pass. Counts are emitted to console.warn ONLY when something
+   was flipped, so a clean store loads silently. */
+function runIntegrityCheck(state: any): void {
+  if (!state || typeof state !== 'object') return;
+
+  const devices    = (state.devices    && typeof state.devices    === 'object') ? state.devices    : {};
+  const projects   = (state.projects   && typeof state.projects   === 'object') ? state.projects   : {};
+  const customers  = (state.customers  && typeof state.customers  === 'object') ? state.customers  : {};
+  const assets     = (state.assets     && typeof state.assets     === 'object') ? state.assets     : {};
+  const warranties = (state.warranties && typeof state.warranties === 'object') ? state.warranties : {};
+  const tickets    = (state.serviceTickets && typeof state.serviceTickets === 'object') ? state.serviceTickets : {};
+
+  let assetsFlagged = 0, assetsCleared = 0;
+  let warrantiesFlagged = 0, warrantiesCleared = 0;
+  let ticketsFlagged = 0, ticketsCleared = 0;
+  let weakLinkBreaks = 0;
+
+  // Assets: device + project + customer all required.
+  for (const a of Object.values(assets) as any[]) {
+    if (!a || typeof a !== 'object') continue;
+    const orphan = !devices[a.deviceId] || !projects[a.projectId] || !customers[a.customerId];
+    if (orphan && a.status !== 'orphaned') {
+      a.status = 'orphaned';
+      assetsFlagged++;
+    } else if (!orphan && a.status === 'orphaned') {
+      // Parent was restored. Best effort revert to 'active' since
+      // we don't know what the prior state was. Operator can flip
+      // to 'decommissioned' / 'service-required' if needed.
+      a.status = 'active';
+      assetsCleared++;
+    }
+  }
+
+  // Warranties: asset must exist.
+  for (const w of Object.values(warranties) as any[]) {
+    if (!w || typeof w !== 'object') continue;
+    const orphan = !assets[w.assetId];
+    if (orphan && !w.isOrphaned) {
+      w.isOrphaned = true;
+      warrantiesFlagged++;
+    } else if (!orphan && w.isOrphaned) {
+      delete w.isOrphaned;
+      warrantiesCleared++;
+    }
+  }
+
+  // Tickets: customer + project required. Optional device / asset /
+  // warranty refs do NOT flag the ticket but are counted so the
+  // operator can see weak-link breakage in the warning summary.
+  for (const t of Object.values(tickets) as any[]) {
+    if (!t || typeof t !== 'object') continue;
+    const requiredOrphan = !customers[t.customerId] || !projects[t.projectId];
+    if (requiredOrphan && !t.isOrphaned) {
+      t.isOrphaned = true;
+      ticketsFlagged++;
+    } else if (!requiredOrphan && t.isOrphaned) {
+      delete t.isOrphaned;
+      ticketsCleared++;
+    }
+    if (t.deviceId    && !devices[t.deviceId])       weakLinkBreaks++;
+    if (t.assetId     && !assets[t.assetId])         weakLinkBreaks++;
+    if (t.warrantyId  && !warranties[t.warrantyId])  weakLinkBreaks++;
+  }
+
+  const total = assetsFlagged + assetsCleared
+              + warrantiesFlagged + warrantiesCleared
+              + ticketsFlagged + ticketsCleared
+              + weakLinkBreaks;
+  if (total > 0) {
+    // Single line warning so DevTools shows one entry per load.
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[SC.1.5 integrity] '
+      + `assets +${assetsFlagged}/-${assetsCleared}, `
+      + `warranties +${warrantiesFlagged}/-${warrantiesCleared}, `
+      + `tickets +${ticketsFlagged}/-${ticketsCleared}, `
+      + `ticket weak-link breaks ${weakLinkBreaks}`,
+    );
+  }
+}
+
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set, get) => ({
@@ -2585,6 +2703,10 @@ export const useProjectStore = create<ProjectState>()(
             }
           }
         }
+        // SC.1.5 cross model integrity sweep. Runs after every
+        // version step, every load. Conservative cascade per the
+        // SC.1 brief: orphans are flagged, never deleted.
+        runIntegrityCheck(persisted);
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -2599,6 +2721,10 @@ export const useProjectStore = create<ProjectState>()(
         for (const slice of ['contacts', 'opportunities', 'touches', 'tasks'] as const) {
           if (isEmpty(persisted?.[slice])) merged[slice] = current[slice];
         }
+        // SC.1.5 — also run integrity at merge time so users already
+        // on the latest version (where migrate is a no op) still get
+        // orphans flagged on every load.
+        runIntegrityCheck(merged);
         return merged;
       },
       // Only persist data slices, not action references (those are on every

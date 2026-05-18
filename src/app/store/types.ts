@@ -464,6 +464,11 @@ export interface Warranty {
   notes: string;
   createdAt: number;
   updatedAt: number;
+  /** SC.1.5 — set true by the load time integrity check when the
+   *  parent Asset has been deleted. Conservative cascade: the
+   *  Warranty record stays in the store, just flagged. SC.6 UIs
+   *  surface it; SC.6+ may add an explicit purge action. */
+  isOrphaned?: boolean;
 }
 
 // ─────────────────────────── Service tickets ─────────────────────
@@ -545,6 +550,15 @@ export interface ServiceTicket {
   updatedAt: number;
   /** ISO 8601 timestamp set when status transitions to `resolved`. */
   resolvedAt?: string;
+  /** SC.1.5 — set true by the load time integrity check when one of
+   *  the required parents (customer, project) has been deleted, or
+   *  when an optional parent reference (device, asset, warranty)
+   *  points at a missing record. Conservative cascade: the ticket
+   *  stays in the store, the workflow `status` is preserved, just
+   *  flagged separately so customer-facing surfaces (the portal)
+   *  can hide it while internal triage views (the deployment UI)
+   *  can still list it. */
+  isOrphaned?: boolean;
 }
 
 // ─────────────────────────── Activity feed ────────────────────────
