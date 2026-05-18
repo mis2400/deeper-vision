@@ -467,3 +467,13 @@
   textarea.dv-input { min-height: 64px; line-height: 1.4; }
   select.dv-input { appearance: auto; padding-right: 1.5rem; }
 }
+
+/* ── Phase 3A density preference ─────────────────────────────────────
+   --density-y scales vertical rhythm in components that opt in via
+   `padding-block: calc(... * var(--density-y))`. Default
+   (comfortable) = 1; compact = 0.78. Surfaces opt in over time; the
+   Settings screen wires it through its field rows so the toggle has
+   immediate visible effect. */
+:root,
+:root[data-density="comfortable"] { --density-y: 1; }
+:root[data-density="compact"]     { --density-y: 0.78; }

@@ -50,11 +50,26 @@ import { useProjectStore } from './store/projectStore';
 function ThemeProvider() {
   // Reads the persisted canvasTheme and mirrors it onto the <html>
   // data-theme attribute so CSS variables resolve correctly. Runs once
-  // per change; never owns its own state.
-  const theme = useProjectStore((s) => s.canvasTheme);
+  // per change; never owns its own state. Phase 3A also mirrors the
+  // density attribute and the optional accent override onto <html>.
+  const theme   = useProjectStore((s) => s.canvasTheme);
+  const density = useProjectStore((s) => s.userPrefs.density);
+  const accent  = useProjectStore((s) => s.userPrefs.accent);
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+  useEffect(() => {
+    document.documentElement.setAttribute('data-density', density);
+  }, [density]);
+  useEffect(() => {
+    // Accent overrides the theme's --primary. Clearing the prop drops
+    // back to the theme default cleanly.
+    if (accent) {
+      document.documentElement.style.setProperty('--primary', accent);
+    } else {
+      document.documentElement.style.removeProperty('--primary');
+    }
+  }, [accent]);
   return null;
 }
 

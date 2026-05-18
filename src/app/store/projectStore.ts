@@ -17,6 +17,7 @@ import {
   CanvasDisplayPrefs, DEFAULT_DISPLAY_PREFS, ProjectTechModel,
   SurveyItem, SurveyObjectType,
   AiConversation, AiMsg, AiAppliedRecord, AssistantContext,
+  UserPrefs, DEFAULT_USER_PREFS,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -107,6 +108,9 @@ export interface ProjectState {
    *  persisted; cleared on reload. The Assistant reads this to scope
    *  questions implicitly. */
   assistantContext: AssistantContext | null;
+  /** Operator preferences — Phase 3A. Density, accent, language,
+   *  time zone, plus profile headline. Persisted. */
+  userPrefs: UserPrefs;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -347,6 +351,9 @@ export interface ProjectState {
   /** Set (or clear) the transient assistant context. Called by every
    *  shipped surface as the operator's focus changes. */
   setAssistantContext: (ctx: Partial<AssistantContext> | null) => void;
+  /** Patch operator preferences. Only the fields included in the
+   *  patch change; the rest keep their current values. */
+  setUserPrefs: (patch: Partial<UserPrefs>) => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -382,6 +389,7 @@ export const useProjectStore = create<ProjectState>()(
       attachments:       {},
       aiConversations:   {},
       assistantContext:  null,
+      userPrefs:         { ...DEFAULT_USER_PREFS },
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1399,6 +1407,8 @@ export const useProjectStore = create<ProjectState>()(
             },
           };
         }),
+      setUserPrefs: (patch) =>
+        set((s) => ({ userPrefs: { ...s.userPrefs, ...patch } })),
       setAssistantContext: (ctx) =>
         set((s) => {
           if (ctx == null) return { assistantContext: null };
@@ -1421,11 +1431,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 9,
+      version: 10,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1558,6 +1568,14 @@ export const useProjectStore = create<ProjectState>()(
             persisted.aiConversations = cleaned;
           }
         }
+        if (version < 10) {
+          // v9 → v10: introduce operator preferences (density / accent
+          // / language / time zone + profile headline). Merge with
+          // sensible defaults so a v9 store hydrates with a usable
+          // userPrefs object even if the migration never touched it.
+          const prev = persisted.userPrefs && typeof persisted.userPrefs === 'object' ? persisted.userPrefs : {};
+          persisted.userPrefs = { ...DEFAULT_USER_PREFS, ...prev };
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1611,6 +1629,7 @@ export const useProjectStore = create<ProjectState>()(
         projectPricebooks: s.projectPricebooks,
         attachments:       s.attachments,
         aiConversations:   s.aiConversations,
+        userPrefs:         s.userPrefs,
       }),
     },
   ),

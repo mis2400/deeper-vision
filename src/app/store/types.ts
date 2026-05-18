@@ -1345,3 +1345,39 @@ export interface AiConversation {
   /** Ordered message list. */
   messages: AiMsg[];
 }
+
+// ─────────────────────────── User preferences ─────────────────────
+// Phase 3A — operator-scoped settings persisted to localStorage so
+// the preferred theme / accent / language travels across sessions.
+// Density is a Tailwind-level convenience: 'compact' tightens
+// vertical rhythm via the data-density attribute on <html>; the
+// chrome scale tokens stay the same. Accent is an optional override
+// of --primary so an integrator can paint the app with their brand.
+
+export interface UserPrefs {
+  /** UI density (vertical rhythm). 'comfortable' is the default. */
+  density: 'compact' | 'comfortable';
+  /** Optional brand accent hex (e.g. '#7C3AED'). When set, applied
+   *  via a CSS custom property override on <html>. Empty / unset =
+   *  the theme's stock primary. */
+  accent?: string;
+  /** BCP-47 language tag (defaults to navigator.language at first
+   *  read). */
+  language: string;
+  /** IANA time zone (defaults to Intl.DateTimeFormat resolvedOptions
+   *  at first read). */
+  timeZone: string;
+  /** Optional display name + email + role headline. Profile fields
+   *  for the Account tab. Backend lands later; today these persist
+   *  locally so the operator's name shows up consistently. */
+  fullName?: string;
+  email?: string;
+  jobTitle?: string;
+}
+
+/** Built-in defaults the store hydrates with on first run. */
+export const DEFAULT_USER_PREFS: UserPrefs = {
+  density: 'comfortable',
+  language: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+  timeZone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC',
+};
