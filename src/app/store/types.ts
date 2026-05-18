@@ -330,6 +330,15 @@ export interface Project {
   existingSystems?: Array<'camera-vms' | 'access-control' | 'intrusion' | 'fire-alarm' | 'network' | 'bas' | 'none'>;
   /** Budget bracket selected at intake. Operator-readable label. */
   budgetRange?: 'under-50k' | '50k-150k' | '150k-500k' | '500k-2m' | 'over-2m';
+
+  // ── Customer portal approval (Phase 4F) ──
+  /** When the customer approved the current proposal via the portal.
+   *  Set by /portal/:projectId; the operator-side workflow honors it
+   *  by advancing the lifecyclePhase to 'approved'. */
+  customerApprovedAt?: number;
+  /** Name the customer typed when approving. Optional — empty means
+   *  the customer approved without signing their name. */
+  customerApprovedBy?: string;
 }
 
 // ─────────────────────────── Activity feed ────────────────────────
