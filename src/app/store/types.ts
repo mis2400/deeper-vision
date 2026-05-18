@@ -1491,3 +1491,45 @@ export interface WorkspaceMember {
   /** Optional list of project ids the member is on. Empty = all. */
   projectIds?: string[];
 }
+
+// ─────────────────────────── Notifications (Phase 3E) ─────────────
+// Per-event notification routing. Channels persist locally; the
+// real delivery (email send, push token, Slack/Teams API call)
+// lands when the notification backend ships.
+
+export type NotificationEventKey =
+  | 'project-status-change'
+  | 'project-comment-added'
+  | 'project-approval-requested'
+  | 'project-approval-granted'
+  | 'wo-blocked'
+  | 'wo-completed'
+  | 'wo-photo-uploaded'
+  | 'threat-high-exposure'
+  | 'threat-simulation-run'
+  | 'billing-payment-failed'
+  | 'billing-plan-renewing'
+  | 'team-member-invited'
+  | 'team-member-joined'
+  | 'weekly-digest';
+
+export type EmailDigestCadence = 'immediate' | 'daily' | 'weekly' | 'off';
+
+export interface NotificationPref {
+  email: EmailDigestCadence;
+  inApp: boolean;
+  push:  boolean;
+  /** Routed to the connected Slack workspace (if any). */
+  slack: boolean;
+  /** Routed to the connected Microsoft Teams workspace (if any). */
+  teams: boolean;
+}
+
+/** Default routing for a freshly-created event preference. */
+export const DEFAULT_NOTIFICATION_PREF: NotificationPref = {
+  email: 'daily',
+  inApp: true,
+  push:  false,
+  slack: false,
+  teams: false,
+};

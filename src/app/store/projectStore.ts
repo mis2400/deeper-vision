@@ -21,6 +21,7 @@ import {
   BillingState, DEFAULT_BILLING, Invoice, PaymentMethod, PlanTier, BillingCycle,
   IntegrationId, IntegrationStatus, IntegrationRecord,
   WorkspaceMember, WorkspaceRoleId, WorkspaceInviteStatus,
+  NotificationEventKey, NotificationPref, DEFAULT_NOTIFICATION_PREF,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -123,6 +124,9 @@ export interface ProjectState {
   integrations: Record<IntegrationId, IntegrationRecord>;
   /** Workspace team directory — Phase 3D. Keyed by member id. */
   workspaceMembers: Record<string, WorkspaceMember>;
+  /** Per-event notification routing — Phase 3E. Keys absent from
+   *  the map fall through to DEFAULT_NOTIFICATION_PREF. */
+  notificationPrefs: Partial<Record<NotificationEventKey, NotificationPref>>;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -384,6 +388,10 @@ export interface ProjectState {
   patchWorkspaceMember: (id: string, patch: Partial<WorkspaceMember>) => void;
   /** Remove a workspace member outright. */
   removeWorkspaceMember: (id: string) => void;
+  /** Patch a single event's notification preference. */
+  setNotificationPref: (key: NotificationEventKey, patch: Partial<NotificationPref>) => void;
+  /** Reset all event preferences to default routing. */
+  resetNotificationPrefs: () => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -423,6 +431,7 @@ export const useProjectStore = create<ProjectState>()(
       billing:           { ...DEFAULT_BILLING },
       integrations:      {} as Record<IntegrationId, IntegrationRecord>,
       workspaceMembers:  {},
+      notificationPrefs: {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1486,6 +1495,13 @@ export const useProjectStore = create<ProjectState>()(
           const { [id]: _drop, ...rest } = s.workspaceMembers;
           return { workspaceMembers: rest };
         }),
+      setNotificationPref: (key, patch) =>
+        set((s) => {
+          const prev = s.notificationPrefs[key] ?? DEFAULT_NOTIFICATION_PREF;
+          return { notificationPrefs: { ...s.notificationPrefs, [key]: { ...prev, ...patch } } };
+        }),
+      resetNotificationPrefs: () =>
+        set(() => ({ notificationPrefs: {} })),
       setAssistantContext: (ctx) =>
         set((s) => {
           if (ctx == null) return { assistantContext: null };
@@ -1508,11 +1524,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 13,
+      version: 14,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1673,6 +1689,11 @@ export const useProjectStore = create<ProjectState>()(
           persisted.workspaceMembers ??= {};
           if (typeof persisted.workspaceMembers !== 'object') persisted.workspaceMembers = {};
         }
+        if (version < 14) {
+          // v13 → v14: introduce per-event notification routing.
+          persisted.notificationPrefs ??= {};
+          if (typeof persisted.notificationPrefs !== 'object') persisted.notificationPrefs = {};
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1730,6 +1751,7 @@ export const useProjectStore = create<ProjectState>()(
         billing:           s.billing,
         integrations:      s.integrations,
         workspaceMembers:  s.workspaceMembers,
+        notificationPrefs: s.notificationPrefs,
       }),
     },
   ),

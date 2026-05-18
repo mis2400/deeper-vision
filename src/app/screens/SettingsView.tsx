@@ -4,12 +4,13 @@
 // landing real Billing / Integrations / Team / Notifications /
 // Security / Advanced surfaces.
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { User, CreditCard, Plug, Users, Bell, Lock, Check, FileDown, Trash2, RefreshCw, Search, UserPlus, Upload as UploadIcon, MoreHorizontal } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
-import type { PlanTier, BillingCycle, Invoice, PaymentMethod, IntegrationId, WorkspaceMember, WorkspaceRoleId } from '../store/types';
+import type { PlanTier, BillingCycle, Invoice, PaymentMethod, IntegrationId, WorkspaceMember, WorkspaceRoleId, NotificationEventKey, NotificationPref, EmailDigestCadence } from '../store/types';
+import { DEFAULT_NOTIFICATION_PREF } from '../store/types';
 import { toast } from 'sonner';
 
 type Section = 'account' | 'billing' | 'integrations' | 'team' | 'notifications' | 'security';
@@ -1101,22 +1102,159 @@ function Team() {
   );
 }
 
+// ─────────────────────────── Notifications (Phase 3E) ────────────
+
+interface NotificationEventDef {
+  key: NotificationEventKey;
+  label: string;
+  group: 'project' | 'field' | 'threat' | 'billing' | 'team' | 'digest';
+  hint: string;
+}
+
+const NOTIFICATION_EVENTS: NotificationEventDef[] = [
+  { key: 'project-status-change',      group: 'project', label: 'Project status changed',     hint: 'When a project moves into a new lifecycle phase.' },
+  { key: 'project-comment-added',      group: 'project', label: 'Comment added in Review',    hint: 'A reviewer left a note on one of your projects.' },
+  { key: 'project-approval-requested', group: 'project', label: 'Approval requested',         hint: 'A project is waiting for a reviewer signoff.' },
+  { key: 'project-approval-granted',   group: 'project', label: 'Approval granted',           hint: 'A reviewer approved a project.' },
+  { key: 'wo-blocked',                 group: 'field',   label: 'Work order blocked',          hint: 'Field tech flagged a WO as blocked.' },
+  { key: 'wo-completed',               group: 'field',   label: 'Work order completed',        hint: 'Install + commissioning closed for a WO.' },
+  { key: 'wo-photo-uploaded',          group: 'field',   label: 'Install photo uploaded',      hint: 'A field tech captured an install photo.' },
+  { key: 'threat-high-exposure',       group: 'threat',  label: 'High exposure scenario run',  hint: 'A scenario produced a high or critical exposure score.' },
+  { key: 'threat-simulation-run',      group: 'threat',  label: 'Threat scenario run',         hint: 'Any operator-triggered simulation completed.' },
+  { key: 'billing-payment-failed',     group: 'billing', label: 'Payment failed',              hint: 'A billing charge could not complete.' },
+  { key: 'billing-plan-renewing',      group: 'billing', label: 'Plan renewing in 7 days',     hint: 'Heads-up before the auto-renewal fires.' },
+  { key: 'team-member-invited',        group: 'team',    label: 'Member invited',              hint: 'A new invite was issued.' },
+  { key: 'team-member-joined',         group: 'team',    label: 'Member joined',               hint: 'A pending invite was accepted.' },
+  { key: 'weekly-digest',              group: 'digest',  label: 'Weekly digest',               hint: 'Project + pipeline summary email.' },
+];
+
+const GROUP_LABEL: Record<NotificationEventDef['group'], string> = {
+  project: 'Projects',
+  field:   'Field operations',
+  threat:  'Threat simulator',
+  billing: 'Billing',
+  team:    'Team',
+  digest:  'Digests',
+};
+
+const CADENCE_OPTIONS: Array<{ value: EmailDigestCadence; label: string }> = [
+  { value: 'immediate', label: 'Immediate' },
+  { value: 'daily',     label: 'Daily' },
+  { value: 'weekly',    label: 'Weekly' },
+  { value: 'off',       label: 'Off' },
+];
+
 function Notifications() {
-  const rows = [
-    'Threat simulation findings',
-    'Change orders awaiting approval',
-    'Commissioning failures',
-    'Weekly project digest',
-  ];
+  const prefs = useProjectStore((s) => s.notificationPrefs);
+  const setPref = useProjectStore((s) => s.setNotificationPref);
+  const resetPrefs = useProjectStore((s) => s.resetNotificationPrefs);
+  const integrations = useProjectStore((s) => s.integrations);
+
+  const slackConnected = integrations['slack']?.status === 'connected';
+  const teamsConnected = integrations['msteams']?.status === 'connected';
+
+  const grouped = useMemo(() => {
+    const out: Record<NotificationEventDef['group'], NotificationEventDef[]> = {
+      project: [], field: [], threat: [], billing: [], team: [], digest: [],
+    };
+    for (const e of NOTIFICATION_EVENTS) out[e.group].push(e);
+    return out;
+  }, []);
+
+  const get = (key: NotificationEventKey): NotificationPref => prefs[key] ?? DEFAULT_NOTIFICATION_PREF;
+
   return (
-    <Panel title="Email me about">
-      {rows.map((r, i) => (
-        <label key={r} className="flex items-center justify-between py-1.5 border-b border-border last:border-b-0">
-          <span className="text-sm">{r}</span>
-          <input type="checkbox" defaultChecked={i < 3} className="accent-primary" />
-        </label>
-      ))}
-    </Panel>
+    <>
+      <Panel title="Per-event routing" subtitle="Each event routes independently. Channels with no connected backend are disabled in the row.">
+        <div className="overflow-hidden border border-border rounded-md">
+          <table className="w-full text-[12px]">
+            <thead className="bg-secondary/40 text-[10px] uppercase tracking-[0.10em] text-muted-foreground">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Event</th>
+                <th className="text-left px-3 py-2 font-medium">Email</th>
+                <th className="text-center px-3 py-2 font-medium">In-app</th>
+                <th className="text-center px-3 py-2 font-medium">Push</th>
+                <th className="text-center px-3 py-2 font-medium">Slack</th>
+                <th className="text-center px-3 py-2 font-medium">Teams</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(Object.keys(grouped) as Array<NotificationEventDef['group']>).map((g) => (
+                <Fragment key={g}>
+                  <tr className="border-t border-border bg-secondary/15">
+                    <td colSpan={6} className="px-3 py-1.5 text-[10px] uppercase tracking-[0.10em] text-muted-foreground">{GROUP_LABEL[g]}</td>
+                  </tr>
+                  {grouped[g].map((evt) => {
+                    const p = get(evt.key);
+                    return (
+                      <tr key={evt.key} className="border-t border-border" data-testid={`notif-event-${evt.key}`}>
+                        <td className="px-3 py-2">
+                          <div className="font-medium">{evt.label}</div>
+                          <div className="text-[10.5px] text-muted-foreground">{evt.hint}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={p.email}
+                            onChange={(e) => setPref(evt.key, { email: e.target.value as EmailDigestCadence })}
+                            className="text-[12px] bg-input-background border border-input-border rounded px-2 py-1 focus:outline-none focus:border-primary"
+                          >
+                            {CADENCE_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" checked={p.inApp} onChange={(e) => setPref(evt.key, { inApp: e.target.checked })} className="accent-primary" />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" checked={p.push} onChange={(e) => setPref(evt.key, { push: e.target.checked })} className="accent-primary" />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={p.slack && slackConnected}
+                            disabled={!slackConnected}
+                            onChange={(e) => setPref(evt.key, { slack: e.target.checked })}
+                            className="accent-primary disabled:opacity-30"
+                            title={slackConnected ? '' : 'Connect Slack on the Integrations tab to enable this channel.'}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={p.teams && teamsConnected}
+                            disabled={!teamsConnected}
+                            onChange={(e) => setPref(evt.key, { teams: e.target.checked })}
+                            className="accent-primary disabled:opacity-30"
+                            title={teamsConnected ? '' : 'Connect Microsoft Teams on the Integrations tab to enable this channel.'}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex items-center justify-between mt-3">
+          <div className="text-[11px] text-muted-foreground">
+            Delivery happens when the notification backend ships. Selections persist locally so your preferences are ready on switch-over.
+          </div>
+          <Button size="sm" variant="outline" onClick={() => { resetPrefs(); toast.success('Notification preferences reset.'); }}>
+            Reset to defaults
+          </Button>
+        </div>
+      </Panel>
+
+      <Panel title="Channel readiness" subtitle="Quick view of what each channel can carry right now.">
+        <ul className="space-y-1.5 text-[12px]">
+          <li><span className="font-medium">Email:</span> ready (digest lands with the backend).</li>
+          <li><span className="font-medium">In-app:</span> ready.</li>
+          <li><span className="font-medium">Push:</span> requires a device token from the mobile build.</li>
+          <li><span className="font-medium">Slack:</span> {slackConnected ? <span className="text-emerald-600">connected. Routing enabled.</span> : <span className="text-muted-foreground">not connected. Add it on Integrations.</span>}</li>
+          <li><span className="font-medium">Teams:</span> {teamsConnected ? <span className="text-emerald-600">connected. Routing enabled.</span> : <span className="text-muted-foreground">not connected. Add it on Integrations.</span>}</li>
+        </ul>
+      </Panel>
+    </>
   );
 }
 
