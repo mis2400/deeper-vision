@@ -485,6 +485,68 @@ export type DeviceType =
 
 export type DeviceKind = 'camera' | 'access' | 'network' | 'power' | 'sensor' | 'audio' | 'storage' | 'display' | 'intrusion';
 
+// ─────────────────────────── Coverage (Pass 2B.1) ─────────────────
+// Coverage profile per device. Cameras keep their existing per lens
+// cone model (see LensCfg) — that data is richer than this single
+// envelope can express. For every other device kind, this profile is
+// the canonical "what does this device cover" answer. Stored on the
+// device (override) or read from DEFAULT_COVERAGE_BY_TYPE.
+export type CoverageShape = 'none' | 'cone' | 'radius' | 'polygon';
+
+export interface CoverageProfile {
+  shape: CoverageShape;
+  /** Half angle in degrees for cone shapes (full FOV = 2 * halfAngleDeg). */
+  fovDeg?: number;
+  /** Reach in feet for cone or radius shapes. */
+  rangeFt?: number;
+  /** Polygon corners (canvas px) for polygon shapes. Closed implicitly. */
+  polygon?: { x: number; y: number }[];
+  /** Per device tint override; falls back to the device's category tone. */
+  tint?: string;
+}
+
+/**
+ * Default coverage profile per DeviceType. Pulled from common
+ * manufacturer envelopes (Verkada D40, HID Signo, Bosch motion, etc.)
+ * where the spec is broadly representative; the operator overrides
+ * via Device.coverage when a specific product needs a tighter or
+ * wider envelope.
+ *
+ * Cameras intentionally map to 'none' here because the existing per
+ * lens cone model is the source of truth and overlaying this would
+ * double draw. Coverage rendering for cameras stays in the LensCfg
+ * path.
+ */
+export const DEFAULT_COVERAGE_BY_TYPE: Partial<Record<DeviceType, CoverageProfile>> = {
+  // Cameras handled by LensCfg.
+  // Access proximity reads.
+  'acc.reader':     { shape: 'radius', rangeFt: 6 },
+  'acc.keypad':     { shape: 'radius', rangeFt: 4 },
+  'acc.biometric':  { shape: 'radius', rangeFt: 4 },
+  // Sensors.
+  'sen.motion':     { shape: 'cone',   fovDeg: 45, rangeFt: 30 },
+  'sen.glass':      { shape: 'radius', rangeFt: 25 },
+  'sen.contact':    { shape: 'radius', rangeFt: 1 },
+  'sen.panic':      { shape: 'radius', rangeFt: 0 },
+  'sen.smoke':      { shape: 'radius', rangeFt: 30 },
+  // Audio.
+  'aud.speaker':    { shape: 'radius', rangeFt: 35 },
+  'aud.horn':       { shape: 'radius', rangeFt: 75 },
+  'aud.intercom':   { shape: 'radius', rangeFt: 10 },
+  // Network coverage (wireless reach).
+  'net.ap':         { shape: 'radius', rangeFt: 80 },
+  'net.wireless':   { shape: 'radius', rangeFt: 80 },
+  'net.bridge':     { shape: 'radius', rangeFt: 300 },
+};
+
+/** Resolve the coverage profile to draw for a device: explicit
+ *  override if present, else the default for the device's type, else
+ *  a none profile. */
+export function coverageForDevice(d: Pick<Device, 'type' | 'coverage'>): CoverageProfile {
+  if (d.coverage) return d.coverage;
+  return DEFAULT_COVERAGE_BY_TYPE[d.type] ?? { shape: 'none' };
+}
+
 export type LensId = 'a' | 'b' | 'c' | 'd';
 export type ActiveLens = LensId | 'all';
 export type LensMode = 'linked' | 'independent';
@@ -576,6 +638,11 @@ export interface Device {
   doorReaderLocation?: 'mullion' | 'wall';
   /** Survey status — used by the Survey tile + project rollups. */
   surveyStatus?: 'todo' | 'verified' | 'issue' | 'skip';
+  /** Canvas V2 Pass 2B.1 — non camera coverage envelope. Override
+   *  for the default profile pulled from DEFAULT_COVERAGE_BY_TYPE
+   *  via coverageForDevice. Cameras intentionally do not use this
+   *  field; their cones come from lenses + LensCfg. */
+  coverage?: CoverageProfile;
 }
 
 // ─────────────────────────── Doors & hardware ─────────────────────
