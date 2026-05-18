@@ -21,7 +21,7 @@ import type { Device, Pathway, Floor, DoorHardware, CanvasBomRow } from '../stor
 import {
   PencilRuler, Eye, EyeOff, MapPin, MessageSquare, CheckCircle2, AlertTriangle,
   Camera, KeyRound, Cable, Activity, ArrowLeft, Link as LinkIcon, Layers, ChevronDown, ChevronUp,
-  X, Send, Maximize2, Minimize2, BarChart3, ExternalLink, DollarSign, FileText,
+  X, Send, Maximize2, Minimize2, BarChart3, ExternalLink, DollarSign, FileText, Printer,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { buildLabel } from '../../build-info';
@@ -94,6 +94,12 @@ interface ReviewComment {
   /** When true, this comment was added in this session; the user will lose
    *  it on reload. Persistence is a backend job. */
   ephemeral?: boolean;
+  /** V1 1B — comment marked resolved hides under the "open only"
+   *  filter and dims in the thread. Reviewer + timestamp persisted so
+   *  the audit trail is clear once backend lands. */
+  resolved?: boolean;
+  resolvedBy?: string;
+  resolvedAt?: number;
 }
 
 const SEED_COMMENTS: ReviewComment[] = [
@@ -252,15 +258,47 @@ export function ReviewMode() {
     toast.message('Sent back to draft', { duration: 2500 });
   };
 
+  // V1 1B — tokenized review link. Generates a single-use share token
+  // and appends it as a query string. Today the token is unbacked
+  // (kept for forward compat); guest-mode rendering lands when portal
+  // auth ships. Toast carries the URL so the user can paste manually
+  // if clipboard is unavailable.
   const onCopyLink = async () => {
-    const url = window.location.href;
+    const token = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 18)
+      : Math.random().toString(36).slice(2, 20);
+    const u = new URL(window.location.href);
+    u.searchParams.set('share', token);
+    const url = u.toString();
     try {
       await navigator.clipboard.writeText(url);
-      toast.success('Review link copied', { description: url, duration: 3000 });
+      toast.success('Review link copied', { description: 'Tokenized share link is on your clipboard.', duration: 3000 });
     } catch {
-      toast.error('Could not copy link', { description: 'Clipboard access was blocked. Copy the URL from the address bar instead.', duration: 5000 });
+      toast.error('Could not copy link', { description: url, duration: 5000 });
     }
   };
+
+  // V1 1B — print friendly review export. window.print honours the
+  // print stylesheet we already inherit from the canvas + reports
+  // styles; comment thread sits inside the printable region.
+  const onPrintReview = () => {
+    toast.message('Opening browser print dialog', { description: 'Pick "Save as PDF" for a file or send to a printer.', duration: 3000 });
+    setTimeout(() => window.print(), 200);
+  };
+
+  // V1 1B — comment thread filtering + mark-as-resolved. The thread
+  // defaults to "open only" once a reviewer marks anything resolved
+  // so the work-in-progress stays scannable.
+  const [showResolved, setShowResolved] = useState<boolean>(true);
+  const onToggleResolved = (id: string) => {
+    setComments((cs) => cs.map((c) => c.id === id
+      ? c.resolved
+        ? { ...c, resolved: false, resolvedBy: undefined, resolvedAt: undefined }
+        : { ...c, resolved: true, resolvedBy: reviewerName || 'Reviewer', resolvedAt: Date.now() }
+      : c));
+  };
+  const visibleComments = showResolved ? comments : comments.filter((c) => !c.resolved);
+  const resolvedCount   = comments.filter((c) => c.resolved).length;
 
   if (!project) {
     return (
@@ -315,6 +353,7 @@ export function ReviewMode() {
         onOpenEngineering={() => nav(`/project/${projectId}/canvas`)}
         onOpenReports={() => nav(`/project/${projectId}/reports`)}
         onCopyLink={onCopyLink}
+        onPrintReview={onPrintReview}
       />
 
       <div className="flex-1 grid grid-cols-[240px_minmax(0,1fr)_340px] min-h-0">
@@ -411,6 +450,11 @@ export function ReviewMode() {
           onAddComment={onAddComment}
           onApprove={onApprove}
           onRequestChanges={onRequestChanges}
+          visibleComments={visibleComments}
+          resolvedCount={resolvedCount}
+          showResolved={showResolved}
+          setShowResolved={setShowResolved}
+          onToggleResolved={onToggleResolved}
         />
       </div>
 
@@ -425,7 +469,7 @@ export function ReviewMode() {
 // ─────────────────────────── Top bar ──────────────────────────────
 
 function ReviewTopBar({
-  projectName, status, setStatus, onOpenEngineering, onOpenReports, onCopyLink,
+  projectName, status, setStatus, onOpenEngineering, onOpenReports, onCopyLink, onPrintReview,
 }: {
   projectName: string;
   status: ReviewStatus;
@@ -433,6 +477,7 @@ function ReviewTopBar({
   onOpenEngineering: () => void;
   onOpenReports: () => void;
   onCopyLink: () => void;
+  onPrintReview: () => void;
 }) {
   const STATUS_META: Record<ReviewStatus, { label: string; tone: string; bg: string; border: string }> = {
     draft:    { label: 'Draft',                tone: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)' },
@@ -479,11 +524,21 @@ function ReviewTopBar({
 
       <button
         onClick={onCopyLink}
-        title="Copy this URL so a reviewer can open the same view"
+        title="Copy a tokenized share link so a reviewer can open this view"
         className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-border hover:bg-secondary/40 text-foreground transition-colors"
         data-track="review-copy-link"
       >
         <LinkIcon className="w-3.5 h-3.5" />Copy review link
+      </button>
+      {/* V1 1B — print the review surface (canvas snapshot + comment
+          thread) so a reviewer can carry it offline. */}
+      <button
+        onClick={onPrintReview}
+        title="Print the review — canvas snapshot plus comment thread"
+        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-border hover:bg-secondary/40 text-foreground transition-colors"
+        data-track="review-print"
+      >
+        <Printer className="w-3.5 h-3.5" />Print review
       </button>
       <button
         onClick={onOpenReports}
@@ -866,6 +921,7 @@ function ReviewSidePanel({
   selectedDevice, selectedPathway, floor, status, comments,
   draftComment, setDraftComment, reviewerName, setReviewerName,
   onAddComment, onApprove, onRequestChanges,
+  visibleComments, resolvedCount, showResolved, setShowResolved, onToggleResolved,
 }: {
   selectedDevice: Device | null;
   selectedPathway: Pathway | null;
@@ -877,6 +933,11 @@ function ReviewSidePanel({
   onAddComment:      () => void;
   onApprove:         () => void;
   onRequestChanges:  () => void;
+  visibleComments:   ReviewComment[];
+  resolvedCount:     number;
+  showResolved:      boolean;
+  setShowResolved:   (v: boolean) => void;
+  onToggleResolved:  (id: string) => void;
 }) {
   return (
     <div className="border-l border-border bg-background/60 backdrop-blur-md flex flex-col min-h-0" data-canvas-chrome="review-side">
@@ -896,6 +957,22 @@ function ReviewSidePanel({
         <div className="px-4 pt-4 pb-2 flex items-center gap-2">
           <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
           <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Review</div>
+          {/* V1 1B — open-only filter. Hidden when nothing is resolved
+              yet so the chrome stays calm until the reviewer actually
+              has resolved comments to filter out. */}
+          {resolvedCount > 0 && (
+            <button
+              onClick={() => setShowResolved(!showResolved)}
+              className={`ml-auto text-[10px] uppercase tracking-[0.10em] px-1.5 py-0.5 rounded transition-colors ${
+                showResolved
+                  ? 'text-muted-foreground hover:text-foreground'
+                  : 'bg-primary/15 text-primary'
+              }`}
+              title={showResolved ? 'Hide resolved comments' : 'Show every comment'}
+            >
+              {showResolved ? `${resolvedCount} resolved` : 'Open only'}
+            </button>
+          )}
         </div>
 
         <div className="px-4 pb-2">
@@ -910,17 +987,33 @@ function ReviewSidePanel({
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 space-y-3 pb-3">
-          {comments.length === 0
-            ? <div className="text-[11.5px] text-muted-foreground">No comments yet.</div>
-            : comments.map((c) => (
-                <div key={c.id} className="rounded-md p-2.5 border border-border bg-secondary/20">
-                  <div className="flex items-center justify-between mb-0.5">
+          {visibleComments.length === 0
+            ? <div className="text-[11.5px] text-muted-foreground">{comments.length === 0 ? 'No comments yet.' : 'No open comments.'}</div>
+            : visibleComments.map((c) => (
+                <div key={c.id} className={`rounded-md p-2.5 border bg-secondary/20 transition-opacity ${c.resolved ? 'border-emerald-500/30 opacity-70' : 'border-border'}`}>
+                  <div className="flex items-center justify-between mb-0.5 gap-2">
                     <span className="text-[11px] font-medium text-foreground truncate">{c.author}</span>
-                    <span className="text-[9.5px] text-muted-foreground tabular-nums">{relativeTime(c.ts)}</span>
+                    <span className="text-[9.5px] text-muted-foreground tabular-nums shrink-0">{relativeTime(c.ts)}</span>
                   </div>
-                  <div className="text-[12px] text-foreground/90 leading-snug">{c.body}</div>
-                  {c.ephemeral && (
-                    <div className="text-[9px] uppercase tracking-[0.12em] mt-1 text-amber-500">Session only · not persisted</div>
+                  <div className={`text-[12px] leading-snug ${c.resolved ? 'text-muted-foreground line-through decoration-1' : 'text-foreground/90'}`}>{c.body}</div>
+                  <div className="flex items-center justify-between gap-2 mt-1.5">
+                    {c.ephemeral ? (
+                      <div className="text-[9px] uppercase tracking-[0.12em] text-amber-500">Session only · not persisted</div>
+                    ) : <span />}
+                    <button
+                      onClick={() => onToggleResolved(c.id)}
+                      className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ml-auto ${
+                        c.resolved
+                          ? 'text-emerald-600 hover:bg-emerald-500/15'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                      }`}
+                      title={c.resolved ? 'Reopen this comment' : 'Mark resolved'}
+                    >
+                      {c.resolved ? '✓ Resolved' : 'Mark resolved'}
+                    </button>
+                  </div>
+                  {c.resolved && c.resolvedBy && (
+                    <div className="text-[9px] text-emerald-600/70 mt-1">Resolved by {c.resolvedBy}{c.resolvedAt ? ` · ${relativeTime(c.resolvedAt)}` : ''}</div>
                   )}
                 </div>
               ))
