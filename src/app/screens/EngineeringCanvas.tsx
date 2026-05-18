@@ -801,6 +801,11 @@ export function EngineeringCanvas() {
   // Canvas V2 Pass 1.9 — Cmd K search + command bar state.
   const [cmdKOpen, setCmdKOpen] = useState(false);
 
+  // Canvas V2 Pass 2A.7 — multi floor overview. When true, the canvas
+  // surface is replaced with a tile grid showing every floor at once.
+  // Click any tile to dive in to that floor.
+  const [overviewOpen, setOverviewOpen] = useState(false);
+
   // setDevices facade: accepts either a new array OR an updater fn. Diffs
   // against the current store snapshot and dispatches add/update/remove for
   // each changed device. Keeps all in-component callers (move/rotate/dup/
@@ -1916,6 +1921,11 @@ export function EngineeringCanvas() {
         e.preventDefault();
         setCmdKOpen((v) => !v);
       }
+      // Pass 2A.7 — Cmd / Ctrl + Shift + O toggles multi floor overview.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'o' || e.key === 'O' || e.key === 'O')) {
+        e.preventDefault();
+        setOverviewOpen((v) => !v);
+      }
       // Pass 2A.2 — Cmd / Ctrl + Up / Down moves the active floor up
       // or down by one in the elevation order (higher level = up).
       // Reads from the live store so the handler stays bound once.
@@ -2603,6 +2613,20 @@ export function EngineeringCanvas() {
           )}
 
           <div className="flex-1 min-w-0 relative">
+            {/* Canvas V2 Pass 2A.7 — multi floor overview. When open,
+                replaces the canvas surface entirely with a tile grid
+                of every floor on this project. Click any tile to
+                drill in. */}
+            {overviewOpen && (
+              <FloorOverview
+                projectId={projectId}
+                onPickFloor={(fid) => {
+                  setCurrentFloorIdForProject(projectId, fid);
+                  setOverviewOpen(false);
+                }}
+                onClose={() => setOverviewOpen(false)}
+              />
+            )}
             <CanvasSurface
               ref={surfaceRef}
               tool={tool}
@@ -3294,6 +3318,22 @@ export function EngineeringCanvas() {
             {/* Group toolbar — appears when 2+ devices are selected via
                 shift-click. Right side at the top of the canvas. Carries
                 the multi-device commands (Run to IDF, clear selection). */}
+            {/* Canvas V2 Pass 2A.7 — multi floor overview toggle.
+                Floating chip top right. Hidden in canvas mode (already
+                immersive). Shown only when there are 2+ floors on the
+                project so single floor projects do not get noise. */}
+            {viewMode !== 'canvas' && !overviewOpen && projectFloors.length >= 2 && (
+              <button
+                onClick={() => setOverviewOpen(true)}
+                title="Multi floor overview (⌘⇧O)"
+                data-track="canvas-overview-open"
+                className="absolute right-3 top-3 z-30 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border bg-card/95 backdrop-blur-md text-foreground hover:bg-secondary/40"
+              >
+                <Columns3 className="w-3.5 h-3.5 text-muted-foreground" />
+                Overview
+              </button>
+            )}
+
             {selIds.size >= 2 && viewMode !== 'canvas' && (
               <div
                 className="absolute z-30 left-1/2 -translate-x-1/2 top-3 inline-flex items-stretch h-9 rounded-xl border bg-card/95 backdrop-blur-xl shadow-[var(--shadow-medium)] overflow-hidden"
@@ -3781,6 +3821,123 @@ function CmdKSection({ title, children }: { title: string; children: React.React
     <div>
       <div className="px-3 pt-2.5 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">{title}</div>
       {children}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FLOOR OVERVIEW MODE — Canvas V2 Pass 2A.7
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function FloorOverview({ projectId, onPickFloor, onClose }: {
+  projectId: string;
+  onPickFloor: (floorId: string) => void;
+  onClose: () => void;
+}) {
+  const floorsMap = useProjectStore((s) => s.floors);
+  const devicesMap = useProjectStore((s) => s.devices);
+  const projectFloors = useMemo(() => Object.values(floorsMap)
+    .filter((f) => f.projectId === projectId)
+    .sort((a, b) => (b.level - a.level) || ((b.createdAt ?? 0) - (a.createdAt ?? 0))),
+    [floorsMap, projectId],
+  );
+  const devicesByFloor = useMemo(() => {
+    const out: Record<string, any[]> = {};
+    for (const d of Object.values(devicesMap) as any[]) {
+      if (!out[d.floorId]) out[d.floorId] = [];
+      out[d.floorId].push(d);
+    }
+    return out;
+  }, [devicesMap]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const levelBadge = (level: number) => {
+    if (level < 0) return `B${Math.abs(level)}`;
+    if (level === 0) return 'G';
+    return `L${level + 1}`;
+  };
+
+  return (
+    <div className="absolute inset-0 z-30 bg-background overflow-auto">
+      <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur-md px-5 py-3 flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium">All floors</div>
+          <div className="text-[11px] text-muted-foreground">{projectFloors.length} floors · click any tile to open</div>
+        </div>
+        <button
+          onClick={onClose}
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[12px] border border-border hover:bg-secondary/40"
+          data-track="canvas-overview-close"
+        >
+          <X className="w-3.5 h-3.5" />
+          Exit overview
+        </button>
+      </div>
+      <div className="p-5 grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+        {projectFloors.map((f) => {
+          const devices = devicesByFloor[f.id] ?? [];
+          const tileBg = f.background;
+          // Tile viewport: 320x224 (~4:3-ish). Compute scale so the
+          // floor's content (background or implicit 800x600) fits.
+          const tileW = 320;
+          const tileH = 224;
+          const contentW = tileBg?.naturalWidth ?? 800;
+          const contentH = tileBg?.naturalHeight ?? 600;
+          const scale = Math.min(tileW / contentW, tileH / contentH);
+          return (
+            <button
+              key={f.id}
+              onClick={() => onPickFloor(f.id)}
+              className="text-left border border-border rounded-xl overflow-hidden hover:border-primary/60 transition-colors bg-card group"
+              data-track="canvas-overview-pick"
+            >
+              <div className="px-3 py-2 flex items-center justify-between border-b border-border">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[10px] tabular-nums text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5 flex-none">{levelBadge(f.level)}</span>
+                  <span className="text-sm truncate">{f.name}</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground tabular-nums">{devices.length} {devices.length === 1 ? 'device' : 'devices'}</span>
+              </div>
+              <div className="relative bg-canvas-background" style={{ width: tileW, height: tileH, margin: '0 auto' }}>
+                <svg
+                  viewBox={`0 0 ${contentW} ${contentH}`}
+                  preserveAspectRatio="xMidYMid meet"
+                  className="absolute inset-0 w-full h-full"
+                >
+                  {tileBg && (
+                    <image href={tileBg.dataUrl} x={0} y={0} width={contentW} height={contentH} opacity={tileBg.opacity ?? 1} preserveAspectRatio="xMidYMid meet" />
+                  )}
+                  {!tileBg && (
+                    <g stroke="currentColor" opacity="0.08">
+                      {[...Array(8)].map((_, i) => (
+                        <line key={`v${i}`} x1={(i + 1) * (contentW / 9)} y1={0} x2={(i + 1) * (contentW / 9)} y2={contentH} strokeWidth="1" />
+                      ))}
+                      {[...Array(6)].map((_, i) => (
+                        <line key={`h${i}`} x1={0} y1={(i + 1) * (contentH / 7)} x2={contentW} y2={(i + 1) * (contentH / 7)} strokeWidth="1" />
+                      ))}
+                    </g>
+                  )}
+                  {/* Device dots — small tinted markers; no glyphs at thumbnail scale. */}
+                  {devices.map((d: any) => (
+                    <circle key={d.id} cx={d.x} cy={d.y} r={Math.max(6, contentW / 60)} fill="var(--primary)" fillOpacity={0.85} stroke="white" strokeWidth={1.5} />
+                  ))}
+                </svg>
+              </div>
+              <div className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border flex items-center justify-between">
+                <span>
+                  {f.background?.fileName ? `Plan · ${f.background.fileName}` : 'Blank'}
+                  {f.calibratedAt && ' · verified scale'}
+                </span>
+                <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity">Open →</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
