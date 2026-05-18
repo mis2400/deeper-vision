@@ -1039,20 +1039,49 @@ export const useProjectStore = create<ProjectState>()(
 
       convertOpportunityToProject: (oppId, opts) => {
         const opp = get().opportunities[oppId];
-        if (!opp) return null;
+        if (!opp) {
+          console.warn(`convertOpportunityToProject: no opportunity ${oppId}`);
+          return null;
+        }
         if (opp.wonProjectId) return opp.wonProjectId; // already converted
-        // Make sure the opportunity is marked won first.
+        // Refuse to write a Project whose customerId points at a deleted
+        // customer — better to surface null to the caller (toast / no-op)
+        // than to silently create an orphan CRM record.
+        const customer = get().customers[opp.customerId];
+        if (!customer) {
+          console.warn(`convertOpportunityToProject: opportunity ${oppId} references missing customer ${opp.customerId}`);
+          return null;
+        }
+        // Stage flip is intentionally a separate set() so its 'opportunity_won'
+        // activity log fires through the normal setOpportunityStage path; the
+        // Project + Site + Building + Floor write below is the atomic step
+        // SC.5.7 cared about. Before SC.5.7 only the Project was written,
+        // leaving the new project with no Site / Building / Floor — the
+        // canvas refused to load and the deployment screen was empty.
         if (opp.stage !== 'won') {
           get().setOpportunityStage(oppId, 'won', { userName: opts?.userName });
         }
-        // Spawn a project shell tied back to the opportunity.
         const now = Date.now();
-        const newId = `p-${oppId}-${now.toString(36).slice(-5)}`;
+        const suffix = `${oppId}-${now.toString(36).slice(-5)}`;
+        const newId = `p-${suffix}`;
+        const siteId = `s-${suffix}`;
+        const buildingId = `b-${suffix}`;
+        const floorId = `f-${suffix}`;
         const startingPhase: LifecyclePhase = opts?.startingPhase ?? 'walk_scheduled';
+
+        // Use the customer's first known address as the seed for the new
+        // site's address field. Site.address is required as a string —
+        // empty if the customer has nothing on file (still valid).
+        const firstAddress = customer.addresses?.[0];
+        const siteAddressLine = firstAddress
+          ? [firstAddress.street, firstAddress.city, firstAddress.state, firstAddress.postal].filter(Boolean).join(', ')
+          : '';
+
         const newProject: Project = {
           id: newId,
           name: opts?.projectName ?? opp.name,
           customerId: opp.customerId,
+          siteId,
           status: 'design',
           lifecyclePhase: startingPhase,
           createdAt: now, updatedAt: now,
@@ -1065,8 +1094,37 @@ export const useProjectStore = create<ProjectState>()(
           priority: 'normal',
           progress: 0,
         };
+        const newSite: Site = {
+          id: siteId,
+          projectId: newId,
+          // Prefer the company name for the site's display name — the joined
+          // address line lives in `address`. Naming and addressing are
+          // separate fields for a reason.
+          name: customer.companyName || 'Main Site',
+          address: siteAddressLine,
+        };
+        const newBuilding: Building = {
+          id: buildingId,
+          siteId,
+          name: 'Main Building',
+        };
+        const newFloor: Floor = {
+          id: floorId,
+          projectId: newId,
+          buildingId,
+          name: 'Floor 1',
+          level: 0,
+          createdAt: now,
+          source: 'blank',
+          scalePxToFt: 0,
+          walls: [],
+        };
+
         set((s) => ({
-          projects:      { ...s.projects, [newId]: newProject },
+          projects:      { ...s.projects,      [newId]:      newProject  },
+          sites:         { ...s.sites,         [siteId]:     newSite     },
+          buildings:     { ...s.buildings,     [buildingId]: newBuilding },
+          floors:        { ...s.floors,        [floorId]:    newFloor    },
           opportunities: { ...s.opportunities, [oppId]: { ...s.opportunities[oppId], wonProjectId: newId, updatedAt: now } },
         }));
         get().logActivity({
