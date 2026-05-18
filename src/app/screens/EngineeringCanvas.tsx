@@ -954,6 +954,10 @@ export function EngineeringCanvas() {
   // V1 2A.3 — honor ?focus=<deviceId> from the URL so an assistant
   // citation chip that links here actually selects the device. Only
   // applies on first arrival; clearing the param prevents re-firing.
+  // V1 2B.5 — also honor ?hint=<kind>&at=<x,y>&label=<text> from the
+  // Threat Simulator's "Harden on canvas" buttons. Drives the
+  // hardenHint overlay rendered alongside the canvas surface.
+  const [hardenHint, setHardenHint] = useState<{ kind: string; at: { x: number; y: number }; label: string } | null>(null);
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
@@ -961,13 +965,41 @@ export function EngineeringCanvas() {
       if (focus) {
         setSelId(focus);
         sp.delete('focus');
-        const newSearch = sp.toString();
-        window.history.replaceState({}, '', `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`);
       }
+      const hintKind = sp.get('hint');
+      const at = sp.get('at');
+      const label = sp.get('label');
+      if (hintKind && at) {
+        const [xs, ys] = at.split(',').map((n) => Number(n));
+        if (!Number.isNaN(xs) && !Number.isNaN(ys)) {
+          setHardenHint({ kind: hintKind, at: { x: xs, y: ys }, label: label ?? `Drop a ${hintKind} here.` });
+        }
+        sp.delete('hint');
+        sp.delete('at');
+        sp.delete('label');
+        sp.delete('fromScenario');
+      }
+      const newSearch = sp.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`);
     } catch { /* no-op */ }
     // Run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // V1 2B.5 — auto-clear the hint when the operator drops a device.
+  // We snapshot the count at hint set; any increase clears.
+  const devicesAtHintRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (hardenHint) {
+      devicesAtHintRef.current = Object.keys(storeDevices).length;
+    } else {
+      devicesAtHintRef.current = null;
+    }
+  }, [hardenHint, storeDevices]);
+  useEffect(() => {
+    if (hardenHint && devicesAtHintRef.current != null && Object.keys(storeDevices).length > devicesAtHintRef.current) {
+      setHardenHint(null);
+    }
+  }, [storeDevices, hardenHint]);
   // V1 2A.2 — broadcast canvas context to the AI Assistant. Fires
   // when project / site / floor / selection changes; the Assistant
   // picks this up implicitly so a question asked from a selected
@@ -2306,6 +2338,32 @@ export function EngineeringCanvas() {
               calibrate={calibrate}
               cableDraw={cableDraw}
             />
+
+            {/* V1 2B.5 — harden hint overlay. Surfaces when the
+                operator clicked "Harden on canvas" on a Threat
+                Simulator breakdown row. Clears on first placed
+                device or on X. */}
+            {hardenHint && (
+              <div className="absolute left-1/2 top-3 -translate-x-1/2 z-20 max-w-[420px] inline-flex items-start gap-2 px-3 py-2 rounded-lg border border-primary/40 bg-card shadow-[var(--shadow-floating)]" data-testid="canvas-harden-hint">
+                <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary">
+                  <Sparkles className="w-3 h-3" />
+                </span>
+                <div className="flex-1 min-w-0 text-[12px] text-foreground leading-snug">
+                  <div className="font-medium text-[11.5px]">Threat Simulator suggested fix</div>
+                  <div className="text-muted-foreground">{hardenHint.label}</div>
+                  <div className="text-[10.5px] text-muted-foreground/70 mt-0.5 tabular-nums">
+                    Anchor: ({Math.round(hardenHint.at.x)}, {Math.round(hardenHint.at.y)})
+                  </div>
+                </div>
+                <button
+                  onClick={() => setHardenHint(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Dismiss the hint"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Empty canvas state: surfaces a prominent dropzone when
                 the current floor has no plan AND no devices/walls yet.

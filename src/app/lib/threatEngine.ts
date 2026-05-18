@@ -66,6 +66,19 @@ export interface ResolvedHop {
   exposurePoints: number;
 }
 
+export type HardenHintKind = 'camera' | 'access' | 'motion' | 'lighting';
+
+export interface HardenHint {
+  /** Which device family the engine recommends. Maps to the canvas
+   *  dock category on the hint overlay. */
+  kind: HardenHintKind;
+  /** Operator-readable instruction ("Drop a camera here to close
+   *  the rear service door gap"). */
+  label: string;
+  /** Where on the floor (absolute px) the hint anchors. */
+  at: { x: number; y: number };
+}
+
 /** One contributing-factor row for the breakdown panel. */
 export interface BreakdownItem {
   id: string;
@@ -74,6 +87,9 @@ export interface BreakdownItem {
   contribution: number;
   hint?: string;
   hopIndex?: number;
+  /** When present, the breakdown row renders a "Harden on canvas"
+   *  button that navigates to /canvas?hint=... with these params. */
+  harden?: HardenHint;
 }
 
 export interface ScenarioResult {
@@ -297,12 +313,27 @@ export function runScenario(
   } else {
     for (const h of hops) {
       if (h.coverage === 'gap') {
+        // V1 2B.5 — assign a harden hint by hop position.
+        // Perimeter / entry hops → lighting (deterrence first).
+        // Early interior hops → camera (catch + record).
+        // Mid-path hops → motion sensor (movement detection).
+        // Final goal-adjacent hop → access control (lockdown the
+        // last door). Four distinct hint kinds across the engine's
+        // existing scenarios.
+        const ratio = h.index / Math.max(1, hops.length - 1);
+        const harden: HardenHint = (() => {
+          if (h.index === 0)                  return { kind: 'lighting', at: { x: h.x, y: h.y }, label: `Add a perimeter light at ${h.label} for deterrence.` };
+          if (h.index === hops.length - 1)    return { kind: 'access',   at: { x: h.x, y: h.y }, label: `Lock down ${h.label} with an access control reader.` };
+          if (ratio > 0.66)                   return { kind: 'motion',   at: { x: h.x, y: h.y }, label: `Add a motion sensor near ${h.label} to catch movement.` };
+          return                                       { kind: 'camera',   at: { x: h.x, y: h.y }, label: `Drop a camera covering ${h.label} to close the gap.` };
+        })();
         breakdown.push({
           id: `b-gap-${h.index}`,
           label: `Gap at ${h.label}`,
           contribution: h.exposurePoints,
           hint: `Hop ${h.index + 1} of ${hops.length}. No placed camera reaches this point.`,
           hopIndex: h.index,
+          harden,
         });
       }
     }

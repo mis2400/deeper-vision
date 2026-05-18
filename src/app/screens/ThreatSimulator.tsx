@@ -257,6 +257,24 @@ export function ThreatSimulator() {
                         <span className="text-rose-500 tabular-nums">+{b.contribution}</span>
                       </div>
                       {b.hint && <div className="text-[10.5px] text-muted-foreground mt-0.5">{b.hint}</div>}
+                      {b.harden && (
+                        <button
+                          onClick={() => {
+                            const sp = new URLSearchParams({
+                              hint: b.harden!.kind,
+                              at: `${Math.round(b.harden!.at.x)},${Math.round(b.harden!.at.y)}`,
+                              label: b.harden!.label,
+                              fromScenario: scenarioId,
+                            });
+                            navigate(`/project/${projectId}/canvas?${sp.toString()}`);
+                          }}
+                          className="mt-1 inline-flex items-center gap-1 h-6 px-1.5 rounded text-[10.5px] border border-primary/40 bg-primary/10 hover:bg-primary/15 text-primary"
+                          data-testid={`threat-harden-${b.harden.kind}`}
+                          title={b.harden.label}
+                        >
+                          <Shield className="w-3 h-3" />Harden on canvas · {b.harden.kind}
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
