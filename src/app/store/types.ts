@@ -785,7 +785,7 @@ export interface Measurement {
 // and pushes the current state onto the future stack. Coalesce key lets
 // rapid back-to-back mutations (drag move, slider scrub) collapse into
 // a single undoable step.
-export type CanvasHistorySlice = 'devices' | 'doors' | 'pathways' | 'floors';
+export type CanvasHistorySlice = 'devices' | 'doors' | 'pathways' | 'floors' | 'rooms';
 
 export interface CanvasHistoryEntry {
   id: string;
@@ -816,6 +816,27 @@ export const CANVAS_HISTORY_PERSIST_MAX = 20;
 export const CANVAS_HISTORY_COALESCE_MS = 500;
 
 export const DEFAULT_CANVAS_HISTORY: CanvasHistoryState = { past: [], future: [] };
+
+// ─────────────────────────── Rooms (Pass 2C) ─────────────────────
+// First class room entities: a polygon on a specific floor with a
+// name, optional description, occupancy estimate, and sensitivity
+// level. Used for: per room BOM rollups, per room coverage stats,
+// per room callouts in reports, and Cmd K search by room name.
+export type RoomSensitivity = 'low' | 'medium' | 'high' | 'critical';
+
+export interface Room {
+  id: string;
+  projectId: string;
+  floorId: string;
+  name: string;
+  description?: string;
+  /** Polygon corners (canvas px, closed implicitly). */
+  polygon: { x: number; y: number }[];
+  occupancyEstimate?: number;
+  sensitivity?: RoomSensitivity;
+  createdAt: number;
+  updatedAt: number;
+}
 
 // ─────────────────────────── Pathways ─────────────────────────────
 export type PathwayType = 'conduit' | 'tray' | 'open' | 'fiber' | 'wireless' | 'underground' | 'flex';

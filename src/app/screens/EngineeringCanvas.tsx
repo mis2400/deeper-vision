@@ -75,7 +75,7 @@ import { toast } from 'sonner';
 // Text + comment tools were never wired to real handlers; removed from the
 // Tool union in the surveyor gap-closure pass per the rule "no dead controls."
 // If we add inline annotation later, re-introduce them with real handlers.
-type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable' | 'conduit' | 'pathway' | 'calibrate';
+type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable' | 'conduit' | 'pathway' | 'calibrate' | 'room';
 
 interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
 
@@ -788,6 +788,13 @@ export function EngineeringCanvas() {
   // useState declaration further down.
   const lockedIdsRef = useRef<Set<string>>(new Set());
 
+  // Canvas V2 Pass 2C.1 — rooms subscription, filtered to active floor.
+  const roomsMap = useProjectStore((s) => s.rooms);
+  const currentFloorRooms = useMemo(
+    () => Object.values(roomsMap).filter((r) => r.floorId === currentFloorId),
+    [roomsMap, currentFloorId],
+  );
+
   // Canvas V2 Pass 1.8 — persisted tape-measure subscription + visibility toggle.
   const measurementsMap = useProjectStore((s) => s.measurements);
   const removeMeasurement = useProjectStore((s) => s.removeMeasurement);
@@ -999,6 +1006,34 @@ export function EngineeringCanvas() {
   // both undo (via the floors slice snapshot) and persistence.
   const [wallStart, setWallStart] = useState<{ x: number; y: number } | null>(null);
   const [wallCursor, setWallCursor] = useState<{ x: number; y: number } | null>(null);
+
+  // Canvas V2 Pass 2C.1 — room polygon draw state. Click vertices,
+  // double click or Enter to close. Esc cancels.
+  const [roomDraw, setRoomDraw] = useState<{ points: { x: number; y: number }[]; cursor: { x: number; y: number } | null }>({ points: [], cursor: null });
+  const addRoom = useProjectStore((s) => s.addRoom);
+  const removeRoom = useProjectStore((s) => s.removeRoom);
+  const finishRoomDraw = useCallback(() => {
+    setRoomDraw((prev) => {
+      if (prev.points.length < 3) return { points: [], cursor: null };
+      const pts = prev.points;
+      if (!currentFloorId) { toast.error('Place a floor before drawing rooms.'); return { points: [], cursor: null }; }
+      pushCanvasHistory('Drew room', ['rooms']);
+      const id = `r-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 5)}`;
+      addRoom({
+        id,
+        projectId: projectId ?? 'p1',
+        floorId: currentFloorId,
+        name: `Room ${Math.floor(Math.random() * 900) + 100}`,
+        polygon: pts.slice(),
+        sensitivity: 'low',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      toast.success('Room drawn');
+      return { points: [], cursor: null };
+    });
+    setTool('select');
+  }, [addRoom, projectId, currentFloorId, pushCanvasHistory]);
   const storeFloorWalls = useProjectStore((s) => (currentFloorId ? s.floors[currentFloorId]?.walls : undefined));
   const setFloorWalls = useProjectStore((s) => s.setFloorWalls);
   const allWalls = useMemo<Wall[]>(
@@ -1920,6 +1955,10 @@ export function EngineeringCanvas() {
       if (e.key === 'm' || e.key === 'M') setTool('measure');
       if (e.key === 'c' || e.key === 'C') setTool('cable');
       if (e.key === 'w' || e.key === 'W') setTool('wall');
+      if (e.key === 'r' || e.key === 'R') {
+        // Only when no modifier is active (Cmd R = browser reload).
+        if (!e.metaKey && !e.ctrlKey) setTool('room');
+      }
       if (e.key === 'Escape') {
         // Escape unwinds from the most-immersive layer first so a single
         // press always feels predictable — first leave Canvas / Field
@@ -1934,18 +1973,22 @@ export function EngineeringCanvas() {
         setWallStart(null);
         setMeasure({ start: null, end: null, cursor: null });
         setCableDraw((c) => ({ points: [], cursor: null, cableType: c.cableType }));
+        setRoomDraw({ points: [], cursor: null });
         resetCalibrate();
         // Mirror the wall + Done button finish flow: if Esc cancels a
         // drawing tool, also flip back to Select so the tool isn't left
         // armed. Without this, Esc cleared the in-flight points but the
         // banner re-appeared as "Click the first vertex" and the next
         // canvas click started a fresh chain.
-        if (tool === 'wall' || tool === 'measure' || tool === 'cable' || tool === 'conduit' || tool === 'pathway' || tool === 'calibrate') {
+        if (tool === 'wall' || tool === 'measure' || tool === 'cable' || tool === 'conduit' || tool === 'pathway' || tool === 'calibrate' || tool === 'room') {
           setTool('select');
         }
       }
       if (e.key === 'Enter' && (tool === 'cable' || tool === 'conduit' || tool === 'pathway') && cableDraw.points.length >= 2) {
         finishCableDraw();
+      }
+      if (e.key === 'Enter' && tool === 'room' && roomDraw.points.length >= 3) {
+        finishRoomDraw();
       }
       // Enter while drawing walls: commit the in-flight chain, clear all
       // wall draw state, and drop the user back to Select. Without the
@@ -2766,6 +2809,9 @@ export function EngineeringCanvas() {
               currentFloorPxToFt={currentFloorPxToFt}
               currentFloorId={currentFloorId}
               coverageGrid={coverageGrid}
+              rooms={currentFloorRooms}
+              roomDraw={tool === 'room' ? roomDraw : undefined}
+              onPickRoom={(rid) => toast.message(`Room: ${roomsMap[rid]?.name ?? rid}`, { duration: 1500 })}
               snap={snap}
               dragging={!!drag}
               onSurfaceClick={(x, y) => {
@@ -2818,6 +2864,15 @@ export function EngineeringCanvas() {
                   setCableDraw((c) => ({ ...c, points: [...c.points, { x: sx, y: sy }] }));
                   return;
                 }
+                if (tool === 'room') {
+                  // Pass 2C.1 — vertex click. Snap optional. Double
+                  // click closes; Enter also closes (handled in the
+                  // keyboard handler).
+                  const sx = snap ? Math.round(x / 20) * 20 : x;
+                  const sy = snap ? Math.round(y / 20) * 20 : y;
+                  setRoomDraw((r) => ({ points: [...r.points, { x: sx, y: sy }], cursor: { x: sx, y: sy } }));
+                  return;
+                }
                 if (tool === 'calibrate') {
                   // First click sets point A, second sets point B. After
                   // B is set, CalibrationApplyPanel surfaces so the user
@@ -2847,6 +2902,12 @@ export function EngineeringCanvas() {
                   setCableDraw((c) => ({ ...c, cursor: { x, y } }));
                   return;
                 }
+                if (tool === 'room' && roomDraw.points.length > 0) {
+                  const sx = snap ? Math.round(x / 20) * 20 : x;
+                  const sy = snap ? Math.round(y / 20) * 20 : y;
+                  setRoomDraw((r) => ({ ...r, cursor: { x: sx, y: sy } }));
+                  return;
+                }
                 if (tool === 'calibrate' && calibrate.a && !calibrate.b) {
                   // Live rubber-band line from A to the cursor before the
                   // user nails point B.
@@ -2869,6 +2930,7 @@ export function EngineeringCanvas() {
                   setTool('select');
                 }
                 if (tool === 'cable' || tool === 'conduit' || tool === 'pathway') finishCableDraw();
+                if (tool === 'room') finishRoomDraw();
               }}
               onSurfaceContextMenu={(e) => {
                 // Right-click cancels any in-flight drawing tool — same
@@ -7193,6 +7255,12 @@ interface SurfaceProps {
     cellW: number;
     cellH: number;
   } | null;
+  /** Canvas V2 Pass 2C.1 — rooms on the active floor + in flight
+   *  draw state when the room tool is active. */
+  rooms?: import('../store/types').Room[];
+  roomDraw?: { points: { x: number; y: number }[]; cursor: { x: number; y: number } | null };
+  /** Click handler for an existing room polygon (Pass 2C.3). */
+  onPickRoom?: (id: string) => void;
   snap: boolean;
   dragging: boolean;
   onSurfaceClick: (x: number, y: number) => void;
@@ -7290,7 +7358,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid, rooms, roomDraw, onPickRoom }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -7601,6 +7669,35 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         {walls.map((w) => (
           <line key={w.id} x1={w.x1} y1={w.y1} x2={w.x2} y2={w.y2} stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" opacity="0.9" />
         ))}
+
+        {/* Canvas V2 Pass 2C.1 — committed rooms (filled polygons) +
+            in-flight room draw polyline. Rooms paint before walls so
+            wall lines stay readable on top. */}
+        {rooms && rooms.map((r) => (
+          <polygon
+            key={`room-${r.id}`}
+            points={r.polygon.map((p) => `${p.x},${p.y}`).join(' ')}
+            fill="rgba(47, 129, 247, 0.10)"
+            stroke="rgba(47, 129, 247, 0.55)"
+            strokeWidth={1.5}
+            style={{ cursor: onPickRoom ? 'pointer' : 'default' }}
+            onClick={(e) => { e.stopPropagation(); onPickRoom?.(r.id); }}
+          />
+        ))}
+        {roomDraw && roomDraw.points.length > 0 && (
+          <g pointerEvents="none">
+            <polyline
+              points={[...roomDraw.points, roomDraw.cursor ?? roomDraw.points[roomDraw.points.length - 1]].map((p) => `${p.x},${p.y}`).join(' ')}
+              fill="none"
+              stroke="#2F81F7"
+              strokeWidth={1.5}
+              strokeDasharray="4 4"
+            />
+            {roomDraw.points.map((p, i) => (
+              <circle key={`rd-${i}`} cx={p.x} cy={p.y} r={3} fill="#2F81F7" />
+            ))}
+          </g>
+        )}
         {wallStart && wallCursor && (
           <g>
             <line x1={wallStart.x} y1={wallStart.y} x2={wallCursor.x} y2={wallCursor.y} stroke="#2F81F7" strokeWidth="2" strokeDasharray="4 4" />
@@ -14320,6 +14417,7 @@ function DrawingToolRail({
     { id: 'pan',     icon: Hand,          label: 'Pan',        key: 'H', hint: 'Drag to pan the floorplan; cursor changes to a grab hand.' },
     { id: 'measure', icon: Ruler,         label: 'Measure',    key: 'M', hint: 'Two clicks to measure distance. Esc to cancel.' },
     { id: 'wall',    icon: WallIcon,      label: 'Wall',       key: 'W', hint: 'Draw wall segments. Click vertices, double-click to finish.' },
+    { id: 'room',    icon: Square,        label: 'Room',       key: 'R', hint: 'Click vertices to outline a room. Double click or Enter to close.' },
   ];
   // Coming-soon tools — removed per "If a control doesn't work, hide it".
   // Text / Room / Door-opening / Window / Scale / Photo will reappear when
@@ -14344,13 +14442,13 @@ function DrawingToolRail({
 
   const onPick = (it: Item) => {
     if (it.coming) return;
-    if (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall') setTool(it.id as Tool);
+    if (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall' || it.id === 'room') setTool(it.id as Tool);
     setPanelId(panelId === it.id ? null : it.id);
   };
 
   const Tile = ({ it, badge }: { it: Item; badge?: React.ReactNode }) => {
     const Icon = it.icon;
-    const isActiveTool = !it.coming && (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall') && tool === it.id;
+    const isActiveTool = !it.coming && (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall' || it.id === 'room') && tool === it.id;
     const isActivePanel = panelId === it.id;
     const isDimmed = !!it.coming;
     return (

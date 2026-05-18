@@ -171,6 +171,11 @@ export interface ProjectState {
    *  to the floor the operator was last working on, not always to
    *  the ground floor. */
   currentFloorIdByProject: Record<string, string>;
+  /** Canvas V2 Pass 2C — first class room entities. Keyed by room
+   *  id; each carries floorId + polygon + sensitivity. The canvas
+   *  filters on currentFloorId to render only the active floor's
+   *  rooms. */
+  rooms: Record<string, import('./types').Room>;
 
   // ── UX preferences ──
   /** Per-project mode override. When unset, mode is derived from
@@ -326,6 +331,11 @@ export interface ProjectState {
    *  a canvasHistory push and manually clean those slices first so
    *  undo can restore the whole removal atomically. */
   removeFloor: (id: string) => void;
+
+  // ── Room CRUD (Pass 2C) ──
+  addRoom:    (r: import('./types').Room) => void;
+  updateRoom: (id: string, patch: Partial<import('./types').Room>) => void;
+  removeRoom: (id: string) => void;
 
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
@@ -514,6 +524,7 @@ export const useProjectStore = create<ProjectState>()(
       canvasHistory:     { ...DEFAULT_CANVAS_HISTORY },
       measurements:      {},
       currentFloorIdByProject: {},
+      rooms:             {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1092,6 +1103,15 @@ export const useProjectStore = create<ProjectState>()(
             currentFloorIdByProject: { ...s.currentFloorIdByProject, [projectId]: floorId },
           };
         }),
+
+      // ── Room CRUD (Pass 2C) ──────────────────────────────────────
+      addRoom: (r) => set((s) => ({ rooms: { ...s.rooms, [r.id]: r } })),
+      updateRoom: (id, patch) =>
+        set((s) => s.rooms[id]
+          ? { rooms: { ...s.rooms, [id]: { ...s.rooms[id], ...patch, updatedAt: Date.now() } } }
+          : s),
+      removeRoom: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.rooms; return { rooms: rest }; }),
 
       // ── Floor CRUD (Pass 2A.5) ───────────────────────────────────
       removeFloor: (id) =>
@@ -1805,12 +1825,13 @@ export const useProjectStore = create<ProjectState>()(
           security: s.security, workspaceSettings: s.workspaceSettings,
           siteCaptures: {}, canvasHistory: { past: [], future: [] }, measurements: {},
           currentFloorIdByProject: sticky,
+          rooms: {},
         };
       }),
     }),
     {
       name: 'deeperVisionStore',
-      version: 20,
+      version: 21,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -2151,6 +2172,14 @@ export const useProjectStore = create<ProjectState>()(
           }
           persisted.currentFloorIdByProject = nextSticky;
         }
+        if (version < 21) {
+          // v20 → v21: introduce the rooms slice (Pass 2C). Empty
+          // default. Defensive coercion against tampered blobs.
+          const raw = persisted.rooms;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            persisted.rooms = {};
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -2221,6 +2250,7 @@ export const useProjectStore = create<ProjectState>()(
         },
         measurements:    s.measurements,
         currentFloorIdByProject: s.currentFloorIdByProject,
+        rooms:           s.rooms,
       }),
     },
   ),
