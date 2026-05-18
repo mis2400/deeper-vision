@@ -12922,10 +12922,18 @@ function BottomDeviceBar({
   onPickPathway: (kind: 'tray' | 'jhook' | 'sleeve' | 'raceway' | 'duct', label: string) => void;
   tool: Tool;
 }) {
+  // V1 P0.6 — dock is grouped by domain. A small uppercase label sits
+  // above each group inside the bar, and the order follows a real
+  // survey workflow: surveillance first, then access, then detect &
+  // alarm, then AV, then the cable/power/network backbone, then site
+  // infrastructure (racks, MDFs, walls). A thin divider sits between
+  // groups so the visual rhythm reinforces the grouping.
+  type GroupId = 'surveillance' | 'access' | 'detect' | 'av' | 'backbone' | 'site';
   type Cat = {
     id: string;
     label: string;
     icon: any;
+    group: GroupId;
     /** Types that the tray exposes as placeable products. Selected from
      *  PRODUCTS so we always show real, in-catalog items. */
     types?: DeviceType[];
@@ -12933,20 +12941,33 @@ function BottomDeviceBar({
      *  (Cabling → cable tool). */
     tool?: Tool;
   };
+  const GROUPS: { id: GroupId; label: string }[] = [
+    { id: 'surveillance', label: 'Surveillance' },
+    { id: 'access',       label: 'Access' },
+    { id: 'detect',       label: 'Detect & alarm' },
+    { id: 'av',           label: 'AV' },
+    { id: 'backbone',     label: 'Cable, power, network' },
+    { id: 'site',         label: 'Site' },
+  ];
   const cats: Cat[] = [
-    { id: 'cam',     label: 'Cameras',    icon: Video,           types: ['cam.dome','cam.bullet','cam.turret','cam.ptz','cam.multisensor','cam.fisheye','cam.lpr','cam.thermal'] },
-    { id: 'acc',     label: 'Access',     icon: ScanFace,        types: ['acc.reader','acc.keypad','acc.strike','acc.maglock','acc.exit','acc.dps','acc.panic','acc.controller','acc.psu'] as any },
-    { id: 'door',    label: 'Doors',      icon: DoorOpen,        types: ['inf.door' as any,'inf.doubledoor' as any,'inf.storefront' as any,'inf.gate' as any] },
-    { id: 'cable',   label: 'Cabling',    icon: Cable },
-    { id: 'conduit', label: 'Conduit',    icon: PencilRuler },
-    { id: 'net',     label: 'Network',    icon: NetworkIcon,     types: ['net.switch','net.idf','net.mdf','net.ap','net.firewall' as any] },
-    { id: 'power',   label: 'Power',      icon: BatteryCharging, types: ['inf.ups' as any,'inf.psu' as any,'inf.transformer' as any] as any },
-    { id: 'intercom',label: 'Intercom',   icon: Phone,           types: ['acc.intercom' as any,'av.intercom' as any] as any },
-    { id: 'audio',   label: 'Audio / PA', icon: Volume2,         types: ['av.speaker' as any,'av.amp' as any,'av.mic' as any] as any },
-    { id: 'intrusion', label: 'Intrusion', icon: ShieldAlert,    types: ['sen.glassbreak' as any,'sen.contact' as any,'sen.panic' as any,'int.contact' as any] as any },
-    { id: 'fire',    label: 'Fire',       icon: Flame,           types: ['fire.pull' as any,'fire.detector' as any,'fire.horn' as any,'fire.strobe' as any] as any },
-    { id: 'sensor',  label: 'Sensors',    icon: Thermometer,     types: ['sen.motion' as any,'sen.glassbreak' as any,'sen.smoke' as any,'sen.temp' as any] as any },
-    { id: 'inf',     label: 'Infrastructure', icon: Server,      types: ['inf.rack','inf.mdf','inf.window' as any,'inf.wall' as any] as any },
+    { id: 'cam',       group: 'surveillance', label: 'Cameras',    icon: Video,           types: ['cam.dome','cam.bullet','cam.turret','cam.ptz','cam.multisensor','cam.fisheye','cam.lpr','cam.thermal'] },
+
+    { id: 'door',      group: 'access', label: 'Doors',      icon: DoorOpen,        types: ['inf.door' as any,'inf.doubledoor' as any,'inf.storefront' as any,'inf.gate' as any] },
+    { id: 'acc',       group: 'access', label: 'Access',     icon: ScanFace,        types: ['acc.reader','acc.keypad','acc.strike','acc.maglock','acc.exit','acc.dps','acc.panic','acc.controller','acc.psu'] as any },
+    { id: 'intercom',  group: 'access', label: 'Intercom',   icon: Phone,           types: ['acc.intercom' as any,'av.intercom' as any] as any },
+
+    { id: 'intrusion', group: 'detect', label: 'Intrusion',  icon: ShieldAlert,     types: ['sen.glassbreak' as any,'sen.contact' as any,'sen.panic' as any,'int.contact' as any] as any },
+    { id: 'fire',      group: 'detect', label: 'Fire',       icon: Flame,           types: ['fire.pull' as any,'fire.detector' as any,'fire.horn' as any,'fire.strobe' as any] as any },
+    { id: 'sensor',    group: 'detect', label: 'Sensors',    icon: Thermometer,     types: ['sen.motion' as any,'sen.glassbreak' as any,'sen.smoke' as any,'sen.temp' as any] as any },
+
+    { id: 'audio',     group: 'av',     label: 'Audio / PA', icon: Volume2,         types: ['av.speaker' as any,'av.amp' as any,'av.mic' as any] as any },
+
+    { id: 'net',       group: 'backbone', label: 'Network',  icon: NetworkIcon,     types: ['net.switch','net.idf','net.mdf','net.ap','net.firewall' as any] },
+    { id: 'cable',     group: 'backbone', label: 'Cabling',  icon: Cable },
+    { id: 'conduit',   group: 'backbone', label: 'Conduit',  icon: PencilRuler },
+    { id: 'power',     group: 'backbone', label: 'Power',    icon: BatteryCharging, types: ['inf.ups' as any,'inf.psu' as any,'inf.transformer' as any] as any },
+
+    { id: 'inf',       group: 'site',   label: 'Site infra', icon: Server,          types: ['inf.rack','inf.mdf','inf.window' as any,'inf.wall' as any] as any },
   ];
   // Open a tray on mount if the URL carries `?openTray=<id>` — used by
   // the headless screenshot capture script to reach sub-states cleanly.
@@ -13465,63 +13486,82 @@ function BottomDeviceBar({
 
       {/* The bar itself — premium light surface, fixed item width, active
           underline + tint so the click target reads as a real selection
-          rather than a generic toolbar button. */}
+          rather than a generic toolbar button. V1 P0.6: tiles are
+          grouped by domain with a small label header and a thin
+          divider between groups so the dock reads as a hierarchy
+          rather than 13 flat icons. */}
       <div
         className="rounded-2xl border bg-[var(--card)] backdrop-blur-xl shadow-[var(--shadow-floating)] flex items-stretch overflow-hidden"
         style={{ borderColor: 'var(--border)' }}
       >
-        {cats.map((c) => {
-          const Icon = c.icon;
-          const isToolCat = !!c.tool;
-          const active = isToolCat ? tool === c.tool : open === c.id;
-          const count = productsByCat[c.id]?.length ?? 0;
-          const isConduitCat = c.id === 'conduit';
-          const isCableCat   = c.id === 'cable';
-          // Cable + Conduit have their own tray bodies (no PRODUCTS catalog
-          // gating); never mark them disabled.
-          const dead = !isToolCat && !isConduitCat && !isCableCat && count === 0;
+        {GROUPS.map((g, gi) => {
+          const groupCats = cats.filter((c) => c.group === g.id);
+          if (groupCats.length === 0) return null;
           return (
-            <button
-              key={c.id}
-              onClick={() => {
-                if (isToolCat && c.tool) { onPickTool(c.tool); setOpen(null); return; }
-                setOpen(open === c.id ? null : c.id);
-              }}
-              disabled={dead}
-              title={dead ? `${c.label} — coming soon` : c.label}
-              data-track={`bottombar-cat-${c.id}`}
-              className={`group relative flex flex-col items-center justify-center gap-1 w-[78px] py-2.5 transition-colors ${
-                active
-                  ? 'text-primary'
-                  : dead
-                    ? 'text-muted-foreground/40 cursor-not-allowed'
-                    : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <span className="absolute inset-x-2 top-1.5 bottom-1.5 rounded-md -z-10 transition-colors"
-                style={{ background: active ? 'rgba(45,111,184,0.10)' : 'transparent' }}
-              />
-              <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
-              <span className="text-[10px] tracking-tight font-medium">{c.label}</span>
-              {/* V1 P0.5 count badge — placed devices on the current floor.
-                  Hidden at zero so the dock stays calm on a fresh canvas. */}
-              {(countByCat[c.id] ?? 0) > 0 && !dead && (
-                <span
-                  className={`absolute top-1 right-2.5 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
-                    active
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-foreground/80 border border-border'
-                  }`}
-                >
-                  {countByCat[c.id]! > 99 ? '99+' : countByCat[c.id]}
-                </span>
-              )}
-              {/* Active underline */}
-              <span
-                className="absolute left-3 right-3 bottom-0 h-[2px] rounded-full transition-opacity"
-                style={{ background: 'var(--primary)', opacity: active ? 1 : 0 }}
-              />
-            </button>
+            <div key={g.id} className="flex items-stretch">
+              {gi > 0 && <span aria-hidden className="self-stretch w-px bg-border/70 my-1.5" />}
+              <div className="flex flex-col">
+                <div className="px-2 pt-1 text-[8.5px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
+                  {g.label}
+                </div>
+                <div className="flex items-stretch">
+                  {groupCats.map((c) => {
+                    const Icon = c.icon;
+                    const isToolCat = !!c.tool;
+                    const active = isToolCat ? tool === c.tool : open === c.id;
+                    const count = productsByCat[c.id]?.length ?? 0;
+                    const isConduitCat = c.id === 'conduit';
+                    const isCableCat   = c.id === 'cable';
+                    // Cable + Conduit have their own tray bodies (no PRODUCTS
+                    // catalog gating); never mark them disabled.
+                    const dead = !isToolCat && !isConduitCat && !isCableCat && count === 0;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          if (isToolCat && c.tool) { onPickTool(c.tool); setOpen(null); return; }
+                          setOpen(open === c.id ? null : c.id);
+                        }}
+                        disabled={dead}
+                        title={dead ? `${c.label} — coming soon` : c.label}
+                        data-track={`bottombar-cat-${c.id}`}
+                        className={`group relative flex flex-col items-center justify-center gap-1 w-[72px] pt-1.5 pb-2 transition-colors ${
+                          active
+                            ? 'text-primary'
+                            : dead
+                              ? 'text-muted-foreground/40 cursor-not-allowed'
+                              : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <span className="absolute inset-x-1.5 top-1 bottom-1.5 rounded-md -z-10 transition-colors"
+                          style={{ background: active ? 'rgba(45,111,184,0.10)' : 'transparent' }}
+                        />
+                        <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
+                        <span className="text-[10px] tracking-tight font-medium">{c.label}</span>
+                        {/* V1 P0.5 count badge — placed devices on the current floor.
+                            Hidden at zero so the dock stays calm on a fresh canvas. */}
+                        {(countByCat[c.id] ?? 0) > 0 && !dead && (
+                          <span
+                            className={`absolute top-0.5 right-2 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
+                              active
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-secondary text-foreground/80 border border-border'
+                            }`}
+                          >
+                            {countByCat[c.id]! > 99 ? '99+' : countByCat[c.id]}
+                          </span>
+                        )}
+                        {/* Active underline */}
+                        <span
+                          className="absolute left-2.5 right-2.5 bottom-0 h-[2px] rounded-full transition-opacity"
+                          style={{ background: 'var(--primary)', opacity: active ? 1 : 0 }}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           );
         })}
       </div>
