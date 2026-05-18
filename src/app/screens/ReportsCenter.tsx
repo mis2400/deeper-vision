@@ -22,7 +22,7 @@ import { SAMPLE_PRODUCTS as CATALOG } from '../lib/productCatalog';
 import { pathwayLengthFt } from '../lib/engineering';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 import type {
-  Floor, Device, Pathway, DoorHardware, WorkOrderStatus, Attachment, AttachmentCategory,
+  Floor, Device, Pathway, Door, IDF, Project, DoorHardware, WorkOrderStatus, Attachment, AttachmentCategory,
 } from '../store/types';
 import { buildLabel, COMMIT_HASH } from '../../build-info';
 import {
@@ -887,6 +887,12 @@ function AssumptionsExclusions() {
 
 function AttachmentsSection({ projectId, mode }: { projectId: string; mode: Mode }) {
   const allAttachments = useProjectStore((s) => s.attachments);
+  // Snapshot of the slices the customer-mode resolver needs. Read at
+  // render time (no live subscription) so the reports section doesn't
+  // thrash on every canvas pointermove or unrelated store mutation.
+  // `allAttachments` above is what keeps the section reactive to
+  // attachment edits; everything else is a one-shot read.
+  const resolverSlices = useProjectStore.getState();
   const attachments = useMemo(
     () => projectAttachments({ attachments: allAttachments } as any, projectId),
     [allAttachments, projectId],
@@ -952,7 +958,7 @@ function AttachmentsSection({ projectId, mode }: { projectId: string; mode: Mode
           ) : (
             <ul className="grid grid-cols-2 gap-2">
               {recent.map((a) => (
-                <ReportAttachmentRow key={a.id} att={a} mode={mode} />
+                <ReportAttachmentRow key={a.id} att={a} mode={mode} state={resolverSlices} />
               ))}
             </ul>
           )}
@@ -962,24 +968,151 @@ function AttachmentsSection({ projectId, mode }: { projectId: string; mode: Mode
   );
 }
 
-function ReportAttachmentRow({ att, mode }: { att: Attachment; mode: Mode }) {
+// Slices the customer-mode resolver reads. Structural, narrower than
+// the full store, so a future schema rename surfaces as a type error
+// here instead of silently degrading customer reports to "Device" /
+// "Floor" fallbacks. Kept structural (not Pick<ProjectState, ...>)
+// so T1 doesn't have to touch the store file to export its interface.
+type ResolverSlices = {
+  projects: Record<string, Project>;
+  floors:   Record<string, Floor>;
+  devices:  Record<string, Device>;
+  doors:    Record<string, Door>;
+  pathways: Record<string, Pathway>;
+  idfs:     Record<string, IDF>;
+};
+
+// Customer-safe label for an attachment's linked object. Walks the
+// store snapshot to resolve human readable names; falls back to a
+// generic kind word so no row leaks raw ids in customer view. The
+// internal view never calls this — it shows the raw type + id.
+function resolveLinkedLabel(state: ResolverSlices, att: Attachment): string {
+  switch (att.linkedObjectType) {
+    case 'project': {
+      const p = state.projects?.[att.linkedObjectId];
+      return p?.name ?? 'Project';
+    }
+    case 'floor': {
+      const f = state.floors?.[att.linkedObjectId];
+      return f?.name ?? 'Floor';
+    }
+    case 'device': {
+      const d = state.devices?.[att.linkedObjectId];
+      if (!d) return 'Device';
+      const kind = deviceKindLabel(String(d.type));
+      const room = (d.label ?? '').trim();
+      const floor = d.floorId ? state.floors?.[d.floorId]?.name : undefined;
+      // Prefer location label (e.g. "Lobby NE"); fall back to floor name; else kind.
+      if (room)  return `${kind} · ${room}`;
+      if (floor) return `${kind} · ${floor}`;
+      return kind;
+    }
+    case 'door': {
+      // First try door-as-Device (the canvas-native flow), then the
+      // legacy state.doors record.
+      const d = state.devices?.[att.linkedObjectId];
+      if (d) {
+        const room = (d.label ?? '').trim();
+        const floor = d.floorId ? state.floors?.[d.floorId]?.name : undefined;
+        if (room)  return `Opening · ${room}`;
+        if (floor) return `Opening · ${floor}`;
+        return 'Opening';
+      }
+      const door = state.doors?.[att.linkedObjectId];
+      if (door) {
+        const floor = door.floorId ? state.floors?.[door.floorId]?.name : undefined;
+        return floor ? `Opening · ${floor}` : 'Opening';
+      }
+      return 'Opening';
+    }
+    case 'pathway': {
+      const p = state.pathways?.[att.linkedObjectId];
+      if (!p) return 'Cable run';
+      const cable = String(p.cableType ?? 'cable').toUpperCase();
+      const floor = p.floorId ? state.floors?.[p.floorId]?.name : undefined;
+      return floor ? `${cable} run · ${floor}` : `${cable} run`;
+    }
+    case 'workOrder': {
+      // WO ids are `wo-{kind}-{sourceId}`. Resolve back to the
+      // source so the customer sees the underlying object, not the
+      // engineering tag. The captures are used only as object-lookup
+      // keys (no eval, no URL construction, no DOM sink).
+      const m = att.linkedObjectId.match(/^wo-([^-]+)-(.+)$/);
+      if (!m) return 'Install task';
+      const [, kind, sourceId] = m;
+      const verb = kind === 'pathway' ? 'Cable pull' : 'Install';
+      // IDFs live on state.idfs, NOT state.devices — handle them
+      // explicitly so the customer doesn't see "Install · Device".
+      if (kind === 'idf') {
+        const idf = state.idfs?.[sourceId];
+        const floor = idf?.floorId ? state.floors?.[idf.floorId]?.name : undefined;
+        const inner = floor ? `Network rack · ${floor}` : 'Network rack';
+        return `${verb} · ${inner}`;
+      }
+      const innerType: import('../store/types').AttachmentLinkType =
+        kind === 'door' ? 'door' : kind === 'pathway' ? 'pathway' : 'device';
+      const fake: Attachment = { ...att, linkedObjectType: innerType, linkedObjectId: sourceId };
+      return `${verb} · ${resolveLinkedLabel(state, fake)}`;
+    }
+    case 'report':
+      return 'Report';
+    default:
+      return 'Project file';
+  }
+}
+
+function deviceKindLabel(t: string): string {
+  if (t.startsWith('cam'))                 return 'Camera';
+  if (t.startsWith('acc'))                 return 'Access device';
+  if (t.startsWith('aud'))                 return 'Audio device';
+  if (t.startsWith('sen'))                 return 'Sensor';
+  if (t.startsWith('net') || t === 'inf.rack' || t === 'inf.mdf') return 'Network rack';
+  if (t.startsWith('pwr'))                 return 'Power device';
+  if (t.startsWith('sto'))                 return 'Storage device';
+  if (t.startsWith('dis'))                 return 'Display';
+  if (t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor')) return 'Opening';
+  return 'Device';
+}
+
+function ReportAttachmentRow({ att, mode, state }: { att: Attachment; mode: Mode; state: ResolverSlices }) {
+  const isCustomer = mode === 'customer';
+  // Defense in depth: even if a future caller skips the upstream
+  // `visible` filter, customer mode never renders an internal-only
+  // attachment. The current AttachmentsSection already filters; this
+  // guard makes the row safe to reuse without that contract.
+  if (isCustomer && att.internalOnly) return null;
+  const customerLabel = isCustomer ? resolveLinkedLabel(state, att) : '';
+  // Customer view: hide raw filename + raw linked id line. Show only
+  // category + resolved location. Internal view keeps the existing
+  // shape: filename + `linked to {type} {id}` + notes when present.
   return (
     <li className="flex items-start gap-2 p-2 rounded-md border border-border bg-background/40">
       {att.dataUrl ? (
-        <img src={att.dataUrl} alt={att.fileName} className="w-14 h-14 rounded object-cover border border-border shrink-0" />
+        <img src={att.dataUrl} alt={isCustomer ? customerLabel : att.fileName} className="w-14 h-14 rounded object-cover border border-border shrink-0" />
       ) : (
         <div className="w-14 h-14 rounded border border-border bg-secondary/20 flex items-center justify-center shrink-0">
           <Paperclip className="w-4 h-4 text-muted-foreground" />
         </div>
       )}
       <div className="flex-1 min-w-0">
-        <div className="text-[11.5px] font-medium text-foreground truncate" title={att.fileName}>{att.fileName}</div>
-        <div className="text-[10px] text-muted-foreground tabular-nums">
-          <span className="uppercase tracking-[0.1em] mr-1">{att.category}</span>
-          · linked to {att.linkedObjectType} {att.linkedObjectId}
-        </div>
-        {mode === 'internal' && att.notes && (
-          <div className="text-[10.5px] text-foreground/75 mt-0.5 italic line-clamp-2">{att.notes}</div>
+        {isCustomer ? (
+          <>
+            <div className="text-[11.5px] font-medium text-foreground truncate" title={customerLabel}>{customerLabel}</div>
+            <div className="text-[10px] text-muted-foreground tabular-nums">
+              <span className="uppercase tracking-[0.1em]">{att.category}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-[11.5px] font-medium text-foreground truncate" title={att.fileName}>{att.fileName}</div>
+            <div className="text-[10px] text-muted-foreground tabular-nums">
+              <span className="uppercase tracking-[0.1em] mr-1">{att.category}</span>
+              · linked to {att.linkedObjectType} {att.linkedObjectId}
+            </div>
+            {att.notes && (
+              <div className="text-[10.5px] text-foreground/75 mt-0.5 italic line-clamp-2">{att.notes}</div>
+            )}
+          </>
         )}
       </div>
     </li>
