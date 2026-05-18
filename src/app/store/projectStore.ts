@@ -180,6 +180,13 @@ export interface ProjectState {
    *  highlights / callouts). Keyed by id; each carries floorId. */
   annotations: Record<string, import('./types').Annotation>;
 
+  /** MVP Spine Completion SC.4.1 — proposal records. Multi version
+   *  per project. SC.2 Approvals reference these via the
+   *  `proposalVersion` string (now derived from `Proposal.version`).
+   *  `bomSnapshot` is frozen at create time so a sent proposal
+   *  never silently drifts from what the customer saw. */
+  proposals: Record<string, import('./types').Proposal>;
+
   /** MVP Spine Completion SC.1.4 — service tickets. Last node in
    *  the spine. References any combination of Customer / Project /
    *  Device / Asset / Warranty; customer + project required.
@@ -388,6 +395,30 @@ export interface ProjectState {
   addWarranty: (w: import('./types').Warranty) => void;
   updateWarranty: (id: string, patch: Partial<import('./types').Warranty>) => void;
   removeWarranty: (id: string) => void;
+
+  // ── Proposal CRUD (SC.4.1) ──
+  /** Create a new Proposal. Auto increments `version` per project
+   *  by scanning existing proposals for that project. Returns the
+   *  created proposal id. Caller supplies customerView, internalView,
+   *  and bomSnapshot (typically derived from the canvas via
+   *  `deriveProposalLines` — added in SC.4.2 / SC.4.5). */
+  createProposal: (input: {
+    projectId: string;
+    customerView: import('./types').ProposalCustomerView;
+    internalView: import('./types').ProposalInternalView;
+    bomSnapshot: import('./types').ProposalLine[];
+    status?: import('./types').ProposalStatus;
+    createdBy?: string;
+    /** Optional explicit id; when omitted action mints
+     *  `prop-${projectId}-v${n}`. */
+    id?: string;
+  }) => string;
+  updateProposal: (id: string, patch: Partial<import('./types').Proposal>) => void;
+  /** Mark the current proposal as superseded and create a new
+   *  draft pre populated with the prior version's content. Returns
+   *  the new proposal id. */
+  supersedeProposal: (id: string) => string | null;
+  removeProposal: (id: string) => void;
 
   // ── ServiceTicket CRUD (SC.1.4) ──
   /** Create a ticket. `ticketNumber` and `notes` array are minted
@@ -661,10 +692,12 @@ function runIntegrityCheck(state: any): void {
   const assets     = (state.assets     && typeof state.assets     === 'object') ? state.assets     : {};
   const warranties = (state.warranties && typeof state.warranties === 'object') ? state.warranties : {};
   const tickets    = (state.serviceTickets && typeof state.serviceTickets === 'object') ? state.serviceTickets : {};
+  const proposals  = (state.proposals  && typeof state.proposals  === 'object') ? state.proposals  : {};
 
   let assetsFlagged = 0, assetsCleared = 0;
   let warrantiesFlagged = 0, warrantiesCleared = 0;
   let ticketsFlagged = 0, ticketsCleared = 0;
+  let proposalsFlagged = 0, proposalsCleared = 0;
   let weakLinkBreaks = 0;
 
   // Assets: device + project + customer all required.
@@ -714,9 +747,23 @@ function runIntegrityCheck(state: any): void {
     if (t.warrantyId  && !warranties[t.warrantyId])  weakLinkBreaks++;
   }
 
+  // Proposals: project required.
+  for (const p of Object.values(proposals) as any[]) {
+    if (!p || typeof p !== 'object') continue;
+    const orphan = !projects[p.projectId];
+    if (orphan && !p.isOrphaned) {
+      p.isOrphaned = true;
+      proposalsFlagged++;
+    } else if (!orphan && p.isOrphaned) {
+      delete p.isOrphaned;
+      proposalsCleared++;
+    }
+  }
+
   const total = assetsFlagged + assetsCleared
               + warrantiesFlagged + warrantiesCleared
               + ticketsFlagged + ticketsCleared
+              + proposalsFlagged + proposalsCleared
               + weakLinkBreaks;
   if (total > 0) {
     // Single line warning so DevTools shows one entry per load.
@@ -726,6 +773,7 @@ function runIntegrityCheck(state: any): void {
       + `assets +${assetsFlagged}/-${assetsCleared}, `
       + `warranties +${warrantiesFlagged}/-${warrantiesCleared}, `
       + `tickets +${ticketsFlagged}/-${ticketsCleared}, `
+      + `proposals +${proposalsFlagged}/-${proposalsCleared}, `
       + `ticket weak-link breaks ${weakLinkBreaks}`,
     );
   }
@@ -765,6 +813,7 @@ export const useProjectStore = create<ProjectState>()(
       assets:            {},
       warranties:        {},
       serviceTickets:    {},
+      proposals:         {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1561,6 +1610,88 @@ export const useProjectStore = create<ProjectState>()(
           : s),
       removeWarranty: (id) =>
         set((s) => { const { [id]: _, ...rest } = s.warranties; return { warranties: rest }; }),
+
+      // ── Proposal CRUD (SC.4.1) ───────────────────────────────────
+      // Version is auto incremented per project by scanning the
+      // existing proposals slice INSIDE the set callback so two
+      // back to back createProposal calls do not collide on the
+      // same version number.
+      createProposal: (input) => {
+        let createdId = input.id ?? '';
+        set((s) => {
+          const existing = Object.values(s.proposals).filter((p) => p.projectId === input.projectId);
+          const nextVersion = existing.reduce((max, p) => Math.max(max, p.version), 0) + 1;
+          if (!createdId) createdId = `prop-${input.projectId}-v${nextVersion}`;
+          // Collision guard: if the deterministic id is already
+          // taken (re run of a fixture, etc.) suffix with random.
+          while (s.proposals[createdId]) {
+            createdId = `prop-${input.projectId}-v${nextVersion}-${Math.random().toString(36).slice(2, 6)}`;
+          }
+          const now = Date.now();
+          const proposal: import('./types').Proposal = {
+            id: createdId,
+            projectId: input.projectId,
+            version: nextVersion,
+            status: input.status ?? 'draft',
+            customerView: input.customerView,
+            internalView: input.internalView,
+            bomSnapshot: input.bomSnapshot,
+            createdAt: now,
+            updatedAt: now,
+            createdBy: input.createdBy,
+          };
+          return { proposals: { ...s.proposals, [createdId]: proposal } };
+        });
+        return createdId;
+      },
+      updateProposal: (id, patch) =>
+        set((s) => {
+          const prev = s.proposals[id];
+          if (!prev) return s;
+          // Strip immutable fields from any patch. id, projectId,
+          // version, createdAt are set once at create time and
+          // never change via the generic update path.
+          const { id: _id, projectId: _pid, version: _v, createdAt: _ca, ...safe } = patch as any;
+          return {
+            proposals: {
+              ...s.proposals,
+              [id]: { ...prev, ...safe, updatedAt: Date.now() },
+            },
+          };
+        }),
+      supersedeProposal: (id) => {
+        const prev = get().proposals[id];
+        if (!prev) return null;
+        // Mark the prior version superseded + carry the audit
+        // pointer. New draft pre populated with prior content.
+        const oldNow = Date.now();
+        set((s) => ({
+          proposals: {
+            ...s.proposals,
+            [id]: { ...prev, status: 'superseded', updatedAt: oldNow },
+          },
+        }));
+        const newId = get().createProposal({
+          projectId: prev.projectId,
+          customerView: { ...prev.customerView },
+          internalView: { ...prev.internalView },
+          bomSnapshot: prev.bomSnapshot.map((l) => ({ ...l })),
+          status: 'draft',
+          createdBy: prev.createdBy,
+        });
+        // Backfill the supersededBy pointer now that we have the
+        // successor id.
+        set((s) => {
+          const stillThere = s.proposals[id];
+          if (!stillThere) return s;
+          return {
+            proposals: { ...s.proposals, [id]: { ...stillThere, supersededBy: newId } },
+          };
+        });
+        return newId;
+      },
+      removeProposal: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.proposals; return { proposals: rest }; }),
 
       // ── ServiceTicket CRUD (SC.1.4) ──────────────────────────────
       // Ticket number generator: scans current state for the max
@@ -2392,12 +2523,13 @@ export const useProjectStore = create<ProjectState>()(
           assets: {},
           warranties: {},
           serviceTickets: {},
+          proposals: {},
         };
       }),
     }),
     {
       name: 'deeperVisionStore',
-      version: 27,
+      version: 28,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -2840,6 +2972,14 @@ export const useProjectStore = create<ProjectState>()(
             if ('customerApprovedBy' in p) delete (p as any).customerApprovedBy;
           }
         }
+        if (version < 28) {
+          // v27 -> v28 (SC.4.1): introduce the proposals slice.
+          // Greenfield, defensive coercion only.
+          const raw = persisted.proposals;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            persisted.proposals = {};
+          }
+        }
         // SC.1.5 cross model integrity sweep. Runs after every
         // version step, every load. Conservative cascade per the
         // SC.1 brief: orphans are flagged, never deleted.
@@ -2924,6 +3064,7 @@ export const useProjectStore = create<ProjectState>()(
         assets:          s.assets,
         warranties:      s.warranties,
         serviceTickets:  s.serviceTickets,
+        proposals:       s.proposals,
       }),
     },
   ),
@@ -3102,6 +3243,30 @@ export const selectors = {
     Object.values(s.serviceTickets)
       .filter((t) => t.status === 'open' || t.status === 'in_progress' || t.status === 'waiting_customer')
       .sort((a, b) => b.createdAt - a.createdAt),
+
+  // ── Proposal selectors (SC.4.1) ──────────────────────────────────
+  /** All proposals on a project, newest version first. */
+  proposalsForProject: (s: ProjectState, projectId: string): import('./types').Proposal[] =>
+    Object.values(s.proposals)
+      .filter((p) => p.projectId === projectId)
+      .sort((a, b) => b.version - a.version),
+
+  /** The highest version proposal on a project, or null. */
+  latestProposalForProject: (s: ProjectState, projectId: string): import('./types').Proposal | null => {
+    const list = Object.values(s.proposals).filter((p) => p.projectId === projectId);
+    if (list.length === 0) return null;
+    return list.reduce((max, p) => (p.version > max.version ? p : max), list[0]);
+  },
+
+  /** The most recently SENT proposal on a project, or null. SC.2's
+   *  approval form derives the proposalVersion from this in SC.4.10. */
+  latestSentProposalForProject: (s: ProjectState, projectId: string): import('./types').Proposal | null => {
+    const list = Object.values(s.proposals).filter(
+      (p) => p.projectId === projectId && (p.status === 'sent' || p.status === 'approved' || p.status === 'superseded'),
+    );
+    if (list.length === 0) return null;
+    return list.reduce((max, p) => (p.version > max.version ? p : max), list[0]);
+  },
 
   // ── Work Order approval gate (SC.2.5) ────────────────────────────
   /** Two part gate that decides whether `deriveWorkOrders` should

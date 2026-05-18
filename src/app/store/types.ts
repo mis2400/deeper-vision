@@ -556,6 +556,107 @@ export interface ServiceTicket {
   isOrphaned?: boolean;
 }
 
+// ─────────────────────────── Proposal records ────────────────────
+// MVP Spine Completion SC.4. A Proposal is the customer facing
+// quote derived from the project's BOM at a point in time.
+// Versioned per project; SC.2's Approval record references a
+// proposalVersion string which now derives from `Proposal.version`.
+//
+// The shape splits cleanly into customerView (what the customer
+// sees in the portal + the exported PDF) and internalView (the
+// cost / margin / GP breakdown the operator works with). The
+// SC.4.3 `toCustomerView` selector strips the internalView entirely
+// before any customer facing artifact is rendered or serialized.
+//
+// bomSnapshot freezes the line items at create time so a later
+// canvas edit does not change a sent proposal silently. Operator
+// must explicitly Create New Version to refresh the snapshot.
+
+export type ProposalStatus = 'draft' | 'sent' | 'approved' | 'superseded' | 'archived';
+
+export interface ProposalLine {
+  id: string;
+  /** Section bucket — drives grouping in the BOM Lines view +
+   *  customer PDF table of contents. */
+  section: 'cameras' | 'access' | 'cabling' | 'conduit' | 'walls' | 'infrastructure' | 'labor' | 'other';
+  sku?: string;
+  /** Customer facing description. Operator can override the
+   *  default (manufacturer + model) with friendlier copy. */
+  description: string;
+  /** Operator internal note. Never shown to customer. */
+  internalNote?: string;
+  quantity: number;
+  unit: string;
+  /** Internal: catalog cost per unit. NEVER shown to customer. */
+  unitCost: number;
+  /** Customer facing: retail sell price per unit. */
+  unitPrice: number;
+  /** Labor hours per unit (internal). */
+  laborHours?: number;
+  /** Hide this line from the customer view entirely. Used for
+   *  internal-only labor / misc line items. */
+  hideFromCustomer?: boolean;
+}
+
+export interface ProposalCustomerView {
+  /** Headline copy at the top of the proposal. Markdown lite
+   *  (paragraph breaks only for V1; rich text upgrade is a
+   *  follow up). */
+  header: string;
+  executiveSummary: string;
+  scope: string;
+  /** Customer facing narrative footer above the signature block. */
+  footer: string;
+  /** Terms + conditions block. Pasted into the PDF as is. */
+  terms: string;
+  /** Optional payment schedule lines, e.g. "50% on signing /
+   *  40% at substantial completion / 10% on commissioning". */
+  paymentSchedule?: string;
+}
+
+export interface ProposalInternalView {
+  /** Hourly wage rate used to derive labor cost. Defaults to a
+   *  sensible value from workspace settings + project pricebook;
+   *  operator can override per proposal. */
+  laborRatePerHour: number;
+  /** Burden multiplier on labor cost (taxes, benefits, overhead). */
+  burdenPct: number;
+  /** Gross margin target (sell - cost - burden = margin). */
+  marginPct: number;
+  /** Free text operator notes. Never serialized to customer view. */
+  notes?: string;
+}
+
+export interface Proposal {
+  id: string;
+  projectId: string;
+  /** Auto incremented per project on createProposal. v1, v2, ... */
+  version: number;
+  status: ProposalStatus;
+  customerView: ProposalCustomerView;
+  internalView: ProposalInternalView;
+  /** Frozen at create time. Re generating requires Create New Version
+   *  so a sent proposal never silently drifts from what the customer
+   *  saw. */
+  bomSnapshot: ProposalLine[];
+  createdAt: number;
+  updatedAt: number;
+  createdBy?: string;
+  /** Set when status flips to `sent`. */
+  sentAt?: number;
+  /** Contact id the proposal was sent to. Free text id for now;
+   *  full Contact linkage lands when the CRM-first flows in SC.5
+   *  start enforcing contact references. */
+  sentTo?: string;
+  /** When a newer version supersedes this one, capture the id of
+   *  the successor so the audit trail is bidirectional. */
+  supersededBy?: string;
+  /** SC.1.5 — set true by the load time integrity check when the
+   *  parent project has been deleted. Proposal stays in the store
+   *  so the historical record is auditable. */
+  isOrphaned?: boolean;
+}
+
 // ─────────────────────────── Activity feed ────────────────────────
 // One log entry per meaningful change. Surfaced on the project command
 // center; later we may roll up across projects for a global feed.
