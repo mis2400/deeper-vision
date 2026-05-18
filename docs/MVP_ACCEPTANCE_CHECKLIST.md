@@ -237,6 +237,93 @@ Two killer features that prove the operational-intelligence positioning. Every c
 
 ---
 
+## 9 · Phase 3 — Settings buildout for enterprise readiness
+
+Seven tabs that take Settings from a profile page to a real V1 enterprise surface. Every channel that needs backend reach is honest about what works today vs. what ships with the auth / billing / notification backends. The Advanced tab also relocates the prior "Reset demo" escape hatch off the Projects header.
+
+### 9a · Account (3A)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| ST-A1 | Profile fields (full name, email, job title) persist via `userPrefs` slice | Done |
+| ST-A2 | Theme 3-way (Light Drafting / Slate Engineering / Dark Command) writes `data-theme` on `<html>` | Done |
+| ST-A3 | Density 2-way (Comfortable / Compact) writes `data-density` + `--density-y` token | Done |
+| ST-A4 | Accent color picker overrides `--primary` CSS variable inline; preset swatches with theme-default reset | Done |
+| ST-A5 | Language + Time zone selects with live `Intl.DateTimeFormat` preview row | Done |
+
+### 9b · Billing (3B)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| ST-B1 | Three plans (Starter / Studio / Enterprise) with feature lists + per-seat pricing | Done |
+| ST-B2 | Monthly / Annual toggle with derived "Save N%" indicator | Done |
+| ST-B3 | Live usage meters (Projects / Seats / Storage) derived from real store data, tint amber > 80% + rose over | Done |
+| ST-B4 | Payment method form with local Luhn check + brand detection; persists last4 + brand + expiry only | Done |
+| ST-B5 | Invoice history with "Generate this period's invoice" + per-row PDF export | Done |
+
+### 9c · Integrations marketplace (3C)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| ST-C1 | 14 connectors across 7 categories (accounting / CRM / field service / communications / VMS / access control / pricing) | Done |
+| ST-C2 | Search + category filter | Done |
+| ST-C3 | Connect / Disconnect persists; Sync stamps lastSyncAt | Done |
+| ST-C4 | Connect toast is explicit: "connection saved locally. Real OAuth lands with backend." | Done |
+
+### 9d · Team (3D)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| ST-D1 | Member directory table with role picker, status pill, last-active, remove | Done |
+| ST-D2 | Invite modal with email + display name + role; validates + persists as `inviteStatus: pending` | Done |
+| ST-D3 | Role definitions panel lists 6 built-in roles + notes custom roles ship Enterprise | Done |
+| ST-D4 | Bulk CSV invite parser: tolerates header, validates email, skips duplicates, defaults missing role to engineer | Done |
+
+### 9e · Notifications (3E)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| ST-E1 | 14 event types across 6 groups (Projects / Field / Threat / Billing / Team / Digests) | Done |
+| ST-E2 | Per-event routing across 5 channels: email cadence (immediate/daily/weekly/off), in-app, push, Slack, Teams | Done |
+| ST-E3 | Slack / Teams checkboxes disabled when the integration isn't connected; tooltip points at Integrations | Done |
+| ST-E4 | Channel readiness summary panel | Done |
+
+### 9f · Security (3F)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| ST-F1 | Compliance badges (SOC 2 / ISO 27001 / GDPR / HIPAA BAA) with honest status | Done |
+| ST-F2 | Data residency 3-way (US / EU / ANZ) | Done |
+| ST-F3 | SSO config — SAML metadata URL or OIDC issuer / clientId / clientSecret + auto-enroll email domains | Done |
+| ST-F4 | SCIM endpoint generator + bearer token reveal + rotate action | Done |
+| ST-F5 | API keys — create with scope picker, secret shown once, revoke action | Done |
+| ST-F6 | Webhooks — URL + event multi-select + signing secret last 4 stored + test ping with simulated 200/502 | Done |
+| ST-F7 | Audit log — every security touchpoint logs an entry; filters by user / action / 7/30/90/all days; CSV export | Done |
+| ST-F8 | Two factor authentication — TOTP secret + 8 recovery codes generated once | Done |
+| ST-F9 | Active sessions — current device seeded from navigator.userAgent; sign-out-others flips others to revoked | Done |
+
+### 9g · Advanced (3G)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| ST-G1 | Workspace identity — name, logo upload (≤256 KB embedded as data URL), brand color picker, custom domain with hostname regex | Done |
+| ST-G2 | Developer mode toggle persisted to `workspaceSettings.devMode` | Done |
+| ST-G3 | Data export — full JSON dump of every persisted slice, downloads via Blob URL, logs audit entry | Done |
+| ST-G4 | Reset demo data relocated from ProjectHub header to this tab | Done |
+| ST-G5 | Delete workspace — "type delete to confirm" modal, clears persisted store, reloads | Done |
+
+**Manual verification.**
+1. `/settings`. Profile fields, theme/density/accent live changes, time zone preview.
+2. Billing → click violet swatch on Account first, see accent travel into Billing; click Annual cycle → "Save 20%" appears; click Studio plan card → currently selected; generate an invoice → row appears + PDF downloads cleanly.
+3. Add a Visa test card (4242 4242 4242 4242 / 12/29 / 123) → persists as `last4=4242, brand=visa`.
+4. Integrations → search "verkada", click Connect → toast "connection saved locally. Real OAuth lands with backend." Click Sync → "Synced just now" appears.
+5. Team → invite mei@deepervision.com → row appears as pending; mark accepted → status flips; CSV bulk invite a 2-row CSV → counts shown in toast.
+6. Notifications → flip "Threat high exposure" email cadence to Weekly → persists; Slack checkbox disabled until you Connect Slack on Integrations.
+7. Security → Enable SSO + OIDC → fill issuer / clientId → Save → audit entry "SSO config updated" logged. Generate SCIM endpoint → URL + token revealed → Rotate → new token + audit entry. Create API key → secret shown once banner → copy + dismiss → key row shows prefix only. Create webhook → secret last4 in toast → test ping → simulated 200 logged + audit entry. Filter audit log by user → CSV exports the visible rows. Enable 2FA → recovery codes appear. Sessions → "Sign out other sessions" → audit entry "Other sessions signed out".
+8. Advanced → upload a small PNG logo → embedded; pick a brand color; type "portal.example.com" custom domain → Save → toast. Export workspace data → JSON file downloads with all slices. Reset demo data → confirm → seed projects restored, your Settings choices preserved. Delete workspace → type "delete" → reloads with fresh store.
+
+---
+
 ## Last verified
 
 - **Date:** 2026-05-17 (calibrated measurement hardening pass)
