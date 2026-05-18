@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { ArrowRight, ArrowLeft, Check, Users, Building2, Shield, Scale, FileCheck, Hammer } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Check, Users, Building2, Shield, Scale, FileCheck, Hammer, X } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import type { Address, Customer, Industry, Project, Site, Building, Floor, Contact } from '../store/types';
 
@@ -66,6 +66,10 @@ export function SiteIntake() {
   const navigate = useNavigate();
   const { projectId } = useParams();
   const [step, setStep] = useState<Step>('client');
+  // existingCustomerId = '' means "create a new customer + contact" (default).
+  // When set, finish() reuses the picked customer + their primary contact and
+  // skips the create calls so we never duplicate the relationship record.
+  const [existingCustomerId, setExistingCustomerId] = useState<string>('');
   const [client, setClient] = useState({ company: '', contact: '', email: '', phone: '' });
   const [site, setSite] = useState({ address: '', city: '', state: '', zip: '', sqft: '', floors: '1', type: '' });
   // V1 4C — Scope step state. Kind starts empty so we can tell the
@@ -93,6 +97,26 @@ export function SiteIntake() {
   const addBuilding = useProjectStore((s) => s.addBuilding);
   const addFloor = useProjectStore((s) => s.addFloor);
   const updateCustomer = useProjectStore((s) => s.updateCustomer);
+  const customersMap = useProjectStore((s) => s.customers);
+  const contactsMap  = useProjectStore((s) => s.contacts);
+
+  const customerOptions = useMemo(
+    () => Object.values(customersMap).sort((a, b) => a.companyName.localeCompare(b.companyName)),
+    [customersMap],
+  );
+  const pickedCustomer = existingCustomerId ? customersMap[existingCustomerId] : undefined;
+  const pickedPrimaryContact = pickedCustomer?.primaryContactId
+    ? contactsMap[pickedCustomer.primaryContactId]
+    : undefined;
+
+  // If the picked customer is removed in another tab while the wizard is open,
+  // drop the picker selection rather than silently falling through to a create
+  // call with empty form state.
+  useEffect(() => {
+    if (existingCustomerId && !customersMap[existingCustomerId]) {
+      setExistingCustomerId('');
+    }
+  }, [existingCustomerId, customersMap]);
 
   // If we were invoked with an existing projectId we just hop straight to
   // calibration without creating duplicate records. The intake screen is only
@@ -105,50 +129,74 @@ export function SiteIntake() {
     try {
       const now = Date.now();
       const suffix = `${now.toString(36).slice(-5)}${Math.random().toString(36).slice(2, 5)}`;
-      const customerId = `c-${suffix}`;
-      const contactId = `ct-${suffix}`;
       const newProjectId = `p-${suffix}`;
       const siteId = `s-${suffix}`;
       const buildingId = `b-${suffix}`;
       const floorId = `f-${suffix}`;
 
+      // Branch: reuse existing customer + their primary contact, or create
+      // a fresh customer + contact pair. Either path leaves us with a valid
+      // customerId we can hang the new Project off.
       const address: Address = {
         street: site.address,
         city: site.city,
         state: site.state || undefined,
         postal: site.zip || undefined,
       };
-      const customer: Customer = {
-        id: customerId,
-        companyName: client.company || site.address || 'New customer',
-        addresses: [address],
-        industry: INDUSTRY_BY_BUILDING_TYPE[site.type],
-        primaryContactId: contactId,
-        createdAt: now,
-        updatedAt: now,
-      };
-      addCustomer(customer);
+      let customerId: string;
+      let companyDisplayName: string;
+      if (existingCustomerId && customersMap[existingCustomerId]) {
+        customerId = existingCustomerId;
+        const picked = customersMap[existingCustomerId];
+        companyDisplayName = picked.companyName;
+        // Keep the customer's addresses list in sync with the new site we are
+        // adding (deduped on street+postal), so future surfaces that read
+        // customer.addresses see every known location for this customer. The
+        // create path already does this implicitly by seeding addresses[0].
+        if (site.address) {
+          const already = (picked.addresses || []).some(
+            (a) => a.street === address.street && (a.postal ?? '') === (address.postal ?? ''),
+          );
+          if (!already) {
+            updateCustomer(customerId, { addresses: [...(picked.addresses || []), address] });
+          }
+        }
+      } else {
+        customerId = `c-${suffix}`;
+        const contactId = `ct-${suffix}`;
+        const customer: Customer = {
+          id: customerId,
+          companyName: client.company || site.address || 'New customer',
+          addresses: [address],
+          industry: INDUSTRY_BY_BUILDING_TYPE[site.type],
+          primaryContactId: contactId,
+          createdAt: now,
+          updatedAt: now,
+        };
+        addCustomer(customer);
 
-      const nameParts = client.contact.trim().split(/\s+/);
-      const contact: Contact = {
-        id: contactId,
-        customerId,
-        firstName: nameParts[0] || client.contact || 'Primary',
-        lastName: nameParts.slice(1).join(' ') || '',
-        email: client.email || undefined,
-        phone: client.phone || undefined,
-        isPrimary: true,
-        createdAt: now,
-        updatedAt: now,
-      };
-      addContact(contact);
+        const nameParts = client.contact.trim().split(/\s+/);
+        const contact: Contact = {
+          id: contactId,
+          customerId,
+          firstName: nameParts[0] || client.contact || 'Primary',
+          lastName: nameParts.slice(1).join(' ') || '',
+          email: client.email || undefined,
+          phone: client.phone || undefined,
+          isPrimary: true,
+          createdAt: now,
+          updatedAt: now,
+        };
+        addContact(contact);
 
-      // Stamp the customer's primaryContactId now that the contact exists —
-      // belt-and-braces in case the customer write landed before the contact.
-      updateCustomer(customerId, { primaryContactId: contactId });
+        // Stamp the customer's primaryContactId now that the contact exists —
+        // belt-and-braces in case the customer write landed before the contact.
+        updateCustomer(customerId, { primaryContactId: contactId });
+        companyDisplayName = customer.companyName;
+      }
 
-      const projectName = client.company
-        ? `${client.company}${site.address ? ` — ${site.address}` : ''}`
+      const projectName = companyDisplayName
+        ? `${companyDisplayName}${site.address ? `, ${site.address}` : ''}`
         : site.address || 'New project';
       const nextAction = ahj.kickoff
         ? `Site walk · kickoff ${ahj.kickoff}`
@@ -187,7 +235,7 @@ export function SiteIntake() {
       const newSite: Site = {
         id: siteId,
         projectId: newProjectId,
-        name: site.address || client.company || 'Main Site',
+        name: site.address || companyDisplayName || 'Main Site',
         address: siteAddressLine,
       };
       addSite(newSite);
@@ -238,12 +286,60 @@ export function SiteIntake() {
         <div className="bg-card border border-border rounded-lg p-6 space-y-4">
           {step === 'client' && (
             <div className="space-y-3">
-              <Field label="Company" value={client.company} onChange={(v) => setClient({ ...client, company: v })} />
-              <Field label="Primary contact" value={client.contact} onChange={(v) => setClient({ ...client, contact: v })} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Email" value={client.email} onChange={(v) => setClient({ ...client, email: v })} />
-                <Field label="Phone" value={client.phone} onChange={(v) => setClient({ ...client, phone: v })} />
-              </div>
+              {customerOptions.length > 0 && (
+                <div>
+                  <label className="text-xs text-muted-foreground">Existing customer (optional)</label>
+                  <div className="mt-1 flex gap-2">
+                    <select
+                      value={existingCustomerId}
+                      onChange={(e) => setExistingCustomerId(e.target.value)}
+                      data-testid="intake-customer-picker"
+                      className="flex-1 bg-input-background border border-input-border rounded-md px-3 py-2 text-sm"
+                    >
+                      <option value="">— Create new customer —</option>
+                      {customerOptions.map((c) => (
+                        <option key={c.id} value={c.id}>{c.companyName}</option>
+                      ))}
+                    </select>
+                    {existingCustomerId && (
+                      <button
+                        type="button"
+                        onClick={() => setExistingCustomerId('')}
+                        className="inline-flex items-center gap-1 px-2.5 text-xs text-muted-foreground hover:text-foreground border border-border rounded-md"
+                        data-testid="intake-customer-clear"
+                      >
+                        <X className="w-3 h-3" />Clear
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Pick one to link this project to an existing relationship. Leave blank to add a new customer below.
+                  </p>
+                </div>
+              )}
+              {pickedCustomer ? (
+                <div className="bg-secondary/40 border border-border rounded-md p-3 text-sm space-y-1" data-testid="intake-customer-summary">
+                  <div className="font-medium">{pickedCustomer.companyName}</div>
+                  {pickedPrimaryContact ? (
+                    <div className="text-xs text-muted-foreground">
+                      Primary contact: {[pickedPrimaryContact.firstName, pickedPrimaryContact.lastName].filter(Boolean).join(' ') || '(unnamed)'}
+                      {pickedPrimaryContact.email ? ` · ${pickedPrimaryContact.email}` : ''}
+                      {pickedPrimaryContact.phone ? ` · ${pickedPrimaryContact.phone}` : ''}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground italic">No primary contact on file. Manage from the customer page.</div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <Field label="Company" value={client.company} onChange={(v) => setClient({ ...client, company: v })} />
+                  <Field label="Primary contact" value={client.contact} onChange={(v) => setClient({ ...client, contact: v })} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Email" value={client.email} onChange={(v) => setClient({ ...client, email: v })} />
+                    <Field label="Phone" value={client.phone} onChange={(v) => setClient({ ...client, phone: v })} />
+                  </div>
+                </>
+              )}
             </div>
           )}
           {step === 'site' && (
@@ -375,7 +471,14 @@ export function SiteIntake() {
           )}
           {step === 'review' && (
             <div className="space-y-3 text-sm">
-              <Row label="Client" v={`${client.company || '—'} · ${client.contact || '—'}`} />
+              <Row
+                label="Client"
+                v={
+                  pickedCustomer
+                    ? `${pickedCustomer.companyName} · ${pickedPrimaryContact ? [pickedPrimaryContact.firstName, pickedPrimaryContact.lastName].filter(Boolean).join(' ') || 'no name on file' : 'no primary contact'} · linked to existing customer`
+                    : `${client.company || '—'} · ${client.contact || '—'}`
+                }
+              />
               <Row label="Site" v={`${site.address || '—'}, ${site.city || ''} ${site.state || ''} · ${site.sqft || '—'} sq ft`} />
               <Row label="Project type" v={SCOPE_KINDS.find((k) => k.id === scope.kind)?.label || 'Not set'} />
               <Row label="Existing systems" v={scope.existing.size ? Array.from(scope.existing).map((id) => EXISTING_SYSTEMS.find((s) => s.id === id)?.label || id).join(', ') : 'None recorded'} />
