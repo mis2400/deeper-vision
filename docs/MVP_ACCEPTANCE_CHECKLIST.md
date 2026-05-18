@@ -367,11 +367,62 @@ Sub passes shipped on `main`:
 - Walls migration: local wall state is gone. VisionScan imports already wrote to Floor.walls so existing imported walls render unchanged. New walls drawn through the wall tool now persist across reload; verify by drawing a wall, navigating away, returning.
 - Store v17 → v18 → v19 migration is forward-only. Persist key `deeperVisionStore`. Users with v16 or earlier get the chained `canvasHistory` + `measurements` slices written on first hydrate; their existing data is untouched.
 
+## 11 · Canvas V2 Pass 2 — Multi floor + Coverage + Rooms + Annotations
+
+Goal: an operator can design a real multi floor building with confidence. Devices placed on floor 3 stay on floor 3. Each floor can have its own blueprint and scale. Camera + non camera coverage are visible with gap detection. Rooms are first class entities. Annotations let operators communicate intent on the canvas.
+
+Sub passes shipped on `main`:
+
+| Pass | Commit | What |
+|---|---|---|
+| 2A.1 | cfc02e7c | Floor model: required projectId + createdAt, currentFloorIdByProject slice, v19→v20 migration, p1 Basement seeded |
+| 2A.2 + 2A.3 | d61743d7 | Real floor dropdown (descending elevation), Cmd↑/↓ nav, canvas filters per floor, pathway filter, selection clears on switch |
+| 2A.4 | c80dc595 | Upload + pathway commit + run-to-IDF + dock counts target active floor; per-floor blueprint + per-floor calibration verified |
+| 2A.5 + 2A.6 | 01a78111 | Manage Floors dialog (add/rename/delete with cascade + undo); defaultNameForLevel naming convention |
+| 2A.7 | 92d687eb | Multi floor overview mode (tile grid, drill in, Cmd⇧O) |
+| 2A.8 | 2ba32c05 | BOM floor filter + per-row floor chip + minimap floor strip |
+| 2B.1 | 819580a9 | CoverageProfile types + DEFAULT_COVERAGE_BY_TYPE registry (motion, reader, AP, speaker etc.) |
+| 2B.2 | bd21f778 | Non camera coverage overlay rendering (radius circles + cone wedges) gated by `coverage` layer |
+| 2B.3 | 9f9cc8ae | Coverage gap detection heat map (red/green grid, off by default) |
+| 2B.4 | 7b4242d8 | Coverage stats panel (overall %, per kind breakdown, gap area) auto-shows with heat map |
+| 2C.1 | df089995 | Room polygon drawing tool (`R` key), Room store slice (v20→v21), sensitivity-tinted polygons |
+| 2C.2 | 2aa4bcfb | Auto-detect rectangular rooms from walls (Cmd K command) |
+| 2C.3 | e9ead1ba | Room inspector (name/description/occupancy/sensitivity), centroid labels, area readout |
+| 2C.4 | c529e2c1 | BOM rows annotated with the room each device sits in (point in polygon) |
+| 2D.1 + 2D.2 + 2D.3 | f0f3ecbf | Annotation slice (v21→v22), notes + numbered callouts tool (`N` key), layer toggle |
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass commit.
+- **Cold load**: `/project/p1/canvas` loads with zero console errors after the chained v19 → v22 migration.
+- **Multi floor round trip (post 2A.3)**: switching the FloorSwitcher between Ground / Level 2 / Basement filtered devices, pathways, and walls per floor. Cmd Up / Down stepped through the elevation correctly.
+- **Per floor blueprint (post 2A.4)**: distinct backgrounds applied to each of p1's three floors render correctly; per floor scale verified (Level 2's `0.1` ft/px reads VERIFIED, Basement reads DEFAULT SCALE).
+- **Multi floor overview (post 2A.7)**: tile grid showed all 3 floors with distinct backgrounds + correct device dots + counts. Clicking a tile drilled in to the picked floor.
+- **Coverage (post 2B.2)**: AP radius circles + reader proximity radii visible on the canvas; layer toggle hides / shows them.
+- **Gap heat map (post 2B.3)**: red/green grid renders, cells flip when devices are moved. Frame rate stayed smooth on the seeded p1 floor.
+
+### Known follow ups deferred to a follow up pass
+
+- Reports (PDF) per floor / per room sections, and floor labels on every device callout. The canvas BOM grew floor + room chips; the PDF export side is its own scoped pass.
+- Per-room rows in `CoverageStatsPanel`. `coverageGrid` is in place; adding per-room area is a straightforward extension.
+- Hover-on-cell tooltip ("3 cameras see this point") + largest contiguous gap label on the heat map.
+- Annotation polish: arrow pointer rendering for `pointToDeviceId`, color picker UI, highlight zone polygon drawing, auto renumber on callout delete, "Print without annotations" toggle in the report builder.
+- Cmd K search results extended to include rooms by name.
+- Full planar face detection for `Detect rooms from walls` (today: orthogonal rectangles only).
+
+### Risk notes for post deploy smoke test
+
+- Chained v19 → v20 → v21 → v22 migrations, all forward only, all defensively coerce tampered shapes. Verified on a live v19 persisted blob: 12 seeded floors loaded with 0 orphans, 0 missing createdAt, 0 devices missing floorId.
+- The Pass 2 fresh reset opens p1 on Ground floor (not Basement) — that ordering preference is documented in the `firstFloorOfProject` helper and the resetDemoData seed.
+- Wall draw in Pass 1.1 already migrated walls to `floors[id].walls`; Pass 2A's per floor filtering reuses that path. No double migration risk.
+- `pathways` floor filter is opt-in via the `floorId` prop on `PathwaysOverlay`. Other (non canvas) callers continue to read all pathways — verified by grep.
+- Coverage stats panel mounts only when the heatmap layer is on, so the per-render coverage rasterisation cost is opt-in.
+
 ## Last verified
 
-- **Date:** 2026-05-18 (Canvas V2 Pass 1 — Trust Restoration)
+- **Date:** 2026-05-18 (Canvas V2 Pass 2 — Multi floor + Coverage + Rooms + Annotations)
 - **Build:** `npm run build` — passing (vite v6.3.5, ~1941 modules, no TS errors)
-- **Persist version:** `deeperVisionStore` v19 (adds `measurements` slice on top of v18's `canvasHistory` slice; both forward-only with defensive coercion against tampered shapes)
+- **Persist version:** `deeperVisionStore` v22 (adds `annotations`, `rooms`, `currentFloorIdByProject`, plus Pass 1's `measurements` / `canvasHistory` / `siteCaptures`; all migrations forward-only with defensive coercion)
 - **UI-verified flow** (real `MouseEvent('click')` + real `Event('input')` against the rendered DOM, then re-read from the same DOM):
   1. Fresh localStorage → `/project/p1/canvas` loads cleanly.
   2. Real native click on `[data-testid="device-CAM-101"]` → SelectionPill renders; Edit button visible.
