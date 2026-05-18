@@ -158,6 +158,9 @@ function matchHelp(q: string)     { return has(q, 'help', 'what can you', 'capab
 
 interface ComputedAnswer { text: string; meta?: AnswerMeta }
 
+// Phase 2A.4 — Counts are direct readouts, not judgments. The brief
+// is explicit: "No chip on responses that are just answers (only on
+// judgments)." So we omit the confidence field here.
 function answerCounts(state: ProjectState, projectId: string, scope: ResolvedScope): ComputedAnswer {
   // Resolve the set of floors implied by site scope (if any). When
   // only a site is set, narrow to floors in that site's buildings.
@@ -391,10 +394,11 @@ function answerSchedule(state: ProjectState, projectId: string, _scope: Resolved
   };
 }
 
+// Phase 2A.4 — Help is an explanation of capabilities, not a
+// judgment. Omit confidence per the brief.
 function answerHelp(_state: ProjectState, _projectId: string, _scope: ResolvedScope): ComputedAnswer {
   return {
     text: 'I answer questions grounded in your project data. I can summarize device counts, coverage, BOM and pricing, PoE budgets, and work order status. Ask me in plain language. Try "what is the BOM total", "how many cameras", "what work orders are blocked". I will cite the records I drew from, and I will say so when something is inference rather than fact.',
-    meta: { confidence: 'high' },
   };
 }
 

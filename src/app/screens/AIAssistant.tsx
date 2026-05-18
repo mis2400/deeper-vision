@@ -90,21 +90,33 @@ export function AIAssistant() {
     // Push an empty assistant message we'll stream into.
     const assistantId = appendMsg(cid, { role: 'assistant', text: '', ts: Date.now(), streaming: true });
     setStreaming(true);
+    let finalised = false;
     try {
       const state = useProjectStore.getState();
       for await (const chunk of streamAnswer(t, state, projectId, assistantContext)) {
         if (cancelledRef.current) break;
         if (chunk.text) patchMsgText(cid, assistantId, chunk.text);
-        if (chunk.done) patchMsg(cid, assistantId, { streaming: false, ...(chunk.meta ?? {}) });
+        if (chunk.done) {
+          patchMsg(cid, assistantId, { streaming: false, ...(chunk.meta ?? {}) });
+          finalised = true;
+        }
       }
     } catch (e) {
       patchMsg(cid, assistantId, {
         streaming: false,
         text: 'Something went wrong producing that answer. The error has been logged in the console.',
       });
+      finalised = true;
       // eslint-disable-next-line no-console
       console.error('[assistant] stream error', e);
     } finally {
+      // V1 2A.4 fix — if the loop broke before the done chunk
+      // arrived (cancelled via unmount, or generator exception),
+      // the persisted assistant message would stay `streaming: true`
+      // forever. Clear the flag so the bubble loses its caret and
+      // the chip / inference / confidence gates can render on next
+      // mount.
+      if (!finalised) patchMsg(cid, assistantId, { streaming: false });
       setStreaming(false);
     }
   }, [draft, streaming, ensureConversation, appendMsg, patchMsgText, patchMsg, projectId]);
@@ -211,6 +223,7 @@ export function AIAssistant() {
                     msg={m}
                     projectId={projectId}
                     onOpenCitation={(c) => nav(citationHref(c, projectId))}
+                    onVerifyFollowup={() => { void send('Walk me through where you got that, citing each device or record I should look at.'); }}
                   />
                 ))}
                 <div ref={endRef} />
@@ -302,16 +315,20 @@ function citationHref(c: AiCitation, projectId: string): string {
   }
 }
 
-function MessageBubble({ msg, projectId, onOpenCitation }: {
+function MessageBubble({ msg, projectId, onOpenCitation, onVerifyFollowup }: {
   msg: AiMsg;
   projectId: string;
   onOpenCitation: (c: AiCitation) => void;
+  onVerifyFollowup: () => void;
 }) {
   const isUser = msg.role === 'user';
   const text = msg.text;
   const streaming = !!msg.streaming;
   const citations = isUser ? undefined : msg.citations;
   const showInference = !isUser && msg.inference && !streaming;
+  // Phase 2A.4 — confidence chip + Low-confidence verify follow-up.
+  const showConfidence = !isUser && !streaming && msg.confidence;
+  const isLow = msg.confidence === 'low';
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center ${isUser ? 'bg-secondary text-muted-foreground' : 'bg-primary/15 text-primary'}`}>
@@ -340,8 +357,44 @@ function MessageBubble({ msg, projectId, onOpenCitation }: {
             Inference. Specific data not directly available.
           </div>
         )}
+        {/* V1 2A.4 — confidence chip. Only on judgment responses
+            (engine omits the field on pure answers like counts /
+            help). Tooltip is mandatory per brief: "No chip without a
+            tooltip." */}
+        {showConfidence && (
+          <div className="mt-1 inline-flex items-center gap-1.5">
+            <ConfidenceChip level={msg.confidence!} why={msg.confidenceWhy} />
+            {isLow && (
+              <button
+                onClick={onVerifyFollowup}
+                className="text-[10.5px] text-primary hover:underline"
+                title="Send a follow-up that asks me to verify this against the canvas."
+              >
+                Would you like me to verify?
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function ConfidenceChip({ level, why }: { level: 'high' | 'medium' | 'low'; why?: string }) {
+  const meta = {
+    high:   { label: 'High',   cls: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600' },
+    medium: { label: 'Medium', cls: 'border-amber-500/30 bg-amber-500/10 text-amber-600' },
+    low:    { label: 'Low',    cls: 'border-rose-500/30 bg-rose-500/10 text-rose-600' },
+  }[level];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 h-5 px-1.5 rounded-full border text-[10.5px] tracking-tight ${meta.cls}`}
+      title={why ?? `${meta.label} confidence`}
+      data-testid="ai-confidence"
+    >
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'currentColor' }} />
+      <span>{meta.label} confidence</span>
+    </span>
   );
 }
 
