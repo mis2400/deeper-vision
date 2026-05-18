@@ -50,6 +50,8 @@ const DEVICE_TO_DOOR_HW: Record<string, DoorHardware> = {
   'acc.biometric': 'reader',
   'acc.intercom':  'intercom',
   'acc.dps':       'contact',    // door position sensor reads as contact
+  'acc.controller':'controller',  // door controller (e.g. Mercury / Verkada)
+  'acc.psu':       'psu',         // power supply for the door assembly
   'aud.intercom':  'intercom',
   'sen.contact':   'contact',
   'sen.panic':     'panic',
@@ -191,6 +193,12 @@ export function validMounts(t: DeviceType): HostKind['kind'][] {
   }
   if (t === 'acc.reader' || t === 'acc.biometric' || t === 'aud.intercom') return ['door', 'wall'];
   if (t === 'acc.strike' || t === 'acc.maglock' || t === 'acc.rex' || t === 'acc.exit' || t === 'sen.contact') return ['door'];
+  // Controllers and PSUs travel with a door assembly. They CAN live in a
+  // dedicated IDF/cabinet too (multi-door panels, head-end power), but the
+  // primary expected host is the door itself — so the drawer's mount
+  // picker offers door first, IDF second. This matches the new
+  // DEVICE_TO_DOOR_HW entries for the same two types.
+  if (t === 'acc.controller' || t === 'acc.psu') return ['door', 'idf'];
   if (t === 'net.switch' || t === 'net.firewall' || t === 'pwr.ups') return ['idf'];
   if (t === 'aud.speaker' || t === 'aud.horn' || t === 'sen.motion' || t === 'sen.smoke') return ['ceiling', 'wall'];
   return ['wall', 'ceiling', 'floor'];

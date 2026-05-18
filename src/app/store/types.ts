@@ -536,6 +536,13 @@ export interface Device {
   //    field is kept for visual-stack flows but is no longer the source of truth
   //    for door hardware schedules / BOM rollups.
   doorAssembly?: DoorHardware[];
+  /** Per-hardware-class Proposed / Existing state. Defaults to
+   *  'proposed' for any hw added by drag-attach (we assume new
+   *  drops are part of the proposed design). The user can flip a
+   *  row to 'existing' to mark hardware already on the opening so
+   *  the BOM reads "to add" vs "already there" cleanly. Only keys
+   *  for hw classes present in `doorAssembly` are meaningful. */
+  doorAssemblyState?: Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
   /** Door electrification, when relevant. */
   doorElectrification?: 'fail-safe' | 'fail-secure';
   /** Where the reader physically sits on the opening. */

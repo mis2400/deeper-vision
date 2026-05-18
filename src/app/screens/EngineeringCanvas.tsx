@@ -12,7 +12,7 @@ import type { Device as StoreDevice } from '../store/types';
 import {
   MousePointer2, Hand, Ruler, Type, MessageSquare, ChevronRight, ChevronLeft,
   Search, X, Upload, MapPin, PencilLine, Sparkles, Undo2, Redo2, ZoomIn, ZoomOut,
-  Maximize2, Magnet, ChevronDown, MoreHorizontal, Trash2, RotateCw, Eye, EyeOff,
+  Maximize2, Magnet, ChevronDown, MoreHorizontal, Trash2, RotateCw, RotateCcw, Eye, EyeOff,
   Minus as WallIcon, Check, Crosshair, Layers, Share2, Users, Lock, Unlock, Plus,
   Settings2, FileText, Slash, CircleDot, GripVertical,
   Video, Aperture, ScanEye, Disc, Flame, ScanFace, KeyRound, DoorOpen, Wifi, Server, Cable, Grid3x3,
@@ -68,7 +68,7 @@ import { toast } from 'sonner';
 // Text + comment tools were never wired to real handlers; removed from the
 // Tool union in the surveyor gap-closure pass per the rule "no dead controls."
 // If we add inline annotation later, re-introduce them with real handlers.
-type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable' | 'conduit' | 'pathway';
+type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable' | 'conduit' | 'pathway' | 'calibrate';
 
 interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
 
@@ -814,6 +814,53 @@ export function EngineeringCanvas() {
     cursor:{ x: number; y: number } | null;
   }>({ start: null, end: null, cursor: null });
 
+  // Scale-calibration tool state. The user picks two points (A → B); the
+  // distance in pixels between them becomes the reference for converting
+  // a known real-world feet input into the floor's `scalePxToFt`. When
+  // `tool === 'calibrate'` and both points are set, the
+  // CalibrationApplyPanel surfaces an input + Apply CTA.
+  const [calibrate, setCalibrate] = useState<{
+    a: { x: number; y: number } | null;
+    b: { x: number; y: number } | null;
+    cursor: { x: number; y: number } | null;
+  }>({ a: null, b: null, cursor: null });
+  // Text the user typed into the Apply panel — kept here so reset paths
+  // (Esc, right-click, Cancel button) can clear it in one place.
+  const [calibrateFt, setCalibrateFt] = useState<string>('');
+  // Reset everything that the in-canvas calibration flow touches. Used by
+  // Esc/right-click/Cancel/Apply paths so a future tool selection starts
+  // clean — including dropping back to the Select tool.
+  const resetCalibrate = useCallback(() => {
+    setCalibrate({ a: null, b: null, cursor: null });
+    setCalibrateFt('');
+  }, []);
+  /** Commit the in-canvas calibration to the active floor:
+   *  `scalePxToFt = realFt / pxMeasured`, plus `calibratedAt`,
+   *  `calibrationReferenceFt`, `calibrationMeasuredPx` so the
+   *  scale-bar's "Verified" state and the /calibrate route's recalibrate
+   *  flow can both read the same metadata. Triggers a toast and flips
+   *  the active tool back to Select. The tiny modal calls into this. */
+  const applyCalibration = useCallback((realFt: number) => {
+    if (!calibrate.a || !calibrate.b || !currentFloorId) return;
+    const dx = calibrate.b.x - calibrate.a.x;
+    const dy = calibrate.b.y - calibrate.a.y;
+    const pxMeasured = Math.hypot(dx, dy);
+    if (pxMeasured < 1 || !(realFt > 0)) return;
+    const ftPerPx = realFt / pxMeasured;
+    useProjectStore.getState().updateFloor(currentFloorId, {
+      scalePxToFt: ftPerPx,
+      calibratedAt: Date.now(),
+      calibrationReferenceFt: realFt,
+      calibrationMeasuredPx: pxMeasured,
+    } as any);
+    toast.success('Scale verified', {
+      description: `${realFt.toFixed(realFt < 10 ? 2 : 1)} ft across ${Math.round(pxMeasured)} px → 1 ft = ${(1 / ftPerPx).toFixed(1)} px`,
+      duration: 4500,
+    });
+    resetCalibrate();
+    setTool('select');
+  }, [calibrate.a, calibrate.b, currentFloorId, resetCalibrate]);
+
   // Cable / pathway draw — click vertices, double-click or Enter to
   // finish, Esc to cancel. On finish, a Pathway record is added to the
   // store with computed length (in feet, via the same 20px/ft scale the
@@ -839,47 +886,64 @@ export function EngineeringCanvas() {
     conduitType?: 'EMT' | 'PVC' | 'FMC' | 'LFMC' | 'raceway' | 'tray';
     conduitSize?: string;
   }>({ kind: 'cable' });
+  // Mirror cableDraw into a ref so finishCableDraw can read the latest
+  // value WITHOUT having to live inside `setCableDraw((prev) => ...)`.
+  // The ref-based read lets us run the side-effecting work (addPathway,
+  // setTool, toast) *outside* React's setState updater. React executes
+  // updaters synchronously during render-scheduling, and Zustand's
+  // `addPathway` synchronously notifies every subscriber — including
+  // `PathwaysOverlay` — which is what triggered the
+  // "Cannot update a component (PathwaysOverlay) while rendering
+  // EngineeringCanvas" warning every time the cable / conduit draw
+  // finished. The setState in `setCableDraw` below is then a pure
+  // reset; no side effects inside its updater.
+  const cableDrawRef = useRef(cableDraw);
+  useEffect(() => { cableDrawRef.current = cableDraw; }, [cableDraw]);
   const finishCableDraw = useCallback(() => {
-    setCableDraw((prev) => {
-      if (prev.points.length < 2) return { points: [], cursor: null, cableType: prev.cableType };
-      const mode = drawModeRef.current;
-      const prefix = mode.kind === 'conduit' ? 'CD' : mode.kind === 'pathway' ? 'PT' : 'PW';
-      const id = `${prefix}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
-      // Length: derive from points + the floor's calibrated scale via the
-      // shared pathwayLengthFt helper so the BOM, canvas labels, and inspector
-      // drawer all agree.
-      const _state = useProjectStore.getState();
-      const _floor = storeSelectors.firstFloorOfProject(_state, projectId);
-      const lengthFt = pathwayLengthFt({ points: prev.points }, _floor);
-      const fid = _state.sites[projectId.replace(/^p/, 's') + ''] ? '' : (_floor?.id ?? '');
-      const isConduit = mode.kind === 'conduit';
-      const isPathway = mode.kind === 'pathway';
-      addPathway({
-        id,
-        projectId,
-        floorId: fid || (_floor?.id ?? ''),
-        type: isConduit ? 'conduit' : isPathway ? 'open' : 'conduit',
-        cableType: prev.cableType,
-        cableCount: 1,
-        points: prev.points,
-        lengthFt,
-        // Dedicated-mode metadata so PathwaysOverlay + PathwayDrawer can
-        // tell standalone conduits / J-hooks / trays from cable runs.
-        ...(isConduit ? { pathwayKind: 'conduit', conduitType: mode.conduitType, conduitSize: mode.conduitSize } : {}),
-        ...(isPathway ? { pathwayKind: mode.pathwayKind ?? 'tray' } : {}),
-      } as any);
-      // Reset the draw-mode back to cable so the next click on the
-      // cable tool draws cable, not another conduit.
-      drawModeRef.current = { kind: 'cable' };
-      // Drop the user back to Select after a draw commits so they're
-      // not stuck in a draw mode they didn't realise was still active.
-      setTool('select');
-      toast.success(`${isConduit ? 'Conduit' : isPathway ? 'Pathway' : 'Cable'} ${id} drawn`, {
-        description: `${lengthFt} ft · saved. Click the route to edit.`,
-        duration: 3500,
-      });
-      // Reset
-      return { points: [], cursor: null, cableType: prev.cableType };
+    const prev = cableDrawRef.current;
+    if (prev.points.length < 2) {
+      setCableDraw({ points: [], cursor: null, cableType: prev.cableType });
+      return;
+    }
+    const mode = drawModeRef.current;
+    const prefix = mode.kind === 'conduit' ? 'CD' : mode.kind === 'pathway' ? 'PT' : 'PW';
+    const id = `${prefix}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
+    // Length: derive from points + the floor's calibrated scale via the
+    // shared pathwayLengthFt helper so the BOM, canvas labels, and inspector
+    // drawer all agree.
+    const _state = useProjectStore.getState();
+    const _floor = storeSelectors.firstFloorOfProject(_state, projectId);
+    const lengthFt = pathwayLengthFt({ points: prev.points }, _floor);
+    const fid = _state.sites[projectId.replace(/^p/, 's') + ''] ? '' : (_floor?.id ?? '');
+    const isConduit = mode.kind === 'conduit';
+    const isPathway = mode.kind === 'pathway';
+    // Reset local draw state FIRST — pure state update, no side effects.
+    setCableDraw({ points: [], cursor: null, cableType: prev.cableType });
+    // Side effects (store write + toast + tool switch) run AFTER the
+    // setState call, fully outside React's render path.
+    addPathway({
+      id,
+      projectId,
+      floorId: fid || (_floor?.id ?? ''),
+      type: isConduit ? 'conduit' : isPathway ? 'open' : 'conduit',
+      cableType: prev.cableType,
+      cableCount: 1,
+      points: prev.points,
+      lengthFt,
+      // Dedicated-mode metadata so PathwaysOverlay + PathwayDrawer can
+      // tell standalone conduits / J-hooks / trays from cable runs.
+      ...(isConduit ? { pathwayKind: 'conduit', conduitType: mode.conduitType, conduitSize: mode.conduitSize } : {}),
+      ...(isPathway ? { pathwayKind: mode.pathwayKind ?? 'tray' } : {}),
+    } as any);
+    // Reset the draw-mode back to cable so the next click on the
+    // cable tool draws cable, not another conduit.
+    drawModeRef.current = { kind: 'cable' };
+    // Drop the user back to Select after a draw commits so they're not
+    // stuck in a draw mode they didn't realise was still active.
+    setTool('select');
+    toast.success(`${isConduit ? 'Conduit' : isPathway ? 'Pathway' : 'Cable'} ${id} drawn`, {
+      description: `${lengthFt} ft · saved. Click the route to edit.`,
+      duration: 3500,
     });
   }, [addPathway, projectId]);
   const [selId, setSelId] = useState<string | null>(null);
@@ -927,6 +991,10 @@ export function EngineeringCanvas() {
   // generate a floor surface (scan with camera, upload, satellite trace,
   // or sketch from scratch).
   const [scanBuildOpen, setScanBuildOpen] = useState(false);
+  // Upload modal — independent of the MapsPanel's own importOpen so the
+  // "Add plan → Upload" flow can be triggered directly from the TopBar
+  // without forcing the user through the section nav.
+  const [canvasImportOpen, setCanvasImportOpen] = useState(false);
   // Report Builder modal — the new "real builder" entry; replaces the
   // scattered list of export rows as the primary report flow.
   const [reportOpen, setReportOpen] = useState(false);
@@ -1314,8 +1382,10 @@ export function EngineeringCanvas() {
         }
         const cur = (host.doorAssembly ?? []) as DoorHardware[];
         const next = cur.includes(hw) ? cur : [...cur, hw];
+        const curState = ((host as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
+        const nextState = cur.includes(hw) ? curState : { ...curState, [hw]: 'proposed' as const };
         setDevices((ds) => ds
-          .map((d) => d.id === host.id ? { ...d, doorAssembly: next, stack: undefined, linkedIds: undefined } : d)
+          .map((d) => d.id === host.id ? { ...d, doorAssembly: next, doorAssemblyState: nextState, stack: undefined, linkedIds: undefined } : d)
           .filter((d) => d.id !== child.id)
         );
         setSelId(host.id);
@@ -1490,6 +1560,15 @@ export function EngineeringCanvas() {
         setWallStart(null);
         setMeasure({ start: null, end: null, cursor: null });
         setCableDraw((c) => ({ points: [], cursor: null, cableType: c.cableType }));
+        resetCalibrate();
+        // Mirror the wall + Done button finish flow: if Esc cancels a
+        // drawing tool, also flip back to Select so the tool isn't left
+        // armed. Without this, Esc cleared the in-flight points but the
+        // banner re-appeared as "Click the first vertex" and the next
+        // canvas click started a fresh chain.
+        if (tool === 'wall' || tool === 'measure' || tool === 'cable' || tool === 'conduit' || tool === 'pathway' || tool === 'calibrate') {
+          setTool('select');
+        }
       }
       if (e.key === 'Enter' && (tool === 'cable' || tool === 'conduit' || tool === 'pathway') && cableDraw.points.length >= 2) {
         finishCableDraw();
@@ -1623,11 +1702,17 @@ export function EngineeringCanvas() {
           }
           const cur = (host.doorAssembly ?? []) as DoorHardware[];
           const next = cur.includes(hw) ? cur : [...cur, hw];
-          setDevices((ds) => ds.map((d) => d.id === host.id ? { ...d, doorAssembly: next, stack: undefined, linkedIds: undefined } : d));
+          // New hardware defaults to 'proposed' (it's a designer dropping
+          // a fresh piece into the schedule). The user can flip it to
+          // 'existing' from the Hardware assembly section if it's
+          // already-installed gear we're documenting.
+          const curState = ((host as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
+          const nextState = cur.includes(hw) ? curState : { ...curState, [hw]: 'proposed' as const };
+          setDevices((ds) => ds.map((d) => d.id === host.id ? { ...d, doorAssembly: next, doorAssemblyState: nextState, stack: undefined, linkedIds: undefined } : d));
           setSelId(host.id);
           setSelPathwayId(null);
           toast.success(`Added ${hw} to ${host.id}`, {
-            description: hw === 'maglock' ? 'Maglocks require a REX for code-compliant egress.' : 'Door assembly updated.',
+            description: hw === 'maglock' ? 'Maglocks require a REX for code-compliant egress.' : 'Door assembly updated. Marked as Proposed by default — flip to Existing in the inspector if it\'s already there.',
             duration: 4500,
           });
           setDrag(null); setHoverHost(null);
@@ -1843,6 +1928,12 @@ export function EngineeringCanvas() {
              spotlight) — handled via the .dv-device:not(.dv-selected) rule. */
           .dv-device { transform: translate(0,0); transform-origin: center; }
           .dv-device:hover:not(.dv-selected) { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.18)); }
+          /* Cone tip / FOV edge handles — hover affordance. The background
+             glow ring brightens on hover so the user clearly sees "this
+             is grabbable" before clicking. No size jump (the handle stays
+             precise for placement). */
+          .dv-cone-handle > circle:first-child { transition: opacity 120ms ease-out; }
+          .dv-cone-handle:hover > circle:first-child { opacity: 0.42; }
           @media (prefers-reduced-motion: reduce) {
             @keyframes pill-in { from { opacity: 1; transform: translateX(-50%); } to { opacity: 1; transform: translateX(-50%); } }
             @keyframes soft-fade-in { from { opacity: 1; } to { opacity: 1; } }
@@ -1945,6 +2036,7 @@ export function EngineeringCanvas() {
               onUserTouchView={() => { userTouchedViewRef.current = true; }}
               devices={devices.filter((d) => !hiddenIds.has(d.id))}
               selId={selId}
+              selPathwayId={selPathwayId}
               selIds={selIds}
               presence={presence}
               hoverByPresence={hoverByPresence}
@@ -2012,6 +2104,19 @@ export function EngineeringCanvas() {
                   setCableDraw((c) => ({ ...c, points: [...c.points, { x: sx, y: sy }] }));
                   return;
                 }
+                if (tool === 'calibrate') {
+                  // First click sets point A, second sets point B. After
+                  // B is set, CalibrationApplyPanel surfaces so the user
+                  // enters the real-world distance and applies. A third
+                  // click while B exists resets to a fresh A — feels
+                  // right when the user realises they mis-clicked.
+                  setCalibrate((c) => {
+                    if (!c.a)   return { a: { x, y }, b: null, cursor: { x, y } };
+                    if (!c.b)   return { a: c.a, b: { x, y }, cursor: { x, y } };
+                    return { a: { x, y }, b: null, cursor: { x, y } };
+                  });
+                  return;
+                }
               }}
               onSurfaceMove={(x, y) => {
                 if (tool === 'wall') {
@@ -2026,6 +2131,12 @@ export function EngineeringCanvas() {
                 }
                 if ((tool === 'cable' || tool === 'conduit' || tool === 'pathway') && cableDraw.points.length > 0) {
                   setCableDraw((c) => ({ ...c, cursor: { x, y } }));
+                  return;
+                }
+                if (tool === 'calibrate' && calibrate.a && !calibrate.b) {
+                  // Live rubber-band line from A to the cursor before the
+                  // user nails point B.
+                  setCalibrate((c) => ({ ...c, cursor: { x, y } }));
                   return;
                 }
               }}
@@ -2045,7 +2156,37 @@ export function EngineeringCanvas() {
                 }
                 if (tool === 'cable' || tool === 'conduit' || tool === 'pathway') finishCableDraw();
               }}
+              onSurfaceContextMenu={(e) => {
+                // Right-click cancels any in-flight drawing tool — same
+                // contract as Esc + the banner's Cancel button. Scope the
+                // preventDefault to drawing tools so right-click stays
+                // free for normal browser behavior when the user is just
+                // selecting / panning (the previous pass consumed it
+                // unconditionally, which broke "Inspect element" and any
+                // future custom right-click affordance).
+                const isDrawing =
+                  tool === 'wall' || tool === 'measure'
+                  || tool === 'cable' || tool === 'conduit' || tool === 'pathway'
+                  || tool === 'calibrate';
+                if (!isDrawing) return;
+                e.preventDefault();
+                if (tool === 'wall') {
+                  setWallStart(null);
+                  setWallCursor(null);
+                  setTool('select');
+                } else if (tool === 'measure') {
+                  setMeasure({ start: null, end: null, cursor: null });
+                  setTool('select');
+                } else if (tool === 'cable' || tool === 'conduit' || tool === 'pathway') {
+                  setCableDraw((c) => ({ points: [], cursor: null, cableType: c.cableType }));
+                  setTool('select');
+                } else if (tool === 'calibrate') {
+                  resetCalibrate();
+                  setTool('select');
+                }
+              }}
               measure={measure}
+              calibrate={calibrate}
               cableDraw={cableDraw}
             />
 
@@ -2085,10 +2226,15 @@ export function EngineeringCanvas() {
                 drawing mode and has a one-click exit. Hidden when no
                 drawing tool is engaged. */}
             {(() => {
-              const isWall    = tool === 'wall';
-              const isMeasure = tool === 'measure';
-              const isCable   = tool === 'cable' || tool === 'conduit' || tool === 'pathway';
-              if (!isWall && !isMeasure && !isCable) return null;
+              const isWall      = tool === 'wall';
+              const isMeasure   = tool === 'measure';
+              const isCable     = tool === 'cable' || tool === 'conduit' || tool === 'pathway';
+              const isCalibrate = tool === 'calibrate';
+              // The Calibrate apply panel renders its own UI once both
+              // points exist; suppress the banner there to avoid stacking
+              // two surfaces on top of each other.
+              const suppressForCalibrateApply = isCalibrate && calibrate.a && calibrate.b;
+              if ((!isWall && !isMeasure && !isCable && !isCalibrate) || suppressForCalibrateApply) return null;
               const wallSegments = walls.length;
               const measurePhase: 'idle' | 'awaiting-end' | 'locked' =
                 !measure.start ? 'idle' : !measure.end ? 'awaiting-end' : 'locked';
@@ -2114,6 +2260,12 @@ export function EngineeringCanvas() {
                   ? 'Click the first vertex'
                   : `${n} vertex${n === 1 ? '' : 'es'} · click to add · Enter or double-click to finish · Esc cancels`;
                 canFinish = n >= 2;
+              } else if (isCalibrate) {
+                title = 'Set scale';
+                subtitle = !calibrate.a
+                  ? 'Click point A on a known feature (door width, parking stall, etc.)'
+                  : 'Click point B at the other end of that feature · Esc cancels';
+                canFinish = false;
               }
               const onFinish = () => {
                 // Finish drops out of the drawing tool back to Select for
@@ -2135,6 +2287,7 @@ export function EngineeringCanvas() {
                 if (isWall) { setWallStart(null); setWallCursor(null); }
                 if (isMeasure) setMeasure({ start: null, end: null, cursor: null });
                 if (isCable) setCableDraw({ points: [], cursor: null, cableType: cableDraw.cableType });
+                if (isCalibrate) resetCalibrate();
                 setTool('select');
               };
               return (
@@ -2176,6 +2329,83 @@ export function EngineeringCanvas() {
                 </div>
               );
             })()}
+
+            {/* Scale-calibration apply panel. Appears once the user has
+                marked both A and B with the Calibrate tool — asks for
+                the real-world distance and applies it to the active
+                floor. Closes by Apply, Cancel, or Esc. Lives in the
+                same overlay layer as armed-placement and tool-status
+                banners so all three feel consistent. */}
+            {tool === 'calibrate' && calibrate.a && calibrate.b && (
+              <div
+                className="absolute top-16 left-1/2 -translate-x-1/2 z-30 w-[320px]"
+                data-testid="calibrate-apply-panel"
+                style={{
+                  background: 'var(--popover)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  boxShadow: '0 12px 28px -12px rgba(0,0,0,0.55)',
+                }}
+              >
+                <div className="px-3 pt-3 pb-2 border-b border-border/60 flex items-center gap-2">
+                  <Ruler className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-[12px] font-medium tracking-tight text-foreground">Set scale</span>
+                  <span className="ml-auto text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">
+                    {Math.round(Math.hypot(calibrate.b.x - calibrate.a.x, calibrate.b.y - calibrate.a.y))} px
+                  </span>
+                </div>
+                <div className="px-3 py-3 space-y-2">
+                  <div className="text-[11.5px] text-muted-foreground leading-snug">
+                    How long is the line you just drew, in real-world feet?
+                    Example: a single door is usually 3 ft.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0.1}
+                      step={0.1}
+                      autoFocus
+                      value={calibrateFt}
+                      onChange={(e) => setCalibrateFt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const v = parseFloat(calibrateFt);
+                          if (v > 0) applyCalibration(v);
+                        }
+                        if (e.key === 'Escape') {
+                          resetCalibrate();
+                          setTool('select');
+                        }
+                      }}
+                      placeholder="e.g. 3"
+                      data-testid="calibrate-feet-input"
+                      className="flex-1 h-8 px-2 rounded border border-border bg-background text-[12.5px] tabular-nums text-foreground focus:outline-none focus:border-primary/60"
+                    />
+                    <span className="text-[11px] text-muted-foreground">ft</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5 pt-1">
+                    <button
+                      onClick={() => { resetCalibrate(); setTool('select'); }}
+                      data-testid="calibrate-cancel"
+                      className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1"
+                    >
+                      Cancel (Esc)
+                    </button>
+                    <button
+                      onClick={() => {
+                        const v = parseFloat(calibrateFt);
+                        if (v > 0) applyCalibration(v);
+                      }}
+                      disabled={!(parseFloat(calibrateFt) > 0)}
+                      data-testid="calibrate-apply"
+                      className="text-[10.5px] uppercase tracking-[0.10em] text-primary-foreground bg-primary rounded px-2 py-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Apply scale
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Click-to-arm placement banner — visible state for the user
                 so they always know what the next canvas click will do. */}
@@ -2452,7 +2682,8 @@ export function EngineeringCanvas() {
               const ft = Math.round(zoom * 100 * ftPerPx * 10) / 10;
               return (
                 <div
-                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none flex items-center gap-1.5"
+                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none flex items-center gap-1.5"
+                  data-testid="scale-bar"
                   style={{
                     background: 'var(--panel-background)',
                     backdropFilter: 'blur(12px)',
@@ -2463,18 +2694,33 @@ export function EngineeringCanvas() {
                   }}
                   title={isCalibrated
                     ? 'Calibrated scale — derived from the floor record'
-                    : 'Default scale only — run /calibrate for an exact measurement.'}
+                    : 'Default scale only — click Set scale to calibrate against a known feature.'}
                 >
-                  <span className="text-[10px] text-muted-foreground tabular-nums">0</span>
-                  <svg width={zoom * 100} height={10} className="inline-block">
+                  <span className="text-[10px] text-muted-foreground tabular-nums pointer-events-none">0</span>
+                  <svg width={zoom * 100} height={10} className="inline-block pointer-events-none">
                     <line x1={0} y1={5} x2={zoom * 100} y2={5} stroke="#E2E8F0" strokeWidth="1.2" />
                     <line x1={0} y1={1} x2={0} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
                     <line x1={zoom * 100} y1={1} x2={zoom * 100} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
                     <line x1={zoom * 50} y1={3} x2={zoom * 50} y2={7} stroke="#E2E8F0" strokeWidth="0.8" opacity="0.6" />
                   </svg>
-                  <span className="text-[10px] text-muted-foreground tabular-nums">{ft} ft</span>
-                  {!isCalibrated && (
-                    <span className="text-[9px] uppercase tracking-[0.10em] text-amber-300/80 ml-1">Default scale</span>
+                  <span className="text-[10px] text-muted-foreground tabular-nums pointer-events-none">{ft} ft</span>
+                  {isCalibrated ? (
+                    <span
+                      className="text-[9px] uppercase tracking-[0.10em] ml-1 pointer-events-none px-1.5 py-px rounded border border-emerald-400/30 bg-emerald-400/12 text-emerald-300"
+                      data-testid="scale-verified-badge"
+                    >Verified</span>
+                  ) : (
+                    <>
+                      <span className="text-[9px] uppercase tracking-[0.10em] text-amber-300/80 ml-1 pointer-events-none">Default scale</span>
+                      <button
+                        onClick={() => { resetCalibrate(); setTool('calibrate'); }}
+                        title="Click two points on a known feature, then enter its real-world length"
+                        data-testid="scale-set-btn"
+                        className="text-[9.5px] uppercase tracking-[0.10em] ml-1 px-1.5 py-0.5 rounded border border-primary/40 bg-primary/12 text-primary hover:bg-primary/20"
+                      >
+                        Set scale
+                      </button>
+                    </>
                   )}
                 </div>
               );
@@ -2545,9 +2791,12 @@ export function EngineeringCanvas() {
             onClose={() => setScanBuildOpen(false)}
             onScanCamera={() => { setScanBuildOpen(false); nav('/visionscan'); }}
             onUpload={() => {
+              // Skip the old Maps-panel detour and open the upload modal
+              // directly. The modal previews the file, lets the user name
+              // it, then hands control to the in-canvas Calibrate tool
+              // via the "Save & set scale" CTA.
               setScanBuildOpen(false);
-              setNavSection('maps');
-              toast.message('Upload a floorplan', { description: 'Pick a building → floor → Import floorplan in the Maps panel.', duration: 5000 });
+              setCanvasImportOpen(true);
             }}
             onSatellite={() => {
               setScanBuildOpen(false);
@@ -2559,6 +2808,19 @@ export function EngineeringCanvas() {
               setPlanSource('blank');
               setTool('wall');
               toast.message('Sketch mode', { description: 'Click to drop wall vertices · double-click to end a run · W toggles the wall tool.', duration: 6000 });
+            }}
+          />
+        )}
+        {canvasImportOpen && (
+          <ImportFloorplanDialog
+            onClose={() => setCanvasImportOpen(false)}
+            onImported={() => setCanvasImportOpen(false)}
+            onStartCalibrate={() => {
+              // Save → hand the user to the in-canvas Calibrate tool so
+              // the next click on the plan starts the two-point flow.
+              setCanvasImportOpen(false);
+              resetCalibrate();
+              setTool('calibrate');
             }}
           />
         )}
@@ -2713,11 +2975,11 @@ function TopBar(props: {
         <Dropdown label={FLOORS[props.floor]} options={FLOORS} onPick={(i) => props.setFloor(i)} />
         <button
           onClick={props.onOpenScanBuild}
-          title="Scan / Build Floorplan — camera, upload, satellite, or sketch"
+          title="Add a floor plan — upload PDF/image, trace satellite, scan demo, or start blank"
           className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
-          data-track="topbar-scan-build"
+          data-track="topbar-add-plan"
         >
-          <ScanLine className="w-3.5 h-3.5" />Scan / Build
+          <Upload className="w-3.5 h-3.5" />Add plan
         </button>
       </div>
 
@@ -2726,7 +2988,11 @@ function TopBar(props: {
       {/* Middle — the two settings an engineer actually touches mid-survey */}
       <div className="flex items-center gap-0.5">
         <SegButton active={props.snap} onClick={() => props.setSnap(!props.snap)} icon={Magnet} label="Snap" hint="S" />
-        <SegButton active={false} onClick={() => props.setUnits(props.units === 'ft' ? 'm' : 'ft')} icon={Ruler} label={props.units === 'ft' ? 'ft' : 'm'} hint="U" />
+        {/* The ft/m toggle was removed: metric was only wired through to
+            the status-bar readout, so toggling it caused scale-bar,
+            measure HUD, pathway labels, position chip, drag HUD, and
+            cone DORI to disagree. It returns when every measurement
+            surface is unit-aware end-to-end. */}
       </div>
 
       <div className="flex-1" />
@@ -2851,31 +3117,28 @@ function TopBar(props: {
               <span className="text-[12px]">Open in new window</span>
             </button>
 
-            {/* Run vision scan (lives here in compact mode) */}
-            {compact && (
-              <button
-                onClick={() => { setMoreOpen(false); props.onScan(); }}
-                className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors border-t border-border/60"
-                data-track="topbar-more-scan"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-                <span className="text-[12px]">Run vision scan</span>
-              </button>
-            )}
+            {/* Demo scan — relabelled + always under More so it cannot be
+                mistaken for the real Surveyor entrypoint. The /visionscan
+                route is a simulated walkthrough, not a live capture. */}
+            <button
+              onClick={() => { setMoreOpen(false); props.onScan(); }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors border-t border-border/60"
+              data-track="topbar-more-scan"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[12px]">Demo scan</span>
+              <span className="ml-auto text-[8.5px] uppercase tracking-[0.14em] px-1 py-px rounded bg-amber-400/15 text-amber-300 border border-amber-400/25">
+                Demo only
+              </span>
+            </button>
           </div>
         )}
       </div>
 
-      {!compact && (
-        <button
-          onClick={props.onScan}
-          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 h-8 rounded-lg bg-primary text-primary-foreground hover:opacity-90"
-          title="Run vision scan"
-          data-track="topbar-run-scan"
-        >
-          <Sparkles className="w-3.5 h-3.5" />Run scan
-        </button>
-      )}
+      {/* Inline Demo scan button removed from the primary TopBar row.
+          The simulated AR/LiDAR walkthrough lives under TopBar → More →
+          "Demo scan" (Demo only). Keeping it inline made it read as the
+          real Surveyor entrypoint. */}
     </div>
   );
 }
@@ -3150,6 +3413,14 @@ function MapsPanel({ onOpenScanBuild }: { onOpenScanBuild?: () => void }) {
         <ImportFloorplanDialog
           onClose={() => setImportOpen(false)}
           onImported={() => setImportOpen(false)}
+          onStartCalibrate={() => {
+            // Hand the user straight into the in-canvas Calibrate tool
+            // right after they save the upload. Closing the modal first
+            // lets the tool-status banner read cleanly under TopBar.
+            setImportOpen(false);
+            resetCalibrate();
+            setTool('calibrate');
+          }}
         />
       )}
     </div>
@@ -3789,30 +4060,30 @@ function ScanBuildFloorplanDialog({
   type Opt = { id: string; icon: any; tone: string; title: string; sub: string; honest?: string; onClick: () => void; recommended?: boolean; track: string };
   const opts: Opt[] = [
     {
-      id: 'scan', icon: CameraIcon, tone: '#22D3EE', track: 'scan-build-camera',
-      title: 'Scan with camera',
-      sub: 'Walk the site. Capture rooms, detect walls and openings, review and import to canvas.',
-      honest: 'Simulated scan workflow. AR / LiDAR capture not connected.',
-      onClick: onScanCamera, recommended: true,
-    },
-    {
       id: 'upload', icon: FolderUp, tone: '#A371F7', track: 'scan-build-upload',
-      title: 'Upload floorplan',
-      sub: 'PNG, JPG, or PDF. Drop it onto the active floor, calibrate scale, then plot devices.',
-      onClick: onUpload,
+      title: 'Upload a plan',
+      sub: 'PNG, JPG, or PDF. Most users start here — drop in a floor plan, set the scale, and plot devices.',
+      onClick: onUpload, recommended: true,
     },
     {
       id: 'satellite', icon: SatelliteIcon, tone: '#34D399', track: 'scan-build-satellite',
-      title: 'Use satellite map',
-      sub: 'Trace walls over real aerial imagery. Useful for exteriors, rooftops, and parking.',
-      honest: 'Tile provider not connected; current view is a stylised stand-in until live tiles ship.',
+      title: 'Use a satellite / address base',
+      sub: 'Enter an address and trace exterior walls, parking, and rooflines on aerial imagery.',
+      honest: 'Live satellite tiles are not connected yet. The base shown is a stylised preview using the address you enter.',
       onClick: onSatellite,
     },
     {
       id: 'draw', icon: PencilLine, tone: '#F08F3C', track: 'scan-build-draw',
-      title: 'Draw from scratch',
-      sub: 'Sketch walls, rooms, and openings on a blank surface. Snap to grid + ortho lock are on.',
+      title: 'Start with a blank canvas',
+      sub: 'Sketch walls, rooms, and openings from scratch. Snap to grid is on.',
       onClick: onDrawScratch,
+    },
+    {
+      id: 'scan', icon: CameraIcon, tone: '#22D3EE', track: 'scan-build-camera',
+      title: 'Run a demo site scan',
+      sub: 'Try the AR / LiDAR walkthrough mock end-to-end. Useful for product walkthroughs.',
+      honest: 'Demo workflow — capture is simulated. Use Upload to bring in a real plan.',
+      onClick: onScanCamera,
     },
   ];
   return (
@@ -3823,8 +4094,8 @@ function ScanBuildFloorplanDialog({
             <ScanLine className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-semibold tracking-tight">Scan / Build Floorplan</div>
-            <div className="text-[12px] text-muted-foreground mt-0.5">How do you want to capture this site?</div>
+            <div className="text-[15px] font-semibold tracking-tight">Add a floor plan</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">Pick how you want to bring this site in. You'll set the scale right after.</div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40">
             <X className="w-4 h-4" />
@@ -3869,7 +4140,7 @@ function ScanBuildFloorplanDialog({
         </div>
         <div className="px-6 py-3 border-t border-border text-[11px] text-muted-foreground flex items-center gap-2">
           <Compass className="w-3 h-3" />
-          After capture: calibrate scale, place doors/windows/walls, then plot devices. Esc to cancel.
+          Next step is always Set scale — click two points on a known feature and enter its real distance. Esc to cancel.
         </div>
       </div>
     </div>
@@ -3999,13 +4270,21 @@ function AddFloorDialog({ buildingName, onClose, onSubmit }: {
  *  PNG / JPG are read directly via FileReader + downscaled. PDF first page
  *  is rendered with pdfjs-dist. DWG / DXF are surfaced as disabled options
  *  with the honest message that a backend parser is required. */
-function ImportFloorplanDialog({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+function ImportFloorplanDialog({ onClose, onImported, onStartCalibrate }: { onClose: () => void; onImported: () => void; onStartCalibrate?: () => void }) {
   const { projectId = 'p1' } = useParams();
   const setFloorBackground = useProjectStore((s) => s.setFloorBackground);
-  const floorId = useProjectStore((s) => storeSelectors.firstFloorOfProject(s, projectId)?.id ?? '');
+  const updateFloor = useProjectStore((s) => s.updateFloor);
+  const floor = useProjectStore((s) => storeSelectors.firstFloorOfProject(s, projectId) as any);
+  const floorId = floor?.id ?? '';
+  const floorName = floor?.name ?? 'Floor';
+  const buildings = useProjectStore((s) => s.buildings);
+  const buildingName = floor?.buildingId ? (buildings as any)[floor.buildingId]?.name ?? '' : '';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Last successful import result, used for the preview + name editor.
+  const [preview, setPreview] = useState<{ dataUrl: string; fileName: string; w: number; h: number } | null>(null);
+  const [planName, setPlanName] = useState<string>('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handlePick = () => inputRef.current?.click();
@@ -4020,12 +4299,17 @@ function ImportFloorplanDialog({ onClose, onImported }: { onClose: () => void; o
       const { importFloorplanFile } = await import('../lib/floorplanImport');
       const { background, note: n } = await importFloorplanFile(file);
       setFloorBackground(floorId, background);
-      toast.success(`Imported ${file.name}`, {
-        description: n ?? 'Visible as the active floor background. Adjust opacity / scale / rotation from the canvas.',
-        duration: 5000,
+      setPreview({
+        dataUrl: background.dataUrl,
+        fileName: background.fileName,
+        w: background.naturalWidth,
+        h: background.naturalHeight,
       });
+      setPlanName(background.fileName.replace(/\.[a-z0-9]+$/i, ''));
       setNote(n ?? null);
-      onImported();
+      // Don't close yet — the user reviews the preview and clicks the
+      // explicit "Save & set scale" CTA below. That makes the workflow
+      // step-by-step instead of bouncing them straight back to the canvas.
     } catch (e: any) {
       console.error(e);
       setError(e?.message ?? 'Import failed');
@@ -4034,12 +4318,40 @@ function ImportFloorplanDialog({ onClose, onImported }: { onClose: () => void; o
     }
   };
 
+  // Persist the edited plan name onto the floor's background record.
+  const commitPlanName = () => {
+    if (!floorId || !preview) return;
+    const cleaned = (planName || '').trim() || preview.fileName;
+    setFloorBackground(floorId, { ...(floor.background ?? {}), fileName: cleaned } as any);
+  };
+
+  // "Save & set scale →" — closes the modal, fires the optional
+  // calibrate-now hook so the parent can arm the in-canvas Calibrate
+  // tool, and lets the parent know an import happened.
+  const onSaveAndCalibrate = () => {
+    if (preview) {
+      commitPlanName();
+      onImported();
+      if (onStartCalibrate) onStartCalibrate();
+      onClose();
+    }
+  };
+  // "Save without scale" — same as above but skips arming the
+  // calibrate tool. Useful when the user wants to take a look first.
+  const onSaveOnly = () => {
+    if (preview) {
+      commitPlanName();
+      onImported();
+      onClose();
+    }
+  };
+
   return (
     <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-[440px] bg-card border border-border rounded-xl shadow-2xl">
+      <div onClick={(e) => e.stopPropagation()} className="w-[480px] bg-card border border-border rounded-xl shadow-2xl">
         <div className="px-5 pt-5 pb-3 border-b border-border">
-          <div className="text-[14px] font-medium tracking-tight">Import floorplan</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Loads a plan onto the active floor as a draggable, scalable, rotatable background.</div>
+          <div className="text-[14px] font-medium tracking-tight">Upload a floor plan</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">PNG, JPG, or PDF (first page). After upload you'll preview, name, and set the scale.</div>
         </div>
         <div className="px-5 py-4 space-y-3">
           <input
@@ -4048,37 +4360,65 @@ function ImportFloorplanDialog({ onClose, onImported }: { onClose: () => void; o
             accept="image/png,image/jpeg,application/pdf,.png,.jpg,.jpeg,.pdf"
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+            data-testid="import-file-input"
           />
 
-          <button
-            onClick={handlePick}
-            disabled={busy}
-            className="w-full px-3 py-4 rounded-lg border-2 border-dashed border-border hover:border-primary/60 hover:bg-primary/4 transition-colors text-left"
-          >
-            <div className="flex items-center gap-3">
-              <Upload className="w-4 h-4 text-primary" />
-              <div>
-                <div className="text-[12.5px] font-medium">{busy ? 'Processing…' : 'Pick a file'}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">PNG, JPG, or PDF (first page)</div>
+          {!preview && (
+            <button
+              onClick={handlePick}
+              disabled={busy}
+              className="w-full px-3 py-5 rounded-lg border-2 border-dashed border-border hover:border-primary/60 hover:bg-primary/4 transition-colors text-left"
+              data-testid="import-pick-btn"
+            >
+              <div className="flex items-center gap-3">
+                <Upload className="w-4 h-4 text-primary" />
+                <div>
+                  <div className="text-[12.5px] font-medium">{busy ? 'Processing…' : 'Pick a file'}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">PNG, JPG, or PDF (first page) · up to ~2k px on the longest edge</div>
+                </div>
+              </div>
+            </button>
+          )}
+
+          {preview && (
+            <div className="space-y-3" data-testid="import-preview-panel">
+              {/* Preview thumbnail — fixed height so any image / orientation
+                  reads at a glance. The "Scale not verified" status sits
+                  on top to make the next step obvious. */}
+              <div className="relative rounded-lg overflow-hidden border border-border bg-secondary/30" style={{ aspectRatio: '4 / 3' }}>
+                <img
+                  src={preview.dataUrl}
+                  alt={preview.fileName}
+                  className="absolute inset-0 w-full h-full object-contain"
+                />
+                <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-[0.10em] border border-amber-400/40 bg-amber-400/15 text-amber-300">
+                  Scale not verified
+                </div>
+                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded text-[9.5px] uppercase tracking-[0.10em] bg-black/55 text-white/85">
+                  {preview.w}×{preview.h}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="block">
+                  <div className="text-[10.5px] text-muted-foreground uppercase tracking-[0.10em] mb-1">Plan name</div>
+                  <input
+                    type="text"
+                    value={planName}
+                    onChange={(e) => setPlanName(e.target.value)}
+                    onBlur={commitPlanName}
+                    placeholder="Ground floor — east wing"
+                    data-testid="import-name-input"
+                    className="w-full h-8 px-2 rounded border border-border bg-background text-[12.5px] text-foreground focus:outline-none focus:border-primary/60"
+                  />
+                </label>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="text-[10.5px] uppercase tracking-[0.10em]">Floor</span>
+                  <span className="text-foreground">{buildingName ? `${buildingName} · ` : ''}{floorName}</span>
+                  <span className="ml-auto text-[10px] italic">Multi-floor switching is one project view away — this pass writes to the active floor.</span>
+                </div>
               </div>
             </div>
-          </button>
-
-          {/* Supported / disabled list — honest about DWG / DXF */}
-          <div className="grid grid-cols-3 gap-2 text-[10.5px]">
-            <div className="p-2 rounded border border-emerald-500/30 bg-emerald-500/5 text-emerald-300/90">
-              PNG · supported
-            </div>
-            <div className="p-2 rounded border border-emerald-500/30 bg-emerald-500/5 text-emerald-300/90">
-              JPG · supported
-            </div>
-            <div className="p-2 rounded border border-emerald-500/30 bg-emerald-500/5 text-emerald-300/90">
-              PDF · first page
-            </div>
-            <div className="col-span-3 p-2 rounded border border-border/60 bg-secondary/20 text-muted-foreground/80">
-              <strong className="opacity-70">DWG / DXF</strong> — disabled. Requires a backend parser; not available in-browser.
-            </div>
-          </div>
+          )}
 
           {note && (
             <div className="px-3 py-2 rounded border border-amber-500/30 bg-amber-500/5 text-[11.5px] text-amber-200/90">
@@ -4092,9 +4432,23 @@ function ImportFloorplanDialog({ onClose, onImported }: { onClose: () => void; o
           )}
         </div>
         <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
-          <button onClick={onClose} className="text-[12px] px-3 h-8 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground">
-            Close
-          </button>
+          {!preview ? (
+            <button onClick={onClose} className="text-[12px] px-3 h-8 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground">
+              Close
+            </button>
+          ) : (
+            <>
+              <button onClick={() => { setPreview(null); setPlanName(''); }} className="text-[12px] px-3 h-8 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground" data-testid="import-replace-btn">
+                Replace file
+              </button>
+              <button onClick={onSaveOnly} className="text-[12px] px-3 h-8 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground" data-testid="import-save-only">
+                Save without scale
+              </button>
+              <button onClick={onSaveAndCalibrate} className="text-[12px] px-3 h-8 rounded-md bg-primary text-primary-foreground hover:opacity-90 font-medium inline-flex items-center gap-1.5" data-testid="import-save-and-scale">
+                <Ruler className="w-3 h-3" />Save & set scale →
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -5111,6 +5465,10 @@ interface SurfaceProps {
   onUserTouchView: () => void;
   devices: Device[];
   selId: string | null;
+  /** Currently-selected pathway id, if any. Drives the per-vertex
+   *  editor overlay (PathwayVertexEditor) so vertex handles render
+   *  ONLY for the selected pathway — never for all pathways. */
+  selPathwayId: string | null;
   selIds: Set<string>;
   presence: PresenceCursor[];
   hoverByPresence: Record<string, { name: string; tone: string }>;
@@ -5136,6 +5494,13 @@ interface SurfaceProps {
   onSurfaceClick: (x: number, y: number) => void;
   onSurfaceMove: (x: number, y: number) => void;
   onSurfaceDblClick: () => void;
+  /** Fired on a right-click anywhere on the canvas surface. Used to
+   *  cancel an in-flight drawing tool (wall / measure / cable / conduit
+   *  / pathway) — parent clears the in-progress state and flips the
+   *  active tool back to Select. The handler is also responsible for
+   *  preventing the browser's native context menu so the canvas feels
+   *  like a CAD tool, not a web page. */
+  onSurfaceContextMenu: (e: React.MouseEvent) => void;
   onMoveDevice: (id: string, x: number, y: number) => void;
   onRotateDevice: (id: string, rot: number) => void;
   onUpdateDevice: (id: string, patch: Partial<Device>) => void;
@@ -5154,6 +5519,15 @@ interface SurfaceProps {
     start: { x: number; y: number } | null;
     end:   { x: number; y: number } | null;
     cursor:{ x: number; y: number } | null;
+  };
+  /** Active scale-calibration state for the Calibrate tool. a = first
+   *  click (point A), b = second click (point B), cursor = live
+   *  rubber-band point before B is set. Used to render the A → B line +
+   *  endpoint dots inside the canvas SVG. */
+  calibrate: {
+    a: { x: number; y: number } | null;
+    b: { x: number; y: number } | null;
+    cursor: { x: number; y: number } | null;
   };
   /** Active cable / pathway draw state. */
   cableDraw: {
@@ -5212,7 +5586,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -5370,7 +5744,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         // / point accumulation flows the way each tool expects. Without
         // this branch, measure and cable clicks fall through and the tool
         // appears unresponsive.
-        if (tool === 'wall' || tool === 'measure' || tool === 'cable' || tool === 'conduit' || tool === 'pathway') {
+        if (tool === 'wall' || tool === 'measure' || tool === 'cable' || tool === 'conduit' || tool === 'pathway' || tool === 'calibrate') {
           const { x, y } = coords(e);
           onSurfaceClick(x, y);
           return;
@@ -5396,11 +5770,12 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         // Live rubber-band cursor for all drawing tools. Required so the
         // measure tool's mid-draw distance preview and the cable preview
         // line track the pointer in real time.
-        if (tool !== 'wall' && tool !== 'measure' && tool !== 'cable' && tool !== 'conduit' && tool !== 'pathway') return;
+        if (tool !== 'wall' && tool !== 'measure' && tool !== 'cable' && tool !== 'conduit' && tool !== 'pathway' && tool !== 'calibrate') return;
         const { x, y } = coords(e);
         onSurfaceMove(x, y);
       }}
       onDoubleClick={onSurfaceDblClick}
+      onContextMenu={onSurfaceContextMenu}
       style={{ background: 'var(--canvas-background)', touchAction: 'none' }}
       className={`absolute inset-0 w-full h-full ${tool === 'wall' || tool === 'measure' || tool === 'cable' ? 'cursor-crosshair' : tool === 'pan' ? (panRef.current ? 'cursor-grabbing' : 'cursor-grab') : dragging ? 'cursor-copy' : 'cursor-default'}`}
     >
@@ -5768,6 +6143,28 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               <g filter={isSel ? 'url(#device-elevation)' : undefined} pointerEvents="none">
                 <HardwareGlyph d={d} tone={tone} selected={isSel} scale={iconScale} />
               </g>
+              {/* Opening-rectangle selected hint — drawn only for
+                  door / gate / opening hosts when they're the selected
+                  device. A subtle dashed rounded-rect indicates "this
+                  is the active opening" without overpowering the plan.
+                  Sits behind the device glyph + RLXMCP badge so the
+                  surveyor still reads the door clearly. */}
+              {isSel && isStackableHost(d.type) && (
+                <rect
+                  x={d.x - 13 * iconScale}
+                  y={d.y - 9 * iconScale}
+                  width={26 * iconScale}
+                  height={18 * iconScale}
+                  rx={2}
+                  fill="none"
+                  stroke={tone}
+                  strokeWidth="0.7"
+                  strokeDasharray="3 2"
+                  opacity="0.75"
+                  pointerEvents="none"
+                  data-testid={`door-selected-hint-${d.id}`}
+                />
+              )}
               {/* Host badge.
                   For door / gate / opening hosts we render a compact
                   "assembly summary" chip: the component count + five
@@ -5785,34 +6182,37 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 if (isOpeningHost) {
                   const asm = d.doorAssembly ?? [];
                   if (asm.length === 0) return null;
-                  // Class buckets — surveyor shorthand RLXMP
+                  // Class buckets — surveyor shorthand R L X M C P.
+                  // Controller and PSU are tracked separately so the badge
+                  // can show "everything except the controller" at a glance.
                   const has = {
                     R: asm.includes('reader'),
                     L: asm.includes('strike') || asm.includes('maglock'),
                     X: asm.includes('rex') || asm.includes('panic') || asm.includes('autoop'),
                     M: asm.includes('dps') || asm.includes('contact'),
-                    P: asm.includes('controller') || asm.includes('psu'),
+                    C: asm.includes('controller'),
+                    P: asm.includes('psu'),
                   };
-                  const classes: Array<keyof typeof has> = ['R','L','X','M','P'];
+                  const classes: Array<keyof typeof has> = ['R','L','X','M','C','P'];
                   const chipX = d.x + 12 * iconScale;
                   const chipY = d.y - 14 * iconScale;
                   return (
                     <g pointerEvents="none">
                       <rect
-                        x={chipX - 14} y={chipY - 6}
-                        width={28} height={13} rx={3}
+                        x={chipX - 15} y={chipY - 6}
+                        width={31} height={13} rx={3}
                         fill="var(--card)" stroke={tone} strokeWidth="0.7" fillOpacity="0.96"
                       />
-                      <text x={chipX - 9} y={chipY + 3.2} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={tone}>
+                      <text x={chipX - 10} y={chipY + 3.2} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={tone}>
                         {asm.length}
                       </text>
                       {/* dots — one per class, filled when present */}
                       {classes.map((cls, i) => (
                         <circle
                           key={cls}
-                          cx={chipX - 3 + i * 3.3}
+                          cx={chipX - 4 + i * 3}
                           cy={chipY + 0.5}
-                          r={1.1}
+                          r={1.05}
                           fill={has[cls] ? tone : 'transparent'}
                           stroke={tone}
                           strokeWidth="0.5"
@@ -5898,7 +6298,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           };
           return (
             <>
-              <RotationRing d={s} onRotate={handleRotate} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} overrideColor={ringColor} />
+              <RotationRing d={s} onRotate={handleRotate} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} pan={pan} overrideColor={ringColor} />
               {/* Direct manipulation cone handles (FOV edges + range tip). For
                   multisensors the handles attach to the active lens's cone; in
                   'all' mode handles are hidden because there's no single cone
@@ -5920,7 +6320,28 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                       zoom={zoom}
                       pan={pan}
                       color={LENS_TONE[k]}
-                      onUpdate={(p) => onUpdateDevice(s.id, { lenses: { ...ls, [k]: { ...L, ...p } } })}
+                      onUpdate={(p) => {
+                        // Linked mode: FOV / range edits on the active lens
+                        // propagate to all four lenses. Each lens keeps its
+                        // own rotation (because rotation is stored relative
+                        // to the body and serves to point each lens at its
+                        // quadrant). Without this branch, the "Linked"
+                        // toggle was decorative — only the active lens
+                        // actually moved.
+                        // Independent mode keeps the previous per-lens
+                        // write so each lens can be tuned alone.
+                        if (lensMode === 'linked') {
+                          const next: typeof ls = {
+                            a: { ...ls.a, ...p },
+                            b: { ...ls.b, ...p },
+                            c: { ...ls.c, ...p },
+                            d: { ...ls.d, ...p },
+                          };
+                          onUpdateDevice(s.id, { lenses: next });
+                        } else {
+                          onUpdateDevice(s.id, { lenses: { ...ls, [k]: { ...L, ...p } } });
+                        }
+                      }}
                     />
                   );
                 }
@@ -5945,6 +6366,23 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             </>
           );
         })()}
+
+        {/* Per-vertex editor for the currently-selected pathway. Renders
+            small drag handles at every vertex + a hover "+" affordance
+            on each segment for inserting a new vertex. Visible ONLY when
+            a pathway is selected — never for unselected pathways, never
+            when only a device is selected. Mounted AFTER the device loop
+            so handles paint above both pathways and devices. */}
+        {selPathwayId && (
+          <PathwayVertexEditor
+            pathwayId={selPathwayId}
+            svgRef={ref as React.RefObject<SVGSVGElement>}
+            zoom={zoom}
+            pan={pan}
+            snap={snap}
+            pxToFt={currentFloorPxToFt}
+          />
+        )}
 
         {/* Live snap guides while dragging — vertical & horizontal alignment lines */}
         {movingDev && snapTargets.map((g, i) => (
@@ -6011,6 +6449,35 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         {/* Measure tool — live distance line between two clicks, with a
             distance chip at the midpoint. Renders in real engineering
             yellow so it never gets confused with FOV cones or pathways. */}
+        {tool === 'calibrate' && calibrate.a && (() => {
+          const end = calibrate.b ?? calibrate.cursor ?? calibrate.a;
+          const dx = end.x - calibrate.a.x;
+          const dy = end.y - calibrate.a.y;
+          const distPx = Math.hypot(dx, dy);
+          const mx = (calibrate.a.x + end.x) / 2;
+          const my = (calibrate.a.y + end.y) / 2;
+          const committed = !!calibrate.b;
+          return (
+            <g pointerEvents="none" data-testid="calibrate-line">
+              <line
+                x1={calibrate.a.x} y1={calibrate.a.y}
+                x2={end.x} y2={end.y}
+                stroke="#22D3EE" strokeWidth="1.4"
+                strokeDasharray={committed ? undefined : "4 3"}
+                opacity={committed ? 1 : 0.85}
+              />
+              <circle cx={calibrate.a.x} cy={calibrate.a.y} r={3.5} fill="#22D3EE" stroke="var(--canvas-background)" strokeWidth="1" />
+              <circle cx={end.x} cy={end.y} r={3.5} fill="#22D3EE" stroke="var(--canvas-background)" strokeWidth="1" />
+              <g transform={`translate(${mx}, ${my - 12})`}>
+                <rect x={-34} y={-9} width={68} height={18} rx={3} fill="var(--panel-background)" fillOpacity="0.94" stroke="#22D3EE" strokeWidth="0.6" />
+                <text textAnchor="middle" y={4} fontSize="10" fontFamily="ui-monospace, monospace" fill="#22D3EE" fontWeight="700">
+                  {Math.round(distPx)} px
+                </text>
+              </g>
+            </g>
+          );
+        })()}
+
         {tool === 'measure' && measure.start && (() => {
           const end = measure.end ?? measure.cursor ?? measure.start;
           const dx = end.x - measure.start.x;
@@ -6506,9 +6973,10 @@ function FovCone({
           main source of the lens's "spotlight" cyber feel; without it the
           cone reads as a clean engineering callout. */}
       {!wireframe && <path d={path} fill={`url(#${gid})`} />}
-      {/* Edge stroke — thin draftsman line, low opacity. */}
-      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 0.9 : 0.7} opacity={wireframe ? 0.85 : 0.42} />
-      {/* DORI band rings — quieter so they don't compete with the cone. */}
+      {/* Edge stroke — hairline draftsman line, low opacity. */}
+      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 0.9 : 0.5} opacity={wireframe ? 0.85 : 0.3} />
+      {/* DORI band rings — quieter still in clean modes; they used to
+          overprint walls and labels in dense plans. */}
       {!wireframe && [0.35, 0.6, 0.8].map((f) => {
         const rr = r * f;
         const xa = cx + Math.cos(a1) * rr;
@@ -6517,7 +6985,7 @@ function FovCone({
         const yb = cy + Math.sin(a2) * rr;
         return (
           <path key={f} d={`M ${xa} ${ya} A ${rr} ${rr} 0 ${half > 90 ? 1 : 0} 1 ${xb} ${yb}`}
-            fill="none" stroke={color} strokeWidth="0.35" opacity="0.25" strokeDasharray="2 4" />
+            fill="none" stroke={color} strokeWidth="0.35" opacity="0.18" strokeDasharray="2 4" />
         );
       })}
       {label && (
@@ -6537,8 +7005,13 @@ function FovCone({
 }
 
 function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null }: { d: Device; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null }) {
-  // Mode-driven render parameters
-  const opacity = (mode === 'minimal' ? 0.35 : mode === 'presentation' ? 0.7 : mode === 'tactical' ? 0.9 : mode === 'heatmap' ? 0.85 : mode === 'night' ? 0.55 : 0.75) * dim * (selected ? 1.15 : 1);
+  // Mode-driven render parameters. Tuned down for the ergonomics pass so
+  // unselected coverage doesn't dominate the plan. Selected coverage
+  // keeps a small 1.2× boost so it reads as clear without being loud —
+  // pairs with the rotation ring + cone handles + selection halo to make
+  // the active object unambiguous. Siblings additionally dim 0.28 via
+  // the parent's `dim` factor (line ~5606), so contrast stays high.
+  const opacity = (mode === 'minimal' ? 0.22 : mode === 'presentation' ? 0.5 : mode === 'tactical' ? 0.7 : mode === 'heatmap' ? 0.7 : mode === 'night' ? 0.42 : 0.55) * dim * (selected ? 1.2 : 1);
   const wireframe = mode === 'wireframe';
   const showArcs = mode !== 'minimal' && mode !== 'presentation';
   const showAim = mode === 'tactical' || mode === 'wireframe' || selected;
@@ -6570,9 +7043,11 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
           // When a lens chip is being hovered, lift its corresponding
           // cone slightly and dim the others — so the user can visually
           // pair "this chip" → "that cone" without any explanation.
-          let coneOpacity = opacity * (selected && activeLens !== 'all' && activeLens !== k ? 0.32 : 1);
+          // Non-active multisensor lens cones drop further so the active
+          // lens reads as the "selected" one. Hovered chip pops a touch.
+          let coneOpacity = opacity * (selected && activeLens !== 'all' && activeLens !== k ? 0.22 : 1);
           if (selected && hoveredLens) {
-            coneOpacity = opacity * (isHovered ? 1.15 : 0.25);
+            coneOpacity = opacity * (isHovered ? 1.1 : 0.18);
           }
           return (
             <FovCone
@@ -6627,9 +7102,9 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
   const path = `M ${d.x} ${d.y} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
   return (
     <g opacity={opacity}>
-      {/* Single-pass fill — no more bloom doubling. Thin edge stroke. */}
+      {/* Single-pass fill — no more bloom doubling. Hairline edge stroke. */}
       {!wireframe && <path d={path} fill={`url(#${gradId})`} />}
-      <path d={path} fill="none" stroke={edge} strokeWidth={wireframe ? 0.9 : 0.6} opacity={wireframe ? 0.85 : 0.45} />
+      <path d={path} fill="none" stroke={edge} strokeWidth={wireframe ? 0.9 : 0.5} opacity={wireframe ? 0.85 : 0.32} />
       {showArcs && [0.35, 0.6, 0.8].map((f, i) => {
         const rr = r * f;
         const xa = d.x + Math.cos(a1) * rr;
@@ -6639,7 +7114,7 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
         return (
           <path key={i}
             d={`M ${xa} ${ya} A ${rr} ${rr} 0 0 1 ${xb} ${yb}`}
-            fill="none" stroke={edge} strokeWidth="0.35" opacity={0.3 - i * 0.07} strokeDasharray="1 3"
+            fill="none" stroke={edge} strokeWidth="0.35" opacity={0.22 - i * 0.05} strokeDasharray="1 3"
           />
         );
       })}
@@ -6648,7 +7123,7 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
           x1={d.x} y1={d.y}
           x2={d.x + Math.cos((rot * Math.PI) / 180) * r}
           y2={d.y + Math.sin((rot * Math.PI) / 180) * r}
-          stroke={edge} strokeWidth="0.4" opacity="0.55" strokeDasharray="2 3"
+          stroke={edge} strokeWidth="0.4" opacity="0.4" strokeDasharray="2 3"
         />
       )}
     </g>
@@ -6716,29 +7191,47 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, pan, color
 
   return (
     <g pointerEvents="auto">
-      {/* Range (tip) handle — drag along cone axis to extend/shorten reach. */}
-      <g onPointerDown={onTipDown} style={{ cursor: 'ew-resize' }}>
-        <circle cx={tipX} cy={tipY} r={7} fill={color} opacity="0.2" />
-        <circle cx={tipX} cy={tipY} r={3.5} fill={color} stroke="var(--canvas-background)" strokeWidth="1" />
+      {/* Range (tip) handle — drag along cone axis to extend/shorten reach.
+          Slightly larger background "glow" for hit affordance; the solid
+          centre stays small for placement precision. */}
+      <g onPointerDown={onTipDown} className="dv-cone-handle" style={{ cursor: 'ew-resize' }}>
+        <circle cx={tipX} cy={tipY} r={8} fill={color} opacity="0.22" />
+        <circle cx={tipX} cy={tipY} r={3.6} fill={color} stroke="var(--canvas-background)" strokeWidth="1.1" />
         <g transform={`translate(${tipX}, ${tipY - 14})`} pointerEvents="none">
           <rect x={-20} y={-7} width={40} height={13} rx={2} fill="var(--panel-background)" fillOpacity="0.92" stroke={color} strokeWidth="0.6" />
           <text textAnchor="middle" y={2.5} fontSize="9" fontWeight="600" fill={color} fontFamily="ui-monospace, monospace">{Math.round(rangeFt)} ft</text>
         </g>
       </g>
-      {/* Edge (FOV) handles — drag to widen/narrow the lens aperture. */}
-      <g onPointerDown={onEdgeDown} style={{ cursor: 'crosshair' }}>
-        <circle cx={e1X} cy={e1Y} r={6} fill={color} opacity="0.2" />
-        <circle cx={e1X} cy={e1Y} r={3} fill={color} stroke="var(--canvas-background)" strokeWidth="0.7" />
+      {/* Edge (FOV) handles — drag to widen/narrow the lens aperture.
+          Both handles share a single live "° fov" badge centred between
+          them so the surveyor always sees the current aperture while
+          adjusting — no need to peek at the inspector mid-drag. */}
+      <g onPointerDown={onEdgeDown} className="dv-cone-handle" style={{ cursor: 'crosshair' }}>
+        <circle cx={e1X} cy={e1Y} r={7} fill={color} opacity="0.22" />
+        <circle cx={e1X} cy={e1Y} r={3.1} fill={color} stroke="var(--canvas-background)" strokeWidth="0.85" />
       </g>
-      <g onPointerDown={onEdgeDown} style={{ cursor: 'crosshair' }}>
-        <circle cx={e2X} cy={e2Y} r={6} fill={color} opacity="0.2" />
-        <circle cx={e2X} cy={e2Y} r={3} fill={color} stroke="var(--canvas-background)" strokeWidth="0.7" />
+      <g onPointerDown={onEdgeDown} className="dv-cone-handle" style={{ cursor: 'crosshair' }}>
+        <circle cx={e2X} cy={e2Y} r={7} fill={color} opacity="0.22" />
+        <circle cx={e2X} cy={e2Y} r={3.1} fill={color} stroke="var(--canvas-background)" strokeWidth="0.85" />
       </g>
+      {/* Live FOV chip — midpoint between the two edge handles, offset
+          slightly outward along the cone axis so it never overlaps the
+          range badge at the tip. */}
+      {(() => {
+        const midX = (e1X + e2X) / 2;
+        const midY = (e1Y + e2Y) / 2;
+        return (
+          <g transform={`translate(${midX}, ${midY})`} pointerEvents="none">
+            <rect x={-20} y={-7} width={40} height={13} rx={2} fill="var(--panel-background)" fillOpacity="0.92" stroke={color} strokeWidth="0.6" />
+            <text textAnchor="middle" y={2.5} fontSize="9" fontWeight="600" fill={color} fontFamily="ui-monospace, monospace">{Math.round(fovDeg)}° fov</text>
+          </g>
+        );
+      })()}
     </g>
   );
 }
 
-function RotationRing({ d, onRotate, svgRef, zoom, overrideColor }: { d: Device; onRotate: (r: number) => void; svgRef: React.RefObject<SVGSVGElement>; zoom: number; overrideColor?: string }) {
+function RotationRing({ d, onRotate, svgRef, zoom, pan, overrideColor }: { d: Device; onRotate: (r: number) => void; svgRef: React.RefObject<SVGSVGElement>; zoom: number; pan: { x: number; y: number }; overrideColor?: string }) {
   // overrideColor lets a multisensor's active-lens color drive the ring's
   // visuals when the ring is editing a single lens (e.g. cyan for Lens A).
   // Otherwise we use the per-object color (if assigned) before the category.
@@ -6757,8 +7250,12 @@ function RotationRing({ d, onRotate, svgRef, zoom, overrideColor }: { d: Device;
   const onMove = (e: React.PointerEvent) => {
     if (!dragging.current || !svgRef.current) return;
     const r = svgRef.current.getBoundingClientRect();
-    const cx = (e.clientX - r.left) / zoom;
-    const cy = (e.clientY - r.top) / zoom;
+    // Same fix that landed for ConeHandles: convert client (CSS px) →
+    // SVG canvas coords by subtracting pan BEFORE dividing by zoom. Without
+    // this, rotating a camera while the canvas is panned snaps the heading
+    // to a wrong angle proportional to the pan offset.
+    const cx = ((e.clientX - r.left) - pan.x) / zoom;
+    const cy = ((e.clientY - r.top)  - pan.y) / zoom;
     const ang = Math.round((Math.atan2(cy - d.y, cx - d.x) * 180) / Math.PI);
     onRotate(((ang % 360) + 360) % 360);
   };
@@ -6793,10 +7290,12 @@ function RotationRing({ d, onRotate, svgRef, zoom, overrideColor }: { d: Device;
         <rect x={-16} y={-7} width={32} height={14} rx={3} fill="var(--panel-background)" fillOpacity="0.85" stroke={tone} strokeWidth="0.6" />
         <text x={0} y={3} textAnchor="middle" fill="var(--foreground)" fontSize="10" fontWeight="700" fontFamily="ui-monospace, monospace">{d.rot}°</text>
       </g>
-      {/* drag handle on the ring */}
-      <g pointerEvents="auto" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} style={{ cursor: 'grab' }}>
-        <circle cx={handleX} cy={handleY} r={6} fill={tone} opacity="0.2" />
-        <circle cx={handleX} cy={handleY} r={3.5} fill={tone} stroke="var(--canvas-background)" strokeWidth="1" />
+      {/* drag handle on the ring — slightly larger glow ring + the same
+          .dv-cone-handle hover affordance so all draggable handles
+          read consistently. */}
+      <g pointerEvents="auto" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} className="dv-cone-handle" style={{ cursor: 'grab' }}>
+        <circle cx={handleX} cy={handleY} r={7} fill={tone} opacity="0.22" />
+        <circle cx={handleX} cy={handleY} r={3.6} fill={tone} stroke="var(--canvas-background)" strokeWidth="1.1" />
       </g>
     </g>
   );
@@ -7518,8 +8017,9 @@ function MultisensorLensChips({
         onClick={() => setActiveLens('all')}
         className="px-3 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors duration-150 hover:bg-white/[0.04]"
         style={{
-          background: activeLens === 'all' ? `${tone}18` : 'transparent',
-          color: activeLens === 'all' ? '#F1F5F9' : 'rgba(148,163,184,0.85)',
+          background: activeLens === 'all' ? `${tone}28` : 'transparent',
+          color: activeLens === 'all' ? '#F8FAFC' : 'rgba(148,163,184,0.85)',
+          boxShadow: activeLens === 'all' ? `inset 0 -1.5px 0 ${tone}` : 'none',
         }}
         title="Control all four lenses together"
       >
@@ -7536,18 +8036,23 @@ function MultisensorLensChips({
             onPointerLeave={() => onLensHover?.(null)}
             className="px-3 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors duration-150 hover:bg-white/[0.04]"
             style={{
-              background: active ? `${lensColor}1A` : 'transparent',
-              color: active ? '#F1F5F9' : 'rgba(148,163,184,0.85)',
+              // Active chip is more clearly distinguished: a stronger
+              // lens-tinted background plus a bottom indicator line in
+              // the same lens color. Easier to pair "this chip" → "that
+              // cone" at a glance.
+              background: active ? `${lensColor}2A` : 'transparent',
+              color: active ? '#F8FAFC' : 'rgba(148,163,184,0.85)',
+              boxShadow: active ? `inset 0 -1.5px 0 ${lensColor}` : 'none',
             }}
             title={`Edit lens ${LENS_LABEL[l]} only — hover to highlight on canvas`}
           >
             <span
               className="rounded-full transition-all duration-200 ease-out"
               style={{
-                width: active ? 7 : 5,
-                height: active ? 7 : 5,
+                width: active ? 8 : 5,
+                height: active ? 8 : 5,
                 background: active ? lensColor : 'rgba(100,116,139,0.7)',
-                boxShadow: active ? `0 0 6px ${lensColor}99` : 'none',
+                boxShadow: active ? `0 0 8px ${lensColor}AA` : 'none',
               }}
             />
             <span className="font-medium tracking-tight">{LENS_LABEL[l]}</span>
@@ -8243,7 +8748,14 @@ function tilesForDevice(d: Device): { id: EditTab; label: string; icon: any; cov
     return includes(['overview','network','accessories','survey','notes','media','ai']);
   }
   if (isCamera) {
-    return EDIT_TABS;
+    // Camera-class drawer: General → Placement → Coverage → Network →
+    // Power → Accessories → Compatibility → AI → Notes → Survey.
+    // The Stack ('linked') tab was removed because cameras have no
+    // accessory-stack workflow — only doors host hardware schedules.
+    // Media + History tabs were also dropped from the default camera
+    // set because their bodies were preview-only / hardcoded; they
+    // will reappear once real persistence + audit log land.
+    return includes(['overview','mounting','lens','network','power','accessories','compliance','ai','notes','survey']);
   }
   // Default: hide Coverage for non-cameras.
   return EDIT_TABS.filter((t) => t.id !== 'lens');
@@ -8302,9 +8814,32 @@ function DrawerSection({ title, children }: { title: string; children: React.Rea
  *  the device was seeded without a catalog product. */
 function ProductOverviewSection({ d }: { d: Device }) {
   const cat = CATALOG.find((p) => p.id === d.product);
+  const updateDevice = useProjectStore((s) => s.updateDevice);
   // Calibrated px → ft for the device's own floor. Falls back to the
   // canvas default when the floor has no calibration recorded.
   const pxToFt = useProjectStore((s) => ftPerPxForFloor(d.floorId ? s.floors[d.floorId] : undefined));
+  const isCam = TYPE_KIND[d.type] === 'camera';
+  // Catalog products that match this device's type (e.g. only dome
+  // models for a `cam.dome`). The picker won't offer a strike for a
+  // camera; sub-types only.
+  const compatibleModels = isCam
+    ? CATALOG.filter((p) => p.deviceType === d.type || p.deviceType === (d.type as string).replace(/^cam\./, 'cam.'))
+    : [];
+  // When the user picks a different model, write the new product id +
+  // copy over the resolution-default fields the camera-render code
+  // already keys off of (range / fov derived from product if the
+  // device's own values are still undefined). We never overwrite
+  // user-set per-device values to avoid surprising them mid-design.
+  const onChangeModel = (newId: string) => {
+    const nextCat = CATALOG.find((p) => p.id === newId);
+    if (!nextCat) return;
+    const patch: any = { product: newId };
+    updateDevice(d.id, patch);
+    toast.message('Camera model changed', {
+      description: `${nextCat.manufacturer} ${nextCat.model} — BOM, resolution, IR, NDAA flags now read from this catalog entry.`,
+      duration: 4500,
+    });
+  };
   const Row2 = ({ label, value, tone }: { label: string; value: any; tone?: string }) =>
     value == null || value === '' ? null : (
       <div className="flex items-center justify-between text-[12px] py-1 border-b border-white/5 last:border-b-0">
@@ -8323,6 +8858,55 @@ function ProductOverviewSection({ d }: { d: Device }) {
         {cat?.productLine && <Row2 label="Line" value={cat.productLine} />}
         <Row2 label="Status" value={<span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: '#34D399', boxShadow: '0 0 6px #34D399' }} />Online</span>} />
       </DrawerSection>
+
+      {/* CameraModelPicker — only renders for camera-class devices. Lets
+          the surveyor swap to a different catalog entry of the same
+          sub-type (a dome stays a dome, a PTZ stays a PTZ) and see the
+          resolution / IR / NDAA / MSRP read out from that catalog row
+          immediately. Quick-chip row at the bottom shows the key specs
+          from the currently-selected product so the surveyor doesn't
+          have to scroll the full Product Details list. */}
+      {isCam && (
+        <DrawerSection title="Model selection">
+          {compatibleModels.length === 0 ? (
+            <div className="text-[11.5px] text-muted-foreground">
+              No catalog matches for this sub-type yet. Drop a different camera category from the bottom bar to seed a model.
+            </div>
+          ) : (
+            <>
+              <select
+                value={d.product ?? ''}
+                onChange={(e) => onChangeModel(e.target.value)}
+                data-testid="camera-model-picker"
+                className="w-full h-9 px-2 rounded-md border border-border bg-background text-[12px] text-foreground focus:outline-none focus:border-primary/60"
+              >
+                <option value="" disabled>Choose a model…</option>
+                {compatibleModels.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.manufacturer} {p.model}{p.resolution ? ` · ${p.resolution}` : ''}
+                  </option>
+                ))}
+              </select>
+              {/* Spec chips — read straight from the selected catalog
+                  entry. Each chip is honest about its source: only renders
+                  if the catalog row carries the value. */}
+              {cat && (
+                <div className="mt-2 flex flex-wrap gap-1" data-testid="camera-spec-chips">
+                  {cat.resolution && <span className="text-[10.5px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.resolution}</span>}
+                  {cat.cameraType && <span className="text-[10.5px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.cameraType}</span>}
+                  {cat.focalRange && <span className="text-[10.5px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.focalRange}</span>}
+                  {d.ir && <span className="text-[10.5px] px-2 py-0.5 rounded border border-amber-400/30 bg-amber-400/10 text-amber-200">IR on</span>}
+                  {cat.ndaa && <span className="text-[10.5px] px-2 py-0.5 rounded border border-emerald-400/30 bg-emerald-400/10 text-emerald-300">NDAA</span>}
+                  {cat.ipRating && <span className="text-[10.5px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-muted-foreground">{cat.ipRating}</span>}
+                </div>
+              )}
+              <div className="mt-2 text-[10.5px] text-muted-foreground">
+                Catalog is a curated sample — vendor APIs are not connected. Switching model updates the BOM line and the spec chips above.
+              </div>
+            </>
+          )}
+        </DrawerSection>
+      )}
 
       {cat && (
         <DrawerSection title="Product details">
@@ -8397,8 +8981,54 @@ function DoorAssemblySection({
     || (d.type as string).startsWith('inf.doubledoor');
   if (!isDoorish) return null;
   const assembly: DoorHardware[] = d.doorAssembly ?? [];
+  const stateMap = ((d as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
   const electrification = d.doorElectrification;
   const readerLocation = d.doorReaderLocation;
+  // Flip a single hardware row between Proposed and Existing without
+  // removing it from the assembly. Used by the segmented pill on each
+  // active tile.
+  const setHwState = (h: DoorHardware, state: 'proposed' | 'existing') => {
+    const dev = useProjectStore.getState().devices[d.id];
+    const cur = ((dev as any)?.doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
+    onUpdate({ doorAssemblyState: { ...cur, [h]: state } } as any);
+  };
+  // Door-type prettifier for the Opening summary card.
+  const openingType = (() => {
+    const t = d.type as string;
+    if (t.includes('door-double'))       return 'Double door';
+    if (t.includes('door-storefront'))   return 'Storefront opening';
+    if (t.includes('door-sliding'))      return 'Sliding door';
+    if (t.includes('gate-swing'))        return 'Swing gate';
+    if (t.includes('gate-slide'))        return 'Slide gate';
+    if (t.includes('elevator'))          return 'Elevator';
+    return 'Single door';
+  })();
+  // Engineering rule checks — labelled as heuristics, NOT code
+  // certification. Same honesty contract as Compatibility tab.
+  const has = (h: DoorHardware) => assembly.includes(h);
+  type RuleWarning = { id: string; severity: 'high' | 'med' | 'info'; title: string; detail: string };
+  const warnings: RuleWarning[] = [];
+  if (has('maglock') && !has('rex')) {
+    warnings.push({ id: 'mag-no-rex', severity: 'high', title: 'Maglock without REX', detail: 'Maglocks require a REX (request-to-exit) or panic device for code-compliant egress.' });
+  }
+  if (has('maglock') && !has('panic')) {
+    warnings.push({ id: 'mag-no-fire', severity: 'med', title: 'Maglock fire release', detail: 'Add a fire-alarm release wiring note in the Notes tab — maglocks must drop on fire signal in most jurisdictions.' });
+  }
+  if (has('strike') && !has('psu')) {
+    warnings.push({ id: 'strike-no-psu', severity: 'high', title: 'Strike without power supply', detail: 'Electric strike needs a 12 / 24 VDC PSU. Drop a PSU onto the door or note one nearby.' });
+  }
+  if (has('reader') && !has('controller')) {
+    warnings.push({ id: 'reader-no-ctrl', severity: 'high', title: 'Reader without controller', detail: 'A reader needs a controller (Mercury / Verkada / S2 / similar) to make access decisions.' });
+  }
+  if ((has('dps') || has('contact')) && !has('controller')) {
+    warnings.push({ id: 'monitor-no-ctrl', severity: 'med', title: 'Door monitor without controller', detail: 'DPS / door contact reports to a controller input — add one or wire to an existing panel.' });
+  }
+  if ((has('strike') || has('maglock')) && !has('controller')) {
+    warnings.push({ id: 'lock-no-ctrl', severity: 'med', title: 'Electrified lock without controller', detail: 'Strikes and maglocks energize from a controller relay. Add a controller or note an existing panel.' });
+  }
+  if (has('intercom') && has('reader')) {
+    warnings.push({ id: 'intercom-plus-reader', severity: 'info', title: 'Intercom + separate reader', detail: 'Many video-intercom stations include a card reader. Confirm you actually need both — otherwise drop one to save labor + BOM.' });
+  }
   const ITEMS: { id: DoorHardware; label: string; hint: string }[] = [
     { id: 'reader',     label: 'Reader',       hint: 'Card / mobile credential.' },
     { id: 'strike',     label: 'Electric strike', hint: 'Fail-secure release at the latch.' },
@@ -8416,51 +9046,146 @@ function DoorAssemblySection({
   // automated toggles compose instead of clobbering one another. The
   // closure's `assembly` variable is from the last render and lags behind.
   const toggle = (h: DoorHardware) => {
-    const current = useProjectStore.getState().devices[d.id]?.doorAssembly ?? [];
+    const dev = useProjectStore.getState().devices[d.id];
+    const current = dev?.doorAssembly ?? [];
     const set = new Set<DoorHardware>(current);
-    if (set.has(h)) set.delete(h); else set.add(h);
-    onUpdate({ doorAssembly: Array.from(set) });
+    const stateMap = { ...((dev as any)?.doorAssemblyState ?? {}) } as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
+    if (set.has(h)) {
+      set.delete(h);
+      delete stateMap[h];
+    } else {
+      set.add(h);
+      // Inspector toggles default to 'proposed' too — same contract as
+      // the drag-attach flow so the BOM is consistent regardless of how
+      // the hardware got onto the opening.
+      stateMap[h] = 'proposed';
+    }
+    onUpdate({ doorAssembly: Array.from(set), doorAssemblyState: stateMap } as any);
   };
   const hasMag = assembly.includes('maglock');
   const hasRex = assembly.includes('rex');
   return (
     <>
-      <DrawerSection title={`Door assembly · ${assembly.length}/${ITEMS.length}`}>
+      {/* Opening summary — compact one-line read of the opening's type +
+          electrification + reader location + total hardware count. Lets
+          the surveyor confirm at a glance "what is this opening?" before
+          digging into the assembly checklist. */}
+      <DrawerSection title="Opening summary">
+        <div className="rounded-md border border-border bg-secondary/15 p-2.5 text-[11.5px] space-y-1" data-testid="opening-summary">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Type</span>
+            <span className="text-foreground">{openingType}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Hardware</span>
+            <span className="text-foreground tabular-nums">{assembly.length} / {ITEMS.length}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Electrification</span>
+            <span className="text-foreground">{electrification === 'fail-safe' ? 'Fail-safe' : electrification === 'fail-secure' ? 'Fail-secure' : '—'}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Reader location</span>
+            <span className="text-foreground">{readerLocation === 'mullion' ? 'Mullion' : readerLocation === 'wall' ? 'Wall' : '—'}</span>
+          </div>
+        </div>
+      </DrawerSection>
+
+      <DrawerSection title={`Hardware assembly · ${assembly.length}/${ITEMS.length}`}>
         <div className="text-[11px] text-muted-foreground/85 mb-2">
-          One persisted hardware schedule per opening. Toggle the components actually present.
+          One persisted schedule per opening. Each item carries a Proposed
+          / Existing flag so the BOM can split "to install" from
+          "already there".
         </div>
         <div className="grid grid-cols-2 gap-1.5">
           {ITEMS.map((it) => {
             const on = assembly.includes(it.id);
+            const state = stateMap[it.id] ?? 'proposed';
             return (
-              <button
+              <div
                 key={it.id}
-                onClick={() => toggle(it.id)}
                 title={it.hint}
                 data-testid={`door-assembly-${it.id}`}
                 data-track={`door-assembly-${it.id}`}
-                className={`text-left px-2.5 py-2 rounded-md border text-[11.5px] transition-colors ${
+                className={`rounded-md border text-[11.5px] transition-colors ${
                   on
                     ? 'border-primary/60 bg-primary/10 text-foreground'
                     : 'border-border text-muted-foreground hover:border-border-strong hover:text-foreground'
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <span className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center ${on ? 'border-primary bg-primary/30' : 'border-border'}`}>
-                    {on && <Check className="w-2.5 h-2.5" />}
-                  </span>
-                  {it.label}
-                </div>
-              </button>
+                <button
+                  onClick={() => toggle(it.id)}
+                  className="w-full text-left px-2.5 py-2"
+                  data-testid={`door-assembly-${it.id}-toggle`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center ${on ? 'border-primary bg-primary/30' : 'border-border'}`}>
+                      {on && <Check className="w-2.5 h-2.5" />}
+                    </span>
+                    {it.label}
+                  </div>
+                </button>
+                {on && (
+                  <div className="px-2 pb-2 -mt-1 flex items-center gap-1 text-[9.5px] uppercase tracking-[0.10em]" data-testid={`door-assembly-${it.id}-state`}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setHwState(it.id, 'proposed'); }}
+                      className={`flex-1 py-0.5 rounded border transition-colors ${
+                        state === 'proposed'
+                          ? 'border-emerald-400/40 bg-emerald-400/12 text-emerald-300'
+                          : 'border-border text-muted-foreground hover:text-foreground'
+                      }`}
+                      data-testid={`door-assembly-${it.id}-proposed`}
+                    >Proposed</button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setHwState(it.id, 'existing'); }}
+                      className={`flex-1 py-0.5 rounded border transition-colors ${
+                        state === 'existing'
+                          ? 'border-sky-400/40 bg-sky-400/12 text-sky-300'
+                          : 'border-border text-muted-foreground hover:text-foreground'
+                      }`}
+                      data-testid={`door-assembly-${it.id}-existing`}
+                    >Existing</button>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
-        {hasMag && !hasRex && (
-          <div className="mt-3 rounded-md border border-amber-300/30 bg-amber-300/8 p-2.5 text-[11px] text-amber-200/90 leading-relaxed">
-            <strong className="text-amber-200">Code:</strong> maglocks require a REX for compliant egress.
-          </div>
-        )}
       </DrawerSection>
+
+      {warnings.length > 0 && (
+        <DrawerSection title={`Engineering rule check · ${warnings.length}`}>
+          <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+            Heuristic rules · not certified code compliance
+          </div>
+          <div className="space-y-1.5" data-testid="door-warnings">
+            {warnings.map((w) => {
+              const tone =
+                w.severity === 'high' ? '#F87171' :
+                w.severity === 'med'  ? '#FACC15' :
+                                        '#94A3B8';
+              return (
+                <div
+                  key={w.id}
+                  data-testid={`door-warning-${w.id}`}
+                  className="rounded-md border p-2 text-[11.5px] leading-snug"
+                  style={{
+                    borderColor: `${tone}55`,
+                    background: `${tone}10`,
+                  }}
+                >
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-[10px] uppercase tracking-[0.10em] tabular-nums" style={{ color: tone }}>{w.severity}</span>
+                    <span className="font-medium text-foreground">{w.title}</span>
+                  </div>
+                  <div className="text-muted-foreground mt-0.5">{w.detail}</div>
+                </div>
+              );
+            })}
+          </div>
+        </DrawerSection>
+      )}
+
       <DrawerSection title="Electrification & reader location">
         <div className="grid grid-cols-2 gap-1.5">
           {(['fail-safe', 'fail-secure'] as const).map((opt) => {
@@ -8495,6 +9220,9 @@ function DoorAssemblySection({
               </button>
             );
           })}
+        </div>
+        <div className="mt-2 text-[10.5px] text-muted-foreground leading-snug">
+          Fail-safe drops on power loss (egress doors); Fail-secure stays locked (perimeter / sensitive). Pair maglocks with a fire-alarm release per local code.
         </div>
       </DrawerSection>
     </>
@@ -8801,33 +9529,54 @@ function ImpactPreviewSection({ device }: { device: Device }) {
     || device.type.startsWith('inf.storefront')
     || device.type.startsWith('inf.doubledoor');
   const isCam = TYPE_KIND[device.type] === 'camera';
-  // Match BOM lines to this specific device. Doors emit per-component
-  // lines keyed by `sourceId === device.id`; camera lines are aggregated
-  // by catalog product so we also match on sku === device.product.
-  const matched = bom.lines.filter((l) => {
-    if (l.sourceId === device.id) return true;
-    if (l.sourceKind === 'device' && device.product && l.sku === device.product) return true;
-    return false;
-  });
+  // Match BOM lines to THIS specific device only — never aggregate by
+  // SKU. The previous `l.sku === device.product` fallback pulled in
+  // every other device sharing the same catalog product, so selecting
+  // one camera showed the cost of N identical cameras. For cameras
+  // whose BOM lines roll up by catalog SKU (no per-id source line),
+  // we present the unit cost from the catalog instead — the matched
+  // list stays one-line-per-device.
+  const matched = bom.lines.filter((l) => l.sourceId === device.id);
   const poeW = isCam ? Math.round((device as any).poeW ?? 9.8) : null;
-  const labelLines = matched.map((l) => ({
-    label: l.description,
-    qty: `${l.qty} ${l.uom ?? 'ea'}`,
-    ext: l.qty * l.unitPrice,
-    hrs: l.laborHours ?? 0,
-  }));
+  // Cameras (and any device class where deriveBOM aggregates by SKU) do
+  // not produce a per-id BOM line. Fall back to a single-unit catalog
+  // lookup so the inspector still shows THIS object's own material +
+  // labor — never multiplied by the project-wide count of the same SKU.
+  const catalogFallback = matched.length === 0 && device.product
+    ? (() => {
+        const p = CATALOG.find((c) => c.id === device.product);
+        if (!p) return null;
+        return {
+          label: `${p.mfr} ${p.model}`,
+          qty: '1 ea',
+          ext: p.msrp ?? 0,
+          hrs: p.laborUnits ?? 0,
+        };
+      })()
+    : null;
+  const labelLines = matched.length > 0
+    ? matched.map((l) => ({
+        label: l.description,
+        qty: `${l.qty} ${l.uom ?? 'ea'}`,
+        ext: l.qty * l.unitPrice,
+        hrs: l.laborHours ?? 0,
+      }))
+    : (catalogFallback ? [catalogFallback] : []);
   // For door-class devices the same DOOR_HARDWARE_PRICE helper that feeds
   // deriveBOM also drives this preview, so the numbers here always match
   // the Estimator BOM lines for the same opening.
   const doorRollup = isDoorish ? deriveDoorAssemblyLines(device) : null;
   return (
     <>
-      <DrawerSection title="Impact preview">
+      <DrawerSection title={`Impact preview · ${device.id}`}>
+        <div className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground mb-1">
+          This object only · not a project rollup
+        </div>
         {labelLines.length === 0 ? (
           <div className="text-[11.5px] text-muted-foreground italic">
             {isDoorish
-              ? 'No door hardware selected yet. Open the Stack tab and toggle reader / strike / REX / etc. to populate this opening.'
-              : "No BOM line yet — this object hasn't generated a material/labor entry. Assign a catalog product on the Overview tile."}
+              ? 'No door hardware selected yet. Open the Assembly tab and toggle reader / strike / REX / etc. to populate this opening.'
+              : "No catalog product assigned yet. Pick one on the Overview tile to see this object's material + labor."}
           </div>
         ) : (
           <div className="space-y-1 text-[11.5px]">
@@ -8855,34 +9604,70 @@ function ImpactPreviewSection({ device }: { device: Device }) {
         </div>
       </DrawerSection>
 
-      {doorRollup && doorRollup.lines.length > 0 && (
-        <DrawerSection title={`Door assembly impact · ${doorRollup.lines.length}`}>
-          <div className="text-[10.5px] text-muted-foreground/85 mb-2">
-            Per-component preview from the active door assembly. Same numbers flow into the Estimator's
-            <span className="text-foreground"> Access control · doors </span> section.
-          </div>
-          <div className="space-y-1 text-[11.5px]">
-            {doorRollup.lines.map((l) => (
-              <div key={l.hw} className="flex items-baseline justify-between gap-2 py-1 border-b border-border/40 last:border-b-0" data-testid={`impact-door-${l.hw}`}>
-                <div className="flex-1 min-w-0 truncate">
-                  <span className="text-foreground">{l.description}</span>
-                  <span className="text-[9.5px] uppercase tracking-[0.10em] text-muted-foreground ml-2">{l.hw}</span>
-                </div>
-                <div className="tabular-nums text-muted-foreground">{l.laborHours.toFixed(2)} hr</div>
-                <div className="tabular-nums text-foreground">${l.unitPrice.toLocaleString()}</div>
+      {doorRollup && doorRollup.lines.length > 0 && (() => {
+        // Per-hardware Proposed/Existing state lives on the device record;
+        // we re-read it here so each row can carry its own tag and we can
+        // split the subtotal into "Proposed (to install)" vs "Existing
+        // (already there)". Defaults to 'proposed' for any hw class that
+        // doesn't have an explicit state — same contract as the drag and
+        // inspector-toggle flows.
+        const stateMap = ((device as any).doorAssemblyState ?? {}) as Partial<Record<import('../store/types').DoorHardware, 'proposed' | 'existing'>>;
+        const proposedLines = doorRollup.lines.filter((l) => (stateMap[l.hw] ?? 'proposed') === 'proposed');
+        const existingLines = doorRollup.lines.filter((l) => (stateMap[l.hw] ?? 'proposed') === 'existing');
+        const proposedHardware = proposedLines.reduce((s, l) => s + l.unitPrice * l.qty, 0);
+        const existingHardware = existingLines.reduce((s, l) => s + l.unitPrice * l.qty, 0);
+        const proposedLabor = proposedLines.reduce((s, l) => s + l.laborHours, 0);
+        return (
+          <DrawerSection title={`Door assembly impact · ${doorRollup.lines.length}`}>
+            <div className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground mb-1">
+              This door only · {proposedLines.length} proposed · {existingLines.length} existing
+            </div>
+            <div className="text-[10.5px] text-muted-foreground/85 mb-2">
+              Per-component preview from the active door assembly. Proposed rows roll into the Estimator;
+              Existing rows are kept as documentation only (zeroed in totals).
+            </div>
+            <div className="space-y-1 text-[11.5px]">
+              {doorRollup.lines.map((l) => {
+                const state = stateMap[l.hw] ?? 'proposed';
+                const isExisting = state === 'existing';
+                return (
+                  <div key={l.hw} className="flex items-baseline justify-between gap-2 py-1 border-b border-border/40 last:border-b-0" data-testid={`impact-door-${l.hw}`}>
+                    <div className="flex-1 min-w-0 truncate">
+                      <span className={isExisting ? 'text-muted-foreground' : 'text-foreground'}>{l.description}</span>
+                      <span className="text-[9.5px] uppercase tracking-[0.10em] text-muted-foreground ml-2">{l.hw}</span>
+                      <span
+                        className="ml-1.5 text-[9px] uppercase tracking-[0.10em] px-1 py-px rounded border"
+                        data-testid={`impact-door-${l.hw}-state`}
+                        style={{
+                          color: isExisting ? '#7CC2FF' : '#4FB87E',
+                          borderColor: isExisting ? 'rgba(124,194,255,0.40)' : 'rgba(79,184,126,0.40)',
+                          background: isExisting ? 'rgba(124,194,255,0.10)' : 'rgba(79,184,126,0.10)',
+                        }}
+                      >{state}</span>
+                    </div>
+                    <div className="tabular-nums text-muted-foreground">{l.laborHours.toFixed(2)} hr</div>
+                    <div className={`tabular-nums ${isExisting ? 'text-muted-foreground line-through' : 'text-foreground'}`}>${l.unitPrice.toLocaleString()}</div>
+                  </div>
+                );
+              })}
+              <div className="flex items-baseline justify-between pt-1.5 text-[11px] font-medium" data-testid="impact-door-proposed-total">
+                <span>Proposed hardware</span>
+                <span className="tabular-nums">${proposedHardware.toLocaleString()}</span>
               </div>
-            ))}
-            <div className="flex items-baseline justify-between pt-1.5 text-[11px] font-medium">
-              <span>Hardware subtotal</span>
-              <span className="tabular-nums">${doorRollup.hardwareTotal.toLocaleString()}</span>
+              <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground" data-testid="impact-door-proposed-labor">
+                <span>Proposed labor</span>
+                <span className="tabular-nums">{proposedLabor.toFixed(2)} hr</span>
+              </div>
+              {existingLines.length > 0 && (
+                <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground/80 pt-0.5" data-testid="impact-door-existing-total">
+                  <span>Existing hardware (excluded from total)</span>
+                  <span className="tabular-nums">${existingHardware.toLocaleString()}</span>
+                </div>
+              )}
             </div>
-            <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground">
-              <span>Labor</span>
-              <span className="tabular-nums">{doorRollup.laborHours.toFixed(2)} hr</span>
-            </div>
-          </div>
-        </DrawerSection>
-      )}
+          </DrawerSection>
+        );
+      })()}
     </>
   );
 }
@@ -9210,7 +9995,10 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
           </>
         )}
       </DrawerSection>
-      <DrawerSection title={mode === 'overview' ? 'Coverage suggestions' : 'Forensic suggestions'}>
+      <DrawerSection title={mode === 'overview' ? 'Heuristic suggestions' : 'Heuristic forensic notes'}>
+        <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+          Static checklist · not generated by AI
+        </div>
         {(mode === 'overview'
           ? [
             'Rotate ±12° to remove blind spot at corner',
@@ -9225,17 +10013,15 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
             'Lower mount to 7 ft for prosecution-grade face capture',
           ]
         ).map((s, i) => (
-          <button key={i} className="w-full text-left text-[11.5px] text-foreground px-2 py-1.5 mb-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5">
+          <button key={i} className="w-full text-left text-[11.5px] text-foreground px-2 py-1.5 mb-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5" disabled aria-disabled="true">
             <Sparkles className="w-3 h-3 inline mr-1.5" style={{ color: tone }} />{s}
           </button>
         ))}
       </DrawerSection>
-      <DrawerSection title="Analytics">
-        <Row label="Face recognition" value="Enabled" tone="#34D399" />
-        <Row label="LPR" value={d.type === 'cam.lpr' ? 'On (sensor)' : '—'} tone={d.type === 'cam.lpr' ? '#34D399' : undefined} />
-        <Row label="Object detection" value="People · Vehicle" />
-        <Row label="Edge GPU" value="74% load" tone="#FACC15" />
-      </DrawerSection>
+      {/* The previous "Analytics" block claimed live telemetry — face
+          recognition, LPR, object detection, edge-GPU load — that the
+          canvas does not have. Removed entirely; analytics belong on a
+          live connector, not in a static drawer card. */}
     </>
   );
 }
@@ -9919,7 +10705,81 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                   <Slider label="Horizontal FOV" value={hfov} min={20} max={360} unit="°" tone={tone} onChange={setHfov} />
                   <Slider label="Distance" value={distance} min={5} max={150} unit="ft" tone={tone} onChange={setDistance} />
                 </DrawerSection>
-                <DrawerSection title="DORI ranges">
+                {/* DORI / Target preview — plain-language verdict at the
+                    current subject distance + a per-grade pass/fail bar.
+                    Uses IEC 62676-4 / EN 50132-7 px/m thresholds against
+                    the existing live `pxPerM` derivation:
+                      Identify  ≥ 250 px/m   (1.7 m subject ≥ 425 px tall)
+                      Recognize ≥ 125 px/m
+                      Observe   ≥  62 px/m
+                      Detect    ≥  25 px/m
+                    The verdict line picks the strongest grade still met
+                    and explains it without jargon. */}
+                {(() => {
+                  const grades = [
+                    { id: 'Identify',  thresh: 250, color: '#4FB87E', plain: 'Face is clear enough for an ID-grade match.' },
+                    { id: 'Recognize', thresh: 125, color: '#7CC2FF', plain: 'You can tell a known face apart from strangers, but not enough for a court ID.' },
+                    { id: 'Observe',   thresh: 62,  color: '#FACC15', plain: 'You can read activity (gait, clothing, gesture) but faces are limited.' },
+                    { id: 'Detect',    thresh: 25,  color: '#FB923C', plain: 'You can see something is there, not who or what.' },
+                  ];
+                  const met = grades.find((g) => pxPerM >= g.thresh);
+                  const verdict = met
+                    ? { id: met.id, color: met.color, plain: met.plain }
+                    : { id: 'Below detect', color: '#E55B5B', plain: 'Subject is too small to register reliably. Move the camera closer or step up the focal length.' };
+                  return (
+                    <DrawerSection title={`Target preview · ${distance.toFixed(0)} ft`}>
+                      <div
+                        className="rounded-lg border px-3 py-2.5 mb-2"
+                        style={{
+                          borderColor: `${verdict.color}55`,
+                          background: `${verdict.color}10`,
+                        }}
+                        data-testid="dori-verdict"
+                      >
+                        <div className="flex items-baseline justify-between gap-2">
+                          <div>
+                            <div className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">At {distance.toFixed(0)} ft</div>
+                            <div className="text-[14px] font-medium tracking-tight" style={{ color: verdict.color }}>{verdict.id} quality</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">Subject</div>
+                            <div className="text-[12px] tabular-nums text-foreground">{Math.round(pxPerM)} px / m</div>
+                          </div>
+                        </div>
+                        <div className="text-[11.5px] text-muted-foreground leading-snug mt-1.5">{verdict.plain}</div>
+                      </div>
+                      {/* Per-grade pass/fail strip */}
+                      <div className="space-y-1" data-testid="dori-grade-list">
+                        {grades.map((g) => {
+                          const ok = pxPerM >= g.thresh;
+                          return (
+                            <div key={g.id} className="flex items-center gap-2 text-[11.5px]">
+                              <span
+                                className="w-1.5 h-1.5 rounded-full"
+                                style={{
+                                  background: ok ? g.color : 'transparent',
+                                  boxShadow: ok ? `0 0 6px ${g.color}88` : 'none',
+                                  outline: ok ? 'none' : `1px solid ${g.color}55`,
+                                  outlineOffset: '-1px',
+                                }}
+                              />
+                              <span className="flex-1 text-foreground">{g.id}</span>
+                              <span className="text-muted-foreground tabular-nums">≥ {g.thresh} px/m</span>
+                              <span className="w-12 text-right uppercase tracking-[0.10em] text-[10px]" style={{ color: ok ? g.color : '#94A3B8' }}>
+                                {ok ? 'Pass' : 'Fail'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="text-[10.5px] text-muted-foreground mt-2 leading-snug">
+                        Thresholds: IEC 62676-4 / EN 50132-7. Subject is the 1.7 m EN-spec figure standing at the full camera range.
+                        Sensor assumed 1080p horizontal; updates live as you drag Distance / HFOV.
+                      </div>
+                    </DrawerSection>
+                  );
+                })()}
+                <DrawerSection title="DORI ranges (legacy estimate)">
                   {[
                     { k: 'Identify',  d: Math.round(doriRange * 0.35), c: '#34D399' },
                     { k: 'Recognize', d: Math.round(doriRange * 0.55), c: '#FACC15' },
@@ -9932,7 +10792,58 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                       <span className="text-[12px] tabular-nums text-foreground">{row.d} ft</span>
                     </div>
                   ))}
+                  <div className="text-[10.5px] text-muted-foreground mt-2 leading-snug">
+                    Rule-of-thumb distance breakpoints (Identify ≈ 35 % of range, etc.). The Target preview card above is the
+                    authoritative pass/fail signal.
+                  </div>
                 </DrawerSection>
+                {/* Compact per-lens summary for multisensor cameras —
+                    shows the four lenses + their rotation / FOV / range
+                    side-by-side so the surveyor can compare all four at
+                    a glance. Active lens row is highlighted in the lens
+                    colour. Click a row to set that lens active. */}
+                {isMultisensor && lenses && (
+                  <DrawerSection title="Lenses">
+                    <div className="space-y-1" data-testid="multisensor-lens-summary">
+                      {(['a','b','c','d'] as const).map((k) => {
+                        const L = lenses[k];
+                        const active = activeLens === k;
+                        const c = LENS_TONE[k];
+                        return (
+                          <button
+                            key={k}
+                            onClick={() => setActiveLens(k)}
+                            data-testid={`lens-summary-${k}`}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[11.5px] tabular-nums"
+                            style={{
+                              background: active ? `${c}1F` : 'transparent',
+                              border: active ? `1px solid ${c}55` : '1px solid transparent',
+                              color: active ? '#F8FAFC' : 'rgba(148,163,184,0.95)',
+                            }}
+                            title={`Edit Lens ${LENS_LABEL[k]} only`}
+                          >
+                            <span className="inline-flex items-center gap-1.5 w-10">
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: c, boxShadow: active ? `0 0 6px ${c}AA` : 'none' }} />
+                              <span className="font-medium">{LENS_LABEL[k]}</span>
+                            </span>
+                            <span className="flex-1 text-left text-muted-foreground">rot</span>
+                            <span className="w-10 text-right text-foreground">{L.rotation}°</span>
+                            <span className="text-left text-muted-foreground">fov</span>
+                            <span className="w-9 text-right text-foreground">{L.fov}°</span>
+                            <span className="text-left text-muted-foreground">range</span>
+                            <span className="w-12 text-right text-foreground">{L.range} ft</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="text-[10.5px] text-muted-foreground mt-2 leading-snug">
+                      Mode: <span className="text-foreground">{lensMode === 'linked' ? 'Linked' : 'Independent'}</span> ·
+                      {lensMode === 'linked'
+                        ? ' Range / FOV changes propagate to all four lenses.'
+                        : ' Each lens edits alone.'}
+                    </div>
+                  </DrawerSection>
+                )}
                 <DrawerSection title="Telemetry">
                   <Row label="px / ft @ 30ft" value={pxPerFt} />
                   <Row label="Overlap %" value={`${overlapPct}%`} tone={overlapPct > 35 ? '#FACC15' : undefined} />
@@ -10075,30 +10986,116 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         )}
 
         {bodyShows(tab, 'compliance') && (
-          <>
-            <DrawerSection title="Codes">
-              <Row label="NEC 725" value="Class 2" tone="#34D399" />
-              <Row label="ADA arc" value="Clear" tone="#34D399" />
-              <Row label="Fire rating" value="Plenum cable required" tone="#FACC15" />
-              <Row label="UL 2802" value="Verified" tone="#34D399" />
+          isCam ? (
+            // Cameras: do NOT claim NEC / ADA / UL / privacy / retention
+            // as verified. Those rows were hardcoded constants, not a
+            // rules-engine result — they would falsely imply compliance
+            // certification. This body is a disabled checklist preview.
+            <DrawerSection title="Compliance checklist · preview">
+              <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+                Rules engine not wired
+              </div>
+              <div className="text-[11.5px] text-muted-foreground mb-2">
+                These are the checks the validator will run once the rules
+                engine ships. None of them are verified for this camera
+                today — treat the list as scope, not as certification.
+              </div>
+              <div className="space-y-1 text-[11.5px] opacity-60 pointer-events-none select-none">
+                <div className="flex items-baseline justify-between py-1 border-b border-border/40">
+                  <span>NEC 725 cable class</span><span className="text-muted-foreground">pending</span>
+                </div>
+                <div className="flex items-baseline justify-between py-1 border-b border-border/40">
+                  <span>ADA mount-height arc</span><span className="text-muted-foreground">pending</span>
+                </div>
+                <div className="flex items-baseline justify-between py-1 border-b border-border/40">
+                  <span>Fire-rating / plenum cable</span><span className="text-muted-foreground">pending</span>
+                </div>
+                <div className="flex items-baseline justify-between py-1 border-b border-border/40">
+                  <span>UL 2802 surveillance compliance</span><span className="text-muted-foreground">pending</span>
+                </div>
+                <div className="flex items-baseline justify-between py-1 border-b border-border/40">
+                  <span>Privacy mask zones</span><span className="text-muted-foreground">pending</span>
+                </div>
+                <div className="flex items-baseline justify-between py-1">
+                  <span>Retention policy</span><span className="text-muted-foreground">pending</span>
+                </div>
+              </div>
             </DrawerSection>
-            <DrawerSection title="Privacy">
-              <Row label="Masked zones" value="2" />
-              <Row label="Retention" value="30 days" />
+          ) : (
+            // Non-camera devices (doors / readers / IDFs / etc.). The
+            // previous body shipped Verified / Class 2 / Clear / 30-day
+            // rows that were hardcoded constants, not rules-engine
+            // output. Until those checks exist as real rules, every row
+            // renders as `pending` against a "Rules engine not wired"
+            // banner. Section labels are kind-aware so the surveyor
+            // sees what scope WILL eventually be validated, without
+            // implying any of it is validated today.
+            <DrawerSection title="Compliance checklist · preview">
+              <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+                Rules engine not wired
+              </div>
+              <div className="text-[11.5px] text-muted-foreground mb-2">
+                These are the checks the validator will run for this object
+                once the rules engine ships. Nothing on this list is
+                verified today.
+              </div>
+              <div className="space-y-1 text-[11.5px] opacity-60 pointer-events-none select-none">
+                {(() => {
+                  const isDoor =
+                    d.type.startsWith('inf.door') || d.type.startsWith('inf.gate')
+                    || d.type.startsWith('inf.storefront') || d.type.startsWith('inf.doubledoor')
+                    || d.type === 'inf.elevator';
+                  const isReader = d.type === 'acc.reader' || d.type === 'acc.keypad' || d.type === 'acc.biometric';
+                  const isIdf = d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'inf.rack' || d.type === 'inf.mdf';
+                  const rows = isDoor
+                    ? ['NFPA 80 / 101 egress path', 'NFPA 72 fire alarm interconnect', 'ADA accessible opening', 'Maglock + REX pairing', 'Strike voltage match', 'Battery backup runtime']
+                    : isReader
+                      ? ['ADA reach (15–48 in)', 'Mullion-strike clearance', 'Mounting-height code', 'Cable type (plenum vs riser)', 'Door coordination']
+                      : isIdf
+                        ? ['Rack U budget', 'PoE budget per switch', 'UPS runtime', 'Thermal load', 'Patch-port density']
+                        : ['NEC 725 cable class', 'ADA / accessibility', 'Fire rating', 'UL listing', 'Retention policy'];
+                  return rows.map((label, i) => (
+                    <div key={i} className="flex items-baseline justify-between py-1 border-b border-border/40 last:border-b-0">
+                      <span>{label}</span>
+                      <span className="text-muted-foreground">pending</span>
+                    </div>
+                  ));
+                })()}
+              </div>
             </DrawerSection>
-          </>
+          )
         )}
 
         {bodyShows(tab, 'telemetry') && (
-          <>
-            <DrawerSection title="Live telemetry">
-              <Row label="Uptime" value="99.94%" tone="#34D399" />
-              <Row label="Packet loss" value="0.02%" />
-              <Row label="Frame drops / hr" value="3" />
-              <Row label="Signal" value="Excellent" tone="#34D399" />
-              <Row label="Last reboot" value="14d ago" />
+          isCam ? (
+            // Telemetry rows below were hardcoded ("Uptime 99.94%", etc.).
+            // We have no live data feed — replaced with a disabled preview.
+            <DrawerSection title="Live telemetry · preview">
+              <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+                No live telemetry feed connected
+              </div>
+              <div className="text-[11.5px] text-muted-foreground">
+                Uptime, packet loss, frame drops, signal, and last reboot
+                will appear here when the camera connector ships. They are
+                not measured today.
+              </div>
             </DrawerSection>
-          </>
+          ) : (
+            // Non-camera telemetry was also hardcoded ("Uptime 99.94%",
+            // "Packet loss 0.02%", etc.). No live data feed is connected
+            // for ANY device kind today — replace with an honest preview
+            // banner for doors / readers / IDFs as well.
+            <DrawerSection title="Live telemetry · preview">
+              <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+                No live telemetry feed connected
+              </div>
+              <div className="text-[11.5px] text-muted-foreground">
+                When the device's connector ships, uptime / packet loss /
+                last-reboot / online status will appear here. None of those
+                values are measured for this object today.
+              </div>
+            </DrawerSection>
+          )
         )}
 
         {bodyShows(tab, 'linked') && (
@@ -10138,37 +11135,36 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
 
         {bodyShows(tab, 'media') && (
           <DrawerSection title="Media">
+            <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+              Preview only · file persistence not wired
+            </div>
             <div className="text-[11.5px] text-muted-foreground mb-2">
-              Attach site photos, datasheets, or scope-of-work snippets for this device.
-              Drag a file in or click below — files persist on the device record.
+              Uploads do not persist yet. The media-store integration is on the
+              roadmap; until then, attach photos / datasheets in your
+              project-management tool of record and link them in the Notes tab.
             </div>
             <button
-              className="w-full px-3 py-6 rounded-md border-2 border-dashed border-border hover:border-primary/60 hover:bg-primary/4 text-[12px] text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-2"
-              onClick={() => toast.message('Media upload', { description: 'In-browser file persistence ships once the media store is connected.', duration: 4000 })}
+              disabled
+              aria-disabled="true"
+              className="w-full px-3 py-5 rounded-md border-2 border-dashed border-border/60 text-[12px] text-muted-foreground/70 cursor-not-allowed flex items-center justify-center gap-2"
+              title="Disabled — no persistence backing"
+              data-testid="media-disabled-button"
             >
-              <FolderUp className="w-4 h-4" /> Add media
+              <FolderUp className="w-4 h-4" /> Add media (disabled)
             </button>
           </DrawerSection>
         )}
 
         {bodyShows(tab, 'history') && (
           <DrawerSection title="Change history">
-            <div className="space-y-2 text-[11.5px]">
-              {[
-                { who: 'Engineer · Jordan', what: 'Placed device on canvas', when: 'just now' },
-                { who: 'System', what: 'Auto-bound to nearest IDF', when: 'just now' },
-              ].map((h, i) => (
-                <div key={i} className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-b-0">
-                  <span className="mt-1 w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                  <div className="flex-1">
-                    <div className="text-foreground">{h.what}</div>
-                    <div className="text-muted-foreground/80 text-[10.5px]">{h.who} · {h.when}</div>
-                  </div>
-                </div>
-              ))}
-              <div className="text-[10.5px] text-muted-foreground/80 pt-1">
-                History is captured per-session today; persistent audit ships with the activity store integration.
-              </div>
+            <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+              Session preview · audit log not wired
+            </div>
+            <div className="text-[11.5px] text-muted-foreground">
+              Per-object change history is not yet captured. Once the
+              activity-store integration ships, edits to this device
+              (placement, FOV / range changes, hardware swaps, notes) will
+              appear here with author + timestamp.
             </div>
           </DrawerSection>
         )}
@@ -11069,6 +12065,289 @@ function PathwaysOverlay({ onPickBundle, onPickPathway }: {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   PATHWAY VERTEX EDITOR — per-vertex drag handles + segment-insert "+"
+   affordance + Delete/Backspace removal for the SELECTED pathway only.
+   Mounted inside the canvas SVG content group (so it inherits the
+   `translate(pan) scale(zoom)` transform and works in canvas coords),
+   AFTER the device loop (so handles paint above both pathways and
+   devices). Renders nothing when no pathway is selected.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function PathwayVertexEditor({
+  pathwayId, svgRef, zoom, pan, snap, pxToFt,
+}: {
+  pathwayId: string;
+  svgRef: React.RefObject<SVGSVGElement>;
+  zoom: number;
+  pan: { x: number; y: number };
+  /** Honors the TopBar Snap toggle. When true, drag and insert snap to
+   *  the project's canvas-wide 20 px (= 1 ft) grid — matches the wall
+   *  + cable draw + click-to-arm snap behaviour used elsewhere. */
+  snap: boolean;
+  /** Calibrated feet-per-pixel for the active floor. Drives the live
+   *  X / Y readout shown next to the dragging vertex. */
+  pxToFt: number;
+}) {
+  const pathway = useProjectStore((s) => (s.pathways as any)[pathwayId]);
+  const floors = useProjectStore((s) => s.floors);
+  const updatePathway = useProjectStore((s) => s.updatePathway);
+  // Hovered vertex (for the delete-key affordance + active-vertex
+  // emphasis). Drag state lives in a ref because we don't need to
+  // re-render the world on every pointermove — store updates already
+  // cause the polyline to re-paint.
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [hoverSeg, setHoverSeg] = useState<number | null>(null);
+  // Live cursor position projected onto the hovered segment. Drives the
+  // "+" insert glyph so it tracks the cursor and lands exactly where
+  // the user is pointing instead of snapping to the segment midpoint.
+  // Coordinates are in canvas-space (pan-stripped).
+  const [insertPt, setInsertPt] = useState<{ x: number; y: number } | null>(null);
+  // Set during an active drag so we can paint the active vertex with
+  // stronger visual weight and surface a small X / Y readout.
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const dragRef = useRef<{ idx: number } | null>(null);
+
+  // Always read the latest pathway from the store via the ref pattern so
+  // the drag handler doesn't close over stale points. (The component
+  // already re-renders on every store change, but the ref keeps the
+  // pointermove math correct between renders.)
+  const pathwayRef = useRef(pathway);
+  useEffect(() => { pathwayRef.current = pathway; }, [pathway]);
+  // Snap also lives in a ref so the pointermove handler always reads the
+  // current value even if the user toggles Snap mid-drag.
+  const snapRef = useRef(snap);
+  useEffect(() => { snapRef.current = snap; }, [snap]);
+
+  // Convert screen-space (client) → canvas coords. Matches the same
+  // pan-aware formula `ConeHandles` and `RotationRing` use after the
+  // direct-manipulation pass.
+  const screenToCanvas = useCallback((clientX: number, clientY: number) => {
+    const r = svgRef.current?.getBoundingClientRect();
+    if (!r) return null;
+    return {
+      x: ((clientX - r.left) - pan.x) / zoom,
+      y: ((clientY - r.top)  - pan.y) / zoom,
+    };
+  }, [svgRef, pan.x, pan.y, zoom]);
+
+  // 20 px = 1 ft is the project-wide canvas grid (same constant the wall
+  // tool, cable draw, and click-to-arm placement use). Centralising it
+  // here keeps the snap step consistent and easy to retune.
+  const SNAP_PX = 20;
+  const applySnap = useCallback((p: { x: number; y: number }) => (
+    snapRef.current ? { x: Math.round(p.x / SNAP_PX) * SNAP_PX, y: Math.round(p.y / SNAP_PX) * SNAP_PX } : p
+  ), []);
+
+  // Project a point onto the segment a→b, clamped to the endpoints. We
+  // use this for cursor-tracked insert ("+" appears at the nearest point
+  // on the segment under the cursor instead of the midpoint). The clamp
+  // keeps the insert glyph from ever leaving the segment if the cursor
+  // strays into the hit-zone padding.
+  const projectOnSegment = useCallback((p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 0.0001) return { x: a.x, y: a.y };
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return { x: a.x + dx * t, y: a.y + dy * t };
+  }, []);
+
+  // Compute the new length (ft) for a candidate points array. Used to
+  // refresh `lengthFt` after a drag/insert/delete so the drawer + BOM
+  // pick up the new total immediately — `pathwayLengthFt` short-circuits
+  // on a stored `lengthFt > 0`, so we must overwrite it.
+  const recomputeLengthFt = useCallback((pts: { x: number; y: number }[]) => {
+    if (!pathway) return 0;
+    const floor = floors[pathway.floorId ?? ''];
+    return pathwayLengthFt({ points: pts }, floor);
+  }, [floors, pathway]);
+
+  // Vertex drag: pointerdown captures, pointermove writes new points to
+  // the store, pointerup commits final lengthFt. The pointer-capture is
+  // installed on the dragged handle's <g> so subsequent move/up events
+  // continue to fire even if the cursor leaves the handle. When Snap is
+  // active the moved point lands on the project grid.
+  const onVertexDown = (idx: number) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch {}
+    dragRef.current = { idx };
+    setDragIdx(idx);
+    const onMove = (ev: PointerEvent) => {
+      if (!dragRef.current) return;
+      const p = screenToCanvas(ev.clientX, ev.clientY);
+      if (!p) return;
+      const cur = pathwayRef.current;
+      if (!cur || !Array.isArray(cur.points)) return;
+      const snapped = applySnap(p);
+      const next = cur.points.map((pt: any, i: number) => i === dragRef.current!.idx ? { x: snapped.x, y: snapped.y } : pt);
+      updatePathway(pathwayId, { points: next, lengthFt: recomputeLengthFt(next) } as any);
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      setDragIdx(null);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  // Segment-insert: the "+" follows the cursor's projection onto the
+  // hovered segment; click splices a new vertex at that exact point.
+  // Honors Snap so the new vertex lands on the grid when the toggle is
+  // on. Falls back to the segment midpoint if the cursor hasn't
+  // produced a fresh projection yet (e.g. headless test that only
+  // dispatches pointerover without a follow-up move).
+  const onInsertSegment = (segIdx: number) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const cur = pathwayRef.current;
+    if (!cur || !Array.isArray(cur.points) || segIdx < 0 || segIdx >= cur.points.length - 1) return;
+    const a = cur.points[segIdx];
+    const b = cur.points[segIdx + 1];
+    const fallbackMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    // If the cursor delivered coordinates via pointermove, use the
+    // projected point; otherwise fall back to the midpoint. Both paths
+    // go through applySnap so the insert respects the toggle.
+    const cursorCanvas = screenToCanvas(e.clientX, e.clientY);
+    const raw = cursorCanvas ? projectOnSegment(cursorCanvas, a, b) : (insertPt ?? fallbackMid);
+    const snapped = applySnap(raw);
+    const next = [...cur.points.slice(0, segIdx + 1), snapped, ...cur.points.slice(segIdx + 1)];
+    updatePathway(pathwayId, { points: next, lengthFt: recomputeLengthFt(next) } as any);
+    setHoverIdx(segIdx + 1);
+    setInsertPt(null);
+  };
+
+  // Track cursor → segment projection while hovering. We attach a
+  // pointermove on each segment hit-zone so the "+" follows the cursor
+  // smoothly. Clearing on pointerleave avoids stale projections.
+  const onSegmentMove = (segIdx: number) => (e: React.PointerEvent) => {
+    const cur = pathwayRef.current;
+    if (!cur || !Array.isArray(cur.points) || segIdx < 0 || segIdx >= cur.points.length - 1) return;
+    const p = screenToCanvas(e.clientX, e.clientY);
+    if (!p) return;
+    setInsertPt(projectOnSegment(p, cur.points[segIdx], cur.points[segIdx + 1]));
+  };
+
+  // Delete the currently-hovered vertex on Backspace/Delete, gated to
+  // keep the pathway at ≥2 points (anything less is no longer a
+  // pathway). No-op if no vertex is hovered.
+  useEffect(() => {
+    if (hoverIdx == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA') return;
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const cur = pathwayRef.current;
+      if (!cur || !Array.isArray(cur.points) || cur.points.length <= 2) return;
+      e.preventDefault();
+      const next = cur.points.filter((_: any, i: number) => i !== hoverIdx);
+      updatePathway(pathwayId, { points: next, lengthFt: recomputeLengthFt(next) } as any);
+      setHoverIdx(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hoverIdx, pathwayId, updatePathway, recomputeLengthFt]);
+
+  if (!pathway || !Array.isArray(pathway.points) || pathway.points.length < 2) return null;
+  const isConduitPath = pathway.pathwayKind && pathway.pathwayKind !== 'cable';
+  const handleTone = isConduitPath ? '#A371F7' : '#22D3EE';
+
+  return (
+    <g data-testid={`pathway-vertices-${pathwayId}`}>
+      {/* Segment-insert "+" affordances. One per segment, only visible
+          when the user hovers that segment's invisible hit-zone. The
+          hit-zone is a transparent thick stroke aligned to each segment;
+          the visible "+" tracks the cursor's nearest projection onto
+          the segment so it lands where you click — not at a fixed
+          midpoint. Falls back to the segment midpoint until the first
+          pointermove delivers a projected point. */}
+      {pathway.points.slice(0, -1).map((a: any, i: number) => {
+        const b = pathway.points[i + 1];
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const visible = hoverSeg === i;
+        const liveInsert = visible && insertPt
+          ? applySnap(insertPt)
+          : applySnap(mid);
+        return (
+          <g key={`seg-${i}`}>
+            {/* Hit-zone catches the hover even when the cursor isn't
+                exactly on the polyline. We DON'T set cursor:copy here
+                unless the segment is active so unrelated pan/select
+                interactions stay clean. */}
+            <line
+              x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              stroke="transparent" strokeWidth={14}
+              pointerEvents="stroke"
+              onPointerEnter={() => setHoverSeg(i)}
+              onPointerMove={onSegmentMove(i)}
+              onPointerLeave={() => { setHoverSeg((s) => s === i ? null : s); setInsertPt(null); }}
+              style={{ cursor: visible ? 'copy' : 'default' }}
+            />
+            {visible && (
+              <g
+                transform={`translate(${liveInsert.x}, ${liveInsert.y})`}
+                onPointerDown={onInsertSegment(i)}
+                onPointerEnter={() => setHoverSeg(i)}
+                onPointerMove={onSegmentMove(i)}
+                style={{ cursor: 'copy' }}
+                data-testid={`pathway-segment-insert-${pathwayId}-${i}`}
+              >
+                <circle r={6} fill={handleTone} opacity="0.22" />
+                <circle r={4} fill={handleTone} stroke="var(--canvas-background)" strokeWidth={0.9} />
+                <line x1={-2.2} y1={0} x2={2.2} y2={0} stroke="var(--canvas-background)" strokeWidth="0.9" />
+                <line x1={0} y1={-2.2} x2={0} y2={2.2} stroke="var(--canvas-background)" strokeWidth="0.9" />
+              </g>
+            )}
+          </g>
+        );
+      })}
+
+      {/* Vertex drag handles. Render after segment hits so a hover on
+          the vertex wins over the segment hover. Small + precise, with
+          a hover-bumped glow ring (the .dv-cone-handle CSS rule already
+          adds this transition). The active/dragging vertex paints with
+          a stronger outline and surfaces a small X / Y HUD above it. */}
+      {pathway.points.map((p: any, i: number) => {
+        const isHover = hoverIdx === i;
+        const isActive = dragIdx === i || hoverIdx === i;
+        const isDragging = dragIdx === i;
+        return (
+          <g
+            key={`vert-${i}`}
+            className="dv-cone-handle"
+            onPointerDown={onVertexDown(i)}
+            onPointerEnter={() => setHoverIdx(i)}
+            onPointerLeave={() => setHoverIdx((c) => c === i ? null : c)}
+            style={{ cursor: 'grab' }}
+            data-testid={`pathway-vertex-${pathwayId}-${i}`}
+          >
+            <circle cx={p.x} cy={p.y} r={isActive ? 8.5 : 6} fill={handleTone} opacity={isActive ? 0.32 : 0.22} />
+            <circle
+              cx={p.x} cy={p.y}
+              r={isActive ? 4.2 : 3.2}
+              fill={handleTone}
+              stroke="var(--canvas-background)"
+              strokeWidth={isActive ? 1.3 : 0.9}
+            />
+            {isDragging && (
+              <g transform={`translate(${p.x}, ${p.y - 16})`} pointerEvents="none" data-testid={`pathway-vertex-hud-${pathwayId}-${i}`}>
+                <rect x={-26} y={-7} width={52} height={13} rx={2} fill="var(--panel-background)" fillOpacity="0.94" stroke={handleTone} strokeWidth="0.6" />
+                <text textAnchor="middle" y={2.5} fontSize="8.5" fontWeight="600" fill={handleTone} fontFamily="ui-monospace, monospace">
+                  {(p.x * pxToFt).toFixed(1)} · {(p.y * pxToFt).toFixed(1)} ft
+                </text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    DRAWING TOOL RAIL — black vertical strip on the left of the canvas
    pane. Tools only (no devices). Always visible in Default + Field
    modes; replaced by a small "Tools" reopener in Canvas mode.
@@ -11524,6 +12803,16 @@ function BottomDeviceBar({
     return null;
   })();
   const [open, setOpen] = useState<string | null>(initialOpen);
+  // Sub-tab state for the Cabling + Conduit trays. The trays used to
+  // render every section's grid simultaneously (~76 buttons for Cabling,
+  // ~39 for Conduit). Now each tray shows ONE section at a time, picked
+  // by these sub-tabs, so the user sees a focused subset (≤12 buttons).
+  const [cableSub, setCableSub] = useState<'cable'|'term'|'coupler'|'rack'|'conduit'|'pathway'|'box'|'firestop'>('cable');
+  const [conduitSub, setConduitSub] = useState<'conduit'|'pathway'|'box'|'firestop'>('conduit');
+  // The Conduit sub-tab defaults to a 6-button "common sizes" set
+  // (EMT 1/2 · EMT 3/4 · EMT 1 · PVC 3/4 · PVC 1 · raceway). Flip this
+  // toggle to expose the full 30-cell type × size matrix.
+  const [conduitShowAll, setConduitShowAll] = useState(false);
   const trayRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -11583,18 +12872,43 @@ function BottomDeviceBar({
           </div>
           {trayCat.id === 'cable' ? (
             <div className="p-3 max-h-[360px] overflow-auto space-y-3">
-              {/* Eight clearly labelled sections per the brief. Each
-                  item carries an icon, a name, a short description, and
-                  a unit type ("per foot" / "each") so the tray reads
-                  like a real product library. */}
+              {/* Sub-tabbed layout. The tray used to render all 8 sections
+                  expanded at once (~76 buttons visible). It now shows ONE
+                  sub-tab's grid at a time so the user faces ≤12 buttons. */}
               {(() => {
                 const fake = (id: string, label: string, note: string): Product => ({
                   id, type: 'net.switch' as DeviceType, mfr: 'Cable', model: label, sub: note, recommended: false,
                 } as any);
-                const sections: { title: string; render: () => React.ReactNode }[] = [
-                  {
-                    title: '1 · Cable · per foot',
-                    render: () => (
+                const CABLE_SUBS: { id: typeof cableSub; label: string }[] = [
+                  { id: 'cable',    label: 'Cable' },
+                  { id: 'term',     label: 'Terminations' },
+                  { id: 'coupler',  label: 'Couplers' },
+                  { id: 'rack',     label: 'Patch / Rack' },
+                  { id: 'conduit',  label: 'Conduit' },
+                  { id: 'pathway',  label: 'Pathways' },
+                  { id: 'box',      label: 'Pull / J-box' },
+                  { id: 'firestop', label: 'Firestop' },
+                ];
+                return (
+                  <>
+                    <div
+                      className="flex flex-wrap items-center gap-1 border-b border-border pb-2"
+                      data-testid="cable-sub-tabs"
+                    >
+                      {CABLE_SUBS.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setCableSub(s.id)}
+                          data-track={`bottombar-cable-sub-${s.id}`}
+                          className={`text-[11px] px-2 py-1 rounded-md border transition-colors ${
+                            cableSub === s.id
+                              ? 'border-primary/40 bg-primary/12 text-primary'
+                              : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                          }`}
+                        >{s.label}</button>
+                      ))}
+                    </div>
+                    {cableSub === 'cable' && (
                       <div className="grid grid-cols-4 gap-1.5">
                         {(CABLE_TYPES as any[]).map((c) => (
                           <button
@@ -11608,11 +12922,8 @@ function BottomDeviceBar({
                           </button>
                         ))}
                       </div>
-                    ),
-                  },
-                  {
-                    title: '2 · Terminations · each',
-                    render: () => (
+                    )}
+                    {cableSub === 'term' && (
                       <div className="grid grid-cols-4 gap-1.5">
                         {([
                           { id: 'jack',         label: 'RJ45 keystone',  pid: 'cabacc-jack-rj45' },
@@ -11635,11 +12946,8 @@ function BottomDeviceBar({
                           </button>
                         ))}
                       </div>
-                    ),
-                  },
-                  {
-                    title: '3 · Couplers · each',
-                    render: () => (
+                    )}
+                    {cableSub === 'coupler' && (
                       <div className="grid grid-cols-4 gap-1.5">
                         {([
                           { id: 'coupler-rj45', label: 'RJ45 coupler',  pid: 'cabacc-coupler-rj45' },
@@ -11659,11 +12967,8 @@ function BottomDeviceBar({
                           </button>
                         ))}
                       </div>
-                    ),
-                  },
-                  {
-                    title: '4 · Patch / Rack · each',
-                    render: () => (
+                    )}
+                    {cableSub === 'rack' && (
                       <div className="grid grid-cols-4 gap-1.5">
                         {([
                           { id: 'pp24',        label: '24-port PP',         pid: 'cabacc-pp-24' },
@@ -11683,13 +12988,10 @@ function BottomDeviceBar({
                           </button>
                         ))}
                       </div>
-                    ),
-                  },
-                  {
-                    title: '5 · Conduit · per foot',
-                    render: () => (
+                    )}
+                    {cableSub === 'conduit' && (
                       <div>
-                        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">Pick a conduit type + size; the cursor arms a Conduit draw tool</div>
+                        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">Pick a conduit type + trade size to arm the Conduit draw tool.</div>
                         <div className="grid grid-cols-6 gap-1">
                           {(['EMT','PVC','FMC','LFMC','raceway'] as const).map((t) => (
                             ['1/2"','3/4"','1"','1-1/4"','1-1/2"','2"'].map((sz) => (
@@ -11706,18 +13008,15 @@ function BottomDeviceBar({
                           ))}
                         </div>
                       </div>
-                    ),
-                  },
-                  {
-                    title: '6 · Pathways · per foot',
-                    render: () => (
+                    )}
+                    {cableSub === 'pathway' && (
                       <div className="grid grid-cols-4 gap-1.5">
                         {([
-                          { kind: 'tray' as const,  label: 'Cable tray' },
-                          { kind: 'jhook' as const, label: 'J-hooks' },
+                          { kind: 'tray' as const,    label: 'Cable tray' },
+                          { kind: 'jhook' as const,   label: 'J-hooks' },
                           { kind: 'raceway' as const, label: 'Surface raceway' },
-                          { kind: 'duct' as const,  label: 'Underground duct' },
-                          { kind: 'sleeve' as const, label: 'Wall sleeve' },
+                          { kind: 'duct' as const,    label: 'Underground duct' },
+                          { kind: 'sleeve' as const,  label: 'Wall sleeve' },
                         ]).map((p) => (
                           <button
                             key={p.kind}
@@ -11730,15 +13029,12 @@ function BottomDeviceBar({
                           </button>
                         ))}
                       </div>
-                    ),
-                  },
-                  {
-                    title: '7 · Pull / Junction boxes · each',
-                    render: () => (
+                    )}
+                    {cableSub === 'box' && (
                       <div className="grid grid-cols-4 gap-1.5">
                         {([
-                          { id: 'pullbox',    label: 'Pull box',       pid: 'cabacc-pullbox' },
-                          { id: 'jbox',       label: 'Junction box',   pid: 'cabacc-jbox' },
+                          { id: 'pullbox', label: 'Pull box',     pid: 'cabacc-pullbox' },
+                          { id: 'jbox',    label: 'Junction box', pid: 'cabacc-jbox' },
                         ]).map((a) => (
                           <button
                             key={a.id}
@@ -11751,15 +13047,12 @@ function BottomDeviceBar({
                           </button>
                         ))}
                       </div>
-                    ),
-                  },
-                  {
-                    title: '8 · Firestop / Sleeves · each',
-                    render: () => (
+                    )}
+                    {cableSub === 'firestop' && (
                       <div className="grid grid-cols-4 gap-1.5">
                         {([
-                          { id: 'firestop', label: 'Firestop',     pid: 'cabacc-firestop' },
-                          { id: 'sleeve',   label: 'Wall sleeve',  pid: 'cabacc-sleeve' },
+                          { id: 'firestop', label: 'Firestop',    pid: 'cabacc-firestop' },
+                          { id: 'sleeve',   label: 'Wall sleeve', pid: 'cabacc-sleeve' },
                         ]).map((a) => (
                           <button
                             key={a.id}
@@ -11772,107 +13065,158 @@ function BottomDeviceBar({
                           </button>
                         ))}
                       </div>
-                    ),
-                  },
-                ];
-                return sections.map((s) => (
-                  <div key={s.title}>
-                    <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">{s.title}</div>
-                    {s.render()}
-                  </div>
-                ));
+                    )}
+                  </>
+                );
               })()}
             </div>
           ) : trayCat.id === 'conduit' ? (
             <div className="p-3 max-h-[360px] overflow-auto space-y-3">
-              <TraySection title="Conduit · per foot" hint="Pick a type + trade size — click to arm the Conduit draw tool.">
-                <div className="grid grid-cols-6 gap-1">
-                  {(['EMT','PVC','FMC','LFMC','raceway'] as const).flatMap((t) =>
-                    ['1/2"','3/4"','1"','1-1/4"','1-1/2"','2"'].map((sz) => (
-                      <button
-                        key={`${t}-${sz}`}
-                        onClick={() => { onPickConduit(t, sz); setOpen(null); }}
-                        data-track={`bottombar-conduit-${t}-${sz.replace(/\W/g, '')}`}
-                        className="text-left px-2 py-1.5 rounded border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors text-[10.5px]"
-                      >
-                        <div className="font-medium tracking-tight text-foreground">{t} {sz}</div>
-                        <div className="text-[9.5px] text-muted-foreground">Per ft</div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </TraySection>
-              <TraySection title="Pathways · per foot" hint="Cable tray, J-hooks, surface raceway, underground duct, wall sleeve.">
-                <div className="grid grid-cols-4 gap-1.5">
-                  {([
-                    { kind: 'tray' as const,    label: 'Cable tray' },
-                    { kind: 'jhook' as const,   label: 'J-hooks' },
-                    { kind: 'raceway' as const, label: 'Surface raceway' },
-                    { kind: 'duct' as const,    label: 'Underground duct' },
-                    { kind: 'sleeve' as const,  label: 'Wall sleeve' },
-                  ]).map((p) => (
-                    <button
-                      key={p.kind}
-                      onClick={() => { onPickPathway(p.kind, p.label); setOpen(null); }}
-                      data-track={`bottombar-pathway-${p.kind}`}
-                      className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
+              {(() => {
+                const fake = (id: string, label: string, note: string): Product => ({
+                  id, type: 'net.switch' as DeviceType, mfr: 'Conduit', model: label, sub: note, recommended: false,
+                } as any);
+                const CONDUIT_SUBS: { id: typeof conduitSub; label: string }[] = [
+                  { id: 'conduit',  label: 'Conduit' },
+                  { id: 'pathway',  label: 'Pathways' },
+                  { id: 'box',      label: 'Pull / J-box' },
+                  { id: 'firestop', label: 'Sleeves / firestop' },
+                ];
+                return (
+                  <>
+                    <div
+                      className="flex flex-wrap items-center gap-1 border-b border-border pb-2"
+                      data-testid="conduit-sub-tabs"
                     >
-                      <div className="text-[11.5px] font-medium tracking-tight">{p.label}</div>
-                      <div className="text-[10px] text-muted-foreground">Pathway · per ft</div>
-                    </button>
-                  ))}
-                </div>
-              </TraySection>
-              <TraySection title="Pull / Junction boxes · each" hint="Drag near a conduit/pathway route to auto-attach.">
-                {(() => {
-                  const fake = (id: string, label: string, note: string): Product => ({
-                    id, type: 'net.switch' as DeviceType, mfr: 'Cable', model: label, sub: note, recommended: false,
-                  } as any);
-                  return (
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {([
-                        { id: 'pullbox', label: 'Pull box',     pid: 'cabacc-pullbox' },
-                        { id: 'jbox',    label: 'Junction box', pid: 'cabacc-jbox' },
-                      ]).map((a) => (
+                      {CONDUIT_SUBS.map((s) => (
                         <button
-                          key={a.id}
-                          onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Conduit accessory · each'), e); setOpen(null); }}
-                          data-track={`bottombar-cableacc-${a.id}`}
-                          className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
-                        >
-                          <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
-                          <div className="text-[10px] text-muted-foreground">Each</div>
-                        </button>
+                          key={s.id}
+                          onClick={() => setConduitSub(s.id)}
+                          data-track={`bottombar-conduit-sub-${s.id}`}
+                          className={`text-[11px] px-2 py-1 rounded-md border transition-colors ${
+                            conduitSub === s.id
+                              ? 'border-primary/40 bg-primary/12 text-primary'
+                              : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                          }`}
+                        >{s.label}</button>
                       ))}
                     </div>
-                  );
-                })()}
-              </TraySection>
-              <TraySection title="Sleeves & firestop · each" hint="Penetrations and rated-wall sealing.">
-                {(() => {
-                  const fake = (id: string, label: string, note: string): Product => ({
-                    id, type: 'net.switch' as DeviceType, mfr: 'Cable', model: label, sub: note, recommended: false,
-                  } as any);
-                  return (
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {([
-                        { id: 'firestop', label: 'Firestop',    pid: 'cabacc-firestop' },
-                        { id: 'sleeve',   label: 'Wall sleeve', pid: 'cabacc-sleeve' },
-                      ]).map((a) => (
-                        <button
-                          key={a.id}
-                          onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Penetration · each'), e); setOpen(null); }}
-                          data-track={`bottombar-cableacc-${a.id}`}
-                          className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
-                        >
-                          <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
-                          <div className="text-[10px] text-muted-foreground">Each</div>
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </TraySection>
+                    {conduitSub === 'conduit' && (() => {
+                      // Curated short list — the six options that cover ~90%
+                      // of low-voltage runs. Surveyors reach for these first.
+                      const COMMON: Array<{ type: 'EMT' | 'PVC' | 'FMC' | 'LFMC' | 'raceway'; size: string; label: string }> = [
+                        { type: 'EMT', size: '1/2"', label: 'EMT 1/2"' },
+                        { type: 'EMT', size: '3/4"', label: 'EMT 3/4"' },
+                        { type: 'EMT', size: '1"',   label: 'EMT 1"' },
+                        { type: 'PVC', size: '3/4"', label: 'PVC 3/4"' },
+                        { type: 'PVC', size: '1"',   label: 'PVC 1"' },
+                        { type: 'raceway', size: '',  label: 'Raceway' },
+                      ];
+                      return (
+                        <>
+                          {!conduitShowAll && (
+                            <div className="grid grid-cols-3 gap-1.5" data-testid="conduit-common-grid">
+                              {COMMON.map((c) => (
+                                <button
+                                  key={`${c.type}-${c.size}`}
+                                  onClick={() => { onPickConduit(c.type, c.size || undefined); setOpen(null); }}
+                                  data-track={`bottombar-conduit-${c.type}-${c.size.replace(/\W/g, '') || 'default'}`}
+                                  className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
+                                >
+                                  <div className="text-[11.5px] font-medium tracking-tight">{c.label}</div>
+                                  <div className="text-[10px] text-muted-foreground">Per ft</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {conduitShowAll && (
+                            <div className="grid grid-cols-6 gap-1" data-testid="conduit-full-grid">
+                              {(['EMT','PVC','FMC','LFMC','raceway'] as const).flatMap((t) =>
+                                ['1/2"','3/4"','1"','1-1/4"','1-1/2"','2"'].map((sz) => (
+                                  <button
+                                    key={`${t}-${sz}`}
+                                    onClick={() => { onPickConduit(t, sz); setOpen(null); }}
+                                    data-track={`bottombar-conduit-${t}-${sz.replace(/\W/g, '')}`}
+                                    className="text-left px-2 py-1.5 rounded border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors text-[10.5px]"
+                                  >
+                                    <div className="font-medium tracking-tight text-foreground">{t} {sz}</div>
+                                    <div className="text-[9.5px] text-muted-foreground">Per ft</div>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => setConduitShowAll((v) => !v)}
+                            data-testid="conduit-show-all-toggle"
+                            data-track="bottombar-conduit-show-all"
+                            className="mt-2 text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1"
+                          >
+                            {conduitShowAll ? 'Show common sizes' : 'Show all sizes (EMT · PVC · FMC · LFMC · raceway × 6)'}
+                          </button>
+                        </>
+                      );
+                    })()}
+                    {conduitSub === 'pathway' && (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { kind: 'tray' as const,    label: 'Cable tray' },
+                          { kind: 'jhook' as const,   label: 'J-hooks' },
+                          { kind: 'raceway' as const, label: 'Surface raceway' },
+                          { kind: 'duct' as const,    label: 'Underground duct' },
+                          { kind: 'sleeve' as const,  label: 'Wall sleeve' },
+                        ]).map((p) => (
+                          <button
+                            key={p.kind}
+                            onClick={() => { onPickPathway(p.kind, p.label); setOpen(null); }}
+                            data-track={`bottombar-pathway-${p.kind}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{p.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Pathway · per ft</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {conduitSub === 'box' && (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { id: 'pullbox', label: 'Pull box',     pid: 'cabacc-pullbox' },
+                          { id: 'jbox',    label: 'Junction box', pid: 'cabacc-jbox' },
+                        ]).map((a) => (
+                          <button
+                            key={a.id}
+                            onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Conduit accessory · each'), e); setOpen(null); }}
+                            data-track={`bottombar-cableacc-${a.id}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Each</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {conduitSub === 'firestop' && (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { id: 'firestop', label: 'Firestop',    pid: 'cabacc-firestop' },
+                          { id: 'sleeve',   label: 'Wall sleeve', pid: 'cabacc-sleeve' },
+                        ]).map((a) => (
+                          <button
+                            key={a.id}
+                            onPointerDown={(e) => { onStartDrag(fake(a.pid, a.label, 'Penetration · each'), e); setOpen(null); }}
+                            data-track={`bottombar-cableacc-${a.id}`}
+                            className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
+                          >
+                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[10px] text-muted-foreground">Each</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           ) : trayProducts.length === 0 ? (
             <div className="px-5 py-8 text-center text-[12px] text-muted-foreground">
@@ -12454,6 +13798,35 @@ function FloorplanBackgroundControls({
         </button>
       </div>
       <div className="px-3 py-2.5 space-y-2.5">
+        {/* Quick actions row — the four most common operations as one-tap
+            buttons, so users don't have to scrub a slider for 90° rotations
+            or to re-centre after a misclick. */}
+        <div className="flex items-center gap-1" data-testid="floorplan-quick-actions">
+          <button
+            onClick={() => onPatch({ rotation: ((bg.rotation - 90) % 360 + 360) % 360 - (bg.rotation - 90 > 180 ? 360 : 0) })}
+            title="Rotate 90° left"
+            data-testid="floorplan-rotate-left"
+            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10.5px]"
+          >
+            <RotateCcw className="w-3 h-3" /> 90°
+          </button>
+          <button
+            onClick={() => onPatch({ rotation: ((bg.rotation + 90) % 360 + 360) % 360 - ((bg.rotation + 90) % 360 > 180 ? 360 : 0) })}
+            title="Rotate 90° right"
+            data-testid="floorplan-rotate-right"
+            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10.5px]"
+          >
+            <RotateCw className="w-3 h-3" /> 90°
+          </button>
+          <button
+            onClick={() => onPatch({ x: 0, y: 0, scale: 1 })}
+            title="Re-centre and fit at 100% scale"
+            data-testid="floorplan-fit"
+            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10.5px]"
+          >
+            <Maximize2 className="w-3 h-3" /> Fit
+          </button>
+        </div>
         <SliderInline
           label="Opacity"
           value={Math.round(bg.opacity * 100)}
@@ -12475,13 +13848,14 @@ function FloorplanBackgroundControls({
         <div className="flex items-center gap-1.5 pt-1">
           <button
             onClick={() => onPatch({ x: 0, y: 0, scale: 1, rotation: 0, opacity: 0.85 })}
+            data-testid="floorplan-reset"
             className="flex-1 text-[10.5px] py-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground"
           >
             Reset transform
           </button>
         </div>
         <div className="text-[9.5px] text-muted-foreground leading-snug pt-1 border-t border-white/8">
-          Imported plan persists on the floor record. Calibrate scale from the canvas to lock real-world feet.
+          Click <span className="text-foreground">Set scale</span> on the scale bar to convert pixels into real-world feet.
         </div>
       </div>
     </div>
