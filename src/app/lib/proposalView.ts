@@ -9,6 +9,7 @@ import type {
   Proposal,
   ProposalLine,
   ProposalCustomerView,
+  CanvasBomRow,
 } from '../store/types';
 
 /** Customer safe shape. ZERO internal fields. ProposalLine entries
@@ -115,7 +116,9 @@ export function deriveProposalInternalTotals(proposal: Proposal): ProposalIntern
   let customerSubtotal = 0;
   for (const l of proposal.bomSnapshot) {
     costSubtotal += l.unitCost * l.quantity;
-    laborHours   += (l.laborHours ?? 0) * l.quantity;
+    // laborHours is TOTAL per line (not per unit) per the
+    // ProposalLine type comment. Sum directly.
+    laborHours   += l.laborHours ?? 0;
     if (!l.hideFromCustomer) {
       customerSubtotal += l.unitPrice * l.quantity;
     }
@@ -179,3 +182,79 @@ export function customerArtifactContainsInternalLeaks(artifact: ProposalCustomer
 export const DEFAULT_LABOR_RATE_PER_HOUR = 95;
 export const DEFAULT_BURDEN_PCT = 0.18;
 export const DEFAULT_MARGIN_PCT = 0.28;
+
+// ─────────────────────── BOM -> ProposalLine ────────────────────
+// SC.4.5 — convert canvas BOM rows (per source rows from
+// deriveCanvasBomRows) into the ProposalLine shape. Section
+// mapping is identity for the categories that overlap, with
+// 'network' rolled into 'infrastructure' so the customer PDF
+// table of contents reads more naturally.
+//
+// Pricing seed: marginPct is applied on the operator side via
+// internalView.marginPct. Initial unitPrice carries a sane default
+// (the canvas row's unitPrice, which already includes catalog
+// MSRP) so a freshly created draft is not all zeros. Operator can
+// override per line.
+
+const SECTION_FROM_CATEGORY: Record<CanvasBomRow['category'], ProposalLine['section']> = {
+  cameras:        'cameras',
+  access:         'access',
+  cabling:        'cabling',
+  conduit:        'conduit',
+  walls:          'walls',
+  network:        'infrastructure',
+  labor:          'labor',
+  other:          'other',
+};
+
+export function bomRowToProposalLine(row: CanvasBomRow): ProposalLine {
+  // SKU resolution: prefer the row's product id if present (devices
+  // backed by a catalog product carry one as a non-typed extra),
+  // otherwise fall back to the row id. Avoids relying on the
+  // sourceKind discriminator that drifted from the type.
+  const sku = (row as any).product || row.id;
+  return {
+    id: `pl-${row.id}`,
+    section: SECTION_FROM_CATEGORY[row.category] ?? 'other',
+    sku,
+    description: row.description,
+    quantity: row.qty,
+    unit: row.uom,
+    unitCost: row.unitPrice,
+    // Default sell = cost. applyMarginToLines bumps every line on
+    // Create. Operator overrides win per line.
+    unitPrice: row.unitPrice,
+    laborHours: row.laborHours,
+    hideFromCustomer: false,
+  };
+}
+
+/** Apply a margin to every line that does not already have a sell
+ *  price set (or where sell == cost, which is the default seed).
+ *  Used by Create proposal to set a sensible initial sell across
+ *  the board. */
+export function applyMarginToLines(lines: ProposalLine[], marginPct: number): ProposalLine[] {
+  const margin = Math.min(0.95, Math.max(0, marginPct));
+  if (margin === 0) return lines.map((l) => ({ ...l }));
+  return lines.map((l) => {
+    // Only bump lines where the operator hasn't overridden the price
+    // (i.e. unitPrice === unitCost from the seed).
+    if (l.unitPrice !== l.unitCost) return { ...l };
+    return { ...l, unitPrice: roundCurrency(l.unitCost / (1 - margin)) };
+  });
+}
+
+/** SC.4.6 fix — reprice EVERY line based on margin, overriding
+ *  any prior per line sell. Used by the "Apply margin to all
+ *  lines" Pricing section action so the customer total tracks
+ *  the operator's target margin. Skips lines with zero cost. */
+export function repriceAllLinesByMargin(lines: ProposalLine[], marginPct: number): ProposalLine[] {
+  const margin = Math.min(0.95, Math.max(0, marginPct));
+  return lines.map((l) => {
+    if (l.unitCost <= 0) return { ...l };
+    const newPrice = margin > 0
+      ? roundCurrency(l.unitCost / (1 - margin))
+      : roundCurrency(l.unitCost);
+    return { ...l, unitPrice: newPrice };
+  });
+}

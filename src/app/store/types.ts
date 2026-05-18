@@ -591,7 +591,11 @@ export interface ProposalLine {
   unitCost: number;
   /** Customer facing: retail sell price per unit. */
   unitPrice: number;
-  /** Labor hours per unit (internal). */
+  /** Labor hours TOTAL for this line (not per unit). Matches the
+   *  shape that deriveBOM / deriveCanvasBomRows already produce
+   *  for pathway and wall lines so the pricing math (laborHours *
+   *  laborRatePerHour) does not have to know whether a line is
+   *  per-unit or aggregated. */
   laborHours?: number;
   /** Hide this line from the customer view entirely. Used for
    *  internal-only labor / misc line items. */
@@ -1531,8 +1535,10 @@ export type CanvasBomCategory = 'cameras' | 'access' | 'network' | 'cabling' | '
 export interface CanvasBomRow {
   id: string;
   category: CanvasBomCategory;
-  /** Where the row came from on the canvas. Drives the row-click selection. */
-  sourceKind: 'device' | 'door' | 'pathway' | 'idf' | 'labor';
+  /** Where the row came from on the canvas. Drives the row-click selection.
+   *  SC.4.5 — 'manual' is used for rows that don't map to a single
+   *  canvas object (walls aggregate, accessory rollups). */
+  sourceKind: 'device' | 'door' | 'pathway' | 'idf' | 'labor' | 'manual';
   /** Device / door / pathway / idf id — selecting this on the canvas focuses the source object. */
   sourceId?: string;
   /** Whether this row represents existing (already-on-site) hardware. Existing rows
