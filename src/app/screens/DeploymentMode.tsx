@@ -213,7 +213,6 @@ export function DeploymentMode() {
         <span>
           {tallies.complete}/{tallies.total} complete · {tallies.open} open · {tallies.blocked} blocked · {Math.round(tallies.hours * 10) / 10} hr of work remaining
           <span className="ml-3 text-foreground/40">·</span>
-          <span className="ml-3">Status + checklist progress persist across reloads. Photo upload is preview-only.</span>
         </span>
         <span>{buildLabel()}</span>
       </div>
@@ -490,7 +489,6 @@ function WorkOrderDetail({ wo, floors, state, projectId }: { wo: WorkOrder; floo
           >
             {MOCK_TECHS.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <div className="text-[9.5px] text-muted-foreground mt-1.5">Tech roster is mock data. Real dispatch lands with backend.</div>
         </div>
         <div className="rounded-lg border border-border p-3 bg-secondary/15">
           <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Hardware identity</div>

@@ -927,8 +927,8 @@ function AttachmentsSection({ projectId, mode }: { projectId: string; mode: Mode
   return (
     <Section title="Attachments" icon={Paperclip}
       subtitle={mode === 'customer'
-        ? 'Files attached to canvas objects and work orders. Internal-only items are hidden in the customer view.'
-        : 'Files attached to canvas objects and work orders. Stored in this browser for prototype — cloud storage not connected yet.'}
+        ? 'Files attached to canvas objects and work orders. Internal items are hidden in the customer view.'
+        : 'Files attached to canvas objects and work orders.'}
     >
       {attachments.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-secondary/5 p-4 text-center text-[11.5px] text-muted-foreground">

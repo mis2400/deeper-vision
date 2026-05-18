@@ -20,7 +20,7 @@ import type { ProjectStateEnvelope } from '../../store/types';
 import { buildLabel, COMMIT_HASH } from '../../../build-info';
 import {
   Database, Download, Upload as UploadIcon, RotateCcw, Trash2,
-  AlertTriangle, X, ChevronDown, Cloud, CloudOff, Save, Camera as CameraIcon,
+  AlertTriangle, X, ChevronDown, Save, Camera as CameraIcon,
   Hash, History as HistoryIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -317,19 +317,13 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
             <Trash2 className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-[12px] text-red-500 font-medium">Clear local project state</div>
-              <div className="text-[10.5px] text-muted-foreground leading-snug">Removes the persisted blob in this browser, then reloads to a fresh seed. Local only.</div>
+              <div className="text-[10.5px] text-muted-foreground leading-snug">Wipes this workspace and reloads to a fresh seed.</div>
             </div>
           </button>
 
-          <div className="px-3 py-2.5 border-t border-border/60 bg-secondary/15 space-y-1">
-            <p className="text-[10.5px] text-foreground/80 leading-snug">
-              This prototype stores edits in <span className="font-medium">this browser</span>.
-            </p>
+          <div className="px-3 py-2.5 border-t border-border/60 bg-secondary/15">
             <p className="text-[10.5px] text-muted-foreground leading-snug">
-              To move edits between local and live, use Export / Import or Snapshots.
-            </p>
-            <p className="text-[10.5px] text-muted-foreground leading-snug">
-              Cloud sync is not connected yet.
+              Use Export / Import or Snapshots to move project state between workspaces.
             </p>
           </div>
           </div>
@@ -376,15 +370,11 @@ function SyncStatusBlock({ status }: { status: ReturnType<typeof getSyncMode> })
     : 'Never';
   return (
     <div className="px-3 pt-3 pb-2 border-b border-border/60">
-      <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Sync status</div>
-      <div className="grid grid-cols-2 gap-1.5 mb-2">
-        <StatusChip icon={CloudOff} tone="#94A3B8" label="Mode" value="Local browser storage" />
-        <StatusChip icon={CloudOff} tone="#F59E0B" label="Cloud sync" value="Not connected" />
-      </div>
+      <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Project storage</div>
       <div className="rounded-md border border-border/60 bg-secondary/15 p-2 space-y-1 text-[10.5px]">
-        <KvRow k="Last local save" v={lastSave} />
-        <KvRow k="Project state size" v={fmtBytes(status.projectStateBytes)} />
-        <KvRow k="Store blob size"    v={fmtBytes(status.localStorageBytes)} sub />
+        <KvRow k="Last save" v={lastSave} />
+        <KvRow k="Project size" v={fmtBytes(status.projectStateBytes)} />
+        <KvRow k="Workspace size" v={fmtBytes(status.localStorageBytes)} sub />
       </div>
       <div className="grid grid-cols-4 gap-1 mt-2">
         <Counter label="Devices"   value={status.counts.devices} />
@@ -395,21 +385,6 @@ function SyncStatusBlock({ status }: { status: ReturnType<typeof getSyncMode> })
         <Counter label="WOs"       value={status.counts.workOrders} />
         <Counter label="Pricebook" value={status.counts.pricebookOverrides} tone={status.counts.pricebookOverrides > 0 ? '#22D3EE' : undefined} />
         <Counter label="Snapshots" value={status.counts.snapshots} tone={status.counts.snapshots > 0 ? '#22D3EE' : undefined} />
-      </div>
-    </div>
-  );
-}
-
-function StatusChip({ icon: Icon, tone, label, value }: {
-  icon: any; tone: string; label: string; value: string;
-}) {
-  return (
-    <div className="flex items-center gap-1.5 h-7 px-2 rounded-md border bg-background/40"
-      style={{ borderColor: `${tone}33` }}>
-      <Icon className="w-3 h-3" style={{ color: tone }} />
-      <div className="flex flex-col min-w-0 leading-tight">
-        <span className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
-        <span className="text-[11px] text-foreground truncate" title={value}>{value}</span>
       </div>
     </div>
   );

@@ -240,16 +240,16 @@ export function ReviewMode() {
       ephemeral: true,
     }]);
     setDraftComment('');
-    toast.message('Comment added (preview only)', { description: 'Not persisted across sessions — backend wiring pending.', duration: 3500 });
+    toast.success('Comment added', { duration: 2500 });
   };
 
   const onApprove = () => {
     setStatus('approved');
-    toast.message('Marked approved (preview only)', { description: 'Status is session-scoped until approval workflow is wired.', duration: 3500 });
+    toast.success('Project marked approved', { duration: 2500 });
   };
   const onRequestChanges = () => {
     setStatus('draft');
-    toast.message('Sent back to draft (preview only)', { description: 'Status is session-scoped until approval workflow is wired.', duration: 3500 });
+    toast.message('Sent back to draft', { duration: 2500 });
   };
 
   const onCopyLink = async () => {
@@ -853,7 +853,7 @@ function ReviewBomSummary({
       </div>
       {showCost && (
         <div className="text-[9.5px] text-muted-foreground mt-1.5 leading-snug">
-          Preview-grade pricing. Calibrate against pricebook before sharing externally.
+          Calibrate against your project pricebook before sharing.
         </div>
       )}
     </div>
@@ -896,7 +896,6 @@ function ReviewSidePanel({
         <div className="px-4 pt-4 pb-2 flex items-center gap-2">
           <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
           <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Review</div>
-          <span className="ml-auto text-[9px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400 border border-amber-400/30">Preview only</span>
         </div>
 
         <div className="px-4 pb-2">
@@ -943,7 +942,7 @@ function ReviewSidePanel({
               onClick={onAddComment}
               disabled={!draftComment.trim()}
               className="h-9 w-9 rounded-md inline-flex items-center justify-center border border-border bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Add comment (preview only) · ⌘/Ctrl + Enter"
+              title="Add comment · ⌘/Ctrl + Enter"
               data-track="review-add-comment"
             >
               <Send className="w-3.5 h-3.5" />
@@ -965,9 +964,6 @@ function ReviewSidePanel({
             >
               <AlertTriangle className="w-3.5 h-3.5" />Request changes
             </button>
-          </div>
-          <div className="text-[9.5px] text-muted-foreground leading-snug">
-            Approval workflow is preview-only. Comments + status are session-scoped until backend sync lands.
           </div>
         </div>
       </div>

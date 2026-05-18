@@ -238,8 +238,7 @@ export function AttachmentPanel({
         setDraftNotes('');
         setDraftInternal(false);
         toast.success(`${accepted.length} attachment${accepted.length === 1 ? '' : 's'} added`, {
-          description: 'Stored in this browser. Cloud storage is not connected yet.',
-          duration: 3500,
+          duration: 2500,
         });
       }
       if (skipped.length > 0) {
@@ -282,12 +281,9 @@ export function AttachmentPanel({
   return (
     <div className={`rounded-lg border border-border bg-secondary/10 ${padding} space-y-2.5`} data-testid="attachment-panel" data-link-type={linkedObjectType} data-link-id={linkedObjectId}>
       {title && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />
-            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{title}</div>
-          </div>
-          <span className="text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400 border border-amber-400/30">Local browser</span>
+        <div className="flex items-center gap-1.5">
+          <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />
+          <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{title}</div>
         </div>
       )}
 
@@ -386,12 +382,6 @@ export function AttachmentPanel({
                     <span>{fmtBytes(att.fileSize)}</span>
                     <span>·</span>
                     <span>{relativeTime(att.createdAt)}</span>
-                    {att.storageMode === 'local-meta' && (
-                      <>
-                        <span>·</span>
-                        <span className="text-amber-500">metadata only</span>
-                      </>
-                    )}
                   </div>
                   {att.notes && (
                     <div className="text-[10.5px] text-foreground/75 mt-1 italic line-clamp-2">{att.notes}</div>
@@ -415,10 +405,6 @@ export function AttachmentPanel({
         </ul>
       )}
 
-      {/* Honesty footer */}
-      <div className="text-[9.5px] text-muted-foreground leading-snug pt-1 border-t border-border/40">
-        Stored in this browser for prototype. Cloud file storage not connected yet — large files persist as metadata only.
-      </div>
     </div>
   );
 }

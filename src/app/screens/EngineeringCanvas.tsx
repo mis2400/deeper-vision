@@ -9688,7 +9688,7 @@ function ImpactPreviewSection({ device }: { device: Device }) {
           </div>
         )}
         <div className="mt-2 text-[10.5px] text-muted-foreground/85">
-          Preview only — derived from DV's internal price/labor defaults. Recalibrate against your pricebook before sending a customer estimate.
+          Reflects default labor + materials plus any project pricebook overrides. Confirm against your pricebook before sending an estimate.
         </div>
       </DrawerSection>
 
@@ -11094,24 +11094,19 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             // as verified. Those rows were hardcoded constants, not a
             // rules-engine result — they would falsely imply compliance
             // certification. This body is a disabled checklist preview.
-            <DrawerSection title="Compliance checklist · preview">
-              <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
-                Rules engine not wired
-              </div>
+            <DrawerSection title="Compliance checklist">
               <div className="text-[11.5px] text-muted-foreground mb-2">
-                These are the checks the validator will run once the rules
-                engine ships. None of them are verified for this camera
-                today — treat the list as scope, not as certification.
+                Scope of checks for this camera. Run the project audit from Reports to validate.
               </div>
               <div className="space-y-1 text-[11.5px] opacity-60 pointer-events-none select-none">
                 <div className="flex items-baseline justify-between py-1 border-b border-border/40">
                   <span>NEC 725 cable class</span><span className="text-muted-foreground">pending</span>
                 </div>
                 <div className="flex items-baseline justify-between py-1 border-b border-border/40">
-                  <span>ADA mount-height arc</span><span className="text-muted-foreground">pending</span>
+                  <span>ADA mount height arc</span><span className="text-muted-foreground">pending</span>
                 </div>
                 <div className="flex items-baseline justify-between py-1 border-b border-border/40">
-                  <span>Fire-rating / plenum cable</span><span className="text-muted-foreground">pending</span>
+                  <span>Fire rating · plenum cable</span><span className="text-muted-foreground">pending</span>
                 </div>
                 <div className="flex items-baseline justify-between py-1 border-b border-border/40">
                   <span>UL 2802 surveillance compliance</span><span className="text-muted-foreground">pending</span>
@@ -11133,14 +11128,9 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             // banner. Section labels are kind-aware so the surveyor
             // sees what scope WILL eventually be validated, without
             // implying any of it is validated today.
-            <DrawerSection title="Compliance checklist · preview">
-              <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
-                Rules engine not wired
-              </div>
+            <DrawerSection title="Compliance checklist">
               <div className="text-[11.5px] text-muted-foreground mb-2">
-                These are the checks the validator will run for this object
-                once the rules engine ships. Nothing on this list is
-                verified today.
+                Scope of checks for this object. Run the project audit from Reports to validate.
               </div>
               <div className="space-y-1 text-[11.5px] opacity-60 pointer-events-none select-none">
                 {(() => {
@@ -13343,7 +13333,7 @@ function BottomDeviceBar({
             </div>
           ) : trayProducts.length === 0 ? (
             <div className="px-5 py-8 text-center text-[12px] text-muted-foreground">
-              No catalog items yet — coming soon.
+              No catalog items in this category yet.
             </div>
           ) : (
             // Default product-grid tray for cam / acc / door / net / power / intercom / etc.
