@@ -10,7 +10,7 @@ import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { Play, Pause, RotateCcw, Shield, Clock, TrendingUp, Footprints, AlertTriangle, Sparkles, SkipBack, SkipForward } from 'lucide-react';
+import { Play, Pause, RotateCcw, Shield, Clock, TrendingUp, Footprints, AlertTriangle, Sparkles, SkipBack, SkipForward, FileDown } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import { SCENARIOS, runScenario } from '../lib/threatEngine';
 
@@ -284,10 +284,204 @@ export function ThreatSimulator() {
           <Button className="w-full" size="sm" variant="outline" onClick={() => navigate(`/project/${projectId}/canvas`)}>
             <Shield className="w-3.5 h-3.5 mr-1" />Harden on canvas
           </Button>
+          {result && (
+            <Button
+              className="w-full"
+              size="sm"
+              variant="outline"
+              onClick={() => exportThreatReport(result, scenarioDef!, state, projectId)}
+              data-testid="threat-export-pdf"
+            >
+              <FileDown className="w-3.5 h-3.5 mr-1" />Print threat report
+            </Button>
+          )}
         </div>
       </div>
     </AppShell>
   );
+}
+
+// V1 2B.7 — Print threat report PDF. Mirrors the ReportsCenter
+// jsPDF pattern: dynamic import, draw cover + sections, save. The
+// report is integrator-deliverable — clean copy, project name in
+// the footer (white-label slot when portal config ships), no
+// fearmongering.
+async function exportThreatReport(
+  result: ReturnType<typeof runScenario>,
+  scenario: ReturnType<typeof SCENARIOS[number]> | undefined,
+  state: ReturnType<typeof useProjectStore.getState>,
+  projectId: string,
+) {
+  if (!result || !scenario) return;
+  const { jsPDF } = await import('jspdf');
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const W = 612, H = 792;
+  const project = state.projects[projectId];
+  const customer = project?.customerId ? state.customers[project.customerId] : undefined;
+  const operatorName = state.currentRole === 'engineer' ? 'Engineer' : state.currentRole;
+  const now = new Date();
+
+  // ── Cover ──
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 120, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.text('Threat Simulator Report', 40, 64);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.text(`${project?.name ?? 'Project'}${customer ? ` · ${customer.name}` : ''}`, 40, 90);
+  doc.text(`${now.toLocaleDateString()} · Prepared by ${operatorName}`, 40, 106);
+
+  let y = 160;
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(scenario.name, 40, y);
+  y += 18;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(75, 85, 99);
+  y = writeWrapped(doc, scenario.description, 40, y, W - 80, 13);
+
+  y += 8;
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(10);
+  doc.text(`Actor: ${scenario.actor}`, 40, y);
+  doc.text(`Time of day: ${scenario.time}`, 320, y);
+  y += 14;
+
+  // ── Score panel ──
+  y += 12;
+  doc.setFillColor(248, 250, 252);
+  doc.rect(40, y - 4, W - 80, 60, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(30);
+  doc.setTextColor(...severityRGB(result.severity));
+  doc.text(`${result.score}%`, 60, y + 32);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(75, 85, 99);
+  doc.text(`${result.severity.toUpperCase()} exposure`, 160, y + 20);
+  doc.text(`${result.hops.filter((h) => h.coverage === 'covered').length} of ${result.hops.length} hops covered`, 160, y + 36);
+  doc.text(`Estimated dwell ${(result.totalDwellSec / 60).toFixed(1)} min`, 160, y + 52);
+  y += 76;
+
+  // ── Path snapshot ──
+  y += 10;
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Resolved path', 40, y);
+  y += 12;
+  drawPathSnapshot(doc, result, 40, y, W - 80, 180);
+  y += 200;
+
+  // ── Contributing factors ──
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Contributing factors', 40, y);
+  y += 14;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  if (result.breakdown.length === 0) {
+    doc.setTextColor(75, 85, 99);
+    doc.text('No contributing factors flagged.', 40, y);
+    y += 14;
+  } else {
+    for (const b of result.breakdown) {
+      if (y > H - 80) { doc.addPage(); y = 60; }
+      doc.setTextColor(15, 23, 42);
+      doc.text(b.label, 40, y);
+      doc.setTextColor(220, 38, 38);
+      doc.text(`+${b.contribution}`, W - 80, y, { align: 'right' });
+      if (b.hint) {
+        y += 12;
+        doc.setTextColor(107, 114, 128);
+        y = writeWrapped(doc, b.hint, 40, y, W - 80, 12);
+      }
+      if (b.harden) {
+        y += 10;
+        doc.setTextColor(37, 99, 235);
+        doc.text(`Recommended: ${b.harden.label}`, 40, y);
+      }
+      y += 18;
+    }
+  }
+
+  // ── Footer ──
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text(`${project?.name ?? 'DeeperVision'} · Threat Simulator · ${now.toISOString().slice(0, 10)}`, 40, H - 30);
+
+  doc.save(`${projectId}-threat-${scenario.id}-${now.toISOString().slice(0, 10)}.pdf`);
+}
+
+function severityRGB(s: 'low' | 'moderate' | 'high' | 'critical'): [number, number, number] {
+  switch (s) {
+    case 'low':      return [16, 185, 129];
+    case 'moderate': return [245, 158, 11];
+    case 'high':     return [249, 115, 22];
+    case 'critical': return [239, 68, 68];
+  }
+}
+
+function writeWrapped(doc: any, text: string, x: number, y: number, maxW: number, lineH: number): number {
+  const words = text.split(/\s+/);
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (doc.getTextWidth(test) > maxW) {
+      doc.text(line, x, y);
+      y += lineH;
+      line = w;
+    } else {
+      line = test;
+    }
+  }
+  if (line) { doc.text(line, x, y); y += lineH; }
+  return y;
+}
+
+function drawPathSnapshot(doc: any, result: ReturnType<typeof runScenario>, x: number, y: number, w: number, h: number) {
+  if (!result) return;
+  const { hops, floorExtents } = result;
+  // Background panel.
+  doc.setFillColor(249, 250, 251);
+  doc.rect(x, y, w, h, 'F');
+  doc.setDrawColor(229, 231, 235);
+  doc.rect(x, y, w, h);
+  // Map floor extents into the panel rect, preserving aspect.
+  const sx = w / floorExtents.w;
+  const sy = h / floorExtents.h;
+  const s = Math.min(sx, sy);
+  const offsetX = x + (w - floorExtents.w * s) / 2;
+  const offsetY = y + (h - floorExtents.h * s) / 2;
+  const toX = (fx: number) => offsetX + (fx - floorExtents.x) * s;
+  const toY = (fy: number) => offsetY + (fy - floorExtents.y) * s;
+  // Lines.
+  for (let i = 1; i < hops.length; i++) {
+    const a = hops[i - 1];
+    const b = hops[i];
+    const covered = b.coverage === 'covered';
+    if (covered) doc.setDrawColor(63, 185, 80);
+    else         doc.setDrawColor(248, 81, 73);
+    doc.setLineWidth(1.5);
+    doc.setLineDashPattern([4, 3], 0);
+    doc.line(toX(a.x), toY(a.y), toX(b.x), toY(b.y));
+  }
+  doc.setLineDashPattern([], 0);
+  // Hop markers.
+  for (let i = 0; i < hops.length; i++) {
+    const hop = hops[i];
+    if (hop.coverage === 'covered') doc.setFillColor(63, 185, 80);
+    else                            doc.setFillColor(248, 81, 73);
+    doc.circle(toX(hop.x), toY(hop.y), 5, 'F');
+    doc.setFontSize(8);
+    doc.setTextColor(31, 41, 55);
+    doc.text(`${i + 1}. ${hop.label}`, toX(hop.x) + 8, toY(hop.y) + 3);
+  }
 }
 
 function ScenarioCanvas({ result, progress, state, projectId }: {
