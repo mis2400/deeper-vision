@@ -466,6 +466,87 @@ export interface Warranty {
   updatedAt: number;
 }
 
+// ─────────────────────────── Service tickets ─────────────────────
+// MVP Spine Completion SC.1.4. A ServiceTicket is the operational
+// trouble record. It is the last node in the spine: lead -> design
+// -> install -> commission -> warranty -> service. A ticket can
+// reference any combination of Customer, Project, Device, Asset,
+// and Warranty so a single record handles "the camera at acct A,
+// project B, that we installed as device C, commissioned as asset
+// D, under warranty E, has stopped recording."
+//
+// Customer + project ids are required (every ticket has a who and
+// a where). Device / Asset / Warranty ids are optional because the
+// reported fault is sometimes broader ("the cellular bridge keeps
+// rebooting" with no specific device on the canvas yet).
+//
+// `notes` is a timeline of operator + customer comments, each
+// stamped with author + timestamp. Append only via `addTicketNote`
+// so timestamps stay correct.
+//
+// `ticketNumber` is human readable (DV-YYYY-NNNN). Generation lives
+// in the store action so the per year counter is centralised; see
+// `createTicket` in projectStore.ts.
+
+export type TicketPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export type TicketStatus =
+  | 'open'
+  | 'in_progress'
+  | 'waiting_customer'
+  | 'resolved'
+  | 'closed';
+
+export type TicketCategory =
+  | 'device_failure'
+  | 'configuration'
+  | 'warranty_claim'
+  | 'preventive'
+  | 'user_request'
+  | 'other';
+
+export interface TicketNote {
+  id: string;
+  authorName: string;
+  authorEmail?: string;
+  body: string;
+  /** ISO 8601 timestamp. Human readable in DevTools. */
+  createdAt: string;
+}
+
+export interface ServiceTicket {
+  id: string;
+  /** Human readable. Format `DV-YYYY-NNNN`, monotonic per year. */
+  ticketNumber: string;
+  customerId: string;
+  projectId: string;
+  /** Optional canvas Device the ticket points at. */
+  deviceId?: string;
+  /** Optional commissioned Asset. SC.5+: if `deviceId` is set and an
+   *  Asset exists for that device, surface this automatically. */
+  assetId?: string;
+  /** Optional Warranty backing a warranty claim category ticket. */
+  warrantyId?: string;
+  title: string;
+  description: string;
+  priority: TicketPriority;
+  status: TicketStatus;
+  category: TicketCategory;
+  /** Who reported. Could be operator, internal user, or customer
+   *  contact. Free text so the portal flow does not have to
+   *  resolve user ids before opening a ticket. */
+  reportedBy: { name: string; email?: string };
+  /** Optional internal assignee. Free text user id for now; SC.4+
+   *  will introduce a real users slice. */
+  assignedTo?: string;
+  /** Append only timeline of comments / status notes. */
+  notes: TicketNote[];
+  createdAt: number;
+  updatedAt: number;
+  /** ISO 8601 timestamp set when status transitions to `resolved`. */
+  resolvedAt?: string;
+}
+
 // ─────────────────────────── Activity feed ────────────────────────
 // One log entry per meaningful change. Surfaced on the project command
 // center; later we may roll up across projects for a global feed.
