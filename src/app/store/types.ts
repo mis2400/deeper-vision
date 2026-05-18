@@ -705,6 +705,36 @@ export interface Estimate {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PROJECT PRICEBOOK — per-project price + labor + markup overrides
+// ═══════════════════════════════════════════════════════════════════
+// Editable in the BOM drawer's Pricebook editor. Each entry overrides
+// the corresponding default (DOOR_HARDWARE_PRICE / CABLE_UNIT_PRICE /
+// estimate.laborRate / estimate.markup) for one project only. Empty
+// overrides fall through to defaults so missing pricebook == legacy
+// behaviour. The overrides survive reload via the workOrderProgress-
+// adjacent `projectPricebooks` slice.
+
+export interface DoorHardwarePricebookEntry {
+  /** USD override for the hardware unit price. Undefined = inherit default. */
+  price?: number;
+  /** Labor-hour override for the install of this hardware. Undefined = inherit. */
+  labor?: number;
+}
+
+export interface ProjectPricebook {
+  projectId: string;
+  /** Door hardware overrides — keyed by `DoorHardware` id. */
+  doorHardware?: Partial<Record<DoorHardware, DoorHardwarePricebookEntry>>;
+  /** Cable per-foot overrides — keyed by `CableType` string. */
+  cablePerFt?: Partial<Record<string, number>>;
+  /** Project labor rate override ($/hr). */
+  laborRate?: number;
+  /** Project markup override (0..1, e.g. 0.18 = 18%). */
+  markup?: number;
+  updatedAt: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // PROJECT STATE ENVELOPE — export / import for shared-demo sync
 // ═══════════════════════════════════════════════════════════════════
 // Lets the user move project state between local + live without a
@@ -761,6 +791,10 @@ export interface ProjectStateEnvelope {
     canvasDisplay?: CanvasDisplayPrefs;
     projectMode?: ProjectMode;
     projectTechModel?: ProjectTechModel;
+    /** Per-project pricebook overrides — optional. When present, takes
+     *  precedence over `DOOR_HARDWARE_PRICE` / `CABLE_UNIT_PRICE` /
+     *  the estimate's labor + markup for this project on the import side. */
+    pricebook?: ProjectPricebook;
   };
 }
 
@@ -857,6 +891,8 @@ export interface CanvasBomRow {
   laborHours: number;
   /** True when unitPrice came back as 0 (no catalog hit + no UNIT_PRICE entry). */
   missingPrice: boolean;
+  /** True when this row's unitPrice or laborHours came from a project-pricebook override. */
+  overridden?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════

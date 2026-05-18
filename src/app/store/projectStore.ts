@@ -72,6 +72,12 @@ interface ProjectState {
    *  from canvas state via `deriveWorkOrders`; this slice carries only
    *  the mutable progress (status, completed checklist, photos, etc.). */
   workOrderProgress: Record<string, import('./types').WorkOrderProgress>;
+  /** Per-project pricebook overrides. Keyed by projectId. Each
+   *  entry can override door-hardware unit prices + labor, cable per-ft
+   *  prices, and the project's labor rate + markup. Empty entries fall
+   *  through to defaults so the absence of a pricebook == legacy
+   *  behaviour. */
+  projectPricebooks: Record<string, import('./types').ProjectPricebook>;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -236,6 +242,24 @@ interface ProjectState {
   /** Set or clear the floor background (imported PNG/JPG/PDF or generated). */
   setFloorBackground: (floorId: string, bg: Floor['background'] | null) => void;
 
+  // ── Project pricebook actions ──
+  /** Override one door-hardware unit's price or labor. Pass `undefined`
+   *  to clear that field; pass `null` for the whole patch to drop the
+   *  hardware override entirely (falls back to the default). */
+  setPricebookDoorHardware: (
+    projectId: string,
+    hw: import('./types').DoorHardware,
+    patch: import('./types').DoorHardwarePricebookEntry | null,
+  ) => void;
+  /** Override the per-foot price for a cable type. Pass `null` to clear. */
+  setPricebookCablePerFt: (projectId: string, cableType: string, pricePerFt: number | null) => void;
+  /** Override the project labor rate ($/hr). Pass `null` to clear. */
+  setPricebookLaborRate: (projectId: string, rate: number | null) => void;
+  /** Override the project markup (0..1). Pass `null` to clear. */
+  setPricebookMarkup: (projectId: string, markup: number | null) => void;
+  /** Clear ALL pricebook overrides for the project. */
+  resetPricebook: (projectId: string) => void;
+
   // ── Project state export / import (shared-demo sync) ──
   /** Replace this project's slice of the store with the contents of an
    *  exported envelope. Other projects' state is preserved. Throws if
@@ -288,6 +312,7 @@ export const useProjectStore = create<ProjectState>()(
       currentRole:       'engineer',
       canvasTheme:       'light',
       workOrderProgress: {},
+      projectPricebooks: {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -882,6 +907,16 @@ export const useProjectStore = create<ProjectState>()(
         if (env.data.projectTechModel) {
           patch.projectTechModels = { ...s.projectTechModels, [pid]: env.data.projectTechModel };
         }
+        // Pricebook: if the envelope carries one, apply it; otherwise
+        // drop any existing pricebook for this project so the imported
+        // state matches the source machine. (Absence in the envelope is
+        // semantically "no overrides on the source".)
+        if (env.data.pricebook) {
+          patch.projectPricebooks = { ...s.projectPricebooks, [pid]: env.data.pricebook };
+        } else {
+          const { [pid]: _drop, ...restPb } = s.projectPricebooks;
+          patch.projectPricebooks = restPb;
+        }
         return patch;
       }),
 
@@ -986,11 +1021,79 @@ export const useProjectStore = create<ProjectState>()(
           };
         }),
 
-      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {} })),
+      // ── Project pricebook actions ───────────────────────────────
+      // All four edit actions stamp `updatedAt` and write into the
+      // `projectPricebooks` slice keyed by projectId. The empty-record
+      // shape is `{ projectId, updatedAt }`; downstream code (deriveBOM)
+      // treats missing fields as fall-through to defaults.
+      setPricebookDoorHardware: (projectId, hw, patch) =>
+        set((s) => {
+          const prev = s.projectPricebooks[projectId] ?? { projectId, updatedAt: 0 };
+          const doorHardware = { ...(prev.doorHardware ?? {}) } as Partial<Record<import('./types').DoorHardware, import('./types').DoorHardwarePricebookEntry>>;
+          if (patch === null) {
+            delete doorHardware[hw];
+          } else {
+            const cur = doorHardware[hw] ?? {};
+            doorHardware[hw] = {
+              price: patch.price === undefined ? cur.price : (patch.price ?? undefined),
+              labor: patch.labor === undefined ? cur.labor : (patch.labor ?? undefined),
+            };
+            // Drop the entry entirely if both fields are now undefined.
+            if (doorHardware[hw]?.price == null && doorHardware[hw]?.labor == null) {
+              delete doorHardware[hw];
+            }
+          }
+          return {
+            projectPricebooks: {
+              ...s.projectPricebooks,
+              [projectId]: { ...prev, projectId, doorHardware, updatedAt: Date.now() },
+            },
+          };
+        }),
+      setPricebookCablePerFt: (projectId, cableType, pricePerFt) =>
+        set((s) => {
+          const prev = s.projectPricebooks[projectId] ?? { projectId, updatedAt: 0 };
+          const cablePerFt = { ...(prev.cablePerFt ?? {}) };
+          if (pricePerFt === null) delete cablePerFt[cableType];
+          else                     cablePerFt[cableType] = pricePerFt;
+          return {
+            projectPricebooks: {
+              ...s.projectPricebooks,
+              [projectId]: { ...prev, projectId, cablePerFt, updatedAt: Date.now() },
+            },
+          };
+        }),
+      setPricebookLaborRate: (projectId, rate) =>
+        set((s) => {
+          const prev = s.projectPricebooks[projectId] ?? { projectId, updatedAt: 0 };
+          return {
+            projectPricebooks: {
+              ...s.projectPricebooks,
+              [projectId]: { ...prev, projectId, laborRate: rate ?? undefined, updatedAt: Date.now() },
+            },
+          };
+        }),
+      setPricebookMarkup: (projectId, markup) =>
+        set((s) => {
+          const prev = s.projectPricebooks[projectId] ?? { projectId, updatedAt: 0 };
+          return {
+            projectPricebooks: {
+              ...s.projectPricebooks,
+              [projectId]: { ...prev, projectId, markup: markup ?? undefined, updatedAt: Date.now() },
+            },
+          };
+        }),
+      resetPricebook: (projectId) =>
+        set((s) => {
+          const { [projectId]: _, ...rest } = s.projectPricebooks;
+          return { projectPricebooks: rest };
+        }),
+
+      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {} })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1074,6 +1177,14 @@ export const useProjectStore = create<ProjectState>()(
           // freshly-generated WO in 'ready' status.
           persisted.workOrderProgress ??= {};
         }
+        if (version < 7) {
+          // v6 → v7: introduce the per-project pricebook slice
+          // (door-hardware unit / labor + cable per-ft + labor rate +
+          // markup overrides). Empty default is safe because
+          // deriveCanvasBomRows treats missing entries as fall-through
+          // to UNIT_PRICE / DOOR_HARDWARE_PRICE / CABLE_UNIT_PRICE.
+          persisted.projectPricebooks ??= {};
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1124,6 +1235,7 @@ export const useProjectStore = create<ProjectState>()(
         busChecks:         s.busChecks,
         surveyItems:       s.surveyItems,
         workOrderProgress: s.workOrderProgress,
+        projectPricebooks: s.projectPricebooks,
       }),
     },
   ),
@@ -1441,7 +1553,7 @@ export function deriveDoorAssemblyLines(device: import('./types').Device): {
   };
 }
 
-const CABLE_UNIT_PRICE: Record<string, number> = {
+export const CABLE_UNIT_PRICE: Record<string, number> = {
   'cat6':       0.42,
   'cat6a':      0.78,
   'fiber-sm':   1.85,
@@ -1685,8 +1797,12 @@ export function deriveCanvasBomRows(
     markup: number;
   };
 } {
-  const laborRate = state.estimates[`est-${projectId}`]?.laborRate ?? 95;
-  const markup = state.estimates[`est-${projectId}`]?.markup ?? 0.18;
+  // Pricebook overrides take precedence over the project's estimate
+  // record, which in turn takes precedence over the hardcoded defaults.
+  // Missing entries fall through to defaults so absence == legacy.
+  const pricebook = state.projectPricebooks[projectId];
+  const laborRate = pricebook?.laborRate ?? state.estimates[`est-${projectId}`]?.laborRate ?? 95;
+  const markup    = pricebook?.markup    ?? state.estimates[`est-${projectId}`]?.markup    ?? 0.18;
 
   const devices = selectors.devicesForProject(state, projectId);
   const doors = Object.values(state.doors).filter((d) => d.projectId === projectId);
@@ -1695,6 +1811,27 @@ export function deriveCanvasBomRows(
 
   let catalogProducts: any[] = [];
   try { catalogProducts = (globalThis as any).__catalogProducts ?? []; } catch { /* noop */ }
+
+  // Resolve effective door-hardware unit/labor with pricebook fallthrough.
+  function effectiveDoorHw(hw: import('./types').DoorHardware): { price: number; labor: number; desc: string; overridden: boolean } {
+    const def = DOOR_HARDWARE_PRICE[hw];
+    if (!def) return { price: 0, labor: 0, desc: hw, overridden: false };
+    const pb = pricebook?.doorHardware?.[hw];
+    const priceOverride = pb?.price != null;
+    const laborOverride = pb?.labor != null;
+    return {
+      price: pb?.price ?? def.price,
+      labor: pb?.labor ?? def.labor,
+      desc:  def.desc,
+      overridden: priceOverride || laborOverride,
+    };
+  }
+  // Resolve effective per-ft cable price with pricebook fallthrough.
+  function effectiveCablePerFt(cableType: string): { perFt: number; overridden: boolean } {
+    const pb = pricebook?.cablePerFt?.[cableType];
+    if (pb != null) return { perFt: pb, overridden: true };
+    return { perFt: CABLE_UNIT_PRICE[cableType] ?? 0.5, overridden: false };
+  }
 
   function categoryFromType(t: string): import('./types').CanvasBomCategory {
     if (t.startsWith('cam'))                 return 'cameras';
@@ -1757,8 +1894,8 @@ export function deriveCanvasBomRows(
         continue;
       }
       for (const hw of assembly) {
-        const meta = DOOR_HARDWARE_PRICE[hw];
-        if (!meta) continue;
+        const eff = effectiveDoorHw(hw);
+        if (!DOOR_HARDWARE_PRICE[hw]) continue;
         const isExisting = stateMap[hw] === 'existing';
         rows.push({
           id: `door-asm-${d.id}-${hw}`,
@@ -1766,12 +1903,13 @@ export function deriveCanvasBomRows(
           sourceKind: 'door',
           sourceId: d.id,
           isExisting,
-          description: meta.desc,
+          description: eff.desc,
           meta: `${shortKindLabel(t)} · ${d.id}`,
           qty: 1, uom: 'ea',
-          unitPrice: meta.price,
-          laborHours: meta.labor,
-          missingPrice: meta.price === 0,
+          unitPrice: eff.price,
+          laborHours: eff.labor,
+          missingPrice: eff.price === 0,
+          overridden: eff.overridden,
         });
       }
       continue;
@@ -1779,8 +1917,28 @@ export function deriveCanvasBomRows(
     // Non-opening device — single row.
     const cat = catalogProducts.find((cp: any) => cp.id === d.product);
     const fallback = UNIT_PRICE[t];
-    const price = cat?.msrp ?? fallback?.price ?? 0;
-    const labor = cat?.laborUnits ?? fallback?.labor ?? 0;
+    // Standalone access-control devices (e.g. an `acc.reader` placed on
+    // a wall, not on a door) share semantics with the matching door-
+    // hardware class — so a pricebook override for that class should
+    // apply here too. Keeps the user's mental model coherent: "set
+    // reader cost = $500" affects every reader on the project.
+    const deviceToHw: Record<string, import('./types').DoorHardware> = {
+      'acc.reader':    'reader',
+      'acc.strike':    'strike',
+      'acc.maglock':   'maglock',
+      'acc.rex':       'rex',
+      'acc.exit':      'panic',
+      'acc.biometric': 'reader',
+      'acc.controller':'controller',
+      'acc.psu':       'psu',
+      'acc.dps':       'contact',
+      'aud.intercom':  'intercom',
+    };
+    const hwKey = deviceToHw[t];
+    const pbHw = hwKey ? pricebook?.doorHardware?.[hwKey] : undefined;
+    const price = pbHw?.price ?? cat?.msrp ?? fallback?.price ?? 0;
+    const labor = pbHw?.labor ?? cat?.laborUnits ?? fallback?.labor ?? 0;
+    const overridden = pbHw?.price != null || pbHw?.labor != null;
     const product = cat ? `${cat.manufacturer} · ${cat.model}` : undefined;
     rows.push({
       id: `dev-${d.id}`,
@@ -1795,6 +1953,7 @@ export function deriveCanvasBomRows(
       unitPrice: price,
       laborHours: labor,
       missingPrice: price === 0,
+      overridden,
     });
   }
 
@@ -1820,20 +1979,21 @@ export function deriveCanvasBomRows(
       continue;
     }
     for (const hw of door.hardware) {
-      const meta = DOOR_HARDWARE_PRICE[hw];
-      if (!meta) continue;
+      if (!DOOR_HARDWARE_PRICE[hw]) continue;
+      const eff = effectiveDoorHw(hw);
       rows.push({
         id: `door-${door.id}-${hw}`,
         category: 'access',
         sourceKind: 'door',
         sourceId: door.id,
         isExisting: false,
-        description: meta.desc,
+        description: eff.desc,
         meta: `Door · ${door.id}`,
         qty: 1, uom: 'ea',
-        unitPrice: meta.price,
-        laborHours: meta.labor,
-        missingPrice: meta.price === 0,
+        unitPrice: eff.price,
+        laborHours: eff.labor,
+        missingPrice: eff.price === 0,
+        overridden: eff.overridden,
       });
     }
   }
@@ -1844,7 +2004,7 @@ export function deriveCanvasBomRows(
   for (const p of pathways) {
     const floor = p.floorId ? state.floors[p.floorId] : undefined;
     const ft = pathwayLengthFt(p, floor);
-    const unitFt = CABLE_UNIT_PRICE[p.cableType] ?? 0.5;
+    const eff = effectiveCablePerFt(p.cableType);
     const qty = ft * p.cableCount;
     rows.push({
       id: `pw-${p.id}`,
@@ -1856,9 +2016,10 @@ export function deriveCanvasBomRows(
       meta: `Run · ${p.id}`,
       qty,
       uom: 'ft',
-      unitPrice: unitFt,
+      unitPrice: eff.perFt,
       laborHours: ft * 0.02 * p.cableCount,
-      missingPrice: unitFt === 0,
+      missingPrice: eff.perFt === 0,
+      overridden: eff.overridden,
     });
   }
 
@@ -2023,6 +2184,7 @@ export function exportProjectState(
       canvasDisplay: state.canvasDisplay[projectId],
       projectMode: state.projectModes[projectId],
       projectTechModel: state.projectTechModels[projectId],
+      pricebook: state.projectPricebooks[projectId],
     },
   };
 }
@@ -2134,6 +2296,12 @@ export function deriveWorkOrders(state: ProjectState, projectId: string): import
   let catalogProducts: any[] = [];
   try { catalogProducts = (globalThis as any).__catalogProducts ?? []; } catch { /* noop */ }
 
+  // Effective door-hardware labor with pricebook fallthrough, so the WO
+  // labor estimates stay in sync with the BOM drawer's per-row figures.
+  const pricebook = state.projectPricebooks[projectId];
+  const hwLabor = (hw: import('./types').DoorHardware): number =>
+    pricebook?.doorHardware?.[hw]?.labor ?? DOOR_HARDWARE_PRICE[hw]?.labor ?? 0;
+
   // ── Cameras ───────────────────────────────────────────────────
   for (const d of devices as any[]) {
     const t = String(d.type);
@@ -2167,7 +2335,7 @@ export function deriveWorkOrders(state: ProjectState, projectId: string): import
     const assembly = (d.doorAssembly ?? []) as import('./types').DoorHardware[];
     const id = `wo-door-${d.id}`;
     // Sum labor across hardware items so the estimate reflects assembly size.
-    const labor = assembly.reduce((s, hw) => s + (DOOR_HARDWARE_PRICE[hw]?.labor ?? 0), 0);
+    const labor = assembly.reduce((s, hw) => s + hwLabor(hw), 0);
     const stateMap = (d.doorAssemblyState ?? {}) as Partial<Record<import('./types').DoorHardware, 'proposed' | 'existing'>>;
     const proposedCount = assembly.filter((hw) => stateMap[hw] !== 'existing').length;
     orders.push({
@@ -2191,7 +2359,7 @@ export function deriveWorkOrders(state: ProjectState, projectId: string): import
   for (const door of doors) {
     const id = `wo-door-${door.id}`;
     if (orders.some((o) => o.id === id)) continue; // de-dup if both representations exist
-    const labor = (door.hardware ?? []).reduce((s, hw) => s + (DOOR_HARDWARE_PRICE[hw]?.labor ?? 0), 0);
+    const labor = (door.hardware ?? []).reduce((s, hw) => s + hwLabor(hw as import('./types').DoorHardware), 0);
     orders.push({
       id,
       kind: 'door',

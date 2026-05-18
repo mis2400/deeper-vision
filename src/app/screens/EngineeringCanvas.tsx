@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 import { ProjectStateMenu } from '../components/canvas/ProjectStateMenu';
+import { PricebookEditor } from '../components/canvas/PricebookEditor';
 const SURVEYOR_SYMBOL_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
 function SURVEYOR_SYMBOL_HAS(t: string): boolean { return SURVEYOR_SYMBOL_SET.has(t); }
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
@@ -13971,6 +13972,17 @@ function ProjectBomDrawer({
   const state = useProjectStore();
   const projectName = state.projects[projectId]?.name ?? 'Project';
   const { rows, totals } = useMemo(() => deriveCanvasBomRows(state, projectId), [state, projectId]);
+  // Pricebook editor is a modal mounted on top of this drawer so the
+  // user can watch totals update underneath while editing.
+  const [pricebookOpen, setPricebookOpen] = useState(false);
+  const pricebook = state.projectPricebooks[projectId];
+  const overrideCount =
+    (Object.keys(pricebook?.doorHardware ?? {}).length) +
+    (Object.keys(pricebook?.cablePerFt ?? {}).length) +
+    (pricebook?.laborRate != null ? 1 : 0) +
+    (pricebook?.markup != null ? 1 : 0);
+  const hasOverrides = overrideCount > 0;
+  const overriddenRowCount = rows.filter((r) => r.overridden).length;
 
   type FilterKey = 'all' | CanvasBomCategory | 'existing';
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -14087,6 +14099,14 @@ function ProjectBomDrawer({
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <button
+              onClick={() => setPricebookOpen(true)}
+              title="Edit pricebook · override prices + labor + markup for this project"
+              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border transition-colors ${hasOverrides ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/15' : 'border-border bg-secondary/40 hover:bg-secondary text-foreground'}`}
+              data-track="bom-open-pricebook"
+            >
+              <DollarSign className="w-3.5 h-3.5" />Pricebook{hasOverrides && <span className="text-[9.5px] tabular-nums opacity-80">· {overrideCount}</span>}
+            </button>
+            <button
               onClick={exportCsv}
               title={`Export ${rows.length} BOM lines as CSV`}
               disabled={rows.length === 0}
@@ -14132,8 +14152,11 @@ function ProjectBomDrawer({
               <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Sell total · {(totals.markup * 100).toFixed(0)}% markup</span>
               <span className="text-[18px] font-medium tabular-nums text-foreground">{fmt(totals.sellTotal)}</span>
             </div>
-            <div className="text-[10px] text-muted-foreground text-right">
-              Pricing is preview-grade.<br />Calibrate against pricebook before quote.
+            <div className="text-[10px] text-right" style={{ color: hasOverrides ? '#22D3EE' : undefined }}>
+              {hasOverrides
+                ? <><span className="font-medium">Project pricebook overrides active</span><br /><span className="text-muted-foreground">{overrideCount} override{overrideCount === 1 ? '' : 's'} · not connected to ERP yet.</span></>
+                : <span className="text-muted-foreground"><span className="font-medium text-foreground">Preview pricing.</span><br />Open pricebook to calibrate.</span>
+              }
             </div>
           </div>
           {totals.missingPriceCount > 0 && (
@@ -14145,8 +14168,17 @@ function ProjectBomDrawer({
               </span>
             </div>
           )}
+          {overriddenRowCount > 0 && (
+            <div className="mt-2 text-[10px] text-muted-foreground">
+              <span className="text-primary font-medium">{overriddenRowCount} row{overriddenRowCount === 1 ? '' : 's'}</span> using pricebook override{overriddenRowCount === 1 ? '' : 's'}.
+            </div>
+          )}
         </div>
       </div>
+
+      {pricebookOpen && (
+        <PricebookEditor projectId={projectId} onClose={() => setPricebookOpen(false)} />
+      )}
 
       {/* Filter pills */}
       <div className="px-5 pt-3 pb-3 border-b border-white/[0.05] shrink-0">
@@ -14251,6 +14283,9 @@ function BomRow({ row, fmt, onSelect }: { row: CanvasBomRow; fmt: (n: number) =>
             )}
             {row.missingPrice && (
               <span className="text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/20" title="No catalog price on file">No price</span>
+            )}
+            {row.overridden && !row.missingPrice && (
+              <span className="text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/40" title="Project pricebook override applied">Overridden</span>
             )}
           </div>
           <div className="text-[12px] font-medium text-foreground truncate">{row.description}</div>

@@ -2050,6 +2050,135 @@ the live URL + the source + build commit hashes.
 
 ---
 
+## Pricebook Calibration Pass (2026-05-18, after Shared Project State pass)
+
+**Goal.** Per-project editable pricing for BOM/Estimate. Default
+`UNIT_PRICE` / `DOOR_HARDWARE_PRICE` / `CABLE_UNIT_PRICE` /
+estimate.laborRate + markup remain as fallbacks; user overrides take
+precedence per project.
+
+### What shipped this pass
+
+- New `<PricebookEditor>` modal in
+  `components/canvas/PricebookEditor.tsx`. 720 px modal opens from a
+  new **Pricebook** button in the BOM drawer header (left of CSV).
+- New store slice `projectPricebooks: Record<projectId, ProjectPricebook>`.
+- Persist version v6 → v7. Migration adds the empty slice.
+- New types in `store/types.ts`: `ProjectPricebook`,
+  `DoorHardwarePricebookEntry`. `CanvasBomRow` gains optional
+  `overridden?: boolean`.
+- New store actions: `setPricebookDoorHardware`,
+  `setPricebookCablePerFt`, `setPricebookLaborRate`,
+  `setPricebookMarkup`, `resetPricebook`.
+- `deriveCanvasBomRows` checks pricebook overrides first (per door
+  hardware, per cable type, project labor rate, project markup), with
+  fall-through to the existing defaults. Each row carries `overridden`
+  so the BOM drawer can badge it.
+- Pricebook overrides also apply to standalone access-control devices
+  (`acc.reader`, `acc.strike`, `acc.maglock`, `acc.rex`, `acc.exit`,
+  `acc.biometric`, `acc.controller`, `acc.psu`, `acc.dps`,
+  `aud.intercom`) — so a "reader = $500" override affects loose
+  reader devices on the canvas too, not just door-asm rows.
+- `deriveWorkOrders` uses the same hardware-labor override so BOM
+  and work-order estimates stay aligned for the same opening.
+- `CABLE_UNIT_PRICE` is now `export const` so the editor can read
+  defaults.
+- BOM drawer:
+  - **Pricebook** button (cyan when overrides present) with the
+    override count as a chip suffix.
+  - Honesty text flips: "Preview pricing. Open pricebook to
+    calibrate." when no overrides; "Project pricebook overrides
+    active · N overrides · not connected to ERP yet." when overrides
+    present.
+  - Per-row **Overridden** badge (primary tone) when the row's price
+    or labor came from a pricebook override.
+  - Small secondary "N rows using pricebook overrides" line under
+    the totals card.
+- Project state export envelope now includes `data.pricebook`.
+  `importProjectState` applies it (and clears any local pricebook
+  for the project when the envelope lacks one).
+
+### Layout
+
+Editor sections:
+- **Markup + labor** — labor rate ($/hr) + project markup (%).
+- **Door hardware** — one row per `DoorHardware` (reader, strike,
+  maglock, rex, dps, contact, intercom, panic, autoop, controller,
+  psu) with separate price + labor inputs. Per-row reset.
+- **Cable per ft** — one row per `CableType` (cat6, cat6a, fiber-sm,
+  fiber-mm, coax, power, composite).
+
+Each row: label / default / override input / effective / per-row
+reset. Header gets a **Reset all** button (with confirm) when any
+override is present. Footer disclaimer: "Pricebook overrides are
+stored in this browser for this project. They feed the BOM drawer,
+CSV export, and field-deployment labor estimates immediately. Not
+connected to ERP / accounting / pricebook vendor sync yet."
+
+### What the user can verify in the browser
+
+1. `/project/p1/canvas` → open **BOM & Estimate**. Header now has a
+   **Pricebook** button left of CSV.
+2. Click → modal opens. With no overrides set, the BOM totals card
+   reads "Preview pricing. Open pricebook to calibrate."
+3. Change **Labor rate** to 120. Effective column flips to 120;
+   reset button activates. BOM "Labor" total recomputes.
+4. Change **Project markup** to 25. Sell total recomputes
+   immediately under the modal. The "% MARKUP" label changes.
+5. Change door **Reader** price to 500. BOM rows for every reader
+   on the project (door-assembly hardware AND standalone `RD-1`
+   device) update to $500 each and get an **Overridden** pill.
+6. Change cable **CAT6A** to 1.25. The PW-1 cable row's `@ $1.25/ft`
+   updates and the row gets an **Overridden** pill.
+7. Header **Pricebook** button now reads `Pricebook · 4` and the
+   honesty card flips to "Project pricebook overrides active · 4
+   overrides · not connected to ERP yet." in cyan.
+8. **Reload** the page. Open BOM → totals and overrides persist.
+9. Open **Project state** → Export project JSON → the envelope's
+   `data.pricebook` carries the 4 overrides.
+10. **Reset to shared demo** clears the pricebook (sell total
+    returns to default).
+11. **Import** the previously exported JSON → overrides return.
+12. Open the BOM CSV export → reader rows show `500.00`, cable row
+    shows `1.25`, totals reflect 25% markup.
+
+### Regression checks
+
+- BOM filter pills + row click + CSV export all unchanged in
+  shape — verified.
+- Project state export/import still works for the rest of the
+  envelope; pricebook is purely additive.
+- Engineering canvas / Review / Deployment routes still mount and
+  render correctly; deployment WO labor reflects the overrides for
+  hardware classes that the user changed.
+- No new React warnings or runtime errors in console (only the
+  standing Vite HMR websocket cosmetic noise).
+
+### What is live vs not-connected-to-ERP
+
+- **Live, real**:
+  - Overrides apply immediately on edit; BOM rows + totals +
+    work-order labor + CSV export all reflect them.
+  - Persistence via Zustand + localStorage (v7 migration).
+  - Project state JSON envelope round-trips overrides.
+- **Not connected**:
+  - No ERP / accounting / vendor pricebook sync.
+  - No catalog-product-level overrides yet (only door-hardware
+    classes, cable types, labor rate, markup) — explicitly within
+    the brief's "if a full model is too big, start with…" scope.
+
+### Build result
+
+`npm run build` → exit 0, 2.13 s. New bundle hash captured in the
+deploy commit below.
+
+### Deployment
+
+This pass DOES deploy to Vercel production. See the final report for
+the live URL + the source + build commit hashes.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already
