@@ -188,6 +188,55 @@ Status legend: `Done` · `In progress` · `To-do` · `Not in scope`.
 
 ---
 
+## 8 · Phase 2 — AI Assistant + Threat Simulator V1
+
+Two killer features that prove the operational-intelligence positioning. Every claim is grounded in live project state; no fake LLM, no invented risk numbers, no fake confidence.
+
+### 8a · AI Assistant (`/ai/:projectId`)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| AI-1 | Conversation history persists per project across reload (`aiConversations` slice + partialize + v9 migration + 50 conv / 200 msg / 32 KB text caps) | Done |
+| AI-2 | Streaming responses feel instant — first token under 500 ms perceived | Done — engine streams 4-20 char chunks at ~14 ms cadence |
+| AI-3 | Sidebar: new conversation + delete with confirm; mobile drawer toggle below `lg` | Done |
+| AI-4 | Empty state surfaces three project-aware example prompts derived from live device / IDF / WO counts | Done |
+| AI-5 | Context awareness — any shipped surface (canvas / review / reports / deployment / dashboard) broadcasts surface + site + floor + selection. Engine narrows answers to that scope. Operator can clear or broaden plainly ("across all floors") | Done |
+| AI-6 | Source citations — every project-data claim carries an inline chip; chip click navigates to the owning surface; canvas honors `?focus=` deep-select. Truncation at 8 with explicit "+N more" | Done |
+| AI-7 | Inference label renders on generalizations (coverage / PoE answers are tagged) | Done |
+| AI-8 | Confidence chip (High / Medium / Low) on judgment responses only, with mandatory tooltip. Low triggers "Would you like me to verify?" follow-up | Done |
+| AI-9 | Six apply-action types: add-device, resolve-event, assign-workflow, create-note, schedule-check, generate-report. Each runs a real store mutation, logs the outcome on the message, ships an Undo affordance | Done |
+| AI-10 | Voice input via Web Speech API. Mic button hides when unsupported. Seven distinct error codes mapped to one-line operator messages — no generic "Recognition error" | Done |
+| AI-11 | Mobile layout at 375 px portrait: sidebar collapses to drawer, sticky input, mic + send reachable. Uses `100dvh` so the iOS keyboard doesn't push the input off-screen | Done |
+
+### 8b · Threat Simulator (`/threat/:projectId`)
+
+| ID | Acceptance criterion | Status |
+|----|----------------------|--------|
+| TS-1 | Deterministic scenario engine: same scenario + same state always produces same score. Every gap is grounded in real camera positions + declared range | Done |
+| TS-2 | Library carries 12 scenarios across perimeter / tailgate / loading / social / vehicle / IT closet / asset removal / late-night / after-action — covers the brief minimum of 10 | Done |
+| TS-3 | Path animates continuously on the canvas at 60 fps via requestAnimationFrame. Actor dot interpolates between hops; pulsing halo telegraphs movement | Done |
+| TS-4 | Camera coverage circles render at real device positions with real range. Active cameras (in range of the live actor position) tint emerald in real time | Done |
+| TS-5 | Exposure score animates live as the path plays. Tied to elapsed engine math, not arbitrary | Done |
+| TS-6 | Breakdown panel lists every gap hop with its exposure contribution + a recommended hardening action | Done |
+| TS-7 | Time scrubber: range input + step-back / step-forward buttons. Scrub pauses playback to avoid input fights | Done |
+| TS-8 | "Harden on canvas" per breakdown row with 4 hint kinds (camera, access, motion, lighting) assigned by hop position. Canvas reads `?hint=…` and renders an anchor overlay that auto-clears on placement | Done |
+| TS-9 | Print threat report PDF: cover, scenario summary, scored severity, path snapshot (vector), contributing factors, hardening recommendations. Customer / project name in cover stripe | Done |
+| TS-10 | Capture baseline + before/after comparison: two score tiles, delta in pts, list of gaps closed by hardening, list of any newly opened gaps. Saved into the PDF when present | Done |
+
+**Manual verification.**
+1. `/ai/p1`. Click "What is the BOM total" prompt. Response streams, citations appear ("Reports", project), confidence chip High visible.
+2. Ask "tell me a joke". Response refuses cleanly. Low confidence chip. "Would you like me to verify?" link appears (purely cosmetic for refusal, but confirms the gate fires).
+3. Click "where are the coverage gaps". Apply suggestions appear: "Drop a camera on Level 2" and "Schedule a coverage re-walk in 7 days". Click the camera one — device count goes 5 → 6, chip flips to "Applied", Undo button visible. Click Undo — back to 5, "Undone" footnote rendered.
+4. Open canvas with `?focus=CAM-101` — CAM-101 starts selected.
+5. Open the persona popover, switch persona — chip dot color changes. Open the assistant — context chip carries the surface name.
+6. `/threat/p1`. Click "Play" — actor dot moves, coverage circles light up emerald as the camera in range sees it, score animates.
+7. Drag the time scrubber — playback pauses, actor jumps to that point, score recomputes for elapsed hops.
+8. Click "Harden on canvas · lighting" on a breakdown row — canvas opens, overlay reads "Threat Simulator suggested fix · Add a perimeter light at Rear service door for deterrence."
+9. Click "Capture baseline" → "Print threat report" — PDF carries the scenario, path snapshot, factors, AND a before/after section (no change yet since nothing was hardened in between).
+10. Drop a camera near the Rear service door on the canvas. Return to threat simulator. Score is lower. Before/after panel shows the delta + lists "Closed by hardening".
+
+---
+
 ## Last verified
 
 - **Date:** 2026-05-17 (calibrated measurement hardening pass)
