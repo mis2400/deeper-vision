@@ -755,10 +755,23 @@ export function EngineeringCanvas() {
   // add or delete starts a fresh step regardless.
   const pushCanvasHistory = useProjectStore((s) => s.pushCanvasHistory);
 
+  // Canvas V2 Pass 1.2 — lockedIds ref so the setDevices facade
+  // (declared next, before the useState that backs lockedIds) can
+  // read the live lock set at mutation time without re-creating the
+  // facade on every lock toggle. The sync effect lives next to the
+  // useState declaration further down.
+  const lockedIdsRef = useRef<Set<string>>(new Set());
+
   // setDevices facade: accepts either a new array OR an updater fn. Diffs
   // against the current store snapshot and dispatches add/update/remove for
   // each changed device. Keeps all in-component callers (move/rotate/dup/
   // delete/drag-drop) working with zero changes elsewhere.
+  //
+  // Canvas V2 Pass 1.2 — lock enforcement. Updates and deletes against
+  // an id in `lockedIds` are filtered out before they reach the store;
+  // a toast tells the operator how many items were skipped so the
+  // refusal is never silent. Adds are always allowed (a freshly placed
+  // device is not in lockedIds yet).
   const setDevices = useCallback((next: Device[] | ((prev: Device[]) => Device[])) => {
     const pid = projectId ?? 'p1';
     const fid = currentFloorId;
@@ -767,13 +780,28 @@ export function EngineeringCanvas() {
     const after = typeof next === 'function' ? next(before) : next;
     const beforeIds = new Set(before.map((d) => d.id));
     const afterIds  = new Set(after.map((d) => d.id));
-    const added    = after.filter((d) => !beforeIds.has(d.id));
-    const removed  = before.filter((d) => !afterIds.has(d.id));
-    const updated  = after.filter((d) => beforeIds.has(d.id) && before.find((p) => p.id === d.id) !== d);
+    let added    = after.filter((d) => !beforeIds.has(d.id));
+    let removed  = before.filter((d) => !afterIds.has(d.id));
+    let updated  = after.filter((d) => beforeIds.has(d.id) && before.find((p) => p.id === d.id) !== d);
+
+    // ── Lock enforcement ──
+    const lockedRef = lockedIdsRef.current;
+    const removedLocked = removed.filter((d) => lockedRef.has(d.id));
+    const updatedLocked = updated.filter((d) => lockedRef.has(d.id));
+    if (removedLocked.length || updatedLocked.length) {
+      removed = removed.filter((d) => !lockedRef.has(d.id));
+      updated = updated.filter((d) => !lockedRef.has(d.id));
+      const total = removedLocked.length + updatedLocked.length;
+      toast.message(`${total} locked item${total === 1 ? '' : 's'} skipped`, {
+        description: 'Unlock from the selection pill or the Layers panel to edit.',
+        duration: 3500,
+      });
+    }
+    if (!added.length && !removed.length && !updated.length) return;
 
     // Push history BEFORE mutating so the snapshot reflects "previous".
-    // Skip the push when nothing changed (defensive).
-    if (added.length || removed.length || updated.length) {
+    // (The earlier early return already covered the no-op case.)
+    {
       const nameOf = (d: Device) => (d as any).name || (d as any).label || (d as any).id;
       let label = 'Edited devices';
       let coalesceKey: string | undefined;
@@ -1393,6 +1421,9 @@ export function EngineeringCanvas() {
   useEffect(() => {
     try { localStorage.setItem(`canvas:${projectId}:locked`, JSON.stringify([...lockedIds])); } catch {}
   }, [lockedIds, projectId]);
+  // Sync the ref declared earlier (next to the setDevices facade) so
+  // lock enforcement reads the live set at mutation time.
+  useEffect(() => { lockedIdsRef.current = lockedIds; }, [lockedIds]);
 
   const surfaceRef = useRef<SVGSVGElement>(null);
   /** Compute zoom + pan that fits the active floorplan into the visible
@@ -2500,6 +2531,13 @@ export function EngineeringCanvas() {
                 lensMode={(sel.lensMode ?? 'linked') as LensMode}
                 setLensMode={setLensModeForSel}
                 onLensHover={setHoveredLens}
+                isLocked={lockedIds.has(sel.id)}
+                onToggleLock={() => {
+                  const next = new Set(lockedIds);
+                  if (next.has(sel.id)) next.delete(sel.id);
+                  else next.add(sel.id);
+                  setLockedIds(next);
+                }}
               />
             )}
 
@@ -8471,7 +8509,7 @@ function MultisensorLensChips({
   );
 }
 
-function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode, onLensHover }: {
+function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode, onLensHover, isLocked, onToggleLock }: {
   d: Device; zoom: number; pan: { x: number; y: number };
   onRotate: (r: number) => void;
   onDelete: () => void;
@@ -8488,6 +8526,12 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
    *  cone on the canvas can subtly emphasize. Optional — single-lens
    *  cameras don't use it. */
   onLensHover?: (lens: LensId | null) => void;
+  /** Pass 1.2 — whether this device's id is in lockedIds, and a
+   *  toggle callback that flips it. The pill shows a Lock / Unlock
+   *  button and decorates the rest of its controls (delete, rotate,
+   *  duplicate) as disabled-looking when isLocked is true. */
+  isLocked?: boolean;
+  onToggleLock?: () => void;
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
   const kind = TYPE_KIND[d.type];
@@ -8779,22 +8823,38 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
         </button>
         {/* Duplicate — promoted to a visible pill button (was inside the
             More popover). Matches the "minimal Edit-first toolbar" spec:
-            identity · Edit · Duplicate · Delete · More. */}
+            identity · Edit · Lock · Duplicate · Delete · More. */}
         <button
           onClick={onDuplicate}
           title="Duplicate"
           data-track="pill-duplicate"
-          className="px-2.5 inline-flex items-center justify-center border-l border-border/60 text-muted-foreground hover:bg-secondary/30 hover:text-foreground transition-colors"
+          className={`px-2.5 inline-flex items-center justify-center border-l border-border/60 transition-colors ${isLocked ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:bg-secondary/30 hover:text-foreground'}`}
         >
           <Copy className="w-3.5 h-3.5" />
         </button>
+        {/* Lock toggle — Canvas V2 Pass 1.2. Visible state so the
+            operator can pin a device once they've placed it, and the
+            mutators (setDevices facade) actually refuse to apply
+            changes while it's locked. */}
+        {onToggleLock && (
+          <button
+            onClick={onToggleLock}
+            title={isLocked ? 'Unlock this device' : 'Lock this device'}
+            data-track={isLocked ? 'pill-unlock' : 'pill-lock'}
+            className={`px-2.5 inline-flex items-center justify-center border-l border-border/60 transition-colors ${isLocked ? 'text-primary bg-primary/10 hover:bg-primary/15' : 'text-muted-foreground hover:bg-secondary/30 hover:text-foreground'}`}
+          >
+            {isLocked
+              ? <Lock className="w-3.5 h-3.5" />
+              : <Unlock className="w-3.5 h-3.5" />}
+          </button>
+        )}
         {/* Delete — promoted to a visible pill button (was inside the
             More popover). Destructive-tone hover. */}
         <button
           onClick={onDelete}
-          title="Delete"
+          title={isLocked ? 'Locked — unlock to delete' : 'Delete'}
           data-track="pill-delete"
-          className="px-2.5 inline-flex items-center justify-center border-l border-border/60 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          className={`px-2.5 inline-flex items-center justify-center border-l border-border/60 transition-colors ${isLocked ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive'}`}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
