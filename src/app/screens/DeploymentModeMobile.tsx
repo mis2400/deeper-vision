@@ -19,10 +19,11 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { useProjectStore, deriveWorkOrders, selectors as sel } from '../store/projectStore';
+import { CommissionSheet, CommissionSummaryPanel } from '../components/CommissionSheet';
 import type { WorkOrder, WorkOrderStatus } from '../store/types';
 import {
   ArrowLeft, ChevronRight, Camera as CameraIcon, Check, CircleDot,
-  Wifi, WifiOff, MapPin, ClipboardList, Hash, ShieldAlert, AlertTriangle,
+  Wifi, WifiOff, MapPin, ClipboardList, Hash, ShieldAlert, ShieldCheck, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -262,6 +263,13 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
   const setStatus = useProjectStore((s) => s.setWorkOrderStatus);
   const addPhoto = useProjectStore((s) => s.addWorkOrderPhotoPlaceholder);
   const removePhoto = useProjectStore((s) => s.removeWorkOrderPhotoPlaceholder);
+  // SC.3.1 — pull the source device for camera + door WOs so we can
+  // mount the commissioning card. Pathways / IDFs have no device id
+  // to write commissioning against; the card stays hidden for them.
+  const sourceDevice = useProjectStore((s) =>
+    (wo.kind === 'camera' || wo.kind === 'door') ? s.devices[wo.sourceId] : undefined,
+  );
+  const [commissionOpen, setCommissionOpen] = useState(false);
 
   const photos = wo.progress.photoPlaceholders ?? [];
   const fileRef = useRef<HTMLInputElement>(null);
@@ -337,6 +345,28 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
           </div>
         )}
       </SectionCard>
+
+      {/* SC.3.1 — Commissioning card. Only for device backed WOs. */}
+      {sourceDevice && (
+        <SectionCard icon={<ShieldCheck className="w-3.5 h-3.5" />} title="Commissioning">
+          <CommissionSummaryPanel device={sourceDevice} />
+          <button
+            type="button"
+            onClick={() => setCommissionOpen(true)}
+            className="mt-2 w-full h-11 inline-flex items-center justify-center gap-1.5 rounded-md text-[13px] border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+            data-testid="deploy-mobile-commission-open"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            {sourceDevice.commissioning?.status === 'pass'
+              ? 'Recommission'
+              : sourceDevice.commissioning?.status === 'partial'
+                ? 'Resolve partial'
+                : sourceDevice.commissioning?.status === 'fail'
+                  ? 'Retry commission'
+                  : 'Commission'}
+          </button>
+        </SectionCard>
+      )}
 
       {/* Checklist */}
       {wo.checklist.length > 0 && (
@@ -470,6 +500,15 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
           </div>
         )}
       </div>
+
+      {/* SC.3.1 — commission sheet mount. Same modal as desktop. */}
+      {sourceDevice && commissionOpen && (
+        <CommissionSheet
+          device={sourceDevice}
+          onCancel={() => setCommissionOpen(false)}
+          onDone={() => setCommissionOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
 } from '../store/projectStore';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 import { AttachmentPanel } from '../components/canvas/AttachmentPanel';
+import { CommissionSheet, CommissionSummaryPanel } from '../components/CommissionSheet';
 import { SAMPLE_PRODUCTS as CATALOG } from '../lib/productCatalog';
 import { pathwayLengthFt } from '../lib/engineering';
 import { buildLabel } from '../../build-info';
@@ -30,7 +31,7 @@ import {
   HardHat, Camera, KeyRound, Cable, Server, Search, ArrowLeft, Filter,
   Circle, CircleDot, CheckCircle2, AlertTriangle, X, Plus, Image as ImageIcon,
   ChevronDown, ChevronUp, Send, MapPin, ClipboardList, Activity, Wrench,
-  Hash, Mic, Layers,
+  Hash, Mic, Layers, ShieldCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -471,6 +472,12 @@ function WorkOrderDetail({ wo, floors, state, projectId }: { wo: WorkOrder; floo
   const patch = useProjectStore((s) => s.patchWorkOrderProgress);
   const setStatus = useProjectStore((s) => s.setWorkOrderStatus);
 
+  // SC.3.1 — commissioning sheet state lives on the detail because
+  // only the selected WO can be commissioned at a time. Sheet writes
+  // through setDeviceCommissioning; SC.3.2 wraps the same action with
+  // Asset creation when status === 'pass'.
+  const [commissionOpen, setCommissionOpen] = useState(false);
+
   // Locate source object + parent floor (for the mini map and detail copy).
   const sourceDevice: Device | undefined =
     wo.kind === 'camera' || wo.kind === 'door'
@@ -551,6 +558,33 @@ function WorkOrderDetail({ wo, floors, state, projectId }: { wo: WorkOrder; floo
               <CheckCircle2 className="w-3.5 h-3.5" />Mark complete
             </button>
           )}
+          {/* SC.3.1 — Commission action. Only enabled for device
+              backed WOs (cameras + doors-as-Device). Pathways + IDFs
+              + legacy state.doors entries get the button hidden
+              because they have no Device.id to write commissioning
+              against / no Asset to spawn. */}
+          {sourceDevice && (
+            <button
+              onClick={() => setCommissionOpen(true)}
+              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border transition-colors ${
+                sourceDevice.commissioning?.status === 'pass'
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/15'
+                  : sourceDevice.commissioning?.status
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-500 hover:bg-amber-500/15'
+                    : 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/15'
+              }`}
+              data-testid="deploy-commission-open"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              {sourceDevice.commissioning?.status === 'pass'
+                ? 'Recommission'
+                : sourceDevice.commissioning?.status === 'partial'
+                  ? 'Resolve partial'
+                  : sourceDevice.commissioning?.status === 'fail'
+                    ? 'Retry commission'
+                    : 'Commission'}
+            </button>
+          )}
         </div>
         {(wo.progress.status === 'blocked' || blockerOpen) && (
           <div className="mt-3 pt-3 border-t border-border space-y-2">
@@ -567,6 +601,14 @@ function WorkOrderDetail({ wo, floors, state, projectId }: { wo: WorkOrder; floo
           </div>
         )}
       </div>
+
+      {/* SC.3.1 — commissioning summary panel. Hidden when the WO
+          is not device backed. Shows the last commissioning record
+          if one exists; the Commission button in the status row
+          opens the form. */}
+      {sourceDevice && (
+        <CommissionSummaryPanel device={sourceDevice} />
+      )}
 
       {/* Assign + serial/MAC */}
       <div className="grid grid-cols-2 gap-3">
@@ -633,6 +675,16 @@ function WorkOrderDetail({ wo, floors, state, projectId }: { wo: WorkOrder; floo
 
       {/* Photo placeholders */}
       <PhotoSection wo={wo} projectId={projectId} />
+
+      {/* SC.3.1 — commissioning sheet. Modal so it does not push
+          the rest of the detail around. */}
+      {sourceDevice && commissionOpen && (
+        <CommissionSheet
+          device={sourceDevice}
+          onCancel={() => setCommissionOpen(false)}
+          onDone={() => setCommissionOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -927,3 +979,8 @@ function relativeTime(ts: number): string {
   if (diff < 86_400_000)    return `${Math.floor(diff / 3_600_000)}h ago`;
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
+
+// Commission UI moved to src/app/components/CommissionSheet.tsx so
+// the mobile screen can reuse the same components. Local helpers
+// removed; consumers import CommissionSheet + CommissionSummaryPanel
+// from there directly.

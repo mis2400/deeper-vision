@@ -774,6 +774,31 @@ export interface LensCfg {
   enabled: boolean;
 }
 
+// ────────── Device commissioning (SC.3.1) ─────────────────────────
+// Persisted commissioning record. `status === 'pass'` is the gate
+// that promotes a Device into an Asset (SC.3.2). The brief calls
+// the four default checklist items out explicitly; the type lets
+// each test slot carry its own id so future per device type
+// overrides slot in without a schema bump.
+export type DeviceCommissionStatus = 'pending' | 'pass' | 'partial' | 'fail';
+
+export interface DeviceCommissionTest {
+  id: string;
+  label: string;
+  passed: boolean;
+}
+
+export interface DeviceCommissioning {
+  status: DeviceCommissionStatus;
+  /** ISO 8601 date (YYYY-MM-DD) the commissioner signed off. */
+  commissionedAt: string;
+  commissionedBy: string;
+  /** Often unknown at install time. Filled in later by re-commissioning. */
+  serialNumber?: string;
+  notes?: string;
+  testResults: DeviceCommissionTest[];
+}
+
 export interface Device {
   id: string;
   projectId: string;
@@ -824,15 +849,17 @@ export interface Device {
    *  poles, etc. Drives the camera inspector "Accessories" section and the
    *  BOM auto-rollup of mount hardware. */
   accessories?: string[];
-  /** Commissioning state per phase — present once commissioning starts. */
-  commissioning?: {
-    install?: 'pending' | 'pass' | 'fail';
-    firmware?: 'pending' | 'pass' | 'fail';
-    network?: 'pending' | 'pass' | 'fail';
-    signal?: 'pending' | 'pass' | 'fail';
-    signedOff?: boolean;
-    notes?: string;
-  };
+  /** SC.3.1 — real commissioning record. Replaces the v1 placeholder
+   *  shape (which was never actually written; the audit flagged
+   *  `device.commissioning` as a phantom field). Present once an
+   *  operator submits the Commission form on the deployment surface.
+   *
+   *  `status === 'pass'` is what triggers the SC.3.2 Asset
+   *  auto-create + SC.3.3 default Warranty. `partial` and `fail`
+   *  persist the record without minting an Asset (the device is
+   *  not in service yet). Re-commissioning is idempotent: the
+   *  same record is overwritten by `setDeviceCommissioning`. */
+  commissioning?: import('./types').DeviceCommissioning;
   // ── Door-as-device assembly (only meaningful when type starts with 'inf.door',
   //    'inf.gate', 'inf.storefront', 'inf.doubledoor'). Persists the access-control
   //    components attached to this opening as one coherent record, instead of

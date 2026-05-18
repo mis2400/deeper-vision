@@ -295,6 +295,13 @@ export interface ProjectState {
   updateDevice: (id: string, patch: Partial<Device>, opts?: { userName?: string; log?: boolean }) => void;
   removeDevice: (id: string, opts?: { userName?: string; log?: boolean }) => void;
 
+  /** SC.3.1 — write a Device's commissioning record. Replaces the
+   *  phantom field flagged in the MVP spine audit. Idempotent:
+   *  calling twice for the same device just overwrites the prior
+   *  record. SC.3.2 hooks the `status === 'pass'` case to also
+   *  call `createAssetFromDevice` + open a default Warranty. */
+  setDeviceCommissioning: (deviceId: string, patch: import('./types').DeviceCommissioning) => void;
+
   // ── Door actions ──
   addDoor:    (d: Door) => void;
   updateDoor: (id: string, patch: Partial<Door>) => void;
@@ -1127,6 +1134,28 @@ export const useProjectStore = create<ProjectState>()(
         const prev = get().devices[id];
         set((s) => { const { [id]: _, ...rest } = s.devices; return { devices: rest }; });
         if (prev && opts?.log !== false) get().logActivity({ projectId: prev.projectId, type: 'device_removed', message: `Removed ${id}`, userName: opts?.userName, relatedEntityId: id });
+      },
+
+      // SC.3.1 — commissioning writer. Pure shallow merge under
+      // `commissioning` so testResults arrays don't accidentally
+      // get extended; caller is responsible for passing the
+      // canonical record. SC.3.2 wraps this in an effect that
+      // promotes a passing device into an Asset.
+      setDeviceCommissioning: (deviceId, patch) => {
+        const prev = get().devices[deviceId];
+        if (!prev) return;
+        set((s) => ({
+          devices: {
+            ...s.devices,
+            [deviceId]: { ...prev, commissioning: patch },
+          },
+        }));
+        get().logActivity({
+          projectId: prev.projectId,
+          type: patch.status === 'pass' ? 'commission_test_pass' : 'commission_test_fail',
+          message: `${prev.label || deviceId} commissioning ${patch.status} by ${patch.commissionedBy || 'unknown'}`,
+          relatedEntityId: deviceId,
+        });
       },
 
       addDoor: (d) => set((s) => ({ doors: { ...s.doors, [d.id]: d } })),
