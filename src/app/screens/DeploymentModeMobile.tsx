@@ -18,7 +18,7 @@
 
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
-import { useProjectStore, deriveWorkOrders } from '../store/projectStore';
+import { useProjectStore, deriveWorkOrders, selectors as sel } from '../store/projectStore';
 import type { WorkOrder, WorkOrderStatus } from '../store/types';
 import {
   ArrowLeft, ChevronRight, Camera as CameraIcon, Check, CircleDot,
@@ -60,13 +60,16 @@ export function DeploymentModeMobile() {
   const idfs         = useProjectStore((s) => s.idfs);
   const floors       = useProjectStore((s) => s.floors);
   const progressMap  = useProjectStore((s) => s.workOrderProgress);
-  const workOrders = useMemo(
-    () => deriveWorkOrders(
-      { projects, devices, pathways, idfs, floors, workOrderProgress: progressMap } as any,
-      projectId,
-    ),
-    [projects, devices, pathways, idfs, floors, progressMap, projectId],
+  // SC.2.5 — approvals slice required for the new gate. Doors are
+  // needed by deriveWorkOrders for the canvas door fallback path.
+  const approvalsMap = useProjectStore((s) => s.approvals);
+  const doorsMap     = useProjectStore((s) => s.doors);
+  const synthState = useMemo(
+    () => ({ projects, devices, pathways, idfs, floors, workOrderProgress: progressMap, approvals: approvalsMap, doors: doorsMap }) as any,
+    [projects, devices, pathways, idfs, floors, progressMap, approvalsMap, doorsMap],
   );
+  const workOrders = useMemo(() => deriveWorkOrders(synthState, projectId), [synthState, projectId]);
+  const woGate = useMemo(() => sel.workOrderGate(synthState, projectId), [synthState, projectId]);
   const project = projects[projectId];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = selectedId ? workOrders.find((w) => w.id === selectedId) ?? null : null;
@@ -153,12 +156,29 @@ function WorkOrderListMobile({ workOrders, onOpen }: { workOrders: WorkOrder[]; 
 
   if (workOrders.length === 0) {
     return (
-      <div className="p-6 text-center mt-12">
+      <div className="p-6 text-center mt-12" data-testid="deploy-mobile-empty-state">
         <div className="w-12 h-12 mx-auto rounded-xl bg-secondary/60 inline-flex items-center justify-center mb-3">
           <ClipboardList className="w-5 h-5 text-muted-foreground" />
         </div>
-        <h2 className="text-base font-medium">No work orders yet</h2>
-        <p className="text-[12.5px] text-muted-foreground mt-1">Work orders appear here once devices are scheduled for install.</p>
+        {!woGate.ok ? (
+          <>
+            <h2 className="text-base font-medium">
+              {woGate.reason === 'no_approval' && 'Awaiting customer approval'}
+              {woGate.reason === 'design_only' && 'Awaiting scope approval'}
+              {woGate.reason === 'phase_too_early' && 'Project not in deployment yet'}
+            </h2>
+            <p className="text-[12.5px] text-muted-foreground mt-1">
+              {woGate.reason === 'no_approval' && 'Work orders generate after the customer approves scope from the Customer Portal.'}
+              {woGate.reason === 'design_only' && 'Design approval signs off the drawing. Work orders generate after a scope or final approval lands.'}
+              {woGate.reason === 'phase_too_early' && <>Project lifecycle is currently <span className="text-foreground">{woGate.phase ?? 'unset'}</span>. Advance to Deployment from the Project Command Center.</>}
+            </p>
+          </>
+        ) : (
+          <>
+            <h2 className="text-base font-medium">No work orders yet</h2>
+            <p className="text-[12.5px] text-muted-foreground mt-1">Work orders appear here once devices are scheduled for install.</p>
+          </>
+        )}
       </div>
     );
   }

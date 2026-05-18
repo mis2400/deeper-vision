@@ -2984,6 +2984,47 @@ export const selectors = {
       .filter((t) => t.status === 'open' || t.status === 'in_progress' || t.status === 'waiting_customer')
       .sort((a, b) => b.createdAt - a.createdAt),
 
+  // ── Work Order approval gate (SC.2.5) ────────────────────────────
+  /** Two part gate that decides whether `deriveWorkOrders` should
+   *  return real records or an empty list. Per the SC.2 brief:
+   *    1. At least one Approval record exists AND the latest is of
+   *       type `scope` or `final`. Design approvals do not unlock
+   *       work orders.
+   *    2. Project lifecyclePhase is `deployment`, `commissioning`,
+   *       `completed`, `managed_service`, or `support`. Pre install
+   *       phases stay blocked even when scope is approved (the
+   *       operator still has to advance the phase manually). */
+  workOrderGate: (s: ProjectState, projectId: string): {
+    ok: boolean;
+    reason: 'ok' | 'no_approval' | 'design_only' | 'phase_too_early';
+    latestApproval: import('./types').Approval | null;
+    phase: LifecyclePhase | null;
+  } => {
+    const project = s.projects?.[projectId];
+    const phase = project?.lifecyclePhase ?? null;
+    // Defensive against partial-state callers (mobile DeploymentMode
+    // synthesizes a state object missing some slices). Treat missing
+    // approvals as "no approvals" rather than crashing. Sort uses
+    // numeric `createdAt` so a tampered or empty `approvedAt` string
+    // can't make the sort nondeterministic and pick a bogus "latest".
+    const approvalsMap = s.approvals ?? {};
+    const list = Object.values(approvalsMap).filter((a) => a && a.projectId === projectId);
+    list.sort((a, b) => b.createdAt - a.createdAt);
+    const latest = list[0] ?? null;
+
+    if (!latest) {
+      return { ok: false, reason: 'no_approval', latestApproval: null, phase };
+    }
+    if (latest.approvalType !== 'scope' && latest.approvalType !== 'final') {
+      return { ok: false, reason: 'design_only', latestApproval: latest, phase };
+    }
+    const installPhases: LifecyclePhase[] = ['deployment', 'commissioning', 'completed', 'managed_service', 'support'];
+    if (!phase || !installPhases.includes(phase)) {
+      return { ok: false, reason: 'phase_too_early', latestApproval: latest, phase };
+    }
+    return { ok: true, reason: 'ok', latestApproval: latest, phase };
+  },
+
   /** Project activity feed, newest first. */
   activityForProject: (s: ProjectState, projectId: string, limit = 50): ActivityItem[] =>
     Object.values(s.activity)
@@ -3996,6 +4037,15 @@ function woProgress(state: ProjectState, woId: string): import('./types').WorkOr
 }
 
 export function deriveWorkOrders(state: ProjectState, projectId: string): import('./types').WorkOrder[] {
+  // SC.2.5 approval + phase gate. Return an empty list whenever
+  // either gate fails. Callers that need to render an explanation
+  // (DeploymentMode, DeploymentModeMobile) read `workOrderGate`
+  // directly to get the structured reason. Pure rollup callers
+  // (Dashboard counts, ReportsCenter, assistant context) get
+  // []  and that's correct: an unapproved project should not
+  // contribute work order rollups.
+  if (!selectors.workOrderGate(state, projectId).ok) return [];
+
   const orders: import('./types').WorkOrder[] = [];
   const devices = selectors.devicesForProject(state, projectId);
   const doors   = Object.values(state.doors).filter((d) => d.projectId === projectId);

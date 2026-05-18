@@ -73,6 +73,11 @@ export function ReportsCenter() {
   const idfs      = useMemo(() => sel.idfsForProject(state, projectId), [state, projectId]);
   const bom       = useMemo(() => deriveCanvasBomRows(state, projectId), [state, projectId]);
   const wos       = useMemo(() => deriveWorkOrders(state, projectId), [state, projectId]);
+  // SC.2.5 — gate readout so the Field Deployment tile + summary
+  // section show an honest "awaiting approval" message instead of
+  // a misleading "0/0 complete" when the project is pre approval
+  // or pre deployment phase.
+  const woGate    = useMemo(() => sel.workOrderGate(state, projectId), [state, projectId]);
   const pricebook = state.projectPricebooks[projectId];
 
   const [mode, setMode] = useState<Mode>('internal');
@@ -367,6 +372,7 @@ export function ReportsCenter() {
           }}
           bom={bom}
           wos={woTallies}
+          woGate={woGate}
           mode={mode}
           hasOverrides={hasOverrides}
           overrideCount={overrideCount}
@@ -402,7 +408,7 @@ export function ReportsCenter() {
         )}
 
         <div id="sec-deployment" className="scroll-mt-20">
-        <DeploymentSummary wos={wos} tallies={woTallies} />
+        <DeploymentSummary wos={wos} tallies={woTallies} woGate={woGate} />
         </div>
 
         {!isCustomer && hasOverrides && (
@@ -480,10 +486,11 @@ function ModeBadge({ mode }: { mode: Mode }) {
 
 // ─────────────────────────── Executive summary ────────────────────
 
-function ExecutiveSummary({ counts, bom, wos, mode, hasOverrides, overrideCount }: {
+function ExecutiveSummary({ counts, bom, wos, woGate, mode, hasOverrides, overrideCount }: {
   counts: { cameras: number; access: number; doors: number; pathways: number; idfs: number; floors: number };
   bom: ReturnType<typeof deriveCanvasBomRows>;
   wos: { total: number; complete: number; blocked: number; open: number; hours: number };
+  woGate: ReturnType<typeof sel.workOrderGate>;
   mode: Mode;
   hasOverrides: boolean;
   overrideCount: number;
@@ -508,12 +515,27 @@ function ExecutiveSummary({ counts, bom, wos, mode, hasOverrides, overrideCount 
             icon={DollarSign} tone="#10B981"
             subline={hasOverrides ? `${overrideCount} pricebook override${overrideCount === 1 ? '' : 's'} active` : 'Preview pricing'}
           />
-          <Tile
-            label="Field deployment"
-            value={`${wos.complete}/${wos.total} complete`}
-            icon={ClipboardCheck} tone="#22D3EE"
-            subline={`${wos.open} open · ${wos.blocked} blocked · ${Math.round(wos.hours * 10) / 10} hr remaining`}
-          />
+          {/* SC.2.5 — honest gated tile instead of misleading 0/0. */}
+          {woGate.ok ? (
+            <Tile
+              label="Field deployment"
+              value={`${wos.complete}/${wos.total} complete`}
+              icon={ClipboardCheck} tone="#22D3EE"
+              subline={`${wos.open} open · ${wos.blocked} blocked · ${Math.round(wos.hours * 10) / 10} hr remaining`}
+            />
+          ) : (
+            <Tile
+              label="Field deployment"
+              value="Awaiting gate"
+              icon={ClipboardCheck} tone="#94A3B8"
+              subline={
+                woGate.reason === 'no_approval' ? 'No customer approval recorded yet.'
+                : woGate.reason === 'design_only' ? 'Latest approval was design only.'
+                : woGate.reason === 'phase_too_early' ? `Project in ${woGate.phase ?? 'unset'} phase; advance to Deployment to start work orders.`
+                : ''
+              }
+            />
+          )}
         </div>
       )}
 
@@ -917,7 +939,22 @@ function BomSummary({ bom, hasOverrides, overrideCount, pricebook, projectName }
 
 // ─────────────────────────── Deployment summary ───────────────────
 
-function DeploymentSummary({ wos, tallies }: { wos: ReturnType<typeof deriveWorkOrders>; tallies: any }) {
+function DeploymentSummary({ wos, tallies, woGate }: { wos: ReturnType<typeof deriveWorkOrders>; tallies: any; woGate: ReturnType<typeof sel.workOrderGate> }) {
+  // SC.2.5 — when the gate is closed, render an honest awaiting
+  // message instead of a zero progress bar + empty table.
+  if (!woGate.ok) {
+    return (
+      <Section title="Field deployment summary" icon={ClipboardCheck}
+        subtitle="Live work-order progress. Pulled from the deployment view; status / checklist persists across reloads.">
+        <div className="rounded-lg border border-dashed border-border bg-secondary/10 p-4 text-[12.5px] text-muted-foreground">
+          {woGate.reason === 'no_approval' && 'Work orders generate after the customer approves scope from the Customer Portal. No approvals on record yet.'}
+          {woGate.reason === 'design_only' && 'Latest customer approval was design only. Work orders generate after a scope or final approval lands.'}
+          {woGate.reason === 'phase_too_early' && <>Project lifecycle is currently <span className="text-foreground">{woGate.phase ?? 'unset'}</span>. Advance to Deployment from the Project Command Center to start work orders.</>}
+        </div>
+      </Section>
+    );
+  }
+
   const grouped: Record<string, { total: number; complete: number; blocked: number; hours: number }> = {};
   for (const w of wos) {
     const g = grouped[w.kind] ?? { total: 0, complete: 0, blocked: 0, hours: 0 };

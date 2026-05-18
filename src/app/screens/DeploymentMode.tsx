@@ -74,6 +74,9 @@ export function DeploymentMode() {
   const project = state.projects[projectId];
 
   const workOrders = useMemo(() => deriveWorkOrders(state, projectId), [state, projectId]);
+  // SC.2.5 — gate readout so the empty state explains WHY the list
+  // is empty when devices are present but approval / phase isn't.
+  const woGate = useMemo(() => sel.workOrderGate(state, projectId), [state, projectId]);
   const floors = useMemo(() => sel.floorsForProject(state, projectId), [state, projectId]);
 
   const [filterKind, setFilterKind]     = useState<WorkOrderKind | 'all'>('all');
@@ -166,46 +169,91 @@ export function DeploymentMode() {
       <div className="flex-1 grid grid-cols-[400px_minmax(0,1fr)] min-h-0">
         {/* Left rail: filters + WO list */}
         <div className="border-r border-border bg-background/60 backdrop-blur-md flex flex-col min-h-0" data-canvas-chrome="deployment-list">
-          <div className="px-4 pt-3 pb-2 border-b border-border space-y-2">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search WO id, source, location…"
-                className="w-full text-[12px] h-8 pl-8 pr-2 rounded-md border border-border bg-background placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
-                data-testid="deploy-search"
-              />
+          {/* SC.2.5 — hide the filter row entirely when the gate is
+              closed. Filter chips are meaningless if there's no list
+              to filter; leaving them visible makes the empty state
+              look broken when the operator clicks chips and nothing
+              changes. */}
+          {woGate.ok && (
+            <div className="px-4 pt-3 pb-2 border-b border-border space-y-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search WO id, source, location…"
+                  className="w-full text-[12px] h-8 pl-8 pr-2 rounded-md border border-border bg-background placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+                  data-testid="deploy-search"
+                />
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                <FilterPill label="All"        active={filterStatus === 'all'}     onClick={() => setFilterStatus('all')}     count={tallies.total}  track="all" />
+                <FilterPill label="Open"       active={filterStatus === 'open'}    onClick={() => setFilterStatus('open')}    count={tallies.open}   track="open" />
+                <FilterPill label="Blocked"    active={filterStatus === 'blocked'} onClick={() => setFilterStatus('blocked')} count={tallies.blocked} tone="#EF4444" track="blocked" />
+                <FilterPill label="Complete"   active={filterStatus === 'complete'} onClick={() => setFilterStatus('complete')} count={tallies.complete} tone="#10B981" track="complete" />
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                <FilterChip kind="all" label="All types" active={filterKind === 'all'} onClick={() => setFilterKind('all')} />
+                {(['camera', 'door', 'pathway', 'idf'] as WorkOrderKind[]).map((k) => (
+                  <FilterChip key={k} kind={k} label={KIND_META[k].label}
+                    active={filterKind === k} onClick={() => setFilterKind(k)} />
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-1 flex-wrap">
-              <FilterPill label="All"        active={filterStatus === 'all'}     onClick={() => setFilterStatus('all')}     count={tallies.total}  track="all" />
-              <FilterPill label="Open"       active={filterStatus === 'open'}    onClick={() => setFilterStatus('open')}    count={tallies.open}   track="open" />
-              <FilterPill label="Blocked"    active={filterStatus === 'blocked'} onClick={() => setFilterStatus('blocked')} count={tallies.blocked} tone="#EF4444" track="blocked" />
-              <FilterPill label="Complete"   active={filterStatus === 'complete'} onClick={() => setFilterStatus('complete')} count={tallies.complete} tone="#10B981" track="complete" />
-            </div>
-            <div className="flex items-center gap-1 flex-wrap">
-              <FilterChip kind="all" label="All types" active={filterKind === 'all'} onClick={() => setFilterKind('all')} />
-              {(['camera', 'door', 'pathway', 'idf'] as WorkOrderKind[]).map((k) => (
-                <FilterChip key={k} kind={k} label={KIND_META[k].label}
-                  active={filterKind === k} onClick={() => setFilterKind(k)} />
-              ))}
-            </div>
-          </div>
+          )}
           <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1.5">
             {filtered.length === 0 && workOrders.length === 0 && (
-              <div className="text-center p-6 space-y-3">
+              <div className="text-center p-6 space-y-3" data-testid="deploy-empty-state">
                 <div className="w-10 h-10 rounded-lg bg-secondary/60 inline-flex items-center justify-center">
                   <ClipboardList className="w-4 h-4 text-muted-foreground" />
                 </div>
-                <div className="text-[12px] text-foreground font-medium">No work orders yet</div>
-                <div className="text-[11px] text-muted-foreground leading-snug max-w-[260px] mx-auto">Devices, doors, pathways, and racks placed on the canvas appear here as install tasks.</div>
-                <button
-                  onClick={() => nav(`/project/${projectId}/canvas`)}
-                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
-                >
-                  Open Engineering Canvas
-                </button>
+                {!woGate.ok ? (
+                  // SC.2.5 — approval / phase gate failed.
+                  <>
+                    <div className="text-[12px] text-foreground font-medium">
+                      {woGate.reason === 'no_approval' && 'Work orders generate after customer approves scope.'}
+                      {woGate.reason === 'design_only' && 'Latest approval was design only.'}
+                      {woGate.reason === 'phase_too_early' && 'Project is not in deployment yet.'}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground leading-snug max-w-[280px] mx-auto">
+                      {woGate.reason === 'no_approval' && 'The customer records approvals from the Customer Portal. Once a scope or final approval lands, work orders derive automatically.'}
+                      {woGate.reason === 'design_only' && 'Design approval signs off the drawing. Work orders generate once the customer approves scope or final.'}
+                      {woGate.reason === 'phase_too_early' && (
+                        <>Project lifecycle is currently <span className="text-foreground">{woGate.phase ?? 'unset'}</span>. Advance to <span className="text-foreground">Deployment</span> from the Project Command Center to start work orders.</>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-center gap-2">
+                      {(woGate.reason === 'no_approval' || woGate.reason === 'design_only') && (
+                        <button
+                          onClick={() => nav(`/portal/${projectId}`)}
+                          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
+                          data-testid="deploy-empty-portal-link"
+                        >
+                          Open Customer Portal
+                        </button>
+                      )}
+                      <button
+                        onClick={() => nav(`/project/${projectId}`)}
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-border hover:bg-secondary"
+                      >
+                        Project Center
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  // Gate is open but canvas has no objects yet.
+                  <>
+                    <div className="text-[12px] text-foreground font-medium">No work orders yet</div>
+                    <div className="text-[11px] text-muted-foreground leading-snug max-w-[260px] mx-auto">Devices, doors, pathways, and racks placed on the canvas appear here as install tasks.</div>
+                    <button
+                      onClick={() => nav(`/project/${projectId}/canvas`)}
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
+                    >
+                      Open Engineering Canvas
+                    </button>
+                  </>
+                )}
               </div>
             )}
             {filtered.length === 0 && workOrders.length > 0 && (
