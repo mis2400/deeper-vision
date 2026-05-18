@@ -236,6 +236,12 @@ interface ProjectState {
   /** Set or clear the floor background (imported PNG/JPG/PDF or generated). */
   setFloorBackground: (floorId: string, bg: Floor['background'] | null) => void;
 
+  // ── Project state export / import (shared-demo sync) ──
+  /** Replace this project's slice of the store with the contents of an
+   *  exported envelope. Other projects' state is preserved. Throws if
+   *  the envelope kind/version doesn't match. */
+  importProjectState: (envelope: import('./types').ProjectStateEnvelope) => void;
+
   // ── Field deployment / work order actions ──
   /** Patch the persisted progress for a derived work order. The progress
    *  record is created on first write; `updatedAt` is stamped on every
@@ -796,6 +802,87 @@ export const useProjectStore = create<ProjectState>()(
           if (!checks[id]) checks[id] = { id, busId, step, status: 'pending' };
         }
         return { busChecks: checks };
+      }),
+
+      // ── Project state import (shared-demo sync) ─────────────────
+      // Replaces only the imported project's records, preserving other
+      // projects in the same store. The corresponding export helper
+      // lives below as `exportProjectState` (pure function).
+      importProjectState: (env) => set((s) => {
+        if (!env || env.kind !== 'deeper-vision-project-state') {
+          throw new Error('Not a Deeper Vision project state envelope.');
+        }
+        if (env.version !== 1) {
+          throw new Error(`Envelope version ${env.version} is not supported.`);
+        }
+        const pid = env.projectId;
+        // Compute the set of object-ids that belong to this project so
+        // we can drop surveyItems + workOrderProgress entries that
+        // reference them (they're rewritten from the envelope below).
+        const oldSites = Object.values(s.sites).filter((x) => x.projectId === pid).map((x) => x.id);
+        const oldBuildings = Object.values(s.buildings).filter((b) => oldSites.includes(b.siteId)).map((b) => b.id);
+        const oldFloors = Object.values(s.floors).filter((f) => oldBuildings.includes(f.buildingId) || f.projectId === pid).map((f) => f.id);
+        const oldDevices = Object.values(s.devices).filter((d) => d.projectId === pid).map((d) => d.id);
+        const oldDoors = Object.values(s.doors).filter((d) => d.projectId === pid).map((d) => d.id);
+        const oldPathways = Object.values(s.pathways).filter((p) => p.projectId === pid).map((p) => p.id);
+        const oldIdfs = Object.values(s.idfs).filter((i) => i.projectId === pid).map((i) => i.id);
+        const oldObjectIds = new Set<string>([...oldDevices, ...oldDoors, ...oldPathways, ...oldIdfs, ...oldFloors]);
+
+        // Strip out the old records for this project.
+        const filter = <T>(rec: Record<string, T>, keep: (v: T) => boolean): Record<string, T> => {
+          const out: Record<string, T> = {};
+          for (const [k, v] of Object.entries(rec)) if (keep(v)) out[k] = v;
+          return out;
+        };
+        const projects   = { ...s.projects, [pid]: env.data.project };
+        const customers  = env.data.customer ? { ...s.customers, [env.data.customer.id]: env.data.customer } : s.customers;
+        const sites      = filter(s.sites,      (x) => x.projectId !== pid);
+        const buildings  = filter(s.buildings,  (b) => !oldSites.includes(b.siteId));
+        const floors     = filter(s.floors,     (f) => !oldBuildings.includes(f.buildingId) && f.projectId !== pid);
+        const devices    = filter(s.devices,    (d: any) => d.projectId !== pid);
+        const doors      = filter(s.doors,      (d) => d.projectId !== pid);
+        const pathways   = filter(s.pathways,   (p) => p.projectId !== pid);
+        const idfs       = filter(s.idfs,       (i) => i.projectId !== pid);
+        const estimates  = filter(s.estimates,  (e) => e.projectId !== pid);
+        const surveyItems = filter(s.surveyItems, (it: any) => !oldObjectIds.has(it.objectId));
+        const workOrderProgress = filter(s.workOrderProgress, (wp) => {
+          // wp.id format: wo-{kind}-{sourceId}. Drop if sourceId belonged
+          // to this project's old object set; the envelope re-adds.
+          const m = wp.id.match(/^wo-[^-]+-(.+)$/);
+          return !m || !oldObjectIds.has(m[1]);
+        });
+
+        // Splice in the new envelope's records.
+        for (const x of env.data.sites)       sites[x.id]      = x;
+        for (const x of env.data.buildings)   buildings[x.id]  = x;
+        for (const x of env.data.floors)      floors[x.id]     = x;
+        for (const x of env.data.devices)     devices[x.id]    = x;
+        for (const x of env.data.doors)       doors[x.id]      = x;
+        for (const x of env.data.pathways)    pathways[x.id]   = x;
+        for (const x of env.data.idfs)        idfs[x.id]       = x;
+        for (const x of env.data.estimates)   estimates[x.id]  = x;
+        for (const x of env.data.surveyItems) surveyItems[x.id] = x;
+        for (const x of env.data.workOrderProgress) workOrderProgress[x.id] = x;
+
+        const patch: any = {
+          projects, customers, sites, buildings, floors,
+          devices, doors, pathways, idfs, estimates,
+          surveyItems, workOrderProgress,
+        };
+        // Per-project UI prefs (optional in envelope).
+        if (env.data.canvasLayers) {
+          patch.canvasLayers = { ...s.canvasLayers, [pid]: env.data.canvasLayers };
+        }
+        if (env.data.canvasDisplay) {
+          patch.canvasDisplay = { ...s.canvasDisplay, [pid]: env.data.canvasDisplay };
+        }
+        if (env.data.projectMode) {
+          patch.projectModes = { ...s.projectModes, [pid]: env.data.projectMode };
+        }
+        if (env.data.projectTechModel) {
+          patch.projectTechModels = { ...s.projectTechModels, [pid]: env.data.projectTechModel };
+        }
+        return patch;
       }),
 
       // ── Work order progress actions ─────────────────────────────
@@ -1849,6 +1936,93 @@ export function deriveCanvasBomRows(
       missingPriceCount,
       laborRate,
       markup,
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PROJECT STATE EXPORT — shared-demo sync helper
+// ═══════════════════════════════════════════════════════════════════
+// Builds a `ProjectStateEnvelope` for the named project. Pure over a
+// store snapshot so the UI can call it inside a render without
+// triggering a re-render. The corresponding apply lives on the store
+// as `importProjectState`.
+
+export function exportProjectState(
+  state: ProjectState,
+  projectId: string,
+  opts?: { buildLabel?: string },
+): import('./types').ProjectStateEnvelope {
+  const project = state.projects[projectId];
+  if (!project) {
+    throw new Error(`No project with id "${projectId}" in store.`);
+  }
+  const customer = project.customerId ? state.customers[project.customerId] : undefined;
+  const sites      = Object.values(state.sites).filter((x) => x.projectId === projectId);
+  const siteIds    = new Set(sites.map((x) => x.id));
+  const buildings  = Object.values(state.buildings).filter((b) => siteIds.has(b.siteId));
+  const buildingIds = new Set(buildings.map((b) => b.id));
+  const floors     = Object.values(state.floors).filter((f) => buildingIds.has(f.buildingId) || f.projectId === projectId);
+  const floorIds   = new Set(floors.map((f) => f.id));
+  const devices    = Object.values(state.devices).filter((d: any) => d.projectId === projectId);
+  const doors      = Object.values(state.doors).filter((d) => d.projectId === projectId);
+  const pathways   = Object.values(state.pathways).filter((p) => p.projectId === projectId);
+  const idfs       = Object.values(state.idfs).filter((i) => i.projectId === projectId);
+  const estimates  = Object.values(state.estimates).filter((e) => e.projectId === projectId);
+
+  // Survey items track an objectId — keep only those that point at one
+  // of the project's devices / doors / pathways / idfs / floors.
+  const objectIds = new Set<string>([
+    ...devices.map((d: any) => d.id),
+    ...doors.map((d: any) => d.id),
+    ...pathways.map((p: any) => p.id),
+    ...idfs.map((i: any) => i.id),
+    ...floorIds,
+  ]);
+  const surveyItems = Object.values(state.surveyItems).filter((it: any) => objectIds.has(it.objectId));
+
+  // Work order progress is keyed by `wo-{kind}-{sourceId}`. Carry only
+  // entries whose sourceId belongs to this project's object set.
+  const workOrderProgress = Object.values(state.workOrderProgress).filter((wp) => {
+    const m = wp.id.match(/^wo-[^-]+-(.+)$/);
+    return !!m && objectIds.has(m[1]);
+  });
+
+  return {
+    kind: 'deeper-vision-project-state',
+    version: 1,
+    exportedAt: Date.now(),
+    buildLabel: opts?.buildLabel,
+    projectId,
+    summary: {
+      projectName: project.name,
+      deviceCount: devices.length,
+      pathwayCount: pathways.length,
+      doorCount: doors.length + devices.filter((d: any) => {
+        const t = String(d.type);
+        return t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
+      }).length,
+      idfCount: idfs.length,
+      floorCount: floors.length,
+      workOrderProgressCount: workOrderProgress.length,
+    },
+    data: {
+      project,
+      customer,
+      sites,
+      buildings,
+      floors,
+      devices: devices as any[],
+      doors,
+      pathways,
+      idfs,
+      estimates,
+      surveyItems: surveyItems as any[],
+      workOrderProgress,
+      canvasLayers: state.canvasLayers[projectId],
+      canvasDisplay: state.canvasDisplay[projectId],
+      projectMode: state.projectModes[projectId],
+      projectTechModel: state.projectTechModels[projectId],
     },
   };
 }

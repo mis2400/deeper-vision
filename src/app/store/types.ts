@@ -705,6 +705,66 @@ export interface Estimate {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PROJECT STATE ENVELOPE — export / import for shared-demo sync
+// ═══════════════════════════════════════════════════════════════════
+// Lets the user move project state between local + live without a
+// backend. Carries the canvas surfaces (project, customer, site,
+// buildings, floors, devices, doors, pathways, IDFs, estimates) plus
+// derived-but-mutable progress (workOrderProgress, surveyItems) and
+// per-project UI prefs (canvasLayers, canvasDisplay, projectMode,
+// projectTechModel). Each entity carries its full record so the import
+// side can replace this project's slice without touching other
+// projects' records.
+//
+// `version` is the envelope schema version, NOT the store persist
+// version. Bump when the envelope shape changes.
+
+export interface ProjectStateEnvelope {
+  /** Always "deeper-vision-project-state" so we can refuse to import
+   *  arbitrary JSON. */
+  kind: 'deeper-vision-project-state';
+  /** Envelope schema version. Bump for breaking changes. */
+  version: 1;
+  /** When the export ran (epoch ms). */
+  exportedAt: number;
+  /** Build label captured at export time so the import side can warn
+   *  if the source was from a different app version. */
+  buildLabel?: string;
+  /** ID of the project whose state this envelope carries. */
+  projectId: string;
+  /** Cosmetic display fields so the import-confirmation modal can show
+   *  "Replace 'Acme HQ — Austin' with 24 devices?" without rehydrating. */
+  summary: {
+    projectName: string;
+    deviceCount: number;
+    pathwayCount: number;
+    doorCount: number;
+    idfCount: number;
+    floorCount: number;
+    workOrderProgressCount: number;
+  };
+  data: {
+    project: Project;
+    customer?: Customer;
+    sites: Site[];
+    buildings: Building[];
+    floors: Floor[];
+    devices: Device[];
+    doors: Door[];
+    pathways: Pathway[];
+    idfs: IDF[];
+    estimates: Estimate[];
+    surveyItems: SurveyItem[];
+    workOrderProgress: WorkOrderProgress[];
+    /** Per-project UI prefs — optional. */
+    canvasLayers?: CanvasLayerState;
+    canvasDisplay?: CanvasDisplayPrefs;
+    projectMode?: ProjectMode;
+    projectTechModel?: ProjectTechModel;
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // FIELD DEPLOYMENT / WORK ORDERS
 // ═══════════════════════════════════════════════════════════════════
 // Work orders are derived from canvas state (one per camera / door /

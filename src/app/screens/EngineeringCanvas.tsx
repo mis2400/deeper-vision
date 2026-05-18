@@ -27,6 +27,7 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
+import { ProjectStateMenu } from '../components/canvas/ProjectStateMenu';
 const SURVEYOR_SYMBOL_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
 function SURVEYOR_SYMBOL_HAS(t: string): boolean { return SURVEYOR_SYMBOL_SET.has(t); }
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
@@ -1986,6 +1987,7 @@ export function EngineeringCanvas() {
             }}
             onOpenReview={() => nav(`/project/${projectId}/review`)}
             onOpenDeployment={() => nav(`/project/${projectId}/deployment`)}
+            projectId={projectId}
             compact={viewMode === 'field'}
             intelOpen={intelOpen}
             setIntelOpen={setIntelOpen}
@@ -2983,6 +2985,9 @@ function TopBar(props: {
   onOpenReview: () => void;
   /** Opens the field deployment / work orders route. */
   onOpenDeployment: () => void;
+  /** Active project id, threaded through so the ProjectStateMenu can
+   *  export/import the right project. */
+  projectId: string;
   /** Compact = render only the essentials. Used in Field view so the bar
    *  is a thin operations strip rather than a full chrome row. */
   compact?: boolean;
@@ -3047,6 +3052,7 @@ function TopBar(props: {
         >
           <HardHat className="w-3.5 h-3.5" />Deploy
         </button>
+        <ProjectStateMenu projectId={props.projectId} />
       </div>
 
       <div className="h-5 w-px bg-border/60" />

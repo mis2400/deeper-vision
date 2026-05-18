@@ -1896,6 +1896,160 @@ live URL + the source + build commit hashes.
 
 ---
 
+## Shared Project State / Demo Sync Pass (2026-05-17, after Field Deployment pass)
+
+**Goal.** Make local-vs-live state divergence operational. Add a
+"Project state" menu in the Engineering Canvas that exports the
+current project to a downloadable JSON, imports a previously
+exported file, resets to the seeded demo, or clears local
+localStorage.
+
+### What shipped this pass
+
+- New popover `<ProjectStateMenu projectId={pid}/>` in
+  `components/canvas/ProjectStateMenu.tsx`. Mounts in the Engineering
+  Canvas TopBar (right of *Deploy*, left of *Snap*). Compact
+  `Database` icon + label + chevron.
+- New helper `exportProjectState(state, projectId, opts)` in
+  `projectStore.ts`. Pure over a snapshot — safe to call inside
+  render. Returns a `ProjectStateEnvelope` carrying the project +
+  customer + sites + buildings + floors + devices + doors + pathways
+  + IDFs + estimates + per-project surveyItems + per-project work-
+  order progress + per-project UI prefs (canvasLayers, canvasDisplay,
+  projectMode, projectTechModel). Captures a build label so the
+  import confirmation can warn on version drift.
+- New store action `importProjectState(env)` that replaces ONLY this
+  project's slice. Other projects in the same browser are preserved.
+  Validates kind + version; throws on mismatch.
+- New `ProjectStateEnvelope` + summary type in `store/types.ts`.
+
+### Layout
+
+The TopBar gains: **Project state ▾** (compact, right of Deploy).
+Click → 320 px popover with two sections:
+- **Move state**: Export project JSON · Import project JSON.
+- **Reset**: Reset to shared demo (amber) · Clear local project state
+  (red).
+
+Footer disclaimer (always visible):
+> This prototype stores project state in this browser.
+> Export / import lets you move a demo state between local and live.
+> Cloud sync will replace this later.
+
+Import + reset + clear actions each open a confirmation modal that
+spells out the consequences (envelope summary for import, what gets
+dropped for reset/clear).
+
+### Honest vs preview / local-only
+
+- **Real, live**:
+  - Export downloads a real `.json` file via `URL.createObjectURL` +
+    `<a download>`. Filename pattern
+    `deeper-vision-${projectId}-${YYYY-MM-DD}.json`.
+  - Import reads the picked file via `File.text()`, parses JSON,
+    validates the envelope, shows a confirmation modal with the
+    summary, then merges into the store. Reload not required — the
+    store updates trigger React re-render so the canvas reflects
+    immediately.
+  - Reset to shared demo calls the existing `resetDemoData` action
+    + clears `workOrderProgress`, then navigates to
+    `/project/p1/canvas` so the user lands on a known-good state.
+  - Clear local removes the `deeperVisionStore` key from
+    localStorage and reloads. Next boot runs the seed clean.
+  - End-to-end verified: marker note `EXPORT-MARKER:...` set on
+    CAM-101, exported (envelope contains it at
+    `env.data.devices[CAM-101].notes`), reset clears it, import
+    restores it. /review and /deployment both reflect the imported
+    state without an additional reload step.
+- **Local-only, labelled in UI**:
+  - Footer paragraph + import-confirmation modal each state that
+    this prototype is browser-local and that cloud sync replaces
+    this later.
+  - Import warns visually when the envelope's build label doesn't
+    match this page's build (amber chip).
+
+### Envelope format
+
+```
+{
+  "kind": "deeper-vision-project-state",
+  "version": 1,
+  "exportedAt": <ms>,
+  "buildLabel": "v0.0.1 · <sha> · ...",
+  "projectId": "p1",
+  "summary": { projectName, deviceCount, pathwayCount, doorCount, idfCount, floorCount, workOrderProgressCount },
+  "data": {
+    project, customer?,
+    sites[], buildings[], floors[],
+    devices[], doors[], pathways[], idfs[],
+    estimates[],
+    surveyItems[], workOrderProgress[],
+    canvasLayers?, canvasDisplay?, projectMode?, projectTechModel?
+  }
+}
+```
+
+`version` is the envelope's own schema; bump for breaking changes. It is
+distinct from the store's persist version (currently 6).
+
+### What the user can verify in the browser
+
+1. `/project/p1/canvas` → TopBar shows **Project state** button (right
+   of *Deploy*).
+2. Click → popover opens with **Move state** (Export / Import) and
+   **Reset** (Reset to shared demo / Clear local project state)
+   sections plus the 3-line disclaimer.
+3. Make a change on the canvas (add a device, edit a door's
+   electrification, etc.).
+4. **Export project JSON** → toast confirms; a
+   `deeper-vision-p1-YYYY-MM-DD.json` file downloads. The envelope
+   contains the change.
+5. **Reset to shared demo** → confirmation modal, click Reset; the
+   change disappears; canvas returns to seeded demo state; URL
+   resets to `/project/p1/canvas`.
+6. **Import project JSON** → file picker, pick the file from step 4;
+   confirmation modal shows project name + counts + exported
+   timestamp; click *Replace local state*; change returns to the
+   canvas immediately.
+7. Navigate to `/review` and `/deployment` — imported state reflects
+   there too (verified via marker note round-trip).
+8. **Clear local project state** → confirmation modal, click Clear;
+   page reloads to a fresh seeded canvas; localStorage no longer
+   carries `deeperVisionStore`.
+
+### Regression checks
+
+- TopBar **Add plan**, **BOM & Estimate**, **Present**, **Deploy**,
+  **Project state** all visible — verified.
+- Drawing tool rail still mounts — verified.
+- Verified end-to-end on /canvas, /review, /deployment.
+- No React/runtime console errors (only the standing Vite HMR
+  websocket cosmetic warnings).
+
+### Remaining risks / future cloud sync
+
+- All four actions are browser-local. A shared canonical demo state
+  for the whole team requires a backend or a "canonical snapshot
+  bundled with the build" mechanism. This pass deliberately ships
+  the local primitives that a future cloud sync will reuse.
+- Import is replace-style (overwrite this project's slice). A future
+  merge mode could keep both states under different project ids.
+- Envelope `version` is 1 today. When the persisted store schema
+  bumps (the v5 → v6 type), import-time migrations would land
+  alongside this version field.
+
+### Build result
+
+`npm run build` → exit 0, 2.54 s. New bundle hash captured in the
+deploy commit below.
+
+### Deployment
+
+This pass DOES deploy to Vercel production. See the final report for
+the live URL + the source + build commit hashes.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already
