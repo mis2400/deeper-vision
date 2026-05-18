@@ -337,13 +337,21 @@ export function CustomerPortal() {
         </div>
 
         <aside className="space-y-3">
-          {/* Approval — SC.2.1 progressive flow. Only a `final`
-              approval flips the card into the "Approved" success
-              state; design / scope / change-order approvals keep
-              the Approve button visible so the customer can move
-              through the gates without losing access. */}
+          {/* Approval card — SC.2.1 + SC.2.6.
+              Status pill summarises the current gate state in
+              customer safe wording. Only a `final` approval flips
+              the card into the "Approved" success state; design /
+              scope / change-order approvals keep the Approve button
+              visible so the customer can progress through the gates
+              without losing access. View history expands an inline
+              list when multiple approvals exist; the latest of each
+              type is highlighted, earlier same type approvals are
+              labelled Superseded. */}
           <div className="bg-card border border-border rounded-lg p-4">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Approval</div>
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Approval</div>
+              <ApprovalStatusPill latest={latestApproval} />
+            </div>
             {latestApproval?.approvalType === 'final' ? (
               <div className="mt-2">
                 <div className="text-sm flex items-center gap-1.5 text-success">
@@ -376,6 +384,9 @@ export function CustomerPortal() {
                   {latestApproval ? 'Record next approval' : 'Approve proposal'} <ArrowRight className="w-3.5 h-3.5 ml-1" />
                 </Button>
               </>
+            )}
+            {priorApprovals.length > 1 && (
+              <ApprovalHistoryToggle approvals={priorApprovals} />
             )}
           </div>
 
@@ -552,6 +563,81 @@ function DocRowItem({ doc }: { doc: Attachment }) {
         >
           <Download className="w-4 h-4" />
         </button>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────── Approval status pill (SC.2.6) ──────────
+// Customer safe summary of the gate state. Maps the (possibly
+// empty) approval list into one of five short labels.
+function ApprovalStatusPill({ latest }: { latest: import('../store/types').Approval | null }) {
+  const status: { label: string; tone: string } = (() => {
+    if (!latest) return { label: 'Awaiting approval', tone: 'text-muted-foreground border-border bg-secondary' };
+    switch (latest.approvalType) {
+      case 'final':        return { label: 'Final approval',    tone: 'text-success border-success/40 bg-success/10' };
+      case 'scope':        return { label: 'Scope approved',    tone: 'text-violet-400 border-violet-500/40 bg-violet-500/10' };
+      case 'change-order': return { label: 'Change approved',   tone: 'text-amber-400 border-amber-500/40 bg-amber-500/10' };
+      case 'design':       return { label: 'Design approved',   tone: 'text-sky-400 border-sky-500/40 bg-sky-500/10' };
+      default:             return { label: 'Approval recorded', tone: 'text-foreground border-border bg-secondary' };
+    }
+  })();
+  return (
+    <span
+      className={`inline-flex items-center text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${status.tone}`}
+      data-testid="portal-approval-status"
+    >
+      {status.label}
+    </span>
+  );
+}
+
+// ─────────────────────── Approval history toggle (SC.2.6) ───────
+// Inline expansion when more than one approval exists. Labels the
+// latest of each type as the current record and earlier same type
+// entries as Superseded so the customer understands which version
+// of the design / scope / final is currently in force.
+function ApprovalHistoryToggle({ approvals }: { approvals: import('../store/types').Approval[] }) {
+  const [open, setOpen] = useState(false);
+  // Map each type to its newest approval id; everything else of
+  // that type is superseded. `approvals` arrives sorted newest
+  // first so the first hit per type wins.
+  const latestIdByType = new Map<string, string>();
+  for (const a of approvals) {
+    if (!latestIdByType.has(a.approvalType)) latestIdByType.set(a.approvalType, a.id);
+  }
+  return (
+    <div className="mt-3 pt-3 border-t border-border/60">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+        data-testid="portal-approval-history-toggle"
+      >
+        {open ? 'Hide approval history' : `View approval history (${approvals.length})`}
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-1.5" data-testid="portal-approval-history-list">
+          {approvals.map((a) => {
+            const superseded = latestIdByType.get(a.approvalType) !== a.id;
+            return (
+              <li key={a.id} className="text-[11px] flex items-start gap-2">
+                <span className="text-muted-foreground tabular-nums shrink-0">
+                  {new Date(a.approvedAt).toLocaleDateString()}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="text-foreground">{approvalTypeLabel(a.approvalType)}</span>
+                  <span className="text-muted-foreground"> · {a.proposalVersion} · {a.approverName}</span>
+                </span>
+                {superseded && (
+                  <span className="shrink-0 text-[9px] uppercase tracking-wider text-muted-foreground/70 border border-border rounded px-1">
+                    Superseded
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );
