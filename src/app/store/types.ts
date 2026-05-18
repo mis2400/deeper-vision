@@ -57,6 +57,7 @@ export type EngineeringLayer =
   | 'fov'          // FOV cones on cameras
   | 'coverage'     // non camera coverage envelopes (Pass 2B.2)
   | 'heatmap'      // coverage gap detection heat map (Pass 2B.3)
+  | 'annotations'  // operator notes / highlights / callouts (Pass 2D)
   | 'labels'       // device id labels under each device
   | 'dimensions'   // dimension chains between adjacent cameras
   | 'pathways'     // pathway runs + cable counts
@@ -75,6 +76,7 @@ export const DEFAULT_CANVAS_LAYERS: CanvasLayerState = {
   fov:         true,
   coverage:    false, // off by default — dense maps stay readable
   heatmap:     false, // expensive — operator opts in when needed
+  annotations: true,  // operator notes / highlights / callouts (Pass 2D)
   labels:      true,
   dimensions:  false,
   pathways:    true,
@@ -785,7 +787,7 @@ export interface Measurement {
 // and pushes the current state onto the future stack. Coalesce key lets
 // rapid back-to-back mutations (drag move, slider scrub) collapse into
 // a single undoable step.
-export type CanvasHistorySlice = 'devices' | 'doors' | 'pathways' | 'floors' | 'rooms';
+export type CanvasHistorySlice = 'devices' | 'doors' | 'pathways' | 'floors' | 'rooms' | 'annotations';
 
 export interface CanvasHistoryEntry {
   id: string;
@@ -834,6 +836,43 @@ export interface Room {
   polygon: { x: number; y: number }[];
   occupancyEstimate?: number;
   sensitivity?: RoomSensitivity;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─────────────────────────── Annotations (Pass 2D) ───────────────
+// Operator authored annotations sitting on top of the canvas.
+// Three kinds today:
+//   - 'note': sticky-note style text marker at a point.
+//   - 'highlight': shaded polygon flagging an area concern.
+//   - 'callout': numbered marker (auto sequenced) referenced from
+//     reports as a numbered annotation list.
+export type AnnotationKind = 'note' | 'highlight' | 'callout';
+export type AnnotationColor = 'yellow' | 'blue' | 'green' | 'red' | 'purple';
+
+export interface Annotation {
+  id: string;
+  projectId: string;
+  floorId: string;
+  kind: AnnotationKind;
+  /** Anchor point in canvas px. For highlight polygons, this is the
+   *  centroid (used for label placement); the polygon itself lives in
+   *  the `polygon` field. */
+  x: number;
+  y: number;
+  /** Operator-supplied text. Empty allowed. */
+  text?: string;
+  color?: AnnotationColor;
+  /** Polygon for highlight zones. Closed implicitly. */
+  polygon?: { x: number; y: number }[];
+  /** Optional arrow pointer to a device id. Renders a leader line. */
+  pointToDeviceId?: string;
+  /** Auto-assigned number for 'callout' kind. Stable until removal,
+   *  at which point downstream renderers renumber from the array
+   *  sorted by createdAt. */
+  number?: number;
+  /** Display name of the operator who created the annotation. */
+  author?: string;
   createdAt: number;
   updatedAt: number;
 }

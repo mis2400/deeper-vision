@@ -176,6 +176,9 @@ export interface ProjectState {
    *  filters on currentFloorId to render only the active floor's
    *  rooms. */
   rooms: Record<string, import('./types').Room>;
+  /** Canvas V2 Pass 2D — operator authored annotations (notes /
+   *  highlights / callouts). Keyed by id; each carries floorId. */
+  annotations: Record<string, import('./types').Annotation>;
 
   // ── UX preferences ──
   /** Per-project mode override. When unset, mode is derived from
@@ -336,6 +339,11 @@ export interface ProjectState {
   addRoom:    (r: import('./types').Room) => void;
   updateRoom: (id: string, patch: Partial<import('./types').Room>) => void;
   removeRoom: (id: string) => void;
+
+  // ── Annotation CRUD (Pass 2D) ──
+  addAnnotation:    (a: import('./types').Annotation) => void;
+  updateAnnotation: (id: string, patch: Partial<import('./types').Annotation>) => void;
+  removeAnnotation: (id: string) => void;
 
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
@@ -525,6 +533,7 @@ export const useProjectStore = create<ProjectState>()(
       measurements:      {},
       currentFloorIdByProject: {},
       rooms:             {},
+      annotations:       {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1112,6 +1121,15 @@ export const useProjectStore = create<ProjectState>()(
           : s),
       removeRoom: (id) =>
         set((s) => { const { [id]: _, ...rest } = s.rooms; return { rooms: rest }; }),
+
+      // ── Annotation CRUD (Pass 2D) ────────────────────────────────
+      addAnnotation: (a) => set((s) => ({ annotations: { ...s.annotations, [a.id]: a } })),
+      updateAnnotation: (id, patch) =>
+        set((s) => s.annotations[id]
+          ? { annotations: { ...s.annotations, [id]: { ...s.annotations[id], ...patch, updatedAt: Date.now() } } }
+          : s),
+      removeAnnotation: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.annotations; return { annotations: rest }; }),
 
       // ── Floor CRUD (Pass 2A.5) ───────────────────────────────────
       removeFloor: (id) =>
@@ -1826,12 +1844,13 @@ export const useProjectStore = create<ProjectState>()(
           siteCaptures: {}, canvasHistory: { past: [], future: [] }, measurements: {},
           currentFloorIdByProject: sticky,
           rooms: {},
+          annotations: {},
         };
       }),
     }),
     {
       name: 'deeperVisionStore',
-      version: 21,
+      version: 22,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -2180,6 +2199,13 @@ export const useProjectStore = create<ProjectState>()(
             persisted.rooms = {};
           }
         }
+        if (version < 22) {
+          // v21 → v22: introduce the annotations slice (Pass 2D).
+          const raw = persisted.annotations;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            persisted.annotations = {};
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -2251,6 +2277,7 @@ export const useProjectStore = create<ProjectState>()(
         measurements:    s.measurements,
         currentFloorIdByProject: s.currentFloorIdByProject,
         rooms:           s.rooms,
+        annotations:     s.annotations,
       }),
     },
   ),

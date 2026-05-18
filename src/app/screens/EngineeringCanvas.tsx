@@ -75,7 +75,7 @@ import { toast } from 'sonner';
 // Text + comment tools were never wired to real handlers; removed from the
 // Tool union in the surveyor gap-closure pass per the rule "no dead controls."
 // If we add inline annotation later, re-introduce them with real handlers.
-type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable' | 'conduit' | 'pathway' | 'calibrate' | 'room';
+type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable' | 'conduit' | 'pathway' | 'calibrate' | 'room' | 'annotate';
 
 interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
 
@@ -787,6 +787,41 @@ export function EngineeringCanvas() {
   // facade on every lock toggle. The sync effect lives next to the
   // useState declaration further down.
   const lockedIdsRef = useRef<Set<string>>(new Set());
+
+  // Canvas V2 Pass 2D — annotations subscription, filtered to active floor.
+  const annotationsMap = useProjectStore((s) => s.annotations);
+  const addAnnotation = useProjectStore((s) => s.addAnnotation);
+  const updateAnnotation = useProjectStore((s) => s.updateAnnotation);
+  const removeAnnotation = useProjectStore((s) => s.removeAnnotation);
+  const currentFloorAnnotations = useMemo(
+    () => Object.values(annotationsMap).filter((a) => a.floorId === currentFloorId),
+    [annotationsMap, currentFloorId],
+  );
+  // Annotation kind selector — operator clicks "Annotate" tool, then
+  // picks note / highlight / callout; the canvas click handler reads
+  // this to decide what to drop.
+  const [annotateKind, setAnnotateKind] = useState<'note' | 'callout'>('note');
+  const operatorName = useProjectStore((s) => s.userPrefs?.fullName || s.userPrefs?.jobTitle || 'Operator');
+  const placeAnnotation = useCallback((x: number, y: number) => {
+    if (!currentFloorId) return;
+    const id = `an-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 5)}`;
+    // Callouts auto number: count existing callouts on this floor and add 1.
+    const existingCallouts = currentFloorAnnotations.filter((a) => a.kind === 'callout').length;
+    pushCanvasHistory('Added annotation', ['annotations']);
+    addAnnotation({
+      id,
+      projectId: projectId ?? 'p1',
+      floorId: currentFloorId,
+      kind: annotateKind,
+      x, y,
+      text: annotateKind === 'callout' ? '' : 'New note',
+      color: 'yellow',
+      number: annotateKind === 'callout' ? existingCallouts + 1 : undefined,
+      author: operatorName,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  }, [currentFloorId, projectId, annotateKind, currentFloorAnnotations, addAnnotation, operatorName, pushCanvasHistory]);
 
   // Canvas V2 Pass 2C.1 — rooms subscription, filtered to active floor.
   const roomsMap = useProjectStore((s) => s.rooms);
@@ -2048,6 +2083,7 @@ export function EngineeringCanvas() {
         // Only when no modifier is active (Cmd R = browser reload).
         if (!e.metaKey && !e.ctrlKey) setTool('room');
       }
+      if ((e.key === 'n' || e.key === 'N') && !e.metaKey && !e.ctrlKey) setTool('annotate');
       if (e.key === 'Escape') {
         // Escape unwinds from the most-immersive layer first so a single
         // press always feels predictable — first leave Canvas / Field
@@ -2901,6 +2937,9 @@ export function EngineeringCanvas() {
               rooms={currentFloorRooms}
               roomDraw={tool === 'room' ? roomDraw : undefined}
               onPickRoom={(rid) => setSelRoomId(rid)}
+              annotations={currentFloorAnnotations}
+              onPatchAnnotation={updateAnnotation}
+              onRemoveAnnotation={(aid) => { pushCanvasHistory('Removed annotation', ['annotations']); removeAnnotation(aid); }}
               snap={snap}
               dragging={!!drag}
               onSurfaceClick={(x, y) => {
@@ -2960,6 +2999,12 @@ export function EngineeringCanvas() {
                   const sx = snap ? Math.round(x / 20) * 20 : x;
                   const sy = snap ? Math.round(y / 20) * 20 : y;
                   setRoomDraw((r) => ({ points: [...r.points, { x: sx, y: sy }], cursor: { x: sx, y: sy } }));
+                  return;
+                }
+                if (tool === 'annotate') {
+                  // Pass 2D.1 / 2D.2 — drop a note or callout at the click.
+                  placeAnnotation(x, y);
+                  setTool('select');
                   return;
                 }
                 if (tool === 'calibrate') {
@@ -7346,6 +7391,7 @@ function EngineeringLayersSection({ layers, onToggle }: { layers: CanvasLayerSta
     { id: 'fov',         label: 'FOV cones',     hint: 'Camera coverage cones' },
     { id: 'coverage',    label: 'Coverage',      hint: 'Motion / reader / AP / speaker ranges' },
     { id: 'heatmap',     label: 'Gap heat map',  hint: 'Red = no device covers this spot' },
+    { id: 'annotations', label: 'Annotations',   hint: 'Operator notes + callouts' },
     { id: 'labels',      label: 'Device labels', hint: 'IDs under each device' },
     { id: 'pathways',    label: 'Pathways',      hint: 'Cable runs and tray' },
     { id: 'dimensions',  label: 'Dimensions',    hint: 'Spacing between cameras' },
@@ -7448,6 +7494,10 @@ interface SurfaceProps {
   roomDraw?: { points: { x: number; y: number }[]; cursor: { x: number; y: number } | null };
   /** Click handler for an existing room polygon (Pass 2C.3). */
   onPickRoom?: (id: string) => void;
+  /** Canvas V2 Pass 2D — operator annotations on the active floor. */
+  annotations?: import('../store/types').Annotation[];
+  onPatchAnnotation?: (id: string, patch: Partial<import('../store/types').Annotation>) => void;
+  onRemoveAnnotation?: (id: string) => void;
   snap: boolean;
   dragging: boolean;
   onSurfaceClick: (x: number, y: number) => void;
@@ -7545,7 +7595,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid, rooms, roomDraw, onPickRoom }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid, rooms, roomDraw, onPickRoom, annotations, onPatchAnnotation, onRemoveAnnotation }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -7909,6 +7959,50 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             ))}
           </g>
         )}
+
+        {/* Canvas V2 Pass 2D — operator annotations. Gated by the
+            annotations layer (toggle in Layers panel). Notes render
+            as small yellow chips with text; callouts as numbered
+            circles. Click to edit text inline; right click (or click
+            the × glyph) to remove. */}
+        {layers.annotations && annotations && annotations.map((a) => {
+          const tone =
+            a.color === 'red'    ? '#ef4444'
+            : a.color === 'green'  ? '#22c55e'
+            : a.color === 'blue'   ? '#2F81F7'
+            : a.color === 'purple' ? '#A371F7'
+            : '#FACC15';
+          if (a.kind === 'callout') {
+            return (
+              <g key={`an-${a.id}`} style={{ cursor: 'pointer' }}
+                 onClick={(e) => { e.stopPropagation(); const next = window.prompt('Callout note', a.text ?? ''); if (next !== null) onPatchAnnotation?.(a.id, { text: next }); }}
+                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); if (window.confirm('Remove callout?')) onRemoveAnnotation?.(a.id); }}
+              >
+                <circle cx={a.x} cy={a.y} r={11} fill={tone} stroke="white" strokeWidth={2} />
+                <text x={a.x} y={a.y + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="white" pointerEvents="none">
+                  {a.number ?? '?'}
+                </text>
+                {a.text && (
+                  <text x={a.x + 14} y={a.y + 4} fontSize={10} fill="var(--foreground)" pointerEvents="none">
+                    {a.text.slice(0, 24)}
+                  </text>
+                )}
+              </g>
+            );
+          }
+          // 'note' (and default for any future kind we don't render).
+          return (
+            <g key={`an-${a.id}`} style={{ cursor: 'pointer' }}
+               onClick={(e) => { e.stopPropagation(); const next = window.prompt('Note', a.text ?? ''); if (next !== null) onPatchAnnotation?.(a.id, { text: next }); }}
+               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); if (window.confirm('Remove note?')) onRemoveAnnotation?.(a.id); }}
+            >
+              <rect x={a.x - 4} y={a.y - 4} width={Math.max(56, (a.text?.length ?? 4) * 6)} height={18} rx={3} fill={tone} fillOpacity={0.95} stroke={tone} />
+              <text x={a.x} y={a.y + 9} fontSize={11} fill="#111" pointerEvents="none">
+                {a.text ?? 'Note'}
+              </text>
+            </g>
+          );
+        })}
         {wallStart && wallCursor && (
           <g>
             <line x1={wallStart.x} y1={wallStart.y} x2={wallCursor.x} y2={wallCursor.y} stroke="#2F81F7" strokeWidth="2" strokeDasharray="4 4" />
@@ -14629,6 +14723,7 @@ function DrawingToolRail({
     { id: 'measure', icon: Ruler,         label: 'Measure',    key: 'M', hint: 'Two clicks to measure distance. Esc to cancel.' },
     { id: 'wall',    icon: WallIcon,      label: 'Wall',       key: 'W', hint: 'Draw wall segments. Click vertices, double-click to finish.' },
     { id: 'room',    icon: Square,        label: 'Room',       key: 'R', hint: 'Click vertices to outline a room. Double click or Enter to close.' },
+    { id: 'annotate', icon: MessageSquare, label: 'Annotate',   key: 'N', hint: 'Drop a note or numbered callout on the plan.' },
   ];
   // Coming-soon tools — removed per "If a control doesn't work, hide it".
   // Text / Room / Door-opening / Window / Scale / Photo will reappear when
@@ -14653,13 +14748,13 @@ function DrawingToolRail({
 
   const onPick = (it: Item) => {
     if (it.coming) return;
-    if (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall' || it.id === 'room') setTool(it.id as Tool);
+    if (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall' || it.id === 'room' || it.id === 'annotate') setTool(it.id as Tool);
     setPanelId(panelId === it.id ? null : it.id);
   };
 
   const Tile = ({ it, badge }: { it: Item; badge?: React.ReactNode }) => {
     const Icon = it.icon;
-    const isActiveTool = !it.coming && (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall' || it.id === 'room') && tool === it.id;
+    const isActiveTool = !it.coming && (it.id === 'select' || it.id === 'pan' || it.id === 'measure' || it.id === 'wall' || it.id === 'room' || it.id === 'annotate') && tool === it.id;
     const isActivePanel = panelId === it.id;
     const isDimmed = !!it.coming;
     return (
