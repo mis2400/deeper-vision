@@ -37,6 +37,8 @@ import { PipelineView } from './screens/PipelineView';
 import { AccountDetail } from './screens/AccountDetail';
 import { CustomerManager } from './screens/CustomerManager';
 import { ContactManager } from './screens/ContactManager';
+import { SiteManager } from './screens/SiteManager';
+import { BuildingManager } from './screens/BuildingManager';
 import { Dashboard } from './screens/Dashboard';
 import { ProductCatalog } from './screens/ProductCatalog';
 import { ThreatDrillLibrary } from './screens/ThreatDrillLibrary';
@@ -88,6 +90,8 @@ export default function App() {
           <Route path="/crm" element={<PipelineView />} />
           <Route path="/customers" element={<CustomerManager />} />
           <Route path="/contacts" element={<ContactManager />} />
+          <Route path="/sites" element={<SiteManager />} />
+          <Route path="/buildings" element={<BuildingManager />} />
           <Route path="/account/:customerId" element={<AccountDetail />} />
           <Route path="/catalog" element={<ProductCatalog />} />
           <Route path="/project/:projectId" element={<ProjectCenter />} />
