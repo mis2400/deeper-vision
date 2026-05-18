@@ -839,85 +839,10 @@ export function EngineeringCanvas() {
   // with the room tool (2C.1). The brief asks for closed polygon
   // detection — rectangles are a useful subset and the most common
   // case in commercial / multifamily floor plans.
-  const detectRoomsFromWalls = useCallback(() => {
-    if (!currentFloorId) return;
-    const wallList = (allWalls ?? []) as Array<{ id: string; x1: number; y1: number; x2: number; y2: number }>;
-    if (wallList.length < 4) {
-      toast.error('Need at least four walls on this floor to look for closed rooms.');
-      return;
-    }
-    // Snap endpoints into a coarse grid so floating point math does
-    // not block coincidence checks.
-    const SNAP = 4; // px
-    const key = (x: number, y: number) => `${Math.round(x / SNAP) * SNAP},${Math.round(y / SNAP) * SNAP}`;
-    type Edge = { a: string; b: string; horizontal: boolean; vertical: boolean; minX: number; maxX: number; minY: number; maxY: number };
-    const edges: Edge[] = wallList.map((w) => ({
-      a: key(w.x1, w.y1), b: key(w.x2, w.y2),
-      horizontal: Math.abs(w.y1 - w.y2) < 2,
-      vertical: Math.abs(w.x1 - w.x2) < 2,
-      minX: Math.min(w.x1, w.x2), maxX: Math.max(w.x1, w.x2),
-      minY: Math.min(w.y1, w.y2), maxY: Math.max(w.y1, w.y2),
-    }));
-    // Find rectangles: pairs of horizontal walls at different Y +
-    // pairs of vertical walls at different X whose ranges form a
-    // closed box.
-    const hWalls = edges.filter((e) => e.horizontal);
-    const vWalls = edges.filter((e) => e.vertical);
-    type Candidate = { id: string; polygon: { x: number; y: number }[] };
-    const candidates: Candidate[] = [];
-    const seenKeys = new Set<string>();
-    for (let i = 0; i < hWalls.length; i += 1) {
-      for (let j = i + 1; j < hWalls.length; j += 1) {
-        const h1 = hWalls[i]; const h2 = hWalls[j];
-        const y1 = (h1.minY + h1.maxY) / 2;
-        const y2 = (h2.minY + h2.maxY) / 2;
-        if (Math.abs(y1 - y2) < 20) continue; // too thin
-        const top = y1 < y2 ? h1 : h2;
-        const bot = y1 < y2 ? h2 : h1;
-        const overlapL = Math.max(top.minX, bot.minX);
-        const overlapR = Math.min(top.maxX, bot.maxX);
-        if (overlapR - overlapL < 20) continue;
-        // Need two vertical walls bracketing the X overlap and spanning the Y gap.
-        const left = vWalls.find((v) => Math.abs(((v.minX + v.maxX) / 2) - overlapL) < 8 && v.minY <= Math.min(top.minY, top.maxY) + 4 && v.maxY >= Math.max(bot.minY, bot.maxY) - 4);
-        const right = vWalls.find((v) => Math.abs(((v.minX + v.maxX) / 2) - overlapR) < 8 && v.minY <= Math.min(top.minY, top.maxY) + 4 && v.maxY >= Math.max(bot.minY, bot.maxY) - 4);
-        if (!left || !right) continue;
-        const polygon = [
-          { x: overlapL, y: y1 < y2 ? y1 : y2 },
-          { x: overlapR, y: y1 < y2 ? y1 : y2 },
-          { x: overlapR, y: y1 < y2 ? y2 : y1 },
-          { x: overlapL, y: y1 < y2 ? y2 : y1 },
-        ];
-        const sig = `${Math.round(overlapL)}-${Math.round(overlapR)}-${Math.round(Math.min(y1, y2))}-${Math.round(Math.max(y1, y2))}`;
-        if (seenKeys.has(sig)) continue;
-        seenKeys.add(sig);
-        candidates.push({ id: sig, polygon });
-      }
-    }
-    if (candidates.length === 0) {
-      toast.error('No closed rectangles detected. Try drawing rooms by hand with the Room tool.');
-      return;
-    }
-    // Accept all by default; the brief asks for review-each but the
-    // pragmatic V1 flow is "show them all, operator deletes the ones
-    // they don't want". Each candidate becomes a Room via addRoom.
-    pushCanvasHistory(`Detected ${candidates.length} rooms`, ['rooms']);
-    let nextNum = currentFloorRooms.length + 1;
-    for (const c of candidates) {
-      const id = `r-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 5)}`;
-      addRoom({
-        id,
-        projectId: projectId ?? 'p1',
-        floorId: currentFloorId,
-        name: `Room ${100 + nextNum}`,
-        polygon: c.polygon,
-        sensitivity: 'low',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-      nextNum += 1;
-    }
-    toast.success(`Detected ${candidates.length} room${candidates.length === 1 ? '' : 's'}. Edit names + sensitivity from the inspector.`);
-  }, [allWalls, currentFloorId, projectId, addRoom, pushCanvasHistory, currentFloorRooms.length]);
+  // detectRoomsFromWalls is defined later (after allWalls is declared)
+  // to avoid the TDZ error that bites when the useCallback dep array
+  // dereferences allWalls during initial render.
+  const detectRoomsFromWallsRef = useRef<() => void>(() => {});
 
   // Canvas V2 Pass 1.8 — persisted tape-measure subscription + visibility toggle.
   const measurementsMap = useProjectStore((s) => s.measurements);
@@ -1164,6 +1089,82 @@ export function EngineeringCanvas() {
     () => ((storeFloorWalls ?? []) as unknown as Wall[]),
     [storeFloorWalls],
   );
+
+  // Canvas V2 Pass 2C.2 — auto detect rooms from walls. Defined here
+  // (after allWalls) to avoid the TDZ error from the earlier ref
+  // declaration. The ref is what callers grab so the keyboard handler
+  // and Cmd K command can fire the latest closure without re binding.
+  const detectRoomsFromWalls = useCallback(() => {
+    if (!currentFloorId) return;
+    const wallList = (allWalls ?? []) as Array<{ id: string; x1: number; y1: number; x2: number; y2: number }>;
+    if (wallList.length < 4) {
+      toast.error('Need at least four walls on this floor to look for closed rooms.');
+      return;
+    }
+    const SNAP = 4;
+    const key = (x: number, y: number) => `${Math.round(x / SNAP) * SNAP},${Math.round(y / SNAP) * SNAP}`;
+    type Edge = { a: string; b: string; horizontal: boolean; vertical: boolean; minX: number; maxX: number; minY: number; maxY: number };
+    const edges: Edge[] = wallList.map((w) => ({
+      a: key(w.x1, w.y1), b: key(w.x2, w.y2),
+      horizontal: Math.abs(w.y1 - w.y2) < 2,
+      vertical: Math.abs(w.x1 - w.x2) < 2,
+      minX: Math.min(w.x1, w.x2), maxX: Math.max(w.x1, w.x2),
+      minY: Math.min(w.y1, w.y2), maxY: Math.max(w.y1, w.y2),
+    }));
+    const hWalls = edges.filter((e) => e.horizontal);
+    const vWalls = edges.filter((e) => e.vertical);
+    type Candidate = { id: string; polygon: { x: number; y: number }[] };
+    const candidates: Candidate[] = [];
+    const seenKeys = new Set<string>();
+    for (let i = 0; i < hWalls.length; i += 1) {
+      for (let j = i + 1; j < hWalls.length; j += 1) {
+        const h1 = hWalls[i]; const h2 = hWalls[j];
+        const y1 = (h1.minY + h1.maxY) / 2;
+        const y2 = (h2.minY + h2.maxY) / 2;
+        if (Math.abs(y1 - y2) < 20) continue;
+        const top = y1 < y2 ? h1 : h2;
+        const bot = y1 < y2 ? h2 : h1;
+        const overlapL = Math.max(top.minX, bot.minX);
+        const overlapR = Math.min(top.maxX, bot.maxX);
+        if (overlapR - overlapL < 20) continue;
+        const left = vWalls.find((v) => Math.abs(((v.minX + v.maxX) / 2) - overlapL) < 8 && v.minY <= Math.min(top.minY, top.maxY) + 4 && v.maxY >= Math.max(bot.minY, bot.maxY) - 4);
+        const right = vWalls.find((v) => Math.abs(((v.minX + v.maxX) / 2) - overlapR) < 8 && v.minY <= Math.min(top.minY, top.maxY) + 4 && v.maxY >= Math.max(bot.minY, bot.maxY) - 4);
+        if (!left || !right) continue;
+        const polygon = [
+          { x: overlapL, y: y1 < y2 ? y1 : y2 },
+          { x: overlapR, y: y1 < y2 ? y1 : y2 },
+          { x: overlapR, y: y1 < y2 ? y2 : y1 },
+          { x: overlapL, y: y1 < y2 ? y2 : y1 },
+        ];
+        const sig = `${Math.round(overlapL)}-${Math.round(overlapR)}-${Math.round(Math.min(y1, y2))}-${Math.round(Math.max(y1, y2))}`;
+        if (seenKeys.has(sig)) continue;
+        seenKeys.add(sig);
+        candidates.push({ id: sig, polygon });
+      }
+    }
+    if (candidates.length === 0) {
+      toast.error('No closed rectangles detected. Try drawing rooms by hand with the Room tool.');
+      return;
+    }
+    pushCanvasHistory(`Detected ${candidates.length} rooms`, ['rooms']);
+    let nextNum = currentFloorRooms.length + 1;
+    for (const c of candidates) {
+      const id = `r-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 5)}`;
+      addRoom({
+        id,
+        projectId: projectId ?? 'p1',
+        floorId: currentFloorId,
+        name: `Room ${100 + nextNum}`,
+        polygon: c.polygon,
+        sensitivity: 'low',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      nextNum += 1;
+    }
+    toast.success(`Detected ${candidates.length} room${candidates.length === 1 ? '' : 's'}. Edit names + sensitivity from the inspector.`);
+  }, [allWalls, currentFloorId, projectId, addRoom, pushCanvasHistory, currentFloorRooms.length]);
+  useEffect(() => { detectRoomsFromWallsRef.current = detectRoomsFromWalls; }, [detectRoomsFromWalls]);
 
   // Measure tool — two-click distance measurement. First click sets a
   // start point; second click freezes the measurement. ESC clears.
@@ -3594,7 +3595,7 @@ export function EngineeringCanvas() {
                   { id: 'toggle-layers', label: 'Toggle layers panel', run: () => setLayersOpen((v) => !v) },
                   { id: 'undo', label: 'Undo', hint: '⌘Z', run: () => { const popped = useProjectStore.getState().canvasUndo(); if (popped) toast.message(`Undo: ${popped.label}`, { duration: 1800 }); } },
                   { id: 'redo', label: 'Redo', hint: '⇧⌘Z', run: () => { const popped = useProjectStore.getState().canvasRedo(); if (popped) toast.message(`Redo: ${popped.label}`, { duration: 1800 }); } },
-                  { id: 'detect-rooms', label: 'Detect rooms from walls', hint: 'Adds closed rectangles', run: detectRoomsFromWalls },
+                  { id: 'detect-rooms', label: 'Detect rooms from walls', hint: 'Adds closed rectangles', run: () => detectRoomsFromWallsRef.current() },
                 ]}
               />
             )}
@@ -4830,6 +4831,96 @@ function UndoRedoButtons() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   MOBILE ACTIONS MENU — Canvas V2 Pass 1.5.1
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function MobileActionsMenu(props: {
+  projectId: string;
+  onOpenScanBuild: () => void;
+  onOpenBom: () => void;
+  onOpenReview: () => void;
+  onOpenDeployment: () => void;
+  viewMode: 'default' | 'field' | 'canvas';
+  setViewMode: (m: 'default' | 'field' | 'canvas') => void;
+  isFullscreen: boolean;
+  onEnterFullscreen: () => void;
+  onExitFullscreen: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+  const item = (icon: any, label: string, onClick: () => void, tone?: 'primary' | 'success' | 'warning') => {
+    const Icon = icon;
+    const toneClass = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-amber-500' : tone === 'primary' ? 'text-primary' : 'text-foreground';
+    return (
+      <button
+        onClick={() => { onClick(); setOpen(false); }}
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-secondary/40"
+      >
+        <Icon className={`w-4 h-4 flex-none ${toneClass}`} />
+        <span>{label}</span>
+      </button>
+    );
+  };
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Actions"
+        aria-label="Open actions menu"
+        data-track="topbar-mobile-actions"
+        className={`inline-flex items-center justify-center h-9 w-9 rounded-lg border ${open ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-foreground'}`}
+      >
+        <MoreHorizontal className="w-4 h-4" />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-10 z-[60] w-[240px] bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+          role="menu"
+        >
+          <div className="border-b border-border px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Project</div>
+          {item(Upload, 'Add plan', props.onOpenScanBuild, 'primary')}
+          {item(BarChart3, 'BOM & Estimate', props.onOpenBom)}
+          {item(Presentation, 'Present (customer view)', props.onOpenReview, 'success')}
+          {item(HardHat, 'Deploy (work orders)', props.onOpenDeployment, 'warning')}
+          <div className="border-t border-b border-border px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">View mode</div>
+          {(['default', 'field', 'canvas'] as const).map((m) => {
+            const active = props.viewMode === m;
+            const Icon = m === 'default' ? Columns3 : m === 'field' ? Square : Maximize;
+            return (
+              <button
+                key={m}
+                onClick={() => { props.setViewMode(m); setOpen(false); }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-secondary/40 ${active ? 'text-primary bg-primary/5' : 'text-foreground'}`}
+              >
+                <Icon className="w-4 h-4 flex-none" />
+                <span className="capitalize">{m}</span>
+                {active && <Check className="w-3.5 h-3.5 ml-auto text-primary" />}
+              </button>
+            );
+          })}
+          <div className="border-t border-border">
+            {item(Maximize2, props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen monitor', props.isFullscreen ? props.onExitFullscreen : props.onEnterFullscreen)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    TOP BAR — floor, scale, scan, setup
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -4887,22 +4978,25 @@ function TopBar(props: {
   }, [moreOpen]);
   return (
     <div
-      className={`shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-3 pr-2 gap-2 text-sm relative z-[45] ${compact ? 'h-11' : 'h-12'}`}
+      className={`shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-2 sm:pl-3 pr-1.5 sm:pr-2 gap-1.5 sm:gap-2 text-sm relative z-[45] ${compact ? 'h-11' : 'h-12'}`}
     >
-      {/* Left — floor + scan/build. Tighter than the previous bar; the project
-          title is in the breadcrumb above, so we don't duplicate it here. */}
-      <div className="flex items-center gap-2 min-w-0">
-        {/* Canvas V2 Pass 2A.2 — real floor picker. Lists every floor
-            on the active project, sorted highest level at top so the
-            list reads like a building elevation. Click any name to
-            switch; Cmd Up / Down keyboard nav lives in the canvas
-            keydown handler. */}
+      {/* Canvas V2 Pass 1.5.1 — top toolbar overflow strategy. Mobile
+          (under md = 768 px) collapses the desktop chrome buttons into
+          a single MobileActionsMenu so nothing wraps or gets cut off.
+          Floor switcher + Undo/Redo stay visible because they are the
+          most-used canvas primitives. */}
+      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+        {/* Floor picker stays visible on mobile — it's the primary
+            multi floor affordance. */}
         <FloorSwitcher projectId={props.projectId} />
         <UndoRedoButtons />
+        {/* Desktop only: Add plan / BOM / Present / Deploy / Project state.
+            Each hides under md. The MobileActionsMenu below reopens
+            them via the overflow sheet. */}
         <button
           onClick={props.onOpenScanBuild}
           title="Add a floor plan — upload PDF/image, trace satellite, scan demo, or start blank"
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+          className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 transition-colors whitespace-nowrap"
           data-track="topbar-add-plan"
         >
           <Upload className="w-3.5 h-3.5" />Add plan
@@ -4910,7 +5004,7 @@ function TopBar(props: {
         <button
           onClick={props.onOpenBom}
           title="BOM & Estimate — derived live from the canvas"
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border hover:bg-secondary/50 text-foreground transition-colors"
+          className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border hover:bg-secondary/50 text-foreground transition-colors whitespace-nowrap"
           data-track="topbar-bom"
         >
           <BarChart3 className="w-3.5 h-3.5" />BOM & Estimate
@@ -4918,7 +5012,7 @@ function TopBar(props: {
         <button
           onClick={props.onOpenReview}
           title="Open the customer / reviewer presentation view of this project"
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-500 transition-colors"
+          className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-500 transition-colors whitespace-nowrap"
           data-track="topbar-review"
         >
           <Presentation className="w-3.5 h-3.5" />Present
@@ -4926,18 +5020,37 @@ function TopBar(props: {
         <button
           onClick={props.onOpenDeployment}
           title="Open Field Deployment — work orders generated live from the canvas"
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 text-amber-600 transition-colors"
+          className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 text-amber-600 transition-colors whitespace-nowrap"
           data-track="topbar-deploy"
         >
           <HardHat className="w-3.5 h-3.5" />Deploy
         </button>
-        <ProjectStateMenu projectId={props.projectId} />
+        <div className="hidden md:flex"><ProjectStateMenu projectId={props.projectId} /></div>
       </div>
 
       <div className="flex-1" />
 
-      {/* Right — view picker, fullscreen, more menu, AI. */}
-      <div className="flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
+      {/* Mobile actions overflow — only renders under md. Bundles
+          every desktop only action into a sheet so the top bar stays
+          a thin two-row hierarchy at 375 px. */}
+      <div className="flex md:hidden">
+        <MobileActionsMenu
+          projectId={props.projectId}
+          onOpenScanBuild={props.onOpenScanBuild}
+          onOpenBom={props.onOpenBom}
+          onOpenReview={props.onOpenReview}
+          onOpenDeployment={props.onOpenDeployment}
+          viewMode={props.viewMode}
+          setViewMode={props.setViewMode}
+          isFullscreen={props.isFullscreen}
+          onEnterFullscreen={props.onEnterFullscreen}
+          onExitFullscreen={props.onExitFullscreen}
+        />
+      </div>
+
+      {/* Right — view picker, fullscreen, more menu, AI. Desktop only;
+          mobile reaches the same actions through MobileActionsMenu. */}
+      <div className="hidden md:flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
         {([
           { id: 'default' as const, label: 'Default', icon: Columns3, hint: 'Default — full chrome (rails + dock)' },
           { id: 'field' as const,   label: 'Field',   icon: Square,   hint: 'Field — slim TopBar, no side rails, canvas is the hero' },
@@ -4961,7 +5074,7 @@ function TopBar(props: {
       <button
         onClick={props.isFullscreen ? props.onExitFullscreen : props.onEnterFullscreen}
         title={props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen monitor'}
-        className={`inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-colors ${props.isFullscreen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
+        className={`hidden md:inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-colors ${props.isFullscreen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
       >
         <Maximize2 className="w-3.5 h-3.5" />
       </button>
@@ -4970,7 +5083,7 @@ function TopBar(props: {
           pop-out, plan source, presence). Keeps the visible bar quiet
           while the engineer still has one click away from anything they
           might need. */}
-      <div className="relative" ref={moreRef}>
+      <div className="hidden md:block relative" ref={moreRef}>
         <button
           onClick={() => setMoreOpen((v) => !v)}
           title="More options"
