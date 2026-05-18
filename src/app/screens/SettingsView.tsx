@@ -7,8 +7,9 @@
 import { useState, useMemo } from 'react';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { User, CreditCard, Plug, Users, Bell, Lock } from 'lucide-react';
+import { User, CreditCard, Plug, Users, Bell, Lock, Check, FileDown, Trash2 } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
+import type { PlanTier, BillingCycle, Invoice, PaymentMethod } from '../store/types';
 import { toast } from 'sonner';
 
 type Section = 'account' | 'billing' | 'integrations' | 'team' | 'notifications' | 'security';
@@ -260,24 +261,404 @@ function Account() {
 
 // ─────────────────────────── Other tabs (Phase 3B-3G land later) ───
 
+// ─────────────────────────── Billing (Phase 3B) ────────────────────
+
+interface PlanDef {
+  id: PlanTier;
+  name: string;
+  monthlyPerSeat: number;
+  /** Annual price per seat — equivalent monthly for the savings calc. */
+  annualPerSeat: number;
+  /** Seats included for the price quoted (additional are at the same rate). */
+  description: string;
+  features: string[];
+  budget: { projects: number; seats: number; storageGb: number };
+}
+
+const PLANS: PlanDef[] = [
+  {
+    id: 'starter',
+    name: 'Starter',
+    monthlyPerSeat: 95,
+    annualPerSeat: 75,
+    description: 'For an integrator running fewer than 25 active projects.',
+    features: ['Up to 25 projects', '5 seats included', '20 GB shared storage', 'Email support'],
+    budget: { projects: 25, seats: 5, storageGb: 20 },
+  },
+  {
+    id: 'studio',
+    name: 'Studio',
+    monthlyPerSeat: 245,
+    annualPerSeat: 195,
+    description: 'For active design teams running parallel projects.',
+    features: ['Up to 200 projects', '12 seats included', '250 GB shared storage', 'Priority support', 'Brand accent + portal links'],
+    budget: { projects: 200, seats: 12, storageGb: 250 },
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    monthlyPerSeat: 0,
+    annualPerSeat: 0,
+    description: 'Custom pricing. SSO, SCIM, custom roles, audit log export.',
+    features: ['Unlimited projects', 'Unlimited seats', '5 TB shared storage', 'SAML SSO + SCIM', 'Custom roles', 'White-label exports'],
+    budget: { projects: Infinity, seats: Infinity, storageGb: 5_000 },
+  },
+];
+
+function planDef(id: PlanTier): PlanDef {
+  return PLANS.find((p) => p.id === id) ?? PLANS[0];
+}
+
+function priceFor(plan: PlanDef, cycle: BillingCycle): number | null {
+  if (plan.monthlyPerSeat === 0) return null;
+  return cycle === 'monthly' ? plan.monthlyPerSeat : plan.annualPerSeat;
+}
+
+function annualSavingsPct(plan: PlanDef): number {
+  if (plan.monthlyPerSeat === 0) return 0;
+  const monthlyTotal = plan.monthlyPerSeat * 12;
+  const annualTotal  = plan.annualPerSeat * 12;
+  return Math.round(((monthlyTotal - annualTotal) / monthlyTotal) * 100);
+}
+
 function Billing() {
+  const billing = useProjectStore((s) => s.billing);
+  const setBilling = useProjectStore((s) => s.setBilling);
+  const setPaymentMethod = useProjectStore((s) => s.setPaymentMethod);
+  const addInvoice = useProjectStore((s) => s.addInvoice);
+
+  // Real usage meters — computed from actual store data.
+  const projectsCount = useProjectStore((s) => Object.keys(s.projects).length);
+  const seatsCount    = 1 + Object.keys(useProjectStore((s) => s.contacts)).length; // operator + contacts as a stand-in for invited seats
+  const storageUsedMb = useProjectStore((s) => Object.values(s.attachments).reduce((acc, a) => acc + ((a as any).sizeKb ?? 0), 0)) / 1024;
+
+  const plan = planDef(billing.plan);
+  const monthlyOrAnnual = priceFor(plan, billing.cycle);
+  const seatTotal = monthlyOrAnnual != null ? monthlyOrAnnual * billing.seats : null;
+
+  const onSwitchPlan = (id: PlanTier) => {
+    setBilling({ plan: id });
+    toast.success(`Plan switched to ${planDef(id).name}.`, { duration: 3000 });
+  };
+  const onSwitchCycle = (cycle: BillingCycle) => {
+    setBilling({ cycle });
+    toast.success(`Billing cycle: ${cycle}.`, { duration: 2500 });
+  };
+  const onGenerateInvoice = () => {
+    const now = Date.now();
+    const periodEnd = now;
+    const periodStart = now - 30 * 86_400_000;
+    const inv: Invoice = {
+      id: `inv-${now.toString(36)}`,
+      number: `INV-${new Date(now).getFullYear()}-${String(billing.invoices.length + 1).padStart(3, '0')}`,
+      amount: seatTotal ?? 0,
+      currency: 'USD',
+      status: 'paid',
+      periodStart,
+      periodEnd,
+      issuedAt: now,
+      paidAt: now,
+    };
+    addInvoice(inv);
+    toast.success(`Generated ${inv.number}.`, { duration: 2500 });
+  };
+
   return (
     <>
-      <Panel title="Plan">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm">Studio · $245 / seat / mo</div>
-            <div className="text-xs text-muted-foreground">12 seats · renews Jun 1, 2026</div>
+      <Panel title="Current plan" subtitle="Usage meters are computed live from your project state.">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="text-base font-medium">{plan.name}</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">{plan.description}</div>
+            {seatTotal != null ? (
+              <div className="text-[12px] text-muted-foreground mt-2 tabular-nums">
+                ${monthlyOrAnnual}/seat · {billing.seats} seats · <span className="text-foreground">${seatTotal.toLocaleString()} / {billing.cycle === 'monthly' ? 'mo' : 'mo equivalent, billed annually'}</span>
+              </div>
+            ) : (
+              <div className="text-[12px] text-muted-foreground mt-2">Enterprise pricing — talk to sales for a quote.</div>
+            )}
+            <div className="text-[11px] text-muted-foreground mt-1">
+              Renews {new Date(billing.renewsAt).toLocaleDateString()}.
+            </div>
           </div>
-          <Button size="sm" variant="outline">Manage plan</Button>
+          {/* Annual / monthly toggle with explicit savings indicator on annual. */}
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden text-[12px]">
+            {(['monthly', 'annual'] as const).map((c) => (
+              <button
+                key={c}
+                onClick={() => onSwitchCycle(c)}
+                className={`px-3 py-1.5 capitalize transition-colors ${billing.cycle === c ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary/40 text-muted-foreground'}`}
+                data-testid={`billing-cycle-${c}`}
+              >
+                {c}{c === 'annual' && annualSavingsPct(plan) > 0 ? ` · save ${annualSavingsPct(plan)}%` : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Usage meters — real numbers from the store. */}
+        <div className="grid grid-cols-3 gap-3 mt-4">
+          <UsageMeter label="Projects"  used={projectsCount}  budget={plan.budget.projects} format={(n) => n === Infinity ? '∞' : `${n}`} />
+          <UsageMeter label="Seats"     used={seatsCount}     budget={plan.budget.seats}    format={(n) => n === Infinity ? '∞' : `${n}`} />
+          <UsageMeter label="Storage"   used={storageUsedMb / 1024} budget={plan.budget.storageGb} format={(n) => `${n.toFixed(1)} GB`} />
         </div>
       </Panel>
-      <Panel title="Payment method">
-        <div className="text-sm">Visa ending 4242</div>
-        <div className="text-xs text-muted-foreground">Expires 09 / 2028</div>
+
+      <Panel title="Switch plan" subtitle="Plan changes apply immediately. Pro-rating lands with the billing backend.">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {PLANS.map((p) => {
+            const isCurrent = p.id === billing.plan;
+            const price = priceFor(p, billing.cycle);
+            return (
+              <div
+                key={p.id}
+                className={`relative rounded-lg border p-3 transition-colors ${isCurrent ? 'border-primary bg-primary/5' : 'border-border bg-background'}`}
+                data-testid={`billing-plan-${p.id}`}
+              >
+                {isCurrent && (
+                  <span className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] text-primary">
+                    <Check className="w-3 h-3" />Current
+                  </span>
+                )}
+                <div className="text-[13px] font-medium">{p.name}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{p.description}</div>
+                <div className="text-[14px] font-medium tabular-nums mt-2">
+                  {price == null ? 'Custom' : `$${price}`}
+                  {price != null && <span className="text-[11px] text-muted-foreground"> / seat / mo</span>}
+                </div>
+                <ul className="text-[11.5px] text-muted-foreground space-y-1 mt-3 mb-3">
+                  {p.features.map((f) => (
+                    <li key={f} className="flex items-start gap-1.5">
+                      <Check className="w-3 h-3 mt-0.5 text-emerald-500 shrink-0" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                {!isCurrent && (
+                  <Button size="sm" variant="outline" className="w-full" onClick={() => onSwitchPlan(p.id)}>
+                    {p.id === 'enterprise' ? 'Talk to sales' : 'Switch'}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
+
+      <PaymentMethodPanel current={billing.paymentMethod} onSave={setPaymentMethod} />
+
+      <Panel title="Invoice history" subtitle="Past invoices download as PDFs. The render is generated locally — no third party sees the data.">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[12px] text-muted-foreground">{billing.invoices.length} invoice{billing.invoices.length === 1 ? '' : 's'} on file.</div>
+          <Button size="sm" variant="outline" onClick={onGenerateInvoice}>Generate this period's invoice</Button>
+        </div>
+        {billing.invoices.length === 0 ? (
+          <div className="text-[12px] text-muted-foreground text-center py-6 border border-dashed border-border rounded-md">
+            No invoices yet. Generate one above to see how the PDF lays out.
+          </div>
+        ) : (
+          <ul className="space-y-1.5">
+            {billing.invoices.map((inv) => (
+              <li key={inv.id} className="flex items-center justify-between py-1.5 px-2 rounded border border-border bg-background">
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-medium tabular-nums">{inv.number}</div>
+                  <div className="text-[10.5px] text-muted-foreground">
+                    {new Date(inv.periodStart).toLocaleDateString()} → {new Date(inv.periodEnd).toLocaleDateString()}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-[12px] font-medium tabular-nums">${inv.amount.toLocaleString()}</span>
+                  <span className={`text-[10px] uppercase tracking-[0.10em] ${inv.status === 'paid' ? 'text-emerald-600' : inv.status === 'open' ? 'text-amber-600' : 'text-rose-600'}`}>{inv.status}</span>
+                  <Button size="sm" variant="ghost" onClick={() => exportInvoicePdf(inv, plan, billing.seats)} data-testid={`invoice-pdf-${inv.id}`}>
+                    <FileDown className="w-3.5 h-3.5 mr-1" />PDF
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Panel>
     </>
   );
+}
+
+function UsageMeter({ label, used, budget, format }: { label: string; used: number; budget: number; format: (n: number) => string }) {
+  const pct = budget === Infinity ? 0 : Math.min(100, Math.round((used / budget) * 100));
+  const over = budget !== Infinity && used > budget;
+  const tone = over ? 'bg-rose-500' : pct > 80 ? 'bg-amber-500' : 'bg-primary';
+  return (
+    <div className="rounded-md border border-border bg-background p-2.5">
+      <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">{label}</div>
+      <div className="text-[14px] font-medium tabular-nums mt-1">
+        {format(used)} <span className="text-[11px] text-muted-foreground">/ {format(budget)}</span>
+      </div>
+      <div className="h-1.5 bg-secondary/50 rounded-full overflow-hidden mt-1.5">
+        <div className={`h-full ${tone} transition-all`} style={{ width: budget === Infinity ? '4%' : `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function PaymentMethodPanel({ current, onSave }: { current?: PaymentMethod; onSave: (pm: PaymentMethod | null) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [number, setNumber] = useState('');
+  const [exp, setExp]       = useState(''); // MM/YY
+  const [cvc, setCvc]       = useState('');
+
+  const cardBrand = detectBrand(number);
+  const numberValid = luhn(number.replace(/\s+/g, '')) && number.replace(/\s+/g, '').length >= 13;
+  const expValid    = /^\d{2}\s*\/\s*\d{2}$/.test(exp);
+  const cvcValid    = /^\d{3,4}$/.test(cvc);
+  const canSave = numberValid && expValid && cvcValid;
+
+  const onSubmit = () => {
+    if (!canSave) return;
+    const last4 = number.replace(/\s+/g, '').slice(-4);
+    const [mm, yy] = exp.split('/').map((s) => Number(s.trim()));
+    onSave({
+      brand: cardBrand,
+      last4,
+      expMonth: mm,
+      expYear: 2000 + yy,
+      savedAt: Date.now(),
+    });
+    setEditing(false);
+    setNumber(''); setExp(''); setCvc('');
+    toast.success('Payment method saved locally. Real charges land with the billing backend.');
+  };
+
+  return (
+    <Panel title="Payment method" subtitle="Card metadata persists locally. Card details are never sent to any server until the billing backend ships.">
+      {!current && !editing && (
+        <div className="text-[12px] text-muted-foreground">No payment method on file yet.
+          <Button size="sm" className="ml-2" onClick={() => setEditing(true)}>Add a card</Button>
+        </div>
+      )}
+      {current && !editing && (
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm capitalize">{current.brand} ending {current.last4}</div>
+            <div className="text-[11px] text-muted-foreground">Expires {String(current.expMonth).padStart(2, '0')} / {current.expYear}</div>
+            <div className="text-[10px] text-muted-foreground/80 mt-0.5">Saved {new Date(current.savedAt).toLocaleDateString()}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Replace</Button>
+            <Button size="sm" variant="ghost" onClick={() => { onSave(null); toast.message('Payment method removed.'); }} title="Remove the card">
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+      {editing && (
+        <div className="space-y-3">
+          <Field label="Card number">
+            <Input value={number} onChange={(e) => setNumber(formatCardNumber(e.target.value))} placeholder="0000 0000 0000 0000" inputMode="numeric" maxLength={23} />
+          </Field>
+          <Field label="Expiry (MM/YY)">
+            <Input value={exp} onChange={(e) => setExp(formatExpiry(e.target.value))} placeholder="MM/YY" inputMode="numeric" maxLength={5} />
+          </Field>
+          <Field label="CVC">
+            <Input value={cvc} onChange={(e) => setCvc(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="123" inputMode="numeric" maxLength={4} />
+          </Field>
+          <div className="flex items-center gap-2 justify-end">
+            <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setNumber(''); setExp(''); setCvc(''); }}>Cancel</Button>
+            <Button size="sm" disabled={!canSave} onClick={onSubmit}>Save card</Button>
+          </div>
+          {!canSave && number.length > 0 && (
+            <div className="text-[10.5px] text-amber-600">
+              {!numberValid ? 'Card number fails the Luhn check.' : !expValid ? 'Expiry must be MM/YY.' : 'CVC must be 3 or 4 digits.'}
+            </div>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function detectBrand(num: string): PaymentMethod['brand'] {
+  const d = num.replace(/\s+/g, '');
+  if (/^4/.test(d))                 return 'visa';
+  if (/^5[1-5]/.test(d))            return 'mastercard';
+  if (/^3[47]/.test(d))             return 'amex';
+  if (/^6(?:011|5)/.test(d))        return 'discover';
+  return 'unknown';
+}
+function formatCardNumber(raw: string): string {
+  const d = raw.replace(/\D/g, '').slice(0, 19);
+  return d.replace(/(.{4})/g, '$1 ').trim();
+}
+function formatExpiry(raw: string): string {
+  const d = raw.replace(/\D/g, '').slice(0, 4);
+  if (d.length <= 2) return d;
+  return `${d.slice(0, 2)}/${d.slice(2)}`;
+}
+function luhn(num: string): boolean {
+  if (!/^\d+$/.test(num)) return false;
+  let sum = 0;
+  let alt = false;
+  for (let i = num.length - 1; i >= 0; i--) {
+    let n = parseInt(num[i], 10);
+    if (alt) { n *= 2; if (n > 9) n -= 9; }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
+async function exportInvoicePdf(inv: Invoice, plan: PlanDef, seats: number) {
+  const { jsPDF } = await import('jspdf');
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const W = 612, H = 792;
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 90, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('Invoice', 40, 52);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.text(inv.number, 40, 72);
+  doc.setTextColor(15, 23, 42);
+  let y = 130;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Billed to', 40, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(75, 85, 99);
+  doc.text('Operator workspace', 40, y + 14);
+  doc.text(`Period: ${new Date(inv.periodStart).toLocaleDateString()} → ${new Date(inv.periodEnd).toLocaleDateString()}`, 40, y + 28);
+  doc.text(`Issued: ${new Date(inv.issuedAt).toLocaleDateString()}`, 40, y + 42);
+  y += 80;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Line items', 40, y);
+  y += 18;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(75, 85, 99);
+  const lineDesc = `${plan.name} plan · ${seats} seats`;
+  doc.text(lineDesc, 40, y);
+  doc.text(`$${inv.amount.toLocaleString()}`, W - 80, y, { align: 'right' });
+  y += 30;
+  doc.setDrawColor(229, 231, 235);
+  doc.line(40, y, W - 40, y);
+  y += 16;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Total', 40, y);
+  doc.text(`$${inv.amount.toLocaleString()} ${inv.currency}`, W - 80, y, { align: 'right' });
+  y += 24;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128);
+  doc.text(`Status: ${inv.status}${inv.paidAt ? ` · paid ${new Date(inv.paidAt).toLocaleDateString()}` : ''}`, 40, y);
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text(`DeeperVision · Generated ${new Date().toISOString().slice(0, 10)}`, 40, H - 30);
+  doc.save(`${inv.number}.pdf`);
 }
 
 function Integrations() {

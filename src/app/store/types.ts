@@ -1381,3 +1381,62 @@ export const DEFAULT_USER_PREFS: UserPrefs = {
   language: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
   timeZone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC',
 };
+
+// ─────────────────────────── Billing (Phase 3B) ───────────────────
+// Operator-facing billing surface. No real Stripe; persistence is
+// local. The Account / Billing UI honestly states that payment
+// processing requires the billing backend.
+
+export type PlanTier = 'starter' | 'studio' | 'enterprise';
+export type BillingCycle = 'monthly' | 'annual';
+
+export interface PlanFeatureBudget {
+  /** Max number of projects the tier allows. */
+  projects: number;
+  /** Max seats included. */
+  seats: number;
+  /** Storage in GB. */
+  storageGb: number;
+}
+
+export interface PaymentMethod {
+  brand: 'visa' | 'mastercard' | 'amex' | 'discover' | 'unknown';
+  last4: string;
+  expMonth: number;
+  expYear: number;
+  /** ISO when the card was last saved locally. */
+  savedAt: number;
+}
+
+export interface Invoice {
+  id: string;
+  /** Display number ("INV-2026-04"). */
+  number: string;
+  amount: number;
+  currency: 'USD';
+  status: 'paid' | 'open' | 'failed';
+  periodStart: number;
+  periodEnd: number;
+  issuedAt: number;
+  paidAt?: number;
+}
+
+export interface BillingState {
+  plan: PlanTier;
+  cycle: BillingCycle;
+  seats: number;
+  /** When the current plan renews. */
+  renewsAt: number;
+  paymentMethod?: PaymentMethod;
+  invoices: Invoice[];
+}
+
+/** Default billing state used on first hydrate. Plausible Studio
+ *  subscription so the Settings surface has something to render. */
+export const DEFAULT_BILLING: BillingState = {
+  plan: 'studio',
+  cycle: 'monthly',
+  seats: 6,
+  renewsAt: Date.now() + 30 * 86_400_000,
+  invoices: [],
+};

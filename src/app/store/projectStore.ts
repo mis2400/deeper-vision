@@ -18,6 +18,7 @@ import {
   SurveyItem, SurveyObjectType,
   AiConversation, AiMsg, AiAppliedRecord, AssistantContext,
   UserPrefs, DEFAULT_USER_PREFS,
+  BillingState, DEFAULT_BILLING, Invoice, PaymentMethod, PlanTier, BillingCycle,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -111,6 +112,9 @@ export interface ProjectState {
   /** Operator preferences — Phase 3A. Density, accent, language,
    *  time zone, plus profile headline. Persisted. */
   userPrefs: UserPrefs;
+  /** Workspace billing state — Phase 3B. Local persistence; no
+   *  real Stripe. */
+  billing: BillingState;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -354,6 +358,13 @@ export interface ProjectState {
   /** Patch operator preferences. Only the fields included in the
    *  patch change; the rest keep their current values. */
   setUserPrefs: (patch: Partial<UserPrefs>) => void;
+  /** Patch the workspace billing state (plan, cycle, seats). */
+  setBilling: (patch: Partial<BillingState>) => void;
+  /** Save / update the payment method card metadata. No card bytes
+   *  are sent anywhere — last4 + brand + expiry only. */
+  setPaymentMethod: (pm: PaymentMethod | null) => void;
+  /** Append a generated invoice to the local invoice history. */
+  addInvoice: (inv: Invoice) => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -390,6 +401,7 @@ export const useProjectStore = create<ProjectState>()(
       aiConversations:   {},
       assistantContext:  null,
       userPrefs:         { ...DEFAULT_USER_PREFS },
+      billing:           { ...DEFAULT_BILLING },
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1409,6 +1421,12 @@ export const useProjectStore = create<ProjectState>()(
         }),
       setUserPrefs: (patch) =>
         set((s) => ({ userPrefs: { ...s.userPrefs, ...patch } })),
+      setBilling: (patch) =>
+        set((s) => ({ billing: { ...s.billing, ...patch } })),
+      setPaymentMethod: (pm) =>
+        set((s) => ({ billing: { ...s.billing, paymentMethod: pm ?? undefined } })),
+      addInvoice: (inv) =>
+        set((s) => ({ billing: { ...s.billing, invoices: [inv, ...s.billing.invoices] } })),
       setAssistantContext: (ctx) =>
         set((s) => {
           if (ctx == null) return { assistantContext: null };
@@ -1431,11 +1449,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 10,
+      version: 11,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1576,6 +1594,15 @@ export const useProjectStore = create<ProjectState>()(
           const prev = persisted.userPrefs && typeof persisted.userPrefs === 'object' ? persisted.userPrefs : {};
           persisted.userPrefs = { ...DEFAULT_USER_PREFS, ...prev };
         }
+        if (version < 11) {
+          // v10 → v11: introduce workspace billing state (plan /
+          // cycle / seats / paymentMethod? / invoices[]). Coerce the
+          // invoices array to keep hydrate safe against a tampered
+          // shape.
+          const prev = persisted.billing && typeof persisted.billing === 'object' ? persisted.billing : {};
+          const invs = Array.isArray((prev as any).invoices) ? (prev as any).invoices : [];
+          persisted.billing = { ...DEFAULT_BILLING, ...prev, invoices: invs };
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1630,6 +1657,7 @@ export const useProjectStore = create<ProjectState>()(
         attachments:       s.attachments,
         aiConversations:   s.aiConversations,
         userPrefs:         s.userPrefs,
+        billing:           s.billing,
       }),
     },
   ),
