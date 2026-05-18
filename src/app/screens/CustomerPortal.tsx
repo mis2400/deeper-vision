@@ -178,11 +178,14 @@ export function CustomerPortal() {
   const [approveBusy, setApproveBusy] = useState(false);
   const [approveErrors, setApproveErrors] = useState<{ name?: string; email?: string; version?: string }>({});
 
-  // When the sheet opens, seed proposal version from the prior
-  // approval, rolling a "vN" tag forward by one. The customer
-  // can override either direction.
+  // SC.4.10 — when a live sent proposal exists, derive the
+  // proposal version from it directly (the customer is approving
+  // THIS specific version, not a free text label they invent).
+  // Fall back to the legacy roll forward when no proposal exists
+  // (a pre SC.4 project still allows ad hoc approvals).
   const openApproveSheet = () => {
-    setProposalVersion(nextProposalVersion(latestApproval?.proposalVersion));
+    const sentProposalVersionLabel = sentProposal ? `v${sentProposal.version}` : nextProposalVersion(latestApproval?.proposalVersion);
+    setProposalVersion(sentProposalVersionLabel);
     setApproverName('');
     setApproverEmail('');
     setApproverComments('');
@@ -430,6 +433,16 @@ export function CustomerPortal() {
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Approval</div>
               <ApprovalStatusPill latest={latestApproval} />
             </div>
+            {/* SC.4.10 — newer version banner. Fires when the
+                customer has approved a prior version AND the
+                currently live sent proposal is a different
+                version. Audit trail: the approval row in the
+                history list still references the original version. */}
+            {sentProposal && latestApproval && latestApproval.proposalVersion !== `v${sentProposal.version}` && (
+              <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700" data-testid="portal-newer-version-banner">
+                You approved {latestApproval.proposalVersion} on {new Date(latestApproval.approvedAt).toLocaleDateString()}. A newer version (v{sentProposal.version}) is now available. Review the proposal above and record a fresh approval below if you want to sign off on this revision.
+              </div>
+            )}
             {latestApproval?.approvalType === 'final' ? (
               <div className="mt-2">
                 <div className="text-sm flex items-center gap-1.5 text-success">
@@ -544,6 +557,10 @@ export function CustomerPortal() {
           onApprovalType={setApprovalType}
           proposalVersion={proposalVersion}
           onProposalVersion={setProposalVersion}
+          /* SC.4.10 — when there's a live sent proposal, the
+             version is determined by the data layer (the operator
+             can't invent a different version number). */
+          versionLocked={!!sentProposal}
           comments={approverComments}
           onComments={setApproverComments}
           errors={approveErrors}
@@ -924,7 +941,7 @@ function approvalTypeLabel(t: ApprovalType): string {
 
 function ApproveSheet({
   name, onName, email, onEmail, approvalType, onApprovalType,
-  proposalVersion, onProposalVersion, comments, onComments,
+  proposalVersion, onProposalVersion, versionLocked, comments, onComments,
   errors, onCancel, onConfirm, busy, companyName,
 }: {
   name: string;
@@ -935,6 +952,10 @@ function ApproveSheet({
   onApprovalType: (v: ApprovalType) => void;
   proposalVersion: string;
   onProposalVersion: (v: string) => void;
+  /** SC.4.10 — when a live sent proposal exists, the version is
+   *  determined by the data layer (the customer is approving THAT
+   *  version specifically). Field renders read only with a hint. */
+  versionLocked?: boolean;
   comments: string;
   onComments: (v: string) => void;
   errors: { name?: string; email?: string; version?: string };
@@ -991,9 +1012,15 @@ function ApproveSheet({
               value={proposalVersion}
               onChange={(e) => onProposalVersion(e.target.value)}
               placeholder="v1"
-              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm"
+              disabled={versionLocked}
+              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm disabled:opacity-70 disabled:cursor-not-allowed"
               data-testid="approve-version"
             />
+            {versionLocked && (
+              <div className="text-[11px] text-muted-foreground mt-1">
+                You're approving the version your team sent. This is automatic.
+              </div>
+            )}
             {errors.version && <div className="text-[11px] text-destructive mt-1">{errors.version}</div>}
           </div>
 
