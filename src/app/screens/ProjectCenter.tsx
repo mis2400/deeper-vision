@@ -623,20 +623,168 @@ function AssetsList({ projectId, assets, warrantiesMap, devicesMap }: {
 }
 
 function AssetExpansion({ asset, warranties, device }: { asset: Asset; warranties: Warranty[]; device?: Device }) {
+  const updateAsset = useProjectStore((s) => s.updateAsset);
+  const updateWarranty = useProjectStore((s) => s.updateWarranty);
+
+  // SC.3.5 — inline edit + decommission flow. Toggling edit flips
+  // the asset detail to inputs + each warranty to its own edit
+  // form. Decommission goes through a two click confirm because
+  // the brief calls out "confirms first" and it cascades to
+  // warranty endDates.
+  const [editing, setEditing] = useState(false);
+  const [confirmingDecom, setConfirmingDecom] = useState(false);
+
+  const [serial, setSerial] = useState(asset.serialNumber ?? '');
+  const [status, setStatus] = useState<AssetStatus>(asset.status);
+  const [notes, setNotes]   = useState(asset.notes ?? '');
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setSerial(asset.serialNumber ?? '');
+    setStatus(asset.status);
+    setNotes(asset.notes ?? '');
+  };
+
+  const saveAsset = () => {
+    updateAsset(asset.id, {
+      serialNumber: serial.trim() || undefined,
+      status,
+      notes: notes.trim() || '',
+    });
+    setEditing(false);
+  };
+
+  const todayIso = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const decommission = () => {
+    updateAsset(asset.id, { status: 'decommissioned' });
+    // SC.3.5 — cascade: linked warranties get an endDate of today
+    // (or kept earlier if they were already expired). History is
+    // preserved (we never delete the record).
+    const today = todayIso();
+    for (const w of warranties) {
+      if (w.endDate > today) updateWarranty(w.id, { endDate: today });
+    }
+    setStatus('decommissioned');
+    setConfirmingDecom(false);
+    setEditing(false);
+  };
+
   return (
     <div className="px-4 pb-4 pl-[68px] text-xs text-muted-foreground space-y-3 border-t border-border/40">
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
-        <div><span className="text-foreground/70">Manufacturer:</span> {asset.manufacturer}</div>
-        <div><span className="text-foreground/70">Model:</span> {asset.model}</div>
-        <div><span className="text-foreground/70">Serial:</span> {asset.serialNumber || '—'}</div>
-        <div><span className="text-foreground/70">Status:</span> {ASSET_STATUS_LABEL[asset.status]}</div>
-        <div><span className="text-foreground/70">Commissioned:</span> {new Date(asset.commissionedAt).toLocaleString()}</div>
-        <div><span className="text-foreground/70">By:</span> {asset.commissionedBy || '—'}</div>
-        <div className="font-mono text-[10px] truncate col-span-2"><span className="text-foreground/70">Asset ID:</span> {asset.id}</div>
-        {device && <div className="font-mono text-[10px] truncate col-span-2"><span className="text-foreground/70">Device ID:</span> {device.id}</div>}
+      {/* Edit toolbar */}
+      <div className="mt-2 flex items-center justify-end gap-2">
+        {!editing && asset.status !== 'decommissioned' && !confirmingDecom && (
+          <>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+              data-testid={`asset-edit-${asset.id}`}
+            >Edit asset</button>
+            <button
+              type="button"
+              onClick={() => setConfirmingDecom(true)}
+              className="text-[11px] text-rose-400 hover:underline inline-flex items-center gap-1"
+              data-testid={`asset-decommission-${asset.id}`}
+            >Decommission</button>
+          </>
+        )}
+        {confirmingDecom && (
+          <>
+            <span className="text-[11px] text-foreground">Decommission this asset?</span>
+            <button
+              type="button"
+              onClick={decommission}
+              className="text-[11px] px-2 py-0.5 rounded border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15"
+              data-testid={`asset-decommission-confirm-${asset.id}`}
+            >Yes, decommission</button>
+            <button
+              type="button"
+              onClick={() => setConfirmingDecom(false)}
+              className="text-[11px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+            >Cancel</button>
+          </>
+        )}
+        {editing && (
+          <>
+            <button
+              type="button"
+              onClick={saveAsset}
+              className="text-[11px] px-2 py-0.5 rounded border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+              data-testid={`asset-save-${asset.id}`}
+            >Save</button>
+            <button
+              type="button"
+              onClick={cancelEdit}
+              className="text-[11px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+            >Cancel</button>
+          </>
+        )}
       </div>
 
-      {asset.notes && (
+      {/* Read mode detail grid */}
+      {!editing && (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          <div><span className="text-foreground/70">Manufacturer:</span> {asset.manufacturer}</div>
+          <div><span className="text-foreground/70">Model:</span> {asset.model}</div>
+          <div><span className="text-foreground/70">Serial:</span> {asset.serialNumber || '—'}</div>
+          <div><span className="text-foreground/70">Status:</span> {ASSET_STATUS_LABEL[asset.status]}</div>
+          <div><span className="text-foreground/70">Commissioned:</span> {new Date(asset.commissionedAt).toLocaleString()}</div>
+          <div><span className="text-foreground/70">By:</span> {asset.commissionedBy || '—'}</div>
+          <div className="font-mono text-[10px] truncate col-span-2"><span className="text-foreground/70">Asset ID:</span> {asset.id}</div>
+          {device && <div className="font-mono text-[10px] truncate col-span-2"><span className="text-foreground/70">Device ID:</span> {device.id}</div>}
+        </div>
+      )}
+
+      {/* Edit mode form (serial + status + notes; manufacturer /
+          model stay read only because they come from the catalog
+          and changing them on the Asset would drift from the
+          underlying Device). */}
+      {editing && (
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+          <label className="col-span-2 flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Serial number</span>
+            <input
+              value={serial}
+              onChange={(e) => setSerial(e.target.value)}
+              placeholder="Optional"
+              className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+              data-testid={`asset-serial-input-${asset.id}`}
+            />
+          </label>
+          <label className="col-span-1 flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Status</span>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as AssetStatus)}
+              className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+              data-testid={`asset-status-input-${asset.id}`}
+            >
+              <option value="active">Active</option>
+              <option value="service-required">Service required</option>
+              {/* Decommission lives behind its own confirm flow;
+                  Orphaned is set by the SC.1.5 integrity sweep,
+                  not the operator. */}
+            </select>
+          </label>
+          <label className="col-span-2 flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Notes</span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+            />
+          </label>
+        </div>
+      )}
+
+      {/* Read only notes when not editing */}
+      {!editing && asset.notes && (
         <div className="rounded border border-border/60 bg-secondary/30 px-3 py-2 text-foreground/90 whitespace-pre-wrap">
           {asset.notes}
         </div>
@@ -649,38 +797,155 @@ function AssetExpansion({ asset, warranties, device }: { asset: Asset; warrantie
           <div className="text-[11px] text-muted-foreground/70 italic">No warranty records.</div>
         ) : (
           <ul className="space-y-1.5">
-            {warranties.map((w) => {
-              const ws = warrantyStatus(w);
-              const tone =
-                ws === 'active'    ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
-                : ws === 'expiring' ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
-                : 'text-rose-300 border-rose-500/30 bg-rose-500/10';
-              return (
-                <li key={w.id} className="flex items-center gap-2 text-[11px]">
-                  <span className={`shrink-0 inline-flex items-center text-[9px] uppercase tracking-wider px-1 rounded border ${tone}`}>
-                    {ws}
-                  </span>
-                  <span className="text-foreground">{w.provider}</span>
-                  <span className="text-muted-foreground">· {w.type}</span>
-                  <span className="text-muted-foreground tabular-nums ml-auto">
-                    {w.startDate} → {w.endDate}
-                  </span>
-                </li>
-              );
-            })}
+            {warranties.map((w) => (
+              <WarrantyRow key={w.id} warranty={w} />
+            ))}
           </ul>
         )}
       </div>
 
-      {/* SC.6 placeholder. CLAUDE.md honesty contract says do not
-          ship dead controls — but the brief explicitly wants this
-          stub here with a tooltip pointing at SC.6. Rendering it
-          as plain text instead of a disabled button keeps it
-          honest: it is information, not an affordance. */}
+      {/* SC.6 placeholder. Honesty contract: rendered as plain
+          text, not a control. */}
       <div className="text-[11px] text-muted-foreground/70 italic flex items-center gap-1">
         <Hash className="w-3 h-3" />
         Service tickets land in SC.6.
       </div>
     </div>
+  );
+}
+
+function WarrantyRow({ warranty }: { warranty: Warranty }) {
+  const updateWarranty = useProjectStore((s) => s.updateWarranty);
+  const [editing, setEditing] = useState(false);
+  const [provider, setProvider] = useState<Warranty['provider']>(warranty.provider);
+  const [type, setType]           = useState(warranty.type);
+  const [startDate, setStartDate] = useState(warranty.startDate);
+  const [endDate, setEndDate]     = useState(warranty.endDate);
+  const [terms, setTerms]         = useState(warranty.terms);
+  const [coverage, setCoverage]   = useState(warranty.coverage);
+
+  const ws = warrantyStatus(warranty);
+  const tone =
+    ws === 'active'    ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
+    : ws === 'expiring' ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+    : 'text-rose-300 border-rose-500/30 bg-rose-500/10';
+
+  const cancel = () => {
+    setEditing(false);
+    setProvider(warranty.provider);
+    setType(warranty.type);
+    setStartDate(warranty.startDate);
+    setEndDate(warranty.endDate);
+    setTerms(warranty.terms);
+    setCoverage(warranty.coverage);
+  };
+
+  const save = () => {
+    updateWarranty(warranty.id, {
+      provider,
+      type: type.trim() || warranty.type,
+      startDate,
+      endDate,
+      terms,
+      coverage,
+    });
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <li className="flex items-center gap-2 text-[11px]">
+        <span className={`shrink-0 inline-flex items-center text-[9px] uppercase tracking-wider px-1 rounded border ${tone}`}>
+          {ws}
+        </span>
+        <span className="text-foreground">{warranty.provider}</span>
+        <span className="text-muted-foreground">· {warranty.type}</span>
+        <span className="text-muted-foreground tabular-nums ml-auto">
+          {warranty.startDate} → {warranty.endDate}
+        </span>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="text-primary hover:underline"
+          data-testid={`warranty-edit-${warranty.id}`}
+        >Edit</button>
+      </li>
+    );
+  }
+
+  return (
+    <li className="rounded border border-border/60 bg-secondary/20 p-2 space-y-2" data-testid={`warranty-edit-form-${warranty.id}`}>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Provider</span>
+          <select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value as Warranty['provider'])}
+            className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+          >
+            <option value="manufacturer">Manufacturer</option>
+            <option value="integrator">Integrator</option>
+            <option value="extended">Extended</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Type</span>
+          <input
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Start date</span>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">End date</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+          />
+        </label>
+      </div>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Terms</span>
+        <textarea
+          value={terms}
+          onChange={(e) => setTerms(e.target.value)}
+          rows={2}
+          className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Coverage</span>
+        <textarea
+          value={coverage}
+          onChange={(e) => setCoverage(e.target.value)}
+          rows={2}
+          className="bg-input-background border border-input-border rounded-md px-2 py-1 text-[12px]"
+        />
+      </label>
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={save}
+          className="text-[11px] px-2 py-0.5 rounded border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+          data-testid={`warranty-save-${warranty.id}`}
+        >Save</button>
+        <button
+          type="button"
+          onClick={cancel}
+          className="text-[11px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+        >Cancel</button>
+      </div>
+    </li>
   );
 }
