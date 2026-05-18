@@ -24,11 +24,12 @@ import {
   Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown, Presentation, HardHat, FileText as FileTextIcon,
   PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
-  ClipboardList,
+  ClipboardList, Paperclip,
 } from 'lucide-react';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 import { ProjectStateMenu } from '../components/canvas/ProjectStateMenu';
 import { PricebookEditor } from '../components/canvas/PricebookEditor';
+import { AttachmentPanel } from '../components/canvas/AttachmentPanel';
 const SURVEYOR_SYMBOL_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
 function SURVEYOR_SYMBOL_HAS(t: string): boolean { return SURVEYOR_SYMBOL_SET.has(t); }
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
@@ -8033,7 +8034,9 @@ type EditTab =
   // V18 surveyor redesign — new sections rendered in the 3-icon grid
   | 'accessories' | 'media' | 'history'
   // MVP foundation pass — object-linked survey capture
-  | 'survey';
+  | 'survey'
+  // Attachments / Files foundation pass — real shared file system
+  | 'attachments';
 
 interface ToolbarAction {
   id: string;
@@ -8797,6 +8800,7 @@ const EDIT_TABS: { id: EditTab; label: string; icon: any; covers: EditTab[] }[] 
   { id: 'linked',     label: 'Stack',         icon: Layers,          covers: ['linked'] },
   { id: 'ai',         label: 'AI',            icon: Sparkles,        covers: ['ai'] },
   { id: 'survey',     label: 'Survey',        icon: ClipboardList,    covers: ['survey'] },
+  { id: 'attachments', label: 'Files',        icon: Paperclip,       covers: ['attachments'] },
 ];
 
 /** Return the tile set the drawer should expose for a given device.
@@ -8819,27 +8823,27 @@ function tilesForDevice(d: Device): { id: EditTab; label: string; icon: any; cov
     // body is the DoorAssemblySection (one persisted hardware schedule),
     // not the legacy device-stack picker. Keeps the icon + click target;
     // only the visible label changes.
-    return includes(['overview','linked','mounting','accessories','network','power','compliance','survey','notes','media','ai'])
+    return includes(['overview','linked','mounting','accessories','network','power','compliance','survey','notes','attachments','ai'])
       .map((t) => t.id === 'linked' ? { ...t, label: 'Assembly' } : t);
   }
   if (isReader) {
-    return includes(['overview','mounting','network','power','accessories','compliance','survey','notes','media','ai']);
+    return includes(['overview','mounting','network','power','accessories','compliance','survey','notes','attachments','ai']);
   }
   if (isIdf) {
-    return includes(['overview','network','power','accessories','compliance','linked','survey','notes','media','ai']);
+    return includes(['overview','network','power','accessories','compliance','linked','survey','notes','attachments','ai']);
   }
   if (isCable) {
-    return includes(['overview','network','accessories','survey','notes','media','ai']);
+    return includes(['overview','network','accessories','survey','notes','attachments','ai']);
   }
   if (isCamera) {
     // Camera-class drawer: General → Placement → Coverage → Network →
-    // Power → Accessories → Compatibility → AI → Notes → Survey.
+    // Power → Accessories → Compatibility → Files → AI → Notes → Survey.
     // The Stack ('linked') tab was removed because cameras have no
     // accessory-stack workflow — only doors host hardware schedules.
-    // Media + History tabs were also dropped from the default camera
-    // set because their bodies were preview-only / hardcoded; they
-    // will reappear once real persistence + audit log land.
-    return includes(['overview','mounting','lens','network','power','accessories','compliance','ai','notes','survey']);
+    // Files (attachments) is real persisted storage; the old preview-
+    // only Media + History tabs stay dropped from the default set
+    // because their bodies haven't landed.
+    return includes(['overview','mounting','lens','network','power','accessories','compliance','attachments','ai','notes','survey']);
   }
   // Default: hide Coverage for non-cameras.
   return EDIT_TABS.filter((t) => t.id !== 'lens');
@@ -10149,7 +10153,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
   const removePathway = useProjectStore((s) => s.removePathway);
   const p = (pathways as any)[pathwayId];
   // Sub-tab state: General / Route / Conduit / Terminations / Accessories / Suggestions / BOM / Notes
-  type Sub = 'general' | 'route' | 'conduit' | 'terms' | 'acc' | 'sugg' | 'bom' | 'notes';
+  type Sub = 'general' | 'route' | 'conduit' | 'terms' | 'acc' | 'sugg' | 'bom' | 'notes' | 'files';
   const [sub, setSub] = useState<Sub>('general');
   if (!p) {
     return (
@@ -10190,6 +10194,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
         { id: 'sugg',      label: 'Suggestions',  icon: Sparkles },
         { id: 'bom',       label: 'BOM',          icon: DollarSign },
         { id: 'notes',     label: 'Notes',        icon: FileText },
+        { id: 'files',     label: 'Files',        icon: Paperclip },
       ]
     : [
         { id: 'general',   label: 'General',      icon: ListChecks },
@@ -10199,6 +10204,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
         { id: 'sugg',      label: 'Suggestions',  icon: Sparkles },
         { id: 'bom',       label: 'BOM',          icon: DollarSign },
         { id: 'notes',     label: 'Notes',        icon: FileText },
+        { id: 'files',     label: 'Files',        icon: Paperclip },
       ];
 
   return (
@@ -10467,6 +10473,19 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
               objectId={pathwayId}
             />
           </>
+        )}
+
+        {sub === 'files' && (
+          <DrawerSection title="Files & attachments">
+            <AttachmentPanel
+              projectId={p.projectId}
+              linkedObjectType="pathway"
+              linkedObjectId={pathwayId}
+              defaultCategory="photo"
+              title="Pathway files"
+              compact
+            />
+          </DrawerSection>
         )}
       </div>
     </div>
@@ -11204,6 +11223,26 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         {bodyShows(tab, 'survey') && (
           <SurveySection device={d} onUpdate={onUpdate} />
         )}
+
+        {bodyShows(tab, 'attachments') && (() => {
+          // Door-class devices store attachments under linkType 'door';
+          // everything else under 'device'. Keeps the project-wide
+          // attachments slice navigable by kind without forcing every
+          // consumer to remember "is this device id actually a door?".
+          const t = String(d.type);
+          const isOpening = t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
+          return (
+            <DrawerSection title="Files & attachments">
+              <AttachmentPanel
+                projectId={d.projectId}
+                linkedObjectType={isOpening ? 'door' : 'device'}
+                linkedObjectId={d.id}
+                defaultCategory={isOpening ? 'photo' : 'photo'}
+                title={isOpening ? 'Door files' : 'Device files'}
+              />
+            </DrawerSection>
+          );
+        })()}
 
         {bodyShows(tab, 'accessories') && (
           <AccessoriesSection

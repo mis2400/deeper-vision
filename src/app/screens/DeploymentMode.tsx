@@ -19,6 +19,7 @@ import {
   useProjectStore, selectors as sel, deriveWorkOrders, DOOR_HARDWARE_PRICE,
 } from '../store/projectStore';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
+import { AttachmentPanel } from '../components/canvas/AttachmentPanel';
 import { SAMPLE_PRODUCTS as CATALOG } from '../lib/productCatalog';
 import { pathwayLengthFt } from '../lib/engineering';
 import { buildLabel } from '../../build-info';
@@ -195,7 +196,7 @@ export function DeploymentMode() {
         <div className="grid grid-cols-[minmax(0,1fr)_400px] min-h-0">
           <div className="overflow-y-auto p-5 min-h-0">
             {selected
-              ? <WorkOrderDetail wo={selected} floors={floors} state={state} />
+              ? <WorkOrderDetail wo={selected} floors={floors} state={state} projectId={projectId} />
               : <div className="text-[12px] text-muted-foreground">Select a work order on the left to see its details.</div>
             }
           </div>
@@ -373,7 +374,7 @@ function WorkOrderRow({ wo, selected, onSelect }: { wo: WorkOrder; selected: boo
 
 // ─────────────────────────── WO detail ────────────────────────────
 
-function WorkOrderDetail({ wo, floors, state }: { wo: WorkOrder; floors: Floor[]; state: any }) {
+function WorkOrderDetail({ wo, floors, state, projectId }: { wo: WorkOrder; floors: Floor[]; state: any; projectId: string }) {
   const kindMeta = KIND_META[wo.kind];
   const statusMeta = STATUS_META[wo.progress.status];
   const KindIcon = kindMeta.icon;
@@ -542,7 +543,7 @@ function WorkOrderDetail({ wo, floors, state }: { wo: WorkOrder; floors: Floor[]
       </div>
 
       {/* Photo placeholders */}
-      <PhotoSection wo={wo} />
+      <PhotoSection wo={wo} projectId={projectId} />
     </div>
   );
 }
@@ -803,19 +804,13 @@ function WorkOrderChecklistPanel({ wo }: { wo: WorkOrder }) {
   );
 }
 
-function PhotoSection({ wo }: { wo: WorkOrder }) {
-  const addPhoto = useProjectStore((s) => s.addWorkOrderPhotoPlaceholder);
-  const removePhoto = useProjectStore((s) => s.removeWorkOrderPhotoPlaceholder);
-  const [fileName, setFileName] = useState('');
-  const [tag, setTag] = useState<'before' | 'after' | 'wiring' | 'label' | 'other'>('after');
-  const photos = wo.progress.photoPlaceholders ?? [];
-  const onAdd = () => {
-    const name = fileName.trim();
-    if (!name) return;
-    addPhoto(wo.id, { fileName: name, tag, sizeKb: Math.round(80 + Math.random() * 1200) });
-    setFileName('');
-    toast.message('Photo placeholder added (preview only)', { description: 'Real upload lands when storage is wired.', duration: 3500 });
-  };
+function PhotoSection({ wo, projectId }: { wo: WorkOrder; projectId: string }) {
+  // The Attachments / Files foundation pass replaced the per-WO
+  // `photoPlaceholders` array with the shared `attachments` slice.
+  // The WO photo section now mounts AttachmentPanel with
+  // linkedObjectType 'workOrder' so the same record drives Reports
+  // + the WO detail. Real image preview (canvas-downsampled to
+  // 800px JPEG q0.8) replaces the prior metadata-only placeholder.
   return (
     <div className="rounded-lg border border-border p-3 bg-secondary/15">
       <div className="flex items-center justify-between mb-2">
@@ -823,54 +818,15 @@ function PhotoSection({ wo }: { wo: WorkOrder }) {
           <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
           <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Install photos</div>
         </div>
-        <span className="text-[9px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400 border border-amber-400/30">Preview · metadata only</span>
       </div>
-      <div className="space-y-1.5 mb-2">
-        {photos.length === 0
-          ? <div className="text-[11.5px] text-muted-foreground">No photos yet.</div>
-          : photos.map((p) => (
-              <div key={p.id} className="flex items-center justify-between gap-2 p-2 rounded-md border border-border bg-background/40">
-                <div className="flex items-center gap-2 min-w-0">
-                  <ImageIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[12px] truncate">{p.fileName}</div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {p.tag ? <span className="uppercase tracking-[0.1em] mr-2">{p.tag}</span> : null}
-                      {p.sizeKb ? `~${p.sizeKb} KB · ` : ''}{relativeTime(p.addedAt)}
-                    </div>
-                  </div>
-                </div>
-                <button onClick={() => removePhoto(wo.id, p.id)} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/40" title="Remove placeholder">
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            ))
-        }
-      </div>
-      <div className="flex items-center gap-1.5">
-        <input
-          type="text"
-          value={fileName}
-          onChange={(e) => setFileName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') onAdd(); }}
-          placeholder="Photo filename (e.g. CAM-101-aim.jpg)"
-          className="flex-1 text-[11.5px] h-7 px-2 rounded border border-border bg-background placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
-          data-testid="deploy-photo-filename"
-        />
-        <select value={tag} onChange={(e) => setTag(e.target.value as any)}
-          className="text-[11px] h-7 px-2 rounded border border-border bg-background focus:outline-none focus:border-primary/50">
-          {(['before', 'after', 'wiring', 'label', 'other'] as const).map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <button onClick={onAdd} disabled={!fileName.trim()}
-          className="h-7 w-7 rounded inline-flex items-center justify-center border border-border bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
-          title="Record photo placeholder"
-          data-track="deploy-photo-add">
-          <Plus className="w-3.5 h-3.5" />
-        </button>
-      </div>
-      <div className="text-[9.5px] text-muted-foreground mt-1.5 leading-snug">
-        Real image upload lands when blob storage is wired. Filenames + tags persist across reloads so the tech can record what they took.
-      </div>
+      <AttachmentPanel
+        projectId={projectId}
+        linkedObjectType="workOrder"
+        linkedObjectId={wo.id}
+        defaultCategory="photo"
+        uploadedBy={wo.progress.assignedTo}
+        compact
+      />
     </div>
   );
 }

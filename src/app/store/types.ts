@@ -705,6 +705,56 @@ export interface Estimate {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ATTACHMENTS — local file metadata + (small) image previews
+// ═══════════════════════════════════════════════════════════════════
+// Single shared model used by canvas device/door/pathway inspectors,
+// the deployment work-order photo section, and the reports center
+// attachments grid. Persisted in its own `attachments` slice keyed by
+// id so individual entities don't have to carry their own arrays.
+//
+// Storage rules (honest local-only contract):
+//   - Small images (≤ ~256 KB raw, downsampled to max 800px on long
+//     edge as JPEG q0.8) are stored as `dataUrl` so the panel can
+//     render thumbnails. `storageMode: 'local-preview'`.
+//   - Larger files OR non-image types are stored as metadata only
+//     (filename, size, MIME, category). `storageMode: 'local-meta'`.
+//     The user sees a file-card without a preview.
+//   - `storageMode: 'cloud'` is reserved for the future backend pass;
+//     no path produces it today.
+// Cloud file storage is not connected; the panel says so.
+
+export type AttachmentLinkType =
+  | 'project' | 'floor' | 'device' | 'door' | 'pathway' | 'workOrder' | 'report';
+
+export type AttachmentCategory =
+  | 'photo' | 'video' | 'pdf' | 'spec' | 'drawing' | 'closeout' | 'note' | 'other';
+
+export type AttachmentStorageMode = 'local-preview' | 'local-meta' | 'cloud';
+
+export interface Attachment {
+  id: string;
+  projectId: string;
+  linkedObjectType: AttachmentLinkType;
+  linkedObjectId: string;
+  fileName: string;
+  /** MIME type as reported by the File object (`image/jpeg` etc). */
+  fileType: string;
+  /** Original file size in bytes. */
+  fileSize: number;
+  category: AttachmentCategory;
+  uploadedBy?: string;
+  createdAt: number;
+  updatedAt?: number;
+  notes?: string;
+  /** When true, this attachment + its notes are hidden in the Reports
+   *  Center customer view. The internal view always shows them. */
+  internalOnly?: boolean;
+  /** Data URL preview. Present only when `storageMode === 'local-preview'`. */
+  dataUrl?: string;
+  storageMode: AttachmentStorageMode;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // PROJECT PRICEBOOK — per-project price + labor + markup overrides
 // ═══════════════════════════════════════════════════════════════════
 // Editable in the BOM drawer's Pricebook editor. Each entry overrides
@@ -795,6 +845,10 @@ export interface ProjectStateEnvelope {
      *  precedence over `DOOR_HARDWARE_PRICE` / `CABLE_UNIT_PRICE` /
      *  the estimate's labor + markup for this project on the import side. */
     pricebook?: ProjectPricebook;
+    /** Project-scoped attachments. Optional in the envelope so older
+     *  exports load without complaint; absent on import means "wipe
+     *  this project's attachments locally". */
+    attachments?: Attachment[];
   };
 }
 

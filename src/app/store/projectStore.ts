@@ -78,6 +78,11 @@ interface ProjectState {
    *  through to defaults so the absence of a pricebook == legacy
    *  behaviour. */
   projectPricebooks: Record<string, import('./types').ProjectPricebook>;
+  /** Attachments — single shared slice keyed by attachment id. Each
+   *  entry carries projectId + linkedObjectType/Id so the
+   *  AttachmentPanel can scope lookups per device/door/pathway/WO
+   *  without forcing per-entity arrays into other shapes. */
+  attachments: Record<string, import('./types').Attachment>;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -260,6 +265,15 @@ interface ProjectState {
   /** Clear ALL pricebook overrides for the project. */
   resetPricebook: (projectId: string) => void;
 
+  // ── Attachment actions ──
+  /** Persist a new attachment. Caller supplies the full record (id,
+   *  projectId, linked object, fileName, etc.). */
+  addAttachment: (a: import('./types').Attachment) => void;
+  /** Patch an attachment. Stamps `updatedAt`. */
+  updateAttachment: (id: string, patch: Partial<import('./types').Attachment>) => void;
+  /** Remove an attachment by id. No-op when missing. */
+  removeAttachment: (id: string) => void;
+
   // ── Project state export / import (shared-demo sync) ──
   /** Replace this project's slice of the store with the contents of an
    *  exported envelope. Other projects' state is preserved. Throws if
@@ -313,6 +327,7 @@ export const useProjectStore = create<ProjectState>()(
       canvasTheme:       'light',
       workOrderProgress: {},
       projectPricebooks: {},
+      attachments:       {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -917,6 +932,17 @@ export const useProjectStore = create<ProjectState>()(
           const { [pid]: _drop, ...restPb } = s.projectPricebooks;
           patch.projectPricebooks = restPb;
         }
+        // Attachments: replace ONLY this project's attachments;
+        // other projects' attachments are preserved. Absence of an
+        // `attachments` array in the envelope means "no attachments
+        // on the source machine for this project".
+        const incomingAttachments = env.data.attachments ?? [];
+        const keptAttachments: Record<string, import('./types').Attachment> = {};
+        for (const [aid, a] of Object.entries(s.attachments)) {
+          if (a.projectId !== pid) keptAttachments[aid] = a;
+        }
+        for (const a of incomingAttachments) keptAttachments[a.id] = a;
+        patch.attachments = keptAttachments;
         return patch;
       }),
 
@@ -1089,11 +1115,26 @@ export const useProjectStore = create<ProjectState>()(
           return { projectPricebooks: rest };
         }),
 
-      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {} })),
+      // ── Attachment actions ──
+      addAttachment: (a) =>
+        set((s) => ({ attachments: { ...s.attachments, [a.id]: a } })),
+      updateAttachment: (id, patch) =>
+        set((s) => {
+          const prev = s.attachments[id];
+          if (!prev) return s;
+          return { attachments: { ...s.attachments, [id]: { ...prev, ...patch, id, updatedAt: Date.now() } } };
+        }),
+      removeAttachment: (id) =>
+        set((s) => {
+          const { [id]: _drop, ...rest } = s.attachments;
+          return { attachments: rest };
+        }),
+
+      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {} })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 7,
+      version: 8,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1185,6 +1226,13 @@ export const useProjectStore = create<ProjectState>()(
           // to UNIT_PRICE / DOOR_HARDWARE_PRICE / CABLE_UNIT_PRICE.
           persisted.projectPricebooks ??= {};
         }
+        if (version < 8) {
+          // v7 → v8: introduce the shared `attachments` slice. Empty
+          // default is safe because attachmentsFor / projectAttachments
+          // selectors treat the absence of a slice (or absence of any
+          // entries for a given link target) as "no attachments yet".
+          persisted.attachments ??= {};
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1236,6 +1284,7 @@ export const useProjectStore = create<ProjectState>()(
         surveyItems:       s.surveyItems,
         workOrderProgress: s.workOrderProgress,
         projectPricebooks: s.projectPricebooks,
+        attachments:       s.attachments,
       }),
     },
   ),
@@ -2185,8 +2234,50 @@ export function exportProjectState(
       projectMode: state.projectModes[projectId],
       projectTechModel: state.projectTechModels[projectId],
       pricebook: state.projectPricebooks[projectId],
+      attachments: Object.values(state.attachments).filter((a) => a.projectId === projectId),
     },
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ATTACHMENT LOOKUPS — selector-style helpers for the panel + reports
+// ═══════════════════════════════════════════════════════════════════
+
+/** All attachments linked to a specific canvas object (device / door /
+ *  pathway / work order / floor / report). Caller-side memoization
+ *  recommended for large lists. */
+export function attachmentsFor(
+  state: ProjectState,
+  linkedObjectType: import('./types').AttachmentLinkType,
+  linkedObjectId: string,
+): import('./types').Attachment[] {
+  return Object.values(state.attachments).filter(
+    (a) => a.linkedObjectType === linkedObjectType && a.linkedObjectId === linkedObjectId,
+  );
+}
+
+/** Every attachment on a project across all link types. Sorted newest
+ *  first so the Reports Center "recent attachments" surface is cheap. */
+export function projectAttachments(state: ProjectState, projectId: string): import('./types').Attachment[] {
+  return Object.values(state.attachments)
+    .filter((a) => a.projectId === projectId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** Per-category counts for a project. Reports Center renders a small
+ *  grid of these as the attachments summary. */
+export function projectAttachmentCounts(
+  state: ProjectState,
+  projectId: string,
+): Record<import('./types').AttachmentCategory, number> {
+  const out: Record<import('./types').AttachmentCategory, number> = {
+    photo: 0, video: 0, pdf: 0, spec: 0, drawing: 0, closeout: 0, note: 0, other: 0,
+  };
+  for (const a of Object.values(state.attachments)) {
+    if (a.projectId !== projectId) continue;
+    out[a.category] = (out[a.category] ?? 0) + 1;
+  }
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════

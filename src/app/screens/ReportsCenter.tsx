@@ -16,12 +16,13 @@ import { useParams, useNavigate, Link } from 'react-router';
 import {
   useProjectStore, selectors as sel, deriveCanvasBomRows, deriveWorkOrders,
   DOOR_HARDWARE_PRICE, CABLE_UNIT_PRICE,
+  projectAttachments, projectAttachmentCounts,
 } from '../store/projectStore';
 import { SAMPLE_PRODUCTS as CATALOG } from '../lib/productCatalog';
 import { pathwayLengthFt } from '../lib/engineering';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 import type {
-  Floor, Device, Pathway, DoorHardware, WorkOrderStatus,
+  Floor, Device, Pathway, DoorHardware, WorkOrderStatus, Attachment, AttachmentCategory,
 } from '../store/types';
 import { buildLabel, COMMIT_HASH } from '../../build-info';
 import {
@@ -207,7 +208,7 @@ export function ReportsCenter() {
 
         <AssumptionsExclusions />
 
-        <Attachments />
+        <AttachmentsSection projectId={projectId} mode={mode} />
 
         <ReportFooter project={project} mode={mode} />
       </div>
@@ -884,15 +885,104 @@ function AssumptionsExclusions() {
 
 // ─────────────────────────── Attachments ──────────────────────────
 
-function Attachments() {
+function AttachmentsSection({ projectId, mode }: { projectId: string; mode: Mode }) {
+  const allAttachments = useProjectStore((s) => s.attachments);
+  const attachments = useMemo(
+    () => projectAttachments({ attachments: allAttachments } as any, projectId),
+    [allAttachments, projectId],
+  );
+  // Customer view: hide internal-only attachments AND drop them from
+  // the per-category totals so the counts always reconcile with what
+  // the recent grid below actually shows. Internal view = raw counts.
+  const visible = mode === 'customer'
+    ? attachments.filter((a) => !a.internalOnly)
+    : attachments;
+  const counts = useMemo(() => {
+    if (mode === 'internal') {
+      return projectAttachmentCounts({ attachments: allAttachments } as any, projectId);
+    }
+    const c: Record<AttachmentCategory, number> = {
+      photo: 0, video: 0, pdf: 0, spec: 0, drawing: 0, closeout: 0, note: 0, other: 0,
+    };
+    for (const a of visible) c[a.category] = (c[a.category] ?? 0) + 1;
+    return c;
+  }, [allAttachments, projectId, mode, visible]);
+  const recent = visible.slice(0, 8);
+
+  const CATEGORY_LABEL: Record<AttachmentCategory, string> = {
+    photo: 'Photos', video: 'Video', pdf: 'PDFs', spec: 'Specs',
+    drawing: 'Drawings', closeout: 'Closeout', note: 'Notes', other: 'Other',
+  };
+  const CATEGORY_TONE: Record<AttachmentCategory, string> = {
+    photo: '#22D3EE', video: '#A371F7', pdf: '#EF4444', spec: '#10B981',
+    drawing: '#7CC4FF', closeout: '#F59E0B', note: '#F472B6', other: '#94A3B8',
+  };
+
   return (
     <Section title="Attachments" icon={Paperclip}
-      subtitle="Drawing sets, photos, and supporting docs land here. Upload pending.">
-      <div className="rounded-lg border border-dashed border-border bg-secondary/5 p-4 text-center text-[11.5px] text-muted-foreground">
-        <Paperclip className="w-4 h-4 mx-auto mb-1.5 text-muted-foreground/50" />
-        Attachment slots — preview only. File upload + storage lands with the cloud sync pass.
-      </div>
+      subtitle={mode === 'customer'
+        ? 'Files attached to canvas objects and work orders. Internal-only items are hidden in the customer view.'
+        : 'Files attached to canvas objects and work orders. Stored in this browser for prototype — cloud storage not connected yet.'}
+    >
+      {attachments.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-secondary/5 p-4 text-center text-[11.5px] text-muted-foreground">
+          <Paperclip className="w-4 h-4 mx-auto mb-1.5 text-muted-foreground/50" />
+          No attachments yet. Open a device, door, pathway, or work order inspector to attach files.
+        </div>
+      ) : (
+        <>
+          {/* Per-category summary */}
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {(Object.keys(counts) as AttachmentCategory[]).map((cat) => (
+              <div key={cat} className="rounded-md border border-border bg-secondary/10 px-2 py-1.5">
+                <div className="text-[9.5px] uppercase tracking-[0.12em]" style={{ color: CATEGORY_TONE[cat] }}>{CATEGORY_LABEL[cat]}</div>
+                <div className="text-[14px] font-medium tabular-nums leading-tight">{counts[cat] ?? 0}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Recent grid — thumbnails when image, otherwise file card */}
+          <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">
+            Recent {visible.length === 0 ? '· nothing visible in customer view' : `· ${recent.length} of ${visible.length}`}
+          </div>
+          {recent.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border bg-secondary/5 p-3 text-center text-[11px] text-muted-foreground">
+              All attachments are marked internal-only. Switch to internal view to see them.
+            </div>
+          ) : (
+            <ul className="grid grid-cols-2 gap-2">
+              {recent.map((a) => (
+                <ReportAttachmentRow key={a.id} att={a} mode={mode} />
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </Section>
+  );
+}
+
+function ReportAttachmentRow({ att, mode }: { att: Attachment; mode: Mode }) {
+  return (
+    <li className="flex items-start gap-2 p-2 rounded-md border border-border bg-background/40">
+      {att.dataUrl ? (
+        <img src={att.dataUrl} alt={att.fileName} className="w-14 h-14 rounded object-cover border border-border shrink-0" />
+      ) : (
+        <div className="w-14 h-14 rounded border border-border bg-secondary/20 flex items-center justify-center shrink-0">
+          <Paperclip className="w-4 h-4 text-muted-foreground" />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-[11.5px] font-medium text-foreground truncate" title={att.fileName}>{att.fileName}</div>
+        <div className="text-[10px] text-muted-foreground tabular-nums">
+          <span className="uppercase tracking-[0.1em] mr-1">{att.category}</span>
+          · linked to {att.linkedObjectType} {att.linkedObjectId}
+        </div>
+        {mode === 'internal' && att.notes && (
+          <div className="text-[10.5px] text-foreground/75 mt-0.5 italic line-clamp-2">{att.notes}</div>
+        )}
+      </div>
+    </li>
   );
 }
 

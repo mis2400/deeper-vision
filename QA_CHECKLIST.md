@@ -2450,6 +2450,148 @@ the live URL + the source + build commit hashes.
 
 ---
 
+## Attachments / Files Foundation Pass (2026-05-18, after Cloud Sync / Snapshot)
+
+**Goal.** Replace the placeholder attachment surfaces (canvas
+inspector Media tile, work-order photo metadata placeholders,
+Reports Center attachments stub) with a single real attachment
+system. Files are local-only today (Zustand + localStorage) and
+labelled as such; cloud blob storage is the next pass.
+
+### What shipped this pass
+
+- New types in `store/types.ts`: `Attachment`, `AttachmentCategory`,
+  `AttachmentLinkType`, `AttachmentStorageMode`. Each entry carries
+  `projectId`, `linkedObjectType`, `linkedObjectId`, `fileName`,
+  `fileType`, `fileSize`, `category`, optional `notes`,
+  `internalOnly`, optional `dataUrl`, and the `storageMode` tag.
+- New persisted slice `attachments: Record<string, Attachment>` on
+  the project store. Persist version bumped v7 → v8 with a no-op
+  migration that ensures the empty slice exists on older clients.
+- Three new store actions: `addAttachment`, `updateAttachment`,
+  `removeAttachment`.
+- Three new pure helpers in `projectStore.ts`:
+  `attachmentsFor(state, linkType, linkId)`,
+  `projectAttachments(state, projectId)` (newest first),
+  `projectAttachmentCounts(state, projectId)` (per-category totals).
+- New reusable component
+  `src/app/components/canvas/AttachmentPanel.tsx`:
+  - Drag-and-drop zone + hidden file picker.
+  - Category select (photo / video / pdf / spec / drawing /
+    closeout / note / other).
+  - Optional notes input + "internal-only" toggle.
+  - Per-file row with thumbnail (when image preview was stored),
+    filename, size, relative timestamp, category chip, "metadata
+    only" warning when storage skipped the dataURL, and a delete
+    icon with `window.confirm`.
+  - Image handling: canvas-downsamples to 800px on long edge as
+    JPEG q0.8; stores as `dataUrl` when the result fits. Non-image
+    files or oversize images get `storageMode: 'local-meta'` and
+    render a category icon card instead of a thumbnail.
+  - Footer: "Stored in this browser for prototype. Cloud file
+    storage not connected yet — large files persist as metadata only."
+- Engineering canvas wiring:
+  - New `'attachments'` value on the `EditTab` union; new "Files"
+    tile in `EDIT_TABS` (Paperclip icon).
+  - Camera / door / reader / IDF / cable device inspectors all
+    include the Files tile via `tilesForDevice()`.
+  - The drawer body renders `<AttachmentPanel>` when tab maps to
+    'attachments'; door-class devices use `linkedObjectType: 'door'`,
+    everything else uses `'device'`.
+  - `PathwayDrawer` gets a new "Files" sub-tab that mounts the panel
+    with `linkedObjectType: 'pathway'`.
+- Deployment work-order detail: the prior `PhotoSection` (which
+  spawned `WorkOrderPhotoPlaceholder` records on a per-WO field) now
+  mounts `<AttachmentPanel>` with `linkedObjectType: 'workOrder'`
+  and `defaultCategory: 'photo'`. Real image previews replace the
+  metadata-only placeholders. The legacy `photoPlaceholders` field
+  stays on the `WorkOrderProgress` type for back-compat but isn't
+  written anymore.
+- Reports Center: the placeholder "Attachments" section is now
+  `<AttachmentsSection>` — per-category count grid + "Recent" thumb
+  grid showing up to 8 attachments. Customer mode hides
+  `internalOnly` attachments and re-derives the per-category counts
+  so the totals match what the customer actually sees.
+- Project state envelope (`exportProjectState` /
+  `importProjectState`) now carries `data.attachments` so the
+  shared-demo sync round-trips attachments. Snapshots reuse the same
+  envelope shape and round-trip them automatically.
+
+### Honest vs not-connected
+
+- **Honest, real**:
+  - All attachment metadata persists across reload via Zustand
+    persist (v8 store).
+  - Image dataURL previews are real thumbnails (downsampled
+    locally; never uploaded anywhere).
+  - Export envelope + snapshots both include attachments. Verified
+    end-to-end: 3 attachments → snapshot → delete one → restore →
+    3 attachments back.
+  - Customer view in Reports filters internal-only attachments AND
+    adjusts the per-category counts so the surface is internally
+    consistent.
+- **Local-only / labelled**:
+  - Footer line in every panel: "Stored in this browser for
+    prototype. Cloud file storage not connected yet — large files
+    persist as metadata only."
+  - Files larger than the dataURL cap (or non-image) render with a
+    "metadata only" tag inline so the user knows the bytes aren't
+    on disk.
+  - Internal-only attachments render with a "Internal" pill so the
+    engineer knows the customer won't see them.
+  - Reports Center subtitle reads "Stored in this browser for
+    prototype — cloud storage not connected yet." in internal view.
+
+### What the user can verify in the browser
+
+1. `/project/p1/canvas` → click any camera → EditDrawer opens → tile
+   row now includes a **Files** tile. Click it → AttachmentPanel
+   mounts with drag-drop + picker + category select + notes.
+2. Drop an image → thumbnail appears within ~200 ms (canvas-downsampled
+   to a JPEG dataURL). Drop a PDF → file-icon card with size + MIME.
+3. Toggle "Internal" → next file gets an Internal pill.
+4. Open a door → Files tile. Open a pathway → Files sub-tab. Same
+   panel, same behavior.
+5. `/project/p1/deployment` → click any WO → "Install photos"
+   section now contains the AttachmentPanel. Attaching a file there
+   shows up on `/reports` automatically.
+6. `/project/p1/reports` → Attachments section shows per-category
+   counts + Recent grid of up to 8 items. Flip to Customer view →
+   internal-only attachments hide; counts re-derive.
+7. **Reload** the page → attachments persist (verified — 3 IDs
+   survived a hard reload).
+8. **Project state → Export** → envelope's `data.attachments`
+   carries the entries (verified 3/3 round-trip).
+9. **Save snapshot** with attachments present → delete an
+   attachment → **Restore snapshot** → the deleted attachment
+   returns.
+10. **Delete attachment** via the trash icon (window.confirm) →
+    row disappears, store entry removed.
+
+### Regression checks
+
+- Engineering canvas TopBar (Add plan / BOM / Present / Deploy /
+  Reports / Project state) and drawing rail all present — verified.
+- Reports Center camera + door + pathway schedules unchanged.
+- Deployment WO list (9 rows) unchanged.
+- No new React / runtime errors on a fresh reload (only the
+  standing Vite HMR websocket cosmetic noise and one stale HMR
+  "Paperclip is not defined" message from before the import
+  landed — gone after reload).
+- Build clean, 2.14 s.
+
+### Persistence migration
+
+`deeperVisionStore` bumped from v7 → v8. Migration adds the empty
+`attachments: {}` slice if missing. Existing data untouched.
+
+### Deployment
+
+This pass DOES deploy to Vercel production. See the final report
+for the live URL + commit hashes.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already
