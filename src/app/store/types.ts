@@ -338,13 +338,51 @@ export interface Project {
   budgetRange?: 'under-50k' | '50k-150k' | '150k-500k' | '500k-2m' | 'over-2m';
 
   // ── Customer portal approval (Phase 4F) ──
-  /** When the customer approved the current proposal via the portal.
-   *  Set by /portal/:projectId; the operator-side workflow honors it
-   *  by advancing the lifecyclePhase to 'approved'. */
+  /** SC.1.1 DEPRECATED for writes. Read only. Approvals now live in
+   *  the dedicated `approvals` slice. The v23 migration backfills
+   *  any prior value here into an `Approval` record. Do NOT add new
+   *  writers — call `addApproval` instead. Field stays on Project
+   *  for back compat with read paths that haven't moved over yet;
+   *  SC.3 retires the field once the UI consumers swap. */
   customerApprovedAt?: number;
-  /** Name the customer typed when approving. Optional — empty means
-   *  the customer approved without signing their name. */
+  /** SC.1.1 DEPRECATED for writes. Read only. See `customerApprovedAt`
+   *  note. Use `Approval.approverName` going forward. */
   customerApprovedBy?: string;
+}
+
+// ───────────────────────── Approval records ───────────────────────
+// MVP Spine Completion SC.1.1. A first class Approval is the durable
+// record of a customer (or operator on a customer's behalf) signing
+// off on a specific version of the project's scope. Replaces the
+// flatlined `Project.customerApprovedAt` / `customerApprovedBy` pair
+// (still kept on Project for now for back compat; SC.3 retires them).
+// Multiple approvals per project are intentional: design approval,
+// scope approval, and final approval are distinct gates and each
+// produces its own record. Re-approval of a later proposal version
+// adds a new record rather than overwriting the previous one, so
+// history is auditable.
+export type ApprovalType = 'design' | 'scope' | 'final' | 'change-order';
+
+export interface Approval {
+  id: string;
+  projectId: string;
+  /** Proposal version this approval is tied to. Free text for now
+   *  (e.g. "v1", "v2-with-changes") until SC.4 introduces a real
+   *  Proposal record with a numeric version. */
+  proposalVersion: string;
+  approverName: string;
+  /** Required at the type level so SC.6 form rolls out without
+   *  optional gymnastics. Migrated records get an empty string when
+   *  the legacy `customerApprovedAt` carried no email. */
+  approverEmail: string;
+  approvalType: ApprovalType;
+  /** Free text comments from the approver. Empty string when none. */
+  comments: string;
+  /** When the approver clicked Approve. ISO 8601 string so it is
+   *  human readable in DevTools without further parsing. */
+  approvedAt: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ─────────────────────────── Activity feed ────────────────────────

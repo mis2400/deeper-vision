@@ -180,6 +180,16 @@ export interface ProjectState {
    *  highlights / callouts). Keyed by id; each carries floorId. */
   annotations: Record<string, import('./types').Annotation>;
 
+  /** MVP Spine Completion SC.1.1 — first class customer approvals.
+   *  Keyed by approval id. Each carries `projectId`, the proposal
+   *  version it ratifies, the approver's name + email + comments,
+   *  the approval type (design / scope / final / change order), and
+   *  an ISO timestamp. Multiple approvals per project are normal:
+   *  design approval, scope approval, final approval, and any
+   *  change order approvals each produce their own record so the
+   *  history is auditable. */
+  approvals: Record<string, import('./types').Approval>;
+
   // ── UX preferences ──
   /** Per-project mode override. When unset, mode is derived from
    *  the project's lifecycle phase via defaultModeForPhase. */
@@ -344,6 +354,16 @@ export interface ProjectState {
   addAnnotation:    (a: import('./types').Annotation) => void;
   updateAnnotation: (id: string, patch: Partial<import('./types').Annotation>) => void;
   removeAnnotation: (id: string) => void;
+
+  // ── Approval CRUD (SC.1.1) ──
+  /** Persist a new customer approval. Caller is responsible for
+   *  filling every required field. The action stamps `createdAt`
+   *  and `updatedAt` to `Date.now()` when zero, otherwise leaves
+   *  the caller's values intact (the SC.1.6 integrity script needs
+   *  to set deterministic timestamps). */
+  addApproval: (a: import('./types').Approval) => void;
+  updateApproval: (id: string, patch: Partial<import('./types').Approval>) => void;
+  removeApproval: (id: string) => void;
 
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
@@ -534,6 +554,7 @@ export const useProjectStore = create<ProjectState>()(
       currentFloorIdByProject: {},
       rooms:             {},
       annotations:       {},
+      approvals:         {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1130,6 +1151,33 @@ export const useProjectStore = create<ProjectState>()(
           : s),
       removeAnnotation: (id) =>
         set((s) => { const { [id]: _, ...rest } = s.annotations; return { annotations: rest }; }),
+
+      // ── Approval CRUD (SC.1.1) ───────────────────────────────────
+      // Three thin writers matching the existing convention. Selectors
+      // for "by project" / "latest" lookups live in `selectors` near
+      // the bottom of this file.
+      addApproval: (a) =>
+        set((s) => {
+          const now = Date.now();
+          const prev = s.approvals[a.id];
+          // Upsert. If a record with this id already exists, the
+          // original `createdAt` wins so re-running the SC.1.6
+          // integrity script doesn't rewrite history. The caller's
+          // explicit `createdAt` is honoured only on first insert
+          // (or when zero, in which case we stamp `now`).
+          const stamped: import('./types').Approval = {
+            ...a,
+            createdAt: prev?.createdAt ?? (a.createdAt || now),
+            updatedAt: a.updatedAt || now,
+          };
+          return { approvals: { ...s.approvals, [a.id]: stamped } };
+        }),
+      updateApproval: (id, patch) =>
+        set((s) => s.approvals[id]
+          ? { approvals: { ...s.approvals, [id]: { ...s.approvals[id], ...patch, updatedAt: Date.now() } } }
+          : s),
+      removeApproval: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.approvals; return { approvals: rest }; }),
 
       // ── Floor CRUD (Pass 2A.5) ───────────────────────────────────
       removeFloor: (id) =>
@@ -1845,12 +1893,15 @@ export const useProjectStore = create<ProjectState>()(
           currentFloorIdByProject: sticky,
           rooms: {},
           annotations: {},
+          // SC.1.1 — explicit empty so resetDemoData doesn't leave the
+          // slice as undefined. SC.1.2/1.3/1.4 must each add a sibling.
+          approvals: {},
         };
       }),
     }),
     {
       name: 'deeperVisionStore',
-      version: 22,
+      version: 23,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -2206,6 +2257,45 @@ export const useProjectStore = create<ProjectState>()(
             persisted.annotations = {};
           }
         }
+        if (version < 23) {
+          // v22 → v23: introduce the approvals slice (SC.1.1).
+          // Backfills the flat `Project.customerApprovedAt` /
+          // `customerApprovedBy` pair into a real Approval record
+          // typed `design` (which is the only kind the legacy
+          // portal flow ever produced). The Project fields stay in
+          // place for back compat until SC.3 retires the consumers.
+          const raw = persisted.approvals;
+          const approvals: Record<string, any> =
+            (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+          const projects: Record<string, any> =
+            (persisted.projects && typeof persisted.projects === 'object' && !Array.isArray(persisted.projects))
+              ? persisted.projects
+              : {};
+          for (const [pid, p] of Object.entries(projects)) {
+            if (!p || typeof p !== 'object') continue;
+            const ts = (p as any).customerApprovedAt;
+            if (typeof ts !== 'number' || !Number.isFinite(ts)) continue;
+            const id = `appr-${pid}-${ts}`;
+            // Idempotency: the id is deterministic from pid + ts, so a
+            // partial failure replay hits the same key. If it already
+            // exists (from a prior run, or from a future SC.1.6 seed
+            // that beat the migration), preserve it.
+            if (approvals[id]) continue;
+            approvals[id] = {
+              id,
+              projectId: pid,
+              proposalVersion: 'v1-legacy',
+              approverName: typeof (p as any).customerApprovedBy === 'string' ? (p as any).customerApprovedBy : '',
+              approverEmail: '',
+              approvalType: 'design',
+              comments: '',
+              approvedAt: new Date(ts).toISOString(),
+              createdAt: ts,
+              updatedAt: ts,
+            };
+          }
+          persisted.approvals = approvals;
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -2278,6 +2368,7 @@ export const useProjectStore = create<ProjectState>()(
         currentFloorIdByProject: s.currentFloorIdByProject,
         rooms:           s.rooms,
         annotations:     s.annotations,
+        approvals:       s.approvals,
       }),
     },
   ),
@@ -2364,6 +2455,21 @@ export const selectors = {
     Object.values(s.siteCaptures)
       .filter((c) => c.projectId === projectId)
       .sort((a, b) => b.createdAt - a.createdAt),
+
+  // ── Approval selectors (SC.1.1) ──────────────────────────────────
+  /** All approvals on a project, newest first by `approvedAt`. */
+  approvalsForProject: (s: ProjectState, projectId: string): import('./types').Approval[] =>
+    Object.values(s.approvals)
+      .filter((a) => a.projectId === projectId)
+      .sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime()),
+
+  /** The newest approval on a project, or null. */
+  latestApprovalForProject: (s: ProjectState, projectId: string): import('./types').Approval | null => {
+    const list = Object.values(s.approvals).filter((a) => a.projectId === projectId);
+    if (list.length === 0) return null;
+    list.sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime());
+    return list[0];
+  },
 
   /** Project activity feed, newest first. */
   activityForProject: (s: ProjectState, projectId: string, limit = 50): ActivityItem[] =>
