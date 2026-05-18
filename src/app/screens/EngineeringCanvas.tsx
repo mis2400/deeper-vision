@@ -2831,16 +2831,25 @@ export function EngineeringCanvas() {
                   </svg>
                   <span className="text-[10px] text-muted-foreground tabular-nums pointer-events-none">{ft} ft</span>
                   {isCalibrated ? (
-                    <span
-                      className="text-[9px] uppercase tracking-[0.10em] ml-1 pointer-events-none px-1.5 py-px rounded border border-emerald-400/30 bg-emerald-400/12 text-emerald-300"
+                    // V1 1A.5 — Verified badge is now a button that
+                    // reopens the calibration tool. Same tool path as
+                    // the initial Set scale, so the engineer can drop
+                    // two new points to re-derive ft/px against a
+                    // freshly measured feature.
+                    <button
+                      onClick={() => { resetCalibrate(); setTool('calibrate'); }}
+                      title="Recalibrate against a new known feature"
                       data-testid="scale-verified-badge"
-                    >Verified</span>
+                      className="text-[9px] uppercase tracking-[0.10em] ml-1 px-1.5 py-px rounded border border-emerald-400/30 bg-emerald-400/12 text-emerald-300 hover:bg-emerald-400/20 transition-colors"
+                    >
+                      Verified
+                    </button>
                   ) : (
                     <>
                       <span className="text-[9px] uppercase tracking-[0.10em] text-amber-300/80 ml-1 pointer-events-none">Default scale</span>
                       <button
                         onClick={() => { resetCalibrate(); setTool('calibrate'); }}
-                        title="Click two points on a known feature, then enter its real-world length"
+                        title="Click two points on a known feature, then enter its real length"
                         data-testid="scale-set-btn"
                         className="text-[9.5px] uppercase tracking-[0.10em] ml-1 px-1.5 py-0.5 rounded border border-primary/40 bg-primary/12 text-primary hover:bg-primary/20"
                       >
