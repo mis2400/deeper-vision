@@ -311,14 +311,32 @@ const TASKS: Task[] = [
 // ── Sites / Buildings / Floors ────────────────────────────────────
 const SITES: Site[]      = PROJECTS.map((p) => ({ id: `s${p.id.slice(1)}`, projectId: p.id, name: p.name, address: CUSTOMERS.find(c => c.id === p.customerId)?.addresses[0] ? `${CUSTOMERS.find(c => c.id === p.customerId)!.addresses[0].street}` : '' }));
 const BUILDINGS: Building[] = SITES.map((s) => ({ id: `b${s.id.slice(1)}`, siteId: s.id, name: 'Building A' }));
-const FLOORS: Floor[] = BUILDINGS.flatMap((b) => [
-  { id: `${b.id}-f1`, buildingId: b.id, name: 'Ground floor', level: 0, source: 'blueprint', scalePxToFt: 0.05, walls: [] },
-  { id: `${b.id}-f2`, buildingId: b.id, name: 'Level 2',      level: 1, source: 'blueprint', scalePxToFt: 0.05, walls: [] },
-]);
+// Canvas V2 Pass 2A.1 — every Floor carries a projectId (required)
+// and a createdAt timestamp. Building / site / project relationships
+// are looked up via SITES so the projectId is denormalised onto the
+// floor for cheap filtering downstream. The base seed gives every
+// project a Ground floor + Level 2; p1 (the demo project) also gets
+// a Basement so the multi floor feature is demonstrable from a fresh
+// reset without the operator having to add floors manually.
+const FLOORS_BASE_SEED_TIME = Date.now();
+const FLOORS: Floor[] = BUILDINGS.flatMap((b) => {
+  const site = SITES.find((s) => s.id === b.siteId);
+  const pid = site?.projectId ?? '';
+  const base: Floor[] = [
+    { id: `${b.id}-f1`, projectId: pid, buildingId: b.id, name: 'Ground floor', level:  0, createdAt: FLOORS_BASE_SEED_TIME, source: 'blueprint', scalePxToFt: 0.05, walls: [] },
+    { id: `${b.id}-f2`, projectId: pid, buildingId: b.id, name: 'Level 2',      level:  1, createdAt: FLOORS_BASE_SEED_TIME + 1, source: 'blueprint', scalePxToFt: 0.05, walls: [] },
+  ];
+  if (pid === 'p1') {
+    base.push({ id: `${b.id}-fB1`, projectId: pid, buildingId: b.id, name: 'Basement',     level: -1, createdAt: FLOORS_BASE_SEED_TIME + 2, source: 'blueprint', scalePxToFt: 0.05, walls: [] });
+  }
+  return base;
+});
 
-const F_P1_GROUND = `b1-f1`;
-const F_P5_GROUND = `b5-f1`;
-const F_P3_GROUND = `b3-f1`;
+const F_P1_GROUND   = `b1-f1`;
+const F_P1_LEVEL_2  = `b1-f2`;
+const F_P1_BASEMENT = `b1-fB1`;
+const F_P5_GROUND   = `b5-f1`;
+const F_P3_GROUND   = `b3-f1`;
 
 // ── Devices ───────────────────────────────────────────────────────
 // Project p1 (Acme HQ) gets the original SEED_DEVICES from the canvas. Other
@@ -346,6 +364,18 @@ const DEVICES: Device[] = [
     doorAssembly: ['reader', 'strike', 'rex', 'dps', 'controller', 'psu'],
     doorElectrification: 'fail-secure',
     doorReaderLocation: 'mullion' },
+
+  // Canvas V2 Pass 2A.1 — multi floor demo. p1 (Acme HQ) gets a
+  // handful of devices on Level 2 and the Basement so a fresh reset
+  // shows three floors of work the operator can switch between.
+  // p1 — Acme HQ Level 2
+  { id: 'CAM-201', projectId: 'p1', floorId: F_P1_LEVEL_2,  type: 'cam.bullet',      label: 'East corridor', product: 'p-axis-p1468',  x: 320, y: 240, rot:  90 },
+  { id: 'CAM-202', projectId: 'p1', floorId: F_P1_LEVEL_2,  type: 'cam.dome',        label: 'Open office',   product: 'p-axis-p3265',  x: 560, y: 320, rot:   0 },
+  { id: 'RD-201',  projectId: 'p1', floorId: F_P1_LEVEL_2,  type: 'acc.reader',      label: 'Suite 201',     product: 'p-hid-signo20', x: 420, y: 160, rot:   0 },
+  { id: 'AP-201',  projectId: 'p1', floorId: F_P1_LEVEL_2,  type: 'net.ap',          label: 'Floor 2 AP',    product: 'p-cisco-ap',    x: 480, y: 280, rot:   0 },
+  // p1 — Acme HQ Basement
+  { id: 'CAM-B01', projectId: 'p1', floorId: F_P1_BASEMENT, type: 'cam.bullet',      label: 'Loading dock',  product: 'p-axis-p1468',  x: 240, y: 380, rot:  45 },
+  { id: 'RD-B01',  projectId: 'p1', floorId: F_P1_BASEMENT, type: 'acc.reader',      label: 'Server room',   product: 'p-hid-signo20', x: 540, y: 240, rot:   0 },
 
   // p5 — Lincoln High School ground floor (sample)
   { id: 'CAM-LH-1', projectId: 'p5', floorId: F_P5_GROUND, type: 'cam.dome',       label: 'Main entrance', product: 'p-axis-p3265', x: 320, y: 240, rot:  90 },

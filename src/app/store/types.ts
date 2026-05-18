@@ -400,10 +400,18 @@ export interface Building {
 
 export interface Floor {
   id: string;
-  projectId?: string;
+  /** Required as of Canvas V2 Pass 2A.1 — every floor belongs to a
+   *  project. The v19 → v20 migration backfills any missing value by
+   *  walking building → site → project. Older code paths that wrote
+   *  Floors without projectId no longer compile. */
+  projectId: string;
   buildingId: string;
   name: string;
   level: number;     // 0 = ground, 1 = level 2, -1 = basement
+  /** Pass 2A.1 — required for stable sort when two floors share a
+   *  level, and so the multi-floor manager can sort by recency. The
+   *  migration backfills missing values to the project's createdAt. */
+  createdAt: number;
   source: 'blueprint' | 'satellite' | 'sketch' | 'blank';
   /** Scale: 1 canvas pixel = scalePxToFt feet. Set by /calibrate. */
   scalePxToFt: number;

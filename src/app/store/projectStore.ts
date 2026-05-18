@@ -165,6 +165,12 @@ export interface ProjectState {
    *  measurement id; each carries its floorId so the canvas only
    *  shows measurements for the active floor. */
   measurements: Record<string, import('./types').Measurement>;
+  /** Canvas V2 Pass 2A.1 — active floor selection per project. The
+   *  canvas reads this to know which floor's devices / walls /
+   *  pathways to render. Persisted so reopening a project goes back
+   *  to the floor the operator was last working on, not always to
+   *  the ground floor. */
+  currentFloorIdByProject: Record<string, string>;
 
   // ── UX preferences ──
   /** Per-project mode override. When unset, mode is derived from
@@ -308,6 +314,11 @@ export interface ProjectState {
   /** Drop every measurement on a given floor. Used by the "clear all"
    *  toolbar action. */
   clearMeasurementsForFloor: (floorId: string) => void;
+
+  // ── Active floor per project (Pass 2A.1) ──
+  /** Set the active floor for a project. Pass an empty string to
+   *  clear the override (falls back to first floor of the project). */
+  setCurrentFloorIdForProject: (projectId: string, floorId: string) => void;
 
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
@@ -495,6 +506,7 @@ export const useProjectStore = create<ProjectState>()(
       siteCaptures:      {},
       canvasHistory:     { ...DEFAULT_CANVAS_HISTORY },
       measurements:      {},
+      currentFloorIdByProject: {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1059,6 +1071,19 @@ export const useProjectStore = create<ProjectState>()(
             if (m.floorId !== floorId) next[id] = m;
           }
           return { measurements: next };
+        }),
+
+      // ── Active floor per project (Pass 2A.1) ─────────────────────
+      setCurrentFloorIdForProject: (projectId, floorId) =>
+        set((s) => {
+          if (!floorId) {
+            // Empty string clears the override.
+            const { [projectId]: _, ...rest } = s.currentFloorIdByProject;
+            return { currentFloorIdByProject: rest };
+          }
+          return {
+            currentFloorIdByProject: { ...s.currentFloorIdByProject, [projectId]: floorId },
+          };
         }),
 
       // ── Threat Drill ─────────────────────────────────────────────
@@ -1733,11 +1758,38 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security, workspaceSettings: s.workspaceSettings, siteCaptures: {}, canvasHistory: { past: [], future: [] }, measurements: {} })),
+      resetDemoData: () => set((s) => {
+        // Pass 2A.1 — initialise currentFloorIdByProject from the
+        // seed so a fresh reset opens the canvas on each project's
+        // ground floor (lowest level) rather than orphaning the
+        // sticky override on the prior project id.
+        const seed = buildSeed();
+        const sticky: Record<string, string> = {};
+        const projects = seed.projects as Record<string, any>;
+        const floors = seed.floors as Record<string, any>;
+        for (const pid of Object.keys(projects)) {
+          const candidates = Object.values(floors).filter((f: any) => f.projectId === pid);
+          // Prefer level 0 (Ground) when one exists; otherwise lowest level.
+          const ground = candidates.find((f: any) => f.level === 0);
+          if (ground) { sticky[pid] = (ground as any).id; continue; }
+          candidates.sort((a: any, b: any) => (a.level - b.level) || ((a.createdAt ?? 0) - (b.createdAt ?? 0)));
+          if (candidates[0]) sticky[pid] = (candidates[0] as any).id;
+        }
+        return {
+          ...seed,
+          workOrderProgress: {}, projectPricebooks: {}, attachments: {},
+          aiConversations: {}, assistantContext: null,
+          userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations,
+          workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs,
+          security: s.security, workspaceSettings: s.workspaceSettings,
+          siteCaptures: {}, canvasHistory: { past: [], future: [] }, measurements: {},
+          currentFloorIdByProject: sticky,
+        };
+      }),
     }),
     {
       name: 'deeperVisionStore',
-      version: 19,
+      version: 20,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1970,6 +2022,114 @@ export const useProjectStore = create<ProjectState>()(
             persisted.measurements = {};
           }
         }
+        if (version < 20) {
+          // v19 → v20: Canvas V2 Pass 2A.1 multi floor foundation.
+          //
+          //  - Every Floor record gains a required projectId (backfilled
+          //    via building → site → project chain) and a createdAt
+          //    (backfilled to project.createdAt where available, falling
+          //    back to Date.now).
+          //  - Every device / door / pathway / IDF / measurement that
+          //    is missing a floorId or has an empty one is repointed
+          //    at the first floor of its project.
+          //  - A new currentFloorIdByProject map is initialised so the
+          //    canvas resumes on the same floor across reloads.
+          //
+          // Forward only. We never drop a record. If a record's project
+          // can not be located (orphan) we leave it alone — the canvas
+          // already tolerates missing parents.
+          const now = Date.now();
+          const projects: Record<string, any> = persisted.projects ?? {};
+          const sites: Record<string, any> = persisted.sites ?? {};
+          const buildings: Record<string, any> = persisted.buildings ?? {};
+          const floors: Record<string, any> = persisted.floors ?? {};
+
+          // Building → project lookup.
+          const buildingToProject = new Map<string, string>();
+          for (const [bid, b] of Object.entries(buildings)) {
+            if (!b || typeof b !== 'object') continue;
+            const site = sites[(b as any).siteId];
+            const pid = site?.projectId;
+            if (pid) buildingToProject.set(bid, pid);
+          }
+
+          // Pass A: backfill Floor.projectId + createdAt.
+          for (const [fid, f] of Object.entries(floors)) {
+            if (!f || typeof f !== 'object') continue;
+            const fObj = f as any;
+            if (!fObj.projectId) {
+              const derived = buildingToProject.get(fObj.buildingId);
+              if (derived) fObj.projectId = derived;
+            }
+            if (typeof fObj.createdAt !== 'number') {
+              const proj = fObj.projectId ? projects[fObj.projectId] : undefined;
+              fObj.createdAt = (typeof proj?.createdAt === 'number') ? proj.createdAt : now;
+            }
+            floors[fid] = fObj;
+          }
+
+          // Project → "default" floor lookup for backfilling missing
+          // floorIds on geometry records and for initialising the
+          // sticky currentFloorIdByProject. Prefers level 0 (Ground)
+          // when one exists, otherwise falls back to the lowest level
+          // (least negative basement, then earliest createdAt as a
+          // tiebreaker). The "lowest level always wins" rule
+          // dropped a fresh reset on Basement, which is not what an
+          // operator expects on open.
+          const firstFloorOfProject = (pid: string): string | null => {
+            const candidates: any[] = [];
+            for (const f of Object.values(floors)) {
+              if (f && typeof f === 'object' && (f as any).projectId === pid) candidates.push(f);
+            }
+            const ground = candidates.find((f) => f.level === 0);
+            if (ground) return ground.id;
+            candidates.sort((a, b) => {
+              if (a.level !== b.level) return a.level - b.level;
+              return (a.createdAt ?? 0) - (b.createdAt ?? 0);
+            });
+            return candidates[0]?.id ?? null;
+          };
+
+          // Pass B: backfill device.floorId / door.floorId / pathway.floorId / idf.floorId / measurement.floorId.
+          const repair = (slice: Record<string, any> | undefined) => {
+            if (!slice) return;
+            for (const [rid, r] of Object.entries(slice)) {
+              if (!r || typeof r !== 'object') continue;
+              const rec = r as any;
+              if (rec.floorId) continue;
+              const pid = rec.projectId;
+              if (!pid) continue;
+              const fid = firstFloorOfProject(pid);
+              if (fid) {
+                rec.floorId = fid;
+                slice[rid] = rec;
+              }
+            }
+          };
+          repair(persisted.devices);
+          repair(persisted.doors);
+          repair(persisted.pathways);
+          repair(persisted.idfs);
+          repair(persisted.measurements);
+
+          // Pass C: initialise currentFloorIdByProject with each
+          // project's first floor (unless the operator already had a
+          // sticky override under v20 — we should never overwrite a
+          // newer value on a forward migration, but defensively merge
+          // rather than replace).
+          const prevSticky: Record<string, string> =
+            (persisted.currentFloorIdByProject && typeof persisted.currentFloorIdByProject === 'object' && !Array.isArray(persisted.currentFloorIdByProject))
+              ? persisted.currentFloorIdByProject
+              : {};
+          const nextSticky: Record<string, string> = { ...prevSticky };
+          for (const pid of Object.keys(projects)) {
+            if (!nextSticky[pid]) {
+              const fid = firstFloorOfProject(pid);
+              if (fid) nextSticky[pid] = fid;
+            }
+          }
+          persisted.currentFloorIdByProject = nextSticky;
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -2039,6 +2199,7 @@ export const useProjectStore = create<ProjectState>()(
           future: [],
         },
         measurements:    s.measurements,
+        currentFloorIdByProject: s.currentFloorIdByProject,
       }),
     },
   ),
