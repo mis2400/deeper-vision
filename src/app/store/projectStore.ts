@@ -1136,11 +1136,14 @@ export const useProjectStore = create<ProjectState>()(
         if (prev && opts?.log !== false) get().logActivity({ projectId: prev.projectId, type: 'device_removed', message: `Removed ${id}`, userName: opts?.userName, relatedEntityId: id });
       },
 
-      // SC.3.1 — commissioning writer. Pure shallow merge under
-      // `commissioning` so testResults arrays don't accidentally
-      // get extended; caller is responsible for passing the
-      // canonical record. SC.3.2 wraps this in an effect that
-      // promotes a passing device into an Asset.
+      // SC.3.1 + SC.3.2 + SC.3.3 — commissioning writer with side
+      // effects. Always writes the record + activity log. When
+      // status === 'pass' it ALSO promotes the device into an Asset
+      // and opens a default 1y manufacturer warranty against it.
+      // Idempotent on the asset side via createAssetFromDevice (one
+      // Asset per device); on repeat pass the asset's commission
+      // metadata is brought forward via updateAsset so the latest
+      // serial / commissioner / date wins.
       setDeviceCommissioning: (deviceId, patch) => {
         const prev = get().devices[deviceId];
         if (!prev) return;
@@ -1155,6 +1158,93 @@ export const useProjectStore = create<ProjectState>()(
           type: patch.status === 'pass' ? 'commission_test_pass' : 'commission_test_fail',
           message: `${prev.label || deviceId} commissioning ${patch.status} by ${patch.commissionedBy || 'unknown'}`,
           relatedEntityId: deviceId,
+        });
+        // SC.3.2 — Asset auto creation on pass only. Partial / fail
+        // explicitly do not promote; the install is not in service.
+        if (patch.status !== 'pass') return;
+
+        const project = get().projects[prev.projectId];
+        const customerId = project?.customerId;
+        if (!project || !customerId) return; // can't link without parents
+
+        // Manufacturer + model: prefer the catalog product when the
+        // device references one, otherwise fall back to the type
+        // code (e.g. 'cam.dome'). Both fields are required on Asset.
+        const catalogProducts: any[] = (() => {
+          try { return (globalThis as any).__catalogProducts ?? []; } catch { return []; }
+        })();
+        const catProd = prev.product ? catalogProducts.find((cp: any) => cp.id === prev.product) : null;
+        const manufacturer = catProd?.manufacturer || 'Unknown';
+        const model = catProd?.model || prev.product || prev.type;
+
+        // Date handling: `patch.commissionedAt` arrives as a bare
+        // `YYYY-MM-DD` string from the form's <input type="date">.
+        // `new Date('YYYY-MM-DD')` parses as UTC midnight, which
+        // displays as the prior day west of UTC in Pasadena. Anchor
+        // the timestamp at local noon so toLocaleDateString lands
+        // on the right date in every US time zone and survives DST.
+        const commissionDate = (() => {
+          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(patch.commissionedAt);
+          if (!m) return new Date(patch.commissionedAt);
+          return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+        })();
+        const commissionedAtISO = commissionDate.toISOString();
+
+        const assetId = get().createAssetFromDevice({
+          deviceId,
+          projectId: prev.projectId,
+          customerId,
+          manufacturer,
+          model,
+          serialNumber: patch.serialNumber,
+          commissionedAt: commissionedAtISO,
+          commissionedBy: patch.commissionedBy,
+          status: 'active',
+        });
+        // Defensive: bail if the asset id ever comes back empty.
+        if (!assetId) return;
+
+        // Idempotent path: an existing Asset gets the latest
+        // commission metadata. Only forward fields the caller
+        // actually set so an omitted serial on recommission does
+        // NOT wipe the previously stored serial. Status flips back
+        // to 'active' on a pass; if that was undesired (operator
+        // had deliberately decommissioned), they re-flip via the
+        // asset edit UI.
+        const assetPatch: Partial<import('./types').Asset> = {
+          commissionedAt: commissionedAtISO,
+          commissionedBy: patch.commissionedBy,
+          status: 'active',
+        };
+        if (patch.serialNumber !== undefined) assetPatch.serialNumber = patch.serialNumber;
+        get().updateAsset(assetId, assetPatch);
+
+        // SC.3.3 — open a default manufacturer warranty the first
+        // time we mint this Asset. If a warranty already exists for
+        // this asset + manufacturer we do nothing (operator can
+        // edit / add additional coverage in the inspector).
+        const existing = Object.values(get().warranties).find(
+          (w) => w.assetId === assetId && w.provider === 'manufacturer',
+        );
+        if (existing) return;
+        const end = new Date(commissionDate);
+        end.setFullYear(end.getFullYear() + 1);
+        const iso = (d: Date) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const wtyId = `wty-${assetId}-mfr`;
+        get().addWarranty({
+          id: wtyId,
+          assetId,
+          provider: 'manufacturer',
+          type: 'standard',
+          startDate: iso(commissionDate),
+          endDate: iso(end),
+          terms: 'Manufacturer standard warranty. Adjust as needed.',
+          coverage: 'Manufacturer defect coverage per device datasheet.',
+          serialNumber: patch.serialNumber,
+          notes: '',
+          createdAt: 0,
+          updatedAt: 0,
         });
       },
 
