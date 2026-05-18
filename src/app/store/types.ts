@@ -427,6 +427,45 @@ export interface Asset {
   updatedAt: number;
 }
 
+// ─────────────────────────── Warranty records ────────────────────
+// MVP Spine Completion SC.1.3. A Warranty is a coverage period
+// attached to an Asset. Unlike Asset which is one per Device, an
+// Asset may have multiple Warranties: a 1y manufacturer warranty
+// plus a 5y integrator extended warranty plus an end customer
+// purchased extended is three records on the same camera.
+//
+// Linkage: Warranty -> Asset (assetId). `serialNumber` is
+// denormalised from Asset for convenience (warranty claim portals
+// usually ask for it). Provider is who is liable, not who issued
+// the paperwork.
+
+export type WarrantyProvider = 'manufacturer' | 'integrator' | 'extended';
+
+export interface Warranty {
+  id: string;
+  assetId: string;
+  provider: WarrantyProvider;
+  /** Free text label for the coverage scheme, e.g. "Axis 1y standard",
+   *  "Access Tech 5y labor + parts", "SquareTrade 3y accidental". */
+  type: string;
+  /** ISO 8601 date string. Inclusive. */
+  startDate: string;
+  /** ISO 8601 date string. Inclusive. The day after this is out of
+   *  coverage. `getExpiringWarranties` uses this. */
+  endDate: string;
+  /** Free text of the contractual terms. May be long. */
+  terms: string;
+  /** Free text of what is covered (parts only, parts + labor, etc). */
+  coverage: string;
+  /** Denormalised from Asset.serialNumber at creation time. Kept
+   *  even if Asset.serialNumber later changes so a claim history
+   *  is reproducible. */
+  serialNumber?: string;
+  notes: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ─────────────────────────── Activity feed ────────────────────────
 // One log entry per meaningful change. Surfaced on the project command
 // center; later we may roll up across projects for a global feed.

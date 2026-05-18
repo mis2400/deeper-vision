@@ -180,6 +180,13 @@ export interface ProjectState {
    *  highlights / callouts). Keyed by id; each carries floorId. */
   annotations: Record<string, import('./types').Annotation>;
 
+  /** MVP Spine Completion SC.1.3 — warranty coverage periods on
+   *  Assets. Many to one: an Asset can carry multiple warranties
+   *  (manufacturer + integrator + customer purchased extended).
+   *  `getExpiringWarranties` looks at `endDate` to surface renewal
+   *  pressure. */
+  warranties: Record<string, import('./types').Warranty>;
+
   /** MVP Spine Completion SC.1.2 — post commission asset inventory.
    *  Keyed by asset id. One Asset per Device (enforced by
    *  `createAssetFromDevice` upsert behaviour). The Device captures
@@ -361,6 +368,12 @@ export interface ProjectState {
   addAnnotation:    (a: import('./types').Annotation) => void;
   updateAnnotation: (id: string, patch: Partial<import('./types').Annotation>) => void;
   removeAnnotation: (id: string) => void;
+
+  // ── Warranty CRUD (SC.1.3) ──
+  /** Persist a warranty. Many warranties per Asset is normal. */
+  addWarranty: (w: import('./types').Warranty) => void;
+  updateWarranty: (id: string, patch: Partial<import('./types').Warranty>) => void;
+  removeWarranty: (id: string) => void;
 
   // ── Asset CRUD (SC.1.2) ──
   /** Idempotent. If an Asset already exists for `deviceId`, returns
@@ -590,6 +603,7 @@ export const useProjectStore = create<ProjectState>()(
       annotations:       {},
       approvals:         {},
       assets:            {},
+      warranties:        {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1252,6 +1266,28 @@ export const useProjectStore = create<ProjectState>()(
           : s),
       removeAsset: (id) =>
         set((s) => { const { [id]: _, ...rest } = s.assets; return { assets: rest }; }),
+
+      // ── Warranty CRUD (SC.1.3) ───────────────────────────────────
+      // Many warranties per Asset; no idempotency by parent. The
+      // caller mints unique ids (typical: `wty-${assetId}-${provider}`).
+      // Upsert preserves createdAt the same way addApproval does.
+      addWarranty: (w) =>
+        set((s) => {
+          const now = Date.now();
+          const prev = s.warranties[w.id];
+          const stamped: import('./types').Warranty = {
+            ...w,
+            createdAt: prev?.createdAt ?? (w.createdAt || now),
+            updatedAt: w.updatedAt || now,
+          };
+          return { warranties: { ...s.warranties, [w.id]: stamped } };
+        }),
+      updateWarranty: (id, patch) =>
+        set((s) => s.warranties[id]
+          ? { warranties: { ...s.warranties, [id]: { ...s.warranties[id], ...patch, updatedAt: Date.now() } } }
+          : s),
+      removeWarranty: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.warranties; return { warranties: rest }; }),
 
       // ── Floor CRUD (Pass 2A.5) ───────────────────────────────────
       removeFloor: (id) =>
@@ -1971,12 +2007,13 @@ export const useProjectStore = create<ProjectState>()(
           // slice as undefined. SC.1.2/1.3/1.4 must each add a sibling.
           approvals: {},
           assets: {},
+          warranties: {},
         };
       }),
     }),
     {
       name: 'deeperVisionStore',
-      version: 24,
+      version: 25,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -2379,6 +2416,13 @@ export const useProjectStore = create<ProjectState>()(
             persisted.assets = {};
           }
         }
+        if (version < 25) {
+          // v24 -> v25: introduce the warranties slice (SC.1.3). Greenfield.
+          const raw = persisted.warranties;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            persisted.warranties = {};
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -2453,6 +2497,7 @@ export const useProjectStore = create<ProjectState>()(
         annotations:     s.annotations,
         approvals:       s.approvals,
         assets:          s.assets,
+        warranties:      s.warranties,
       }),
     },
   ),
@@ -2571,6 +2616,40 @@ export const selectors = {
   /** The single Asset for a Device, or null. One-to-one rule. */
   assetForDevice: (s: ProjectState, deviceId: string): import('./types').Asset | null =>
     Object.values(s.assets).find((a) => a.deviceId === deviceId) ?? null,
+
+  // ── Warranty selectors (SC.1.3) ──────────────────────────────────
+  /** All warranties on an Asset, newest first by createdAt. */
+  warrantiesForAsset: (s: ProjectState, assetId: string): import('./types').Warranty[] =>
+    Object.values(s.warranties)
+      .filter((w) => w.assetId === assetId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+
+  /** All warranties for a customer (join via assets). */
+  warrantiesForCustomer: (s: ProjectState, customerId: string): import('./types').Warranty[] => {
+    const assetIds = new Set(
+      Object.values(s.assets).filter((a) => a.customerId === customerId).map((a) => a.id),
+    );
+    return Object.values(s.warranties)
+      .filter((w) => assetIds.has(w.assetId))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  /** Warranties whose `endDate` falls within the next `days` days
+   *  (default 90). Used to surface renewal pressure on the portal
+   *  and the dashboard. Sorted soonest first. */
+  expiringWarranties: (
+    s: ProjectState,
+    days = 90,
+    now: number = Date.now(),
+  ): import('./types').Warranty[] => {
+    const cutoff = now + days * 24 * 60 * 60 * 1000;
+    return Object.values(s.warranties)
+      .filter((w) => {
+        const end = new Date(w.endDate).getTime();
+        return Number.isFinite(end) && end >= now && end <= cutoff;
+      })
+      .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+  },
 
   /** Project activity feed, newest first. */
   activityForProject: (s: ProjectState, projectId: string, limit = 50): ActivityItem[] =>
