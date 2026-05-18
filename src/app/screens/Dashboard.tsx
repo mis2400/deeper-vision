@@ -14,11 +14,11 @@ import { IntegrationCard } from '../components/ui/dv';
 import {
   Calendar, Briefcase, Users, Link as LinkIcon, MessageCircle,
   ArrowRight, ChevronRight, CheckCircle2, Clock, AlertTriangle,
-  Activity as ActivityIcon, DollarSign, Building2, Sparkles,
+  Activity as ActivityIcon, DollarSign, Building2, Sparkles, HardHat,
 } from 'lucide-react';
-import { useProjectStore, STAGE_PROBABILITY } from '../store/projectStore';
+import { useProjectStore, STAGE_PROBABILITY, deriveWorkOrders } from '../store/projectStore';
 import { PHASES, healthTone } from '../lifecycle/phases';
-import type { LifecyclePhase, Task, Opportunity, Project } from '../store/types';
+import type { LifecyclePhase, Task, Opportunity, Project, WorkOrder } from '../store/types';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -94,6 +94,63 @@ export function Dashboard() {
     Object.values(touchesMap).sort((a, b) => b.occurredAt - a.occurredAt).slice(0, 5),
     [touchesMap]);
 
+  // V1 4B — My open work orders across every project. Filters to the
+  // operator's assignedTo when present; otherwise treats unassigned
+  // open WOs as available pickups.
+  const state = useProjectStore((s) => s);
+  const myOpenWOs = useMemo(() => {
+    const out: Array<{ wo: WorkOrder; projectId: string; projectName: string }> = [];
+    for (const p of projects) {
+      const wos = deriveWorkOrders(state, p.id);
+      for (const wo of wos) {
+        if (wo.progress.status === 'complete') continue;
+        const mine = wo.progress.assignedTo === DEMO_USER_ID
+          || wo.progress.assignedTo === 'mei'
+          || (wo.progress.assignedTo == null && wo.progress.status !== 'blocked');
+        if (mine) out.push({ wo, projectId: p.id, projectName: p.name });
+      }
+    }
+    return out.sort((a, b) => {
+      // Blocked first, then by status ordering, then by project name.
+      const order: Record<string, number> = { blocked: 0, 'on-site': 1, installing: 2, testing: 3, assigned: 4, ready: 5 };
+      return (order[a.wo.progress.status] ?? 9) - (order[b.wo.progress.status] ?? 9);
+    }).slice(0, 8);
+  }, [projects, state]);
+
+  // V1 4B — Next 7 days: tasks + work-order dueDates due in the
+  // forward window, grouped by day. Honest derivation — only
+  // surfaces items the store actually has dates on.
+  const weekItems = useMemo(() => {
+    const now = Date.now();
+    const horizon = now + 7 * 86_400_000;
+    type Item = { kind: 'task' | 'project'; id: string; label: string; subtitle?: string; due: number; href?: string };
+    const items: Item[] = [];
+    for (const t of Object.values(tasksMap)) {
+      if (t.status !== 'open' || t.assignedUserId !== DEMO_USER_ID) continue;
+      if (!t.dueDate || t.dueDate > horizon) continue;
+      items.push({
+        kind: 'task',
+        id: t.id,
+        label: t.title,
+        subtitle: t.customerId ? customersMap[t.customerId]?.companyName : undefined,
+        due: t.dueDate,
+        href: t.customerId ? `/account/${t.customerId}` : '/crm',
+      });
+    }
+    for (const p of projects) {
+      if (!p.dueDate || p.dueDate > horizon) continue;
+      items.push({
+        kind: 'project',
+        id: p.id,
+        label: `${p.name} · ${p.nextAction ?? 'next action'}`,
+        subtitle: p.customerId ? customersMap[p.customerId]?.companyName : undefined,
+        due: p.dueDate,
+        href: `/project/${p.id}`,
+      });
+    }
+    return items.sort((a, b) => a.due - b.due);
+  }, [tasksMap, projects, customersMap]);
+
   return (
     <AppShell
       crumbs={[{ label: 'Dashboard' }]}
@@ -141,10 +198,11 @@ export function Dashboard() {
               onClick={() => navigate('/crm')}
             />
             <StatCard
-              label="Site walks"
-              value="0"
-              hint="Calendar integration · placeholder"
-              tone="muted"
+              label="Open work orders"
+              value={String(myOpenWOs.length)}
+              hint={myOpenWOs.filter((w) => w.wo.progress.status === 'blocked').length > 0 ? `${myOpenWOs.filter((w) => w.wo.progress.status === 'blocked').length} blocked` : 'Across every project'}
+              tone={myOpenWOs.filter((w) => w.wo.progress.status === 'blocked').length > 0 ? 'amber' : 'neutral'}
+              onClick={() => navigate('/projects')}
             />
           </div>
 
@@ -204,6 +262,83 @@ export function Dashboard() {
                   </div>
                 </div>
               ))}
+            </Card>
+          </div>
+        </Section>
+
+        {/* ── My day (Phase 4B) ──────────────────────────────────── */}
+        <Section
+          icon={<HardHat className="w-3.5 h-3.5" />}
+          title="My day"
+          hint="What you own across every project"
+        >
+          <div className="grid grid-cols-3 gap-3">
+            {/* AI Assistant entry point */}
+            <button
+              onClick={() => navigate('/ai/p1')}
+              className="rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors p-3 text-left"
+              data-testid="dashboard-ai-entry"
+            >
+              <div className="flex items-center gap-2 text-primary">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="text-[12px] uppercase tracking-[0.10em]">AI Assistant</span>
+              </div>
+              <div className="text-[14px] font-medium mt-1.5">Ask grounded questions</div>
+              <div className="text-[11.5px] text-muted-foreground mt-0.5">
+                Coverage gaps, BOM totals, PoE budgets, blocked work orders. Cites the records it draws from.
+              </div>
+              <div className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-primary">
+                Open Assistant <ArrowRight className="w-3 h-3" />
+              </div>
+            </button>
+
+            {/* This week */}
+            <Card title="This week" cta={weekItems.length > 0 ? { label: `${weekItems.length} item${weekItems.length === 1 ? '' : 's'}`, onClick: () => navigate('/projects') } : undefined}>
+              {weekItems.length === 0 ? (
+                <Empty>Nothing scheduled in the next 7 days.</Empty>
+              ) : weekItems.slice(0, 5).map((it) => (
+                <button
+                  key={`${it.kind}-${it.id}`}
+                  onClick={() => it.href && navigate(it.href)}
+                  className="w-full text-left px-3 py-2 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors flex items-start gap-2.5"
+                >
+                  <div className="flex flex-col items-center shrink-0 w-9">
+                    <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">
+                      {new Date(it.due).toLocaleDateString(undefined, { weekday: 'short' })}
+                    </div>
+                    <div className="text-[14px] font-medium tabular-nums leading-none">
+                      {new Date(it.due).getDate()}
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12.5px] text-foreground truncate">{it.label}</div>
+                    {it.subtitle && <div className="text-[10.5px] text-muted-foreground truncate">{it.subtitle}</div>}
+                  </div>
+                </button>
+              ))}
+            </Card>
+
+            {/* My work orders */}
+            <Card title="My open work orders" cta={myOpenWOs.length > 0 ? { label: 'Deployment', onClick: () => navigate(`/project/${myOpenWOs[0].projectId}/deployment`) } : undefined}>
+              {myOpenWOs.length === 0 ? (
+                <Empty>No open work orders assigned to you.</Empty>
+              ) : myOpenWOs.slice(0, 5).map(({ wo, projectId, projectName }) => {
+                const blocked = wo.progress.status === 'blocked';
+                return (
+                  <button
+                    key={wo.id}
+                    onClick={() => navigate(`/project/${projectId}/deployment`)}
+                    className="w-full text-left px-3 py-2 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full ${blocked ? 'bg-rose-500' : 'bg-primary/70'} shrink-0`} />
+                      <span className="text-[12.5px] text-foreground truncate flex-1">{wo.title}</span>
+                      <span className={`text-[10px] uppercase tracking-[0.10em] ${blocked ? 'text-rose-600' : 'text-muted-foreground'}`}>{wo.progress.status}</span>
+                    </div>
+                    <div className="text-[10.5px] text-muted-foreground truncate mt-0.5">{projectName}{wo.location ? ` · ${wo.location}` : ''}</div>
+                  </button>
+                );
+              })}
             </Card>
           </div>
         </Section>
@@ -331,27 +466,34 @@ export function Dashboard() {
               </div>
             );
           })()}
-          <div className="mt-3 text-[11px] text-muted-foreground italic">
-            Integration substrate is in the data layer (external IDs, sync state, mapping). No vendor is live yet — connection flows are a labeled placeholder.
+          <div className="mt-3 text-[11px] text-muted-foreground">
+            Connect or manage integrations from <button onClick={() => navigate('/settings')} className="text-primary hover:underline">Settings → Integrations</button>.
           </div>
         </Section>
 
-        {/* ── Customer Operations ───────────────────────────────── */}
-        <Section
-          icon={<MessageCircle className="w-3.5 h-3.5" />}
-          title="Customer operations"
-          hint="Service · warranties · lifecycle"
-        >
-          <div className="grid grid-cols-4 gap-3">
-            <StatCard label="Open tickets" value="0" hint="Tickets module is a labeled future" tone="muted" />
-            <StatCard label="Warranty expirations" value="0" hint="90-day lookahead · future" tone="muted" />
-            <StatCard label="Managed accounts" value={String(projectsByPhase.managed_service?.length ?? 0)} hint="Projects in managed service" tone="neutral" />
-            <StatCard label="Maintenance visits" value="0" hint="Recurring schedule · future" tone="muted" />
-          </div>
-          <div className="mt-3 text-[11px] text-muted-foreground italic">
-            Service and ticketing are a future module. The asset registry and warranty fields exist on closed-out devices; ticket intake UI is not built yet.
-          </div>
-        </Section>
+        {/* ── Customer operations ─────────────────────────────────
+            Only the managed_service count is grounded in real data
+            right now; tickets / warranties / maintenance visits
+            ship as their own surfaces in later phases (4O / 4P).
+            Per the honesty contract we don't render labeled-future
+            placeholders here. */}
+        {(projectsByPhase.managed_service?.length ?? 0) > 0 && (
+          <Section
+            icon={<MessageCircle className="w-3.5 h-3.5" />}
+            title="Customer operations"
+            hint="Managed service"
+          >
+            <div className="grid grid-cols-4 gap-3">
+              <StatCard
+                label="Managed accounts"
+                value={String(projectsByPhase.managed_service?.length ?? 0)}
+                hint="Projects in managed service"
+                tone="neutral"
+                onClick={() => navigate('/projects')}
+              />
+            </div>
+          </Section>
+        )}
       </div>
     </AppShell>
   );
