@@ -2320,6 +2320,136 @@ the live URL + the source + build commit hashes.
 
 ---
 
+## Cloud Sync / Local Snapshot History Pass (2026-05-18, after Reports)
+
+**Goal.** Lay the operational + UI substrate a future cloud sync will
+build on, without faking any cloud connection today. Adds explicit
+sync-status surfacing, per-project local snapshot history, and a
+plain-module service layer that the next pass can swap to a real
+backend without rewriting callers.
+
+### What shipped this pass
+
+- New `src/app/services/projectSync.ts` module exposing seven helpers:
+  - `getSyncMode(projectId)` — returns `{ mode: 'local',
+    cloudConnected: false, storeKey, localStorageBytes,
+    projectStateBytes, lastLocalSave?, counts: { devices, doors,
+    pathways, idfs, floors, workOrders, pricebookOverrides,
+    snapshots } }`. Pure; safe to call inside render.
+  - `saveLocalSnapshot(projectId, name?)` — builds an envelope via
+    `exportProjectState`, persists it under
+    `localStorage["deeperVisionSnapshots"]`.
+  - `listLocalSnapshots(projectId)` — returns snapshots for this
+    project, newest first.
+  - `restoreLocalSnapshot(snapshotId)` — pass-through to
+    `useProjectStore.getState().importProjectState(env)`.
+  - `deleteLocalSnapshot(snapshotId)` — removes from the snapshot blob.
+  - `exportProjectEnvelope(projectId)` — thin wrapper around
+    `exportProjectState`.
+  - `importProjectEnvelope(envelope)` — thin wrapper around the store
+    action.
+- `ProjectStateMenu` widened to 400 px and gains two new sections at
+  the top:
+  - **Sync status**: Mode chip (`CloudOff` icon · "Local browser
+    storage"), Cloud sync chip (amber `CloudOff` · "Not connected"),
+    last local save timestamp, project state size, store blob size,
+    plus a 4×2 mini-counter grid (Devices / Doors / Pathways / IDFs
+    / Floors / WOs / Pricebook / Snapshots).
+  - **Snapshots (N)**: a name input + Save button on top, followed
+    by a list of saved snapshots. Each row shows name, relative
+    timestamp, summary counts (devices / doors / pathways / WO
+    state), Restore button, Delete icon. Empty state hints how to
+    use them.
+- New `SnapshotRestoreConfirmModal` — full-screen modal that previews
+  the snapshot summary + source build label (with version-drift
+  warning) before applying. Matches the existing
+  `ImportConfirmModal` pattern.
+- Snapshot delete uses `window.confirm` to keep one-shot destructive
+  actions compact; restore + import keep the proper modal because
+  they overwrite live state.
+- Updated footer copy in the menu to the exact brief language:
+  > This prototype stores edits in **this browser**.
+  > To move edits between local and live, use Export / Import or
+  > Snapshots.
+  > Cloud sync is not connected yet.
+- "Clear local project state" toast updated to note "Snapshots kept
+  under their own key", reflecting the new key separation.
+
+### Honest vs not-yet-connected
+
+- **Honest, real**:
+  - `getSyncMode` always returns `mode: 'local'`, `cloudConnected: false`.
+    No background polling, no faked "syncing…" indicator.
+  - Snapshots live under their own localStorage key
+    `deeperVisionSnapshots`; "Clear local project state" no longer
+    nukes them by accident.
+  - Save → mutate → restore → mutate → restore round-trip is
+    verified to round-trip a `CAM-101.notes` marker end-to-end.
+  - Sync-status size readings come from `localStorage.getItem`
+    string-length (project envelope + full store blob).
+- **Labelled / not connected**:
+  - Cloud chip is amber `CloudOff` "Not connected".
+  - Footer disclaimer states cloud sync isn't connected.
+  - Snapshot restore modal warns when the snapshot's source build
+    differs from the current page.
+
+### What the user can verify in the browser
+
+1. Open `/project/p1/canvas` → click **Project state ▾**.
+2. Top of menu shows **Sync status** (Mode = Local browser storage,
+   Cloud sync = Not connected) and per-project counters (Devices 9,
+   Doors 2, Pathways 1, IDFs 1, Floors 2, WOs 9, Pricebook 0,
+   Snapshots 0).
+3. Type a name in the **Snapshots** input → click Save → row
+   appears with timestamp + counts.
+4. Mutate the canvas (edit a camera, change a pricebook value,
+   anything) → Save another named snapshot.
+5. Click **Restore** on the first snapshot → confirm modal previews
+   counts + source build → click *Restore + replace state* → the
+   live canvas reverts to that snapshot. Verified end-to-end with a
+   marker note on CAM-101.
+6. Click **Restore** on the second snapshot → the marker comes back.
+7. Click the trash icon on a snapshot → window.confirm → snapshot
+   row disappears, count decrements.
+8. Reload page → snapshots survive. The "Snapshots" counter in the
+   sync-status grid matches the list length.
+9. **Reset to shared demo** still wipes the live project but leaves
+   snapshots intact (separate key).
+10. **Clear local project state** also leaves snapshots intact (toast
+    notes this).
+11. **Export project JSON** still produces the envelope with all the
+    pricebook / work-order / door-assembly fields.
+12. `/reports` and `/deployment` routes still reflect the live state
+    after a snapshot restore.
+
+### Regression checks
+
+- TopBar **Add plan**, **BOM**, **Present**, **Deploy**, **Reports**,
+  **Project state** all visible and functional — verified.
+- Reports + Deployment routes both reflect the restored state.
+- BOM drawer / Pricebook editor unchanged.
+- No new React / runtime errors in the console after a fresh reload
+  (only standing Vite HMR websocket cosmetic noise).
+
+### Build result
+
+`npm run build` → exit 0, 1.93 s. New bundle hash captured in the
+deploy commit below.
+
+### Persistence
+
+No store version bump; snapshots live under their own
+`deeperVisionSnapshots` localStorage key, separate from the v7
+`deeperVisionStore` blob. That separation is what lets "Clear local
+project state" preserve snapshot history.
+
+### Deployment
+
+This pass DOES deploy to Vercel production. See the final report for
+the live URL + the source + build commit hashes.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already
