@@ -16,9 +16,10 @@ import { AppShell } from '../components/AppShell';
 import { useProjectStore } from '../store/projectStore';
 import { streamAnswer, suggestPrompts } from '../lib/assistantEngine';
 import { executeAction, undoAction } from '../lib/assistantActions';
+import { useVoiceInput } from '../lib/useVoiceInput';
 import {
   Sparkles, Send, User, Plus, Trash2, MessageSquare, Lightbulb, X as XIcon,
-  Crosshair, Info, CheckCircle2, Undo2, Zap,
+  Crosshair, Info, CheckCircle2, Undo2, Zap, Mic, MicOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AiCitation, AiMsg, AiAction, AiAppliedRecord } from '../store/types';
@@ -64,6 +65,13 @@ export function AIAssistant() {
   const [draft, setDraft] = useState('');
   const [streaming, setStreaming] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // V1 2A.6 — voice input. The hook owns the Web Speech lifecycle;
+  // the final transcript appends into the textarea so the operator
+  // can edit before sending.
+  const voice = useVoiceInput((finalText) => {
+    setDraft((d) => (d ? d + ' ' : '') + finalText);
+  });
   // V1 2A.1 — track in-flight streams so unmount / navigation cancels
   // them cleanly. Each new send mints a token; the loop exits as soon
   // as the cancelled flag flips.
@@ -317,17 +325,42 @@ export function AIAssistant() {
             )}
             <div className="flex items-end gap-2 bg-input-background border border-input-border rounded-lg px-3 py-2 focus-within:border-primary transition-colors">
               <textarea
-                value={draft}
+                value={voice.state === 'listening' && voice.transcript ? `${draft}${draft ? ' ' : ''}${voice.transcript}` : draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
                 }}
-                placeholder={streaming ? 'Answering…' : ctxActive ? 'Ask scoped to this context, or say "across the whole project"…' : 'Ask about coverage, BOM, PoE, work orders…'}
+                placeholder={streaming ? 'Answering…' : voice.state === 'listening' ? 'Listening…' : ctxActive ? 'Ask scoped to this context, or say "across the whole project"…' : 'Ask about coverage, BOM, PoE, work orders…'}
                 rows={1}
                 disabled={streaming}
                 className="flex-1 bg-transparent text-[13px] focus:outline-none resize-none max-h-32 placeholder:text-muted-foreground/60"
                 data-testid="ai-input"
               />
+              {/* V1 2A.6 — voice input button. Hidden when the browser
+                  has no SpeechRecognition at all (no fake affordance
+                  per the honesty contract). */}
+              {voice.supported && (
+                <button
+                  onClick={voice.toggle}
+                  disabled={streaming}
+                  className={`h-8 w-8 inline-flex items-center justify-center rounded-md border transition-colors ${
+                    voice.state === 'listening'
+                      ? 'border-rose-500/50 bg-rose-500/15 text-rose-600 animate-pulse'
+                      : voice.state === 'denied' || voice.state === 'error'
+                        ? 'border-amber-500/50 bg-amber-500/10 text-amber-600'
+                        : 'border-border bg-secondary/50 text-muted-foreground hover:text-foreground hover:border-border-strong'
+                  }`}
+                  data-testid="ai-voice"
+                  title={
+                    voice.state === 'listening' ? 'Stop recording'
+                    : voice.state === 'denied' ? 'Microphone access denied. Allow it in browser settings.'
+                    : voice.state === 'error' && voice.errorMessage ? voice.errorMessage
+                    : 'Dictate your question'
+                  }
+                >
+                  {voice.state === 'listening' ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                </button>
+              )}
               <button
                 onClick={() => void send()}
                 disabled={!draft.trim() || streaming}
@@ -338,6 +371,13 @@ export function AIAssistant() {
                 <Send className="w-3.5 h-3.5" />
               </button>
             </div>
+            {/* Voice error / status line — only when there's something
+                concrete to say. No generic "Recognition error". */}
+            {voice.errorMessage && (voice.state === 'denied' || voice.state === 'error') && (
+              <div className="mt-1 text-[10.5px] text-amber-600 inline-flex items-center gap-1" data-testid="ai-voice-error">
+                <Info className="w-3 h-3" />{voice.errorMessage}
+              </div>
+            )}
             <div className="mt-1.5 text-[10px] text-muted-foreground">Enter to send. Shift+Enter for a new line.</div>
           </div>
         </div>
