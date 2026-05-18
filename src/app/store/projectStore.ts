@@ -3555,6 +3555,19 @@ export const CABLE_UNIT_PRICE: Record<string, number> = {
   'composite':  1.40,
 };
 
+// SC.4.2 — conduit + wall pricing. Conduit price-per-ft is a
+// blended average of fittings + sticks for V1; per-type override
+// via pricebook lands when SC.7+ adds the per-trade pricebook
+// surface. Wall framing covers labor + minimal material for a
+// rough framing run (drywall + studs are typically the GC's
+// scope, not security integrator's, so this number stays low).
+export const CONDUIT_UNIT_PRICE_PER_FT = 4.20;
+export const CONDUIT_LABOR_HOURS_PER_FT = 0.08;
+export const WALL_UNIT_PRICE_PER_FT = 0.85;
+export const WALL_LABOR_HOURS_PER_FT = 0.04;
+export const ACCESSORY_DEFAULT_PRICE = 65;
+export const ACCESSORY_DEFAULT_LABOR_HOURS = 0.25;
+
 /** Compute estimate line items live from a project's current devices, doors,
  *  pathways, and IDFs. Returns lines + headline totals. Pure function — safe
  *  to call inside React render. */
@@ -3650,8 +3663,8 @@ export function deriveBOM(state: ProjectState, projectId: string): {
       description: `Accessory · ${aid.replace(/^acc-/, '').replace(/-/g, ' ')}`,
       qty,
       uom: 'ea',
-      unitPrice: 65,
-      laborHours: 0.25 * qty,
+      unitPrice: ACCESSORY_DEFAULT_PRICE,
+      laborHours: ACCESSORY_DEFAULT_LABOR_HOURS * qty,
     });
   });
 
@@ -3704,13 +3717,34 @@ export function deriveBOM(state: ProjectState, projectId: string): {
     }
   }
 
-  // Pathways → cable feet + small conduit allocation.
+  // Pathways → cable feet OR conduit feet.
   // Uses pathwayLengthFt (lib/engineering) so the BOM, canvas labels, and
   // PathwayDrawer all agree. Per-floor calibration via floor.scalePxToFt;
   // fallback is the canvas default (1 / 20 ft per px) until /calibrate runs.
+  //
+  // SC.4.2 — conduit (p.type === 'conduit') gets its own line at
+  // CONDUIT_UNIT_PRICE_PER_FT rather than billing as cable. Cable
+  // path stays as is so a `tray` / `flex` pathway with cableCount
+  // still rolls up into the cable bucket.
   for (const p of pathways) {
     const floor = p.floorId ? state.floors[p.floorId] : undefined;
     const ft = pathwayLengthFt(p, floor);
+    if (p.type === 'conduit') {
+      const conduitSize = (p as any).conduitSize ? ` ${(p as any).conduitSize}` : '';
+      const conduitMat  = (p as any).conduitType ? ` ${(p as any).conduitType}` : '';
+      lines.push({
+        id: `pw-${p.id}-conduit`,
+        sourceKind: 'pathway',
+        sourceId: p.id,
+        sku: `conduit${conduitMat || ''}${conduitSize || ''}`.trim(),
+        description: `Conduit${conduitMat}${conduitSize} · ${ft} ft`,
+        qty: ft,
+        uom: 'ft',
+        unitPrice: CONDUIT_UNIT_PRICE_PER_FT,
+        laborHours: ft * CONDUIT_LABOR_HOURS_PER_FT,
+      });
+      continue;
+    }
     const unitFt = CABLE_UNIT_PRICE[p.cableType] ?? 0.5;
     lines.push({
       id: `pw-${p.id}-cable`,
@@ -3722,6 +3756,36 @@ export function deriveBOM(state: ProjectState, projectId: string): {
       uom: 'ft',
       unitPrice: unitFt,
       laborHours: ft * 0.02 * p.cableCount, // ~1.2 min per ft per pull
+    });
+  }
+
+  // SC.4.2 — Walls. Per floor roll up of linear feet from
+  // floor.walls[]. Each wall segment is two points; distance is
+  // Euclidean px * floor scalePxToFt. Single aggregated line per
+  // project rather than per floor so the BOM stays scannable
+  // (the canvas BOM drawer breaks down per row when an operator
+  // wants the detail).
+  let wallTotalFt = 0;
+  for (const floor of Object.values(state.floors)) {
+    if (floor.projectId !== projectId) continue;
+    const scale = (floor.scalePxToFt ?? 0) > 0 ? floor.scalePxToFt : 1 / 20;
+    for (const w of (floor.walls ?? [])) {
+      const dx = w.x2 - w.x1;
+      const dy = w.y2 - w.y1;
+      wallTotalFt += Math.sqrt(dx * dx + dy * dy) * scale;
+    }
+  }
+  if (wallTotalFt > 0) {
+    const rounded = Math.round(wallTotalFt);
+    lines.push({
+      id: `walls-${projectId}`,
+      sourceKind: 'manual',
+      sku: 'wall-framing',
+      description: `Wall framing · ${rounded} LF`,
+      qty: rounded,
+      uom: 'ft',
+      unitPrice: WALL_UNIT_PRICE_PER_FT,
+      laborHours: rounded * WALL_LABOR_HOURS_PER_FT,
     });
   }
 
@@ -3990,12 +4054,32 @@ export function deriveCanvasBomRows(
     }
   }
 
-  // ── Pathways. One row per cable run; length uses the per-floor
+  // ── Pathways. SC.4.2 — conduit gets its own row + category. Cable
+  // runs stay under 'cabling' as before. Length uses the per-floor
   // calibrated px-to-ft scale so the BOM agrees with the canvas
   // labels and the pathway drawer.
   for (const p of pathways) {
     const floor = p.floorId ? state.floors[p.floorId] : undefined;
     const ft = pathwayLengthFt(p, floor);
+    if (p.type === 'conduit') {
+      const conduitSize = (p as any).conduitSize ? ` ${(p as any).conduitSize}` : '';
+      const conduitMat  = (p as any).conduitType ? ` ${(p as any).conduitType}` : '';
+      rows.push({
+        id: `pw-${p.id}`,
+        category: 'conduit',
+        sourceKind: 'pathway',
+        sourceId: p.id,
+        isExisting: false,
+        description: `Conduit${conduitMat}${conduitSize} · ${ft} ft`,
+        meta: `Run · ${p.id}`,
+        qty: ft,
+        uom: 'ft',
+        unitPrice: CONDUIT_UNIT_PRICE_PER_FT,
+        laborHours: ft * CONDUIT_LABOR_HOURS_PER_FT,
+        missingPrice: false,
+      });
+      continue;
+    }
     const eff = effectiveCablePerFt(p.cableType);
     const qty = ft * p.cableCount;
     rows.push({
@@ -4014,6 +4098,64 @@ export function deriveCanvasBomRows(
       overridden: eff.overridden,
     });
   }
+
+  // ── Walls (SC.4.2). Per project aggregation across every floor's
+  // walls[] array. Single row keeps the canvas BOM scannable;
+  // operators who want a per floor breakdown can read the floor
+  // strip on the canvas. */
+  let wallTotalFt = 0;
+  for (const floor of Object.values(state.floors)) {
+    if (floor.projectId !== projectId) continue;
+    const scale = (floor.scalePxToFt ?? 0) > 0 ? floor.scalePxToFt : 1 / 20;
+    for (const w of (floor.walls ?? [])) {
+      const dx = w.x2 - w.x1;
+      const dy = w.y2 - w.y1;
+      wallTotalFt += Math.sqrt(dx * dx + dy * dy) * scale;
+    }
+  }
+  if (wallTotalFt > 0) {
+    const rounded = Math.round(wallTotalFt);
+    rows.push({
+      id: `walls-${projectId}`,
+      category: 'walls',
+      sourceKind: 'manual',
+      isExisting: false,
+      description: `Wall framing · ${rounded} LF`,
+      meta: 'Floors aggregate',
+      qty: rounded,
+      uom: 'ft',
+      unitPrice: WALL_UNIT_PRICE_PER_FT,
+      laborHours: rounded * WALL_LABOR_HOURS_PER_FT,
+      missingPrice: false,
+    });
+  }
+
+  // ── Device accessories (SC.4.2). Parity with deriveBOM: walk
+  // each device's accessories[] array, count by accessory id,
+  // emit one row per kind. Hardcoded $65 / 0.25 hr defaults
+  // shared with deriveBOM via ACCESSORY_DEFAULT_* constants so
+  // the two derivation paths agree.
+  const canvasAccCounts = new Map<string, number>();
+  for (const d of devices as any[]) {
+    for (const aid of (d.accessories ?? []) as string[]) {
+      canvasAccCounts.set(aid, (canvasAccCounts.get(aid) ?? 0) + 1);
+    }
+  }
+  canvasAccCounts.forEach((qty, aid) => {
+    rows.push({
+      id: `acc-${projectId}-${aid}`,
+      category: 'other',
+      sourceKind: 'device',
+      isExisting: false,
+      description: `Accessory · ${aid.replace(/^acc-/, '').replace(/-/g, ' ')}`,
+      meta: `${qty}× across project`,
+      qty,
+      uom: 'ea',
+      unitPrice: ACCESSORY_DEFAULT_PRICE,
+      laborHours: ACCESSORY_DEFAULT_LABOR_HOURS * qty,
+      missingPrice: false,
+    });
+  });
 
   // ── IDFs. Switch + UPS rows.
   for (const idf of idfs) {

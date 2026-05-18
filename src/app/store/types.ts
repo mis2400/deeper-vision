@@ -1527,7 +1527,7 @@ export interface WorkOrder {
 // EstimateLine (which aggregates devices by SKU), one row = one
 // canvas object so the drawer can click a row and select the
 // originating device / door hardware / pathway on the floorplan.
-export type CanvasBomCategory = 'cameras' | 'access' | 'network' | 'cabling' | 'labor' | 'other';
+export type CanvasBomCategory = 'cameras' | 'access' | 'network' | 'cabling' | 'conduit' | 'walls' | 'labor' | 'other';
 export interface CanvasBomRow {
   id: string;
   category: CanvasBomCategory;
