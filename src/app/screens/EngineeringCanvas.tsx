@@ -749,6 +749,12 @@ export function EngineeringCanvas() {
     ) as unknown as Device[];
   }, [storeDevices, projectId, currentFloorId]);
 
+  // Canvas V2 Pass 1.1 — undo / redo. Snapshot devices BEFORE each
+  // mutation so canvasUndo can swap back. Coalesce key collapses
+  // rapid drag-moves of a single device into one undoable step; an
+  // add or delete starts a fresh step regardless.
+  const pushCanvasHistory = useProjectStore((s) => s.pushCanvasHistory);
+
   // setDevices facade: accepts either a new array OR an updater fn. Diffs
   // against the current store snapshot and dispatches add/update/remove for
   // each changed device. Keeps all in-component callers (move/rotate/dup/
@@ -761,54 +767,86 @@ export function EngineeringCanvas() {
     const after = typeof next === 'function' ? next(before) : next;
     const beforeIds = new Set(before.map((d) => d.id));
     const afterIds  = new Set(after.map((d) => d.id));
-    // Removals
-    for (const d of before) if (!afterIds.has(d.id)) storeRemoveDevice(d.id);
-    // Adds + updates
-    for (const d of after) {
-      if (!beforeIds.has(d.id)) {
-        // Compatibility check on add: anything dropped onto the floorplan
-        // that should be attached to a host (strike / maglock / rex) gets a
-        // soft warning toast pointing the user to drag it onto a door. The
-        // add still goes through — the user is the engineer and can
-        // override — but the platform tells them so misconfigurations
-        // don't sneak in.
-        const compat = canHost('floor', d.type);
-        if (!compat.allowed) {
-          toast.warning(compat.reason ?? 'Compatibility issue', {
-            description: compat.hint,
-            duration: 6000,
-          });
-        } else if (compat.requires) {
-          toast.message('Heads up', {
-            description: compat.requires,
-            duration: 5000,
-          });
-        }
-        storeAddDevice({ ...(d as any), projectId: pid, floorId: fid } as StoreDevice);
-      } else {
-        const prev = before.find((p) => p.id === d.id)!;
-        // Shallow diff — only patch what actually changed to keep undo
-        // history concise.
-        const patch: any = {};
-        for (const k of Object.keys(d)) {
-          if ((d as any)[k] !== (prev as any)[k]) patch[k] = (d as any)[k];
-        }
-        if (Object.keys(patch).length) storeUpdateDevice(d.id, patch);
+    const added    = after.filter((d) => !beforeIds.has(d.id));
+    const removed  = before.filter((d) => !afterIds.has(d.id));
+    const updated  = after.filter((d) => beforeIds.has(d.id) && before.find((p) => p.id === d.id) !== d);
+
+    // Push history BEFORE mutating so the snapshot reflects "previous".
+    // Skip the push when nothing changed (defensive).
+    if (added.length || removed.length || updated.length) {
+      const nameOf = (d: Device) => (d as any).name || (d as any).label || (d as any).id;
+      let label = 'Edited devices';
+      let coalesceKey: string | undefined;
+      if (removed.length === 1 && added.length === 0 && updated.length === 0) {
+        label = `Deleted ${nameOf(removed[0])}`;
+      } else if (removed.length > 1 && added.length === 0 && updated.length === 0) {
+        label = `Deleted ${removed.length} devices`;
+      } else if (added.length === 1 && removed.length === 0 && updated.length === 0) {
+        label = `Added ${nameOf(added[0])}`;
+      } else if (added.length > 1 && removed.length === 0 && updated.length === 0) {
+        label = `Added ${added.length} devices`;
+      } else if (updated.length === 1 && added.length === 0 && removed.length === 0) {
+        const u = updated[0];
+        const prev = before.find((p) => p.id === u.id)!;
+        const movedXY = (u.x !== prev.x) || (u.y !== prev.y);
+        const rotated = u.rot !== prev.rot;
+        if (movedXY && !rotated) { label = `Moved ${nameOf(u)}`; coalesceKey = `move-${u.id}`; }
+        else if (rotated && !movedXY) { label = `Rotated ${nameOf(u)}`; coalesceKey = `rotate-${u.id}`; }
+        else { label = `Updated ${nameOf(u)}`; coalesceKey = `update-${u.id}`; }
+      } else if (updated.length > 1 && added.length === 0 && removed.length === 0) {
+        label = `Moved ${updated.length} devices`;
+        coalesceKey = 'move-multi';
       }
+      pushCanvasHistory(label, ['devices'], coalesceKey);
     }
-  }, [projectId, currentFloorId, storeAddDevice, storeUpdateDevice, storeRemoveDevice]);
-  const [walls, setWalls] = useState<Wall[]>([]);
+
+    // Removals
+    for (const d of removed) storeRemoveDevice(d.id);
+    // Adds
+    for (const d of added) {
+      // Compatibility check on add: anything dropped onto the floorplan
+      // that should be attached to a host (strike / maglock / rex) gets a
+      // soft warning toast pointing the user to drag it onto a door. The
+      // add still goes through — the user is the engineer and can
+      // override — but the platform tells them so misconfigurations
+      // don't sneak in.
+      const compat = canHost('floor', d.type);
+      if (!compat.allowed) {
+        toast.warning(compat.reason ?? 'Compatibility issue', {
+          description: compat.hint,
+          duration: 6000,
+        });
+      } else if (compat.requires) {
+        toast.message('Heads up', {
+          description: compat.requires,
+          duration: 5000,
+        });
+      }
+      storeAddDevice({ ...(d as any), projectId: pid, floorId: fid } as StoreDevice);
+    }
+    // Updates
+    for (const d of updated) {
+      const prev = before.find((p) => p.id === d.id)!;
+      const patch: any = {};
+      for (const k of Object.keys(d)) {
+        if ((d as any)[k] !== (prev as any)[k]) patch[k] = (d as any)[k];
+      }
+      if (Object.keys(patch).length) storeUpdateDevice(d.id, patch);
+    }
+  }, [projectId, currentFloorId, storeAddDevice, storeUpdateDevice, storeRemoveDevice, pushCanvasHistory]);
+  // Canvas V2 Pass 1.1 — walls now live entirely in the store under
+  // floors[id].walls. Local `walls` state used to hold session-only
+  // segments; that meant they could not be undone and did not persist
+  // across reloads. Routing everything through setFloorWalls gives us
+  // both undo (via the floors slice snapshot) and persistence.
   const [wallStart, setWallStart] = useState<{ x: number; y: number } | null>(null);
   const [wallCursor, setWallCursor] = useState<{ x: number; y: number } | null>(null);
-  // Walls persisted on the active floor record (written by VisionScan import
-  // and by the wall tool's commit path). We merge with the local
-  // in-progress walls so freshly-drawn segments appear immediately even
-  // before they're serialized to the store.
   const storeFloorWalls = useProjectStore((s) => (currentFloorId ? s.floors[currentFloorId]?.walls : undefined));
-  const allWalls = useMemo<Wall[]>(() => {
-    const a = (storeFloorWalls ?? []) as unknown as Wall[];
-    return [...a, ...walls];
-  }, [storeFloorWalls, walls]);
+  const setFloorWalls = useProjectStore((s) => s.setFloorWalls);
+  const allWalls = useMemo<Wall[]>(
+    () => ((storeFloorWalls ?? []) as unknown as Wall[]),
+    [storeFloorWalls],
+  );
 
   // Measure tool — two-click distance measurement. First click sets a
   // start point; second click freezes the measurement. ESC clears.
@@ -851,6 +889,10 @@ export function EngineeringCanvas() {
     const pxMeasured = Math.hypot(dx, dy);
     if (pxMeasured < 1 || !(realFt > 0)) return;
     const ftPerPx = realFt / pxMeasured;
+    // Snapshot floors for undo. Calibration updates Floor.scalePxToFt
+    // plus the verification metadata; restoring the floors slice
+    // reverses all four fields in one step.
+    pushCanvasHistory('Recalibrated scale', ['floors']);
     useProjectStore.getState().updateFloor(currentFloorId, {
       scalePxToFt: ftPerPx,
       calibratedAt: Date.now(),
@@ -863,7 +905,7 @@ export function EngineeringCanvas() {
     });
     resetCalibrate();
     setTool('select');
-  }, [calibrate.a, calibrate.b, currentFloorId, resetCalibrate]);
+  }, [calibrate.a, calibrate.b, currentFloorId, resetCalibrate, pushCanvasHistory]);
 
   // Cable / pathway draw — click vertices, double-click or Enter to
   // finish, Esc to cancel. On finish, a Pathway record is added to the
@@ -925,6 +967,8 @@ export function EngineeringCanvas() {
     setCableDraw({ points: [], cursor: null, cableType: prev.cableType });
     // Side effects (store write + toast + tool switch) run AFTER the
     // setState call, fully outside React's render path.
+    // Snapshot the pathways slice for undo before the add lands.
+    pushCanvasHistory(`Drew ${isConduit ? 'conduit' : isPathway ? 'pathway' : 'cable run'}`, ['pathways']);
     addPathway({
       id,
       projectId,
@@ -1724,6 +1768,27 @@ export function EngineeringCanvas() {
       if ((e.metaKey || e.ctrlKey) && e.key === '0') { e.preventDefault(); setZoom(1); }
       if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); setZoom((z) => Math.min(4, z * 1.2)); }
       if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); setZoom((z) => Math.max(0.25, z / 1.2)); }
+      // Canvas V2 Pass 1.1 — undo / redo. Cmd-Z undo, Cmd-Shift-Z redo.
+      // Ctrl-Y also redos (Windows convention). Esc earlier in this
+      // handler cancels in-flight edits and pushes nothing to history.
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        const wantsRedo = e.shiftKey;
+        const popped = wantsRedo
+          ? useProjectStore.getState().canvasRedo()
+          : useProjectStore.getState().canvasUndo();
+        if (popped) {
+          toast.message(`${wantsRedo ? 'Redo' : 'Undo'}: ${popped.label}`, { duration: 2000 });
+        } else {
+          toast.message(wantsRedo ? 'Nothing to redo' : 'Nothing to undo', { duration: 1500 });
+        }
+      }
+      if ((e.ctrlKey && !e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        const popped = useProjectStore.getState().canvasRedo();
+        if (popped) toast.message(`Redo: ${popped.label}`, { duration: 2000 });
+        else toast.message('Nothing to redo', { duration: 1500 });
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -2212,6 +2277,9 @@ export function EngineeringCanvas() {
               floorBackground={floorBackground}
               onUpdateBackground={(patch) => {
                 if (!currentFloorId || !floorBackground) return;
+                // Coalesce so dragging the background's position slider
+                // produces one undoable step, not one per frame.
+                pushCanvasHistory('Adjusted floor background', ['floors'], 'bg-edit');
                 useProjectStore.getState().setFloorBackground(currentFloorId, { ...floorBackground, ...patch });
               }}
               onBlank={() => { setSelId(null); setSelPathwayId(null); }}
@@ -2230,7 +2298,15 @@ export function EngineeringCanvas() {
                   const sy = snap ? Math.round(y / 20) * 20 : y;
                   if (!wallStart) { setWallStart({ x: sx, y: sy }); }
                   else {
-                    setWalls((ws) => [...ws, { id: `w${ws.length + 1}`, x1: wallStart.x, y1: wallStart.y, x2: sx, y2: sy }]);
+                    if (currentFloorId) {
+                      // Stable wall id so undo / redo round trips do
+                      // not collide. Snapshot floors before mutating
+                      // so canvasUndo restores the prior wall set.
+                      const wid = `w-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+                      const next = [...(storeFloorWalls ?? []), { id: wid, x1: wallStart.x, y1: wallStart.y, x2: sx, y2: sy }];
+                      pushCanvasHistory('Drew wall', ['floors']);
+                      setFloorWalls(currentFloorId, next);
+                    }
                     setWallStart({ x: sx, y: sy });
                   }
                   return;
@@ -2442,7 +2518,7 @@ export function EngineeringCanvas() {
               // two surfaces on top of each other.
               const suppressForCalibrateApply = isCalibrate && calibrate.a && calibrate.b;
               if ((!isWall && !isMeasure && !isCable && !isCalibrate) || suppressForCalibrateApply) return null;
-              const wallSegments = walls.length;
+              const wallSegments = allWalls.length;
               const measurePhase: 'idle' | 'awaiting-end' | 'locked' =
                 !measure.start ? 'idle' : !measure.end ? 'awaiting-end' : 'locked';
               let title = '';
@@ -2848,8 +2924,14 @@ export function EngineeringCanvas() {
             {floorBackground && currentFloorId && (
               <FloorplanBackgroundControls
                 bg={floorBackground}
-                onPatch={(patch) => useProjectStore.getState().setFloorBackground(currentFloorId, { ...floorBackground, ...patch })}
-                onRemove={() => useProjectStore.getState().setFloorBackground(currentFloorId, null)}
+                onPatch={(patch) => {
+                  pushCanvasHistory('Adjusted floor background', ['floors'], 'bg-edit');
+                  useProjectStore.getState().setFloorBackground(currentFloorId, { ...floorBackground, ...patch });
+                }}
+                onRemove={() => {
+                  pushCanvasHistory('Removed floor background', ['floors']);
+                  useProjectStore.getState().setFloorBackground(currentFloorId, null);
+                }}
               />
             )}
 
@@ -3119,6 +3201,51 @@ function StartCard({ icon: Icon, title, sub, onClick, accent }: { icon: any; tit
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   UNDO / REDO BUTTONS — Canvas V2 Pass 1.1
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function UndoRedoButtons() {
+  const past = useProjectStore((s) => s.canvasHistory.past);
+  const future = useProjectStore((s) => s.canvasHistory.future);
+  const nextUndo = past[past.length - 1];
+  const nextRedo = future[future.length - 1];
+  const canUndo = !!nextUndo;
+  const canRedo = !!nextRedo;
+  const handleUndo = () => {
+    const popped = useProjectStore.getState().canvasUndo();
+    if (popped) toast.message(`Undo: ${popped.label}`, { duration: 2000 });
+  };
+  const handleRedo = () => {
+    const popped = useProjectStore.getState().canvasRedo();
+    if (popped) toast.message(`Redo: ${popped.label}`, { duration: 2000 });
+  };
+  return (
+    <div className="inline-flex items-center gap-0.5 h-8 px-0.5 rounded-lg border border-border bg-background">
+      <button
+        onClick={handleUndo}
+        disabled={!canUndo}
+        title={canUndo ? `Undo: ${nextUndo.label}  (⌘Z)` : 'Nothing to undo'}
+        className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors ${canUndo ? 'text-foreground hover:bg-secondary' : 'text-muted-foreground/40 cursor-default'}`}
+        data-track="topbar-undo"
+        aria-label="Undo"
+      >
+        <Undo2 className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={handleRedo}
+        disabled={!canRedo}
+        title={canRedo ? `Redo: ${nextRedo.label}  (⇧⌘Z)` : 'Nothing to redo'}
+        className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors ${canRedo ? 'text-foreground hover:bg-secondary' : 'text-muted-foreground/40 cursor-default'}`}
+        data-track="topbar-redo"
+        aria-label="Redo"
+      >
+        <Redo2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    TOP BAR — floor, scale, scan, setup
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -3193,6 +3320,7 @@ function TopBar(props: {
           <Layers className="w-3.5 h-3.5 text-muted-foreground" />
           {props.floorName || 'Floor'}
         </span>
+        <UndoRedoButtons />
         <button
           onClick={props.onOpenScanBuild}
           title="Add a floor plan — upload PDF/image, trace satellite, scan demo, or start blank"

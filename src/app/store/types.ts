@@ -685,6 +685,44 @@ export interface SiteCapture {
   updatedAt: number;
 }
 
+// ─────────────────────────── Canvas history (Pass 1.1) ───────────
+// Undo / redo storage. Snapshot-based: each entry captures the contents
+// of the slices that are about to mutate. Undo restores the snapshot
+// and pushes the current state onto the future stack. Coalesce key lets
+// rapid back-to-back mutations (drag move, slider scrub) collapse into
+// a single undoable step.
+export type CanvasHistorySlice = 'devices' | 'doors' | 'pathways' | 'floors';
+
+export interface CanvasHistoryEntry {
+  id: string;
+  /** Epoch ms when this entry was created. */
+  timestamp: number;
+  /** Operator-facing label ("Added bullet camera", "Deleted 3 devices"). */
+  label: string;
+  /** Optional. When set, a subsequent push with the same key inside the
+   *  coalesce window is treated as the same action and does not create
+   *  a new entry. */
+  coalesceKey?: string;
+  /** Captured slice contents at the time the entry was created. Only
+   *  the slices that were declared on push are present. */
+  snapshot: Partial<Record<CanvasHistorySlice, Record<string, any>>>;
+}
+
+export interface CanvasHistoryState {
+  past: CanvasHistoryEntry[];
+  future: CanvasHistoryEntry[];
+}
+
+/** Maximum entries kept in memory. */
+export const CANVAS_HISTORY_MAX = 50;
+/** Maximum entries persisted across reload. Older entries are dropped
+ *  on save so localStorage stays inside its budget. */
+export const CANVAS_HISTORY_PERSIST_MAX = 20;
+/** Coalesce window in ms. */
+export const CANVAS_HISTORY_COALESCE_MS = 500;
+
+export const DEFAULT_CANVAS_HISTORY: CanvasHistoryState = { past: [], future: [] };
+
 // ─────────────────────────── Pathways ─────────────────────────────
 export type PathwayType = 'conduit' | 'tray' | 'open' | 'fiber' | 'wireless' | 'underground' | 'flex';
 export type CableType = 'cat6' | 'cat6a' | 'fiber-sm' | 'fiber-mm' | 'coax' | 'power' | 'composite';

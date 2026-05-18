@@ -24,6 +24,9 @@ import {
   NotificationEventKey, NotificationPref, DEFAULT_NOTIFICATION_PREF,
   SecurityState, DEFAULT_SECURITY, SsoConfig, ScimConfig, ApiKey, ApiKeyScope, Webhook, WebhookEvent, AuditEntry, AuditAction, SecuritySession, TwoFactor, DataResidency,
   WorkspaceSettings, DEFAULT_WORKSPACE_SETTINGS,
+  CanvasHistoryEntry, CanvasHistoryState, CanvasHistorySlice,
+  CANVAS_HISTORY_MAX, CANVAS_HISTORY_PERSIST_MAX, CANVAS_HISTORY_COALESCE_MS,
+  DEFAULT_CANVAS_HISTORY,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -154,6 +157,10 @@ export interface ProjectState {
    *  label + optional photo + voice note + GPS fix. Photos and audio
    *  are inline base64 because there's no upload backend. */
   siteCaptures:  Record<string, import('./types').SiteCapture>;
+  /** Canvas undo / redo history — Canvas V2 Pass 1.1. Snapshot-based
+   *  past / future stacks. Capped at CANVAS_HISTORY_MAX in memory,
+   *  CANVAS_HISTORY_PERSIST_MAX on disk. */
+  canvasHistory: import('./types').CanvasHistoryState;
 
   // ── UX preferences ──
   /** Per-project mode override. When unset, mode is derived from
@@ -274,6 +281,22 @@ export interface ProjectState {
   addSiteCapture:    (item: Omit<import('./types').SiteCapture, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => string;
   updateSiteCapture: (id: string, patch: Partial<import('./types').SiteCapture>) => void;
   removeSiteCapture: (id: string) => void;
+
+  // ── Canvas undo / redo (Pass 1.1) ──
+  /** Snapshot the current contents of the named slices and push them as
+   *  a new "past" entry. Clears the future stack. When `coalesceKey` is
+   *  set and the most recent past entry shares the key inside the
+   *  coalesce window, the existing entry is retained (its "before"
+   *  snapshot stays valid) and no new entry is created. */
+  pushCanvasHistory: (label: string, slices: import('./types').CanvasHistorySlice[], coalesceKey?: string) => void;
+  /** Pop the most recent past entry, restore its snapshot, and push the
+   *  prior state onto the future stack. Returns the popped entry so the
+   *  caller can show a toast with its label. Null if past was empty. */
+  canvasUndo: () => import('./types').CanvasHistoryEntry | null;
+  /** Symmetric: pop future, restore, push current onto past. */
+  canvasRedo: () => import('./types').CanvasHistoryEntry | null;
+  /** Wipe both stacks (used by reset demo + on project switch). */
+  clearCanvasHistory: () => void;
 
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
@@ -459,6 +482,7 @@ export const useProjectStore = create<ProjectState>()(
       security:          { ...DEFAULT_SECURITY },
       workspaceSettings: { ...DEFAULT_WORKSPACE_SETTINGS },
       siteCaptures:      {},
+      canvasHistory:     { ...DEFAULT_CANVAS_HISTORY },
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -919,6 +943,97 @@ export const useProjectStore = create<ProjectState>()(
           : s),
       removeSiteCapture: (id) =>
         set((s) => { const { [id]: _, ...rest } = s.siteCaptures; return { siteCaptures: rest }; }),
+
+      // ── Canvas history (Canvas V2 Pass 1.1) ──────────────────────
+      pushCanvasHistory: (label, slices, coalesceKey) =>
+        set((s) => {
+          const top = s.canvasHistory.past[s.canvasHistory.past.length - 1];
+          // Coalesce: same key inside the window keeps the existing
+          // "before" snapshot. The whole point is that a drag-move of
+          // CAM-12 produces one undoable step, not one per frame.
+          if (
+            coalesceKey
+            && top
+            && top.coalesceKey === coalesceKey
+            && Date.now() - top.timestamp < CANVAS_HISTORY_COALESCE_MS
+          ) {
+            return s;
+          }
+          const snapshot: CanvasHistoryEntry['snapshot'] = {};
+          for (const sl of slices) {
+            // Shallow copy: each slice is a Record<id, obj>. Object
+            // identities on inner records are immutable per our action
+            // pattern (always { ...prev, [id]: newObj }), so a shallow
+            // copy is enough to capture state at this instant.
+            snapshot[sl] = { ...((s as any)[sl] as Record<string, any>) };
+          }
+          const entry: CanvasHistoryEntry = {
+            id: typeof crypto !== 'undefined' && crypto.randomUUID
+              ? `h-${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`
+              : `h-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            timestamp: Date.now(),
+            label,
+            coalesceKey,
+            snapshot,
+          };
+          const nextPast = [...s.canvasHistory.past, entry];
+          // Cap depth: drop oldest entries first.
+          while (nextPast.length > CANVAS_HISTORY_MAX) nextPast.shift();
+          // Any new action invalidates the redo stack.
+          return { canvasHistory: { past: nextPast, future: [] } };
+        }),
+
+      canvasUndo: () => {
+        const s = get();
+        const past = s.canvasHistory.past;
+        if (past.length === 0) return null;
+        const entry = past[past.length - 1];
+        // Capture current state of the same slices so redo can swap back.
+        const currentSnapshot: CanvasHistoryEntry['snapshot'] = {};
+        for (const sl of Object.keys(entry.snapshot) as CanvasHistorySlice[]) {
+          currentSnapshot[sl] = { ...((s as any)[sl] as Record<string, any>) };
+        }
+        // Restore each captured slice in one set().
+        set((cur) => {
+          const patch: any = {
+            canvasHistory: {
+              past: past.slice(0, -1),
+              future: [...cur.canvasHistory.future, { ...entry, snapshot: currentSnapshot }],
+            },
+          };
+          for (const sl of Object.keys(entry.snapshot) as CanvasHistorySlice[]) {
+            patch[sl] = entry.snapshot[sl];
+          }
+          return patch;
+        });
+        return entry;
+      },
+
+      canvasRedo: () => {
+        const s = get();
+        const future = s.canvasHistory.future;
+        if (future.length === 0) return null;
+        const entry = future[future.length - 1];
+        const currentSnapshot: CanvasHistoryEntry['snapshot'] = {};
+        for (const sl of Object.keys(entry.snapshot) as CanvasHistorySlice[]) {
+          currentSnapshot[sl] = { ...((s as any)[sl] as Record<string, any>) };
+        }
+        set((cur) => {
+          const patch: any = {
+            canvasHistory: {
+              past: [...cur.canvasHistory.past, { ...entry, snapshot: currentSnapshot }],
+              future: future.slice(0, -1),
+            },
+          };
+          for (const sl of Object.keys(entry.snapshot) as CanvasHistorySlice[]) {
+            patch[sl] = entry.snapshot[sl];
+          }
+          return patch;
+        });
+        return entry;
+      },
+
+      clearCanvasHistory: () => set(() => ({ canvasHistory: { past: [], future: [] } })),
 
       // ── Threat Drill ─────────────────────────────────────────────
       addScenario: (sc) => set((s) => ({ scenarios: { ...s.scenarios, [sc.id]: sc } })),
@@ -1592,11 +1707,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security, workspaceSettings: s.workspaceSettings, siteCaptures: {} })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security, workspaceSettings: s.workspaceSettings, siteCaptures: {}, canvasHistory: { past: [], future: [] } })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 17,
+      version: 18,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1797,6 +1912,29 @@ export const useProjectStore = create<ProjectState>()(
             persisted.siteCaptures = {};
           }
         }
+        if (version < 18) {
+          // v17 → v18: introduce canvas undo / redo history (Canvas V2
+          // Pass 1.1). Empty default — old sessions just start with no
+          // recoverable history, future ones accumulate. Defensive
+          // coercion: a tampered blob with wrong shape resets cleanly.
+          const raw = persisted.canvasHistory;
+          if (
+            !raw
+            || typeof raw !== 'object'
+            || Array.isArray(raw)
+            || !Array.isArray((raw as any).past)
+            || !Array.isArray((raw as any).future)
+          ) {
+            persisted.canvasHistory = { past: [], future: [] };
+          } else {
+            // Trim any oversized persisted past to the persist cap so
+            // we don't carry someone else's massive history forward.
+            persisted.canvasHistory = {
+              past: ((raw as any).past as any[]).slice(-CANVAS_HISTORY_PERSIST_MAX),
+              future: [],
+            };
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1858,6 +1996,13 @@ export const useProjectStore = create<ProjectState>()(
         security:          s.security,
         workspaceSettings: s.workspaceSettings,
         siteCaptures:      s.siteCaptures,
+        // Persist only the most recent slice of canvas history. Future
+        // is intentionally dropped — a "redo" path doesn't survive a
+        // reload by design, the same way most desktop tools work.
+        canvasHistory: {
+          past: s.canvasHistory.past.slice(-CANVAS_HISTORY_PERSIST_MAX),
+          future: [],
+        },
       }),
     },
   ),
