@@ -3088,27 +3088,7 @@ function TopBar(props: {
         >
           <HardHat className="w-3.5 h-3.5" />Deploy
         </button>
-        <button
-          onClick={props.onOpenReports}
-          title="Open the Reports / Proposal package — generated live from the canvas"
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 text-sky-500 transition-colors"
-          data-track="topbar-reports"
-        >
-          <FileTextIcon className="w-3.5 h-3.5" />Reports
-        </button>
         <ProjectStateMenu projectId={props.projectId} />
-      </div>
-
-      <div className="h-5 w-px bg-border/60" />
-
-      {/* Middle — the two settings an engineer actually touches mid-survey */}
-      <div className="flex items-center gap-0.5">
-        <SegButton active={props.snap} onClick={() => props.setSnap(!props.snap)} icon={Magnet} label="Snap" hint="S" />
-        {/* The ft/m toggle was removed: metric was only wired through to
-            the status-bar readout, so toggling it caused scale-bar,
-            measure HUD, pathway labels, position chip, drag HUD, and
-            cone DORI to disagree. It returns when every measurement
-            surface is unit-aware end-to-end. */}
       </div>
 
       <div className="flex-1" />
@@ -3187,10 +3167,40 @@ function TopBar(props: {
               </div>
             </div>
 
+            {/* Reports — moved here from the visible top bar in V1 P0.4. */}
+            <button
+              onClick={() => { setMoreOpen(false); props.onOpenReports(); }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors"
+              data-track="topbar-more-reports"
+            >
+              <FileTextIcon className="w-3.5 h-3.5 text-sky-500" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px]">Reports</div>
+                <div className="text-[10.5px] text-muted-foreground">Proposal package generated from the canvas</div>
+              </div>
+            </button>
+
+            {/* Snap toggle — moved here from the visible top bar + the
+                drawing rail (both duplicates removed in V1 P0.4). */}
+            <button
+              onClick={() => { props.setSnap(!props.snap); }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors border-t border-border/40"
+              data-track="topbar-more-snap"
+            >
+              <Magnet className="w-3.5 h-3.5 text-muted-foreground" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px]">Snap to grid</div>
+                <div className="text-[10.5px] text-muted-foreground">{props.snap ? 'Vertices round to the 20 px grid.' : 'Free placement, sub-grid precision.'}</div>
+              </div>
+              <span className={`text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded ${props.snap ? 'bg-primary/15 text-primary' : 'bg-secondary/40 text-muted-foreground'}`}>
+                {props.snap ? 'On' : 'Off'}
+              </span>
+            </button>
+
             {/* Intelligence toggle */}
             <button
               onClick={() => { props.setIntelOpen(!props.intelOpen); }}
-              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors"
+              className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors border-t border-border/40"
               data-track="topbar-more-intel"
             >
               <Activity className="w-3.5 h-3.5 text-sky-400" />
@@ -12676,7 +12686,9 @@ function DrawingToolRail({
       >
         {items.map((it) => <Tile key={it.label} it={it} />)}
         <div className="w-7 h-px bg-white/10 my-1.5" />
-        <Tile it={{ id: 'snap',   icon: Magnet,    label: 'Snap',   hint: snap ? 'Magnetic snap is ON.' : 'Magnetic snap is OFF.' }} />
+        {/* Snap toggle was removed from the rail to drop the duplicate
+            (it now lives only in the top bar overflow menu). Layers
+            and Map remain because they each open distinct side panels. */}
         <Tile it={{ id: 'layers', icon: Layers,    label: 'Layers', hint: 'Toggle engineering overlays on the canvas.' }} />
         <Tile it={{ id: 'map',    icon: MapIcon,   label: 'Map',    hint: 'Bring a floorplan in: scan / upload / satellite / sketch.' }} />
       </div>
