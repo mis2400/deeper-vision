@@ -324,11 +324,54 @@ Seven tabs that take Settings from a profile page to a real V1 enterprise surfac
 
 ---
 
+## 10 · Canvas V2 Pass 1 — Trust Restoration
+
+Goal: an operator using the Canvas trusts it. Nothing dishonest, work cannot be lost without recovery, selection + action primitives work as expected, locked items stay locked, the canvas behaves like a tool.
+
+Sub passes shipped on `main`:
+
+| Pass | Commit | What |
+|---|---|---|
+| 1.0 | 9827eefe | Stop lying. Hid the dead Media + History drawer tabs, the inert TopBar Floor dropdown, the "Use an address" mocked card, the ScanBuild satellite + demo scan cards, the AddFloor satellite source, "DWG / DXF" false-format copy, bottom dock "coming soon" disabled buttons, heuristic-suggestion disabled-button pattern. Zero dead controls remain in the canvas chrome. |
+| 1.1 | 8107c455 | Undo / redo. New canvasHistory slice (store v17 → v18). 50 step in memory, 20 persisted. Snapshot based. Auto label derivation in setDevices facade. Walls migrated from local state to store. Cmd Z, Shift Cmd Z, Ctrl Y. Toolbar buttons + toast feedback. |
+| 1.2 | 96e813f2 | Lock enforcement. setDevices facade refuses removes + updates on lockedIds. "N locked items skipped" toast. Lock toggle in SelectionPill with primary tone when locked. |
+| 1.3 | 18d98b3f | Selection primitives. Marquee + Shift click already existed; added Cmd / Ctrl click toggle, Cmd / Ctrl A (Shift includes locked), Esc clears both selId and selIds. |
+| 1.4 | b49eac87 | Copy / paste / duplicate. Cmd C / V / D. In memory clipboard. Multi select aware. linkedIds and stack dropped from clones. Refs let the keyboard handler stay bound once. |
+| 1.5 | 82d57357 | Alignment + distribute. Six align buttons (L / centre-H / R / T / centre-V / B) and two distribute buttons (≥3 selected). Single grouped undo per action. |
+| 1.6 | 62c5affe | Arrow nudge. 1 unit per press, 10 with Shift. Multi select moves as a group. Focus aware (skips inputs). |
+| 1.7 | 1fde908c | Door hardware no longer orphans on the floor. 120 unit fallback auto attach to nearest door; honest reject if no door nearby. |
+| 1.8 | af1dc899 | Persistent tape measure. New measurements slice (store v18 → v19). Click two points to commit; multiple concurrent measurements; click label to remove one; Hide all / Show all / Clear all in the measure tool banner. Labels recompute against the floor's live scale on every render. |
+| 1.9 | d659ce3c | Cmd K search + command bar. Searches devices / pathways / IDFs by id / name / type. Common commands (Select all cameras / doors / readers, Fit, Centre, Show/Hide measurements, Toggle layers, Undo, Redo). Click result to select + pan to position. |
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass commit.
+- **Cold load**: `/project/p1/canvas` loads with zero console errors.
+- **Honesty sweep (post 1.0)**: live DOM grep returns zero hits for "Media", "History", "Preview only", "not wired", "coming soon", "DWG", "DXF", "Demo workflow", "stylised preview".
+- **Undo/redo round trip (post 1.1)**: store level test confirmed `addDevice → canvasUndo → device removed → canvasRedo → device restored`. Cmd Z dispatched via `window.dispatchEvent` correctly pops past and pushes future.
+- **Cmd K overlay (post 1.9)**: opens via `window.dispatchEvent` of Cmd K. Shows COMMANDS section + DEVICES (RECENT) with the seeded CAM-101 / CAM-102 at their store coordinates.
+- **Browser smoke**: visually confirmed honest Floor badge, two card import dialog, Cmd K overlay layout, undo / redo toolbar buttons enabled / disabled state.
+
+### Known follow ups not addressed in Pass 1
+
+- Per device lock badge on the canvas glyph (selection pill covers the active case; non selected case relies on the Layers panel).
+- Right click context menu on a device (lock toggle still reachable via selection pill + Layers panel).
+- Door place: doors aren't placed directly on the canvas today (they come from VisionScan import), so the door place mutation is not yet wrapped in pushCanvasHistory. When the canvas grows a direct addDoor path, wrap it the same way devices are.
+- Linked relationship deep clone on duplicate (door + its hardware stack as one clone). Pass 1.4 explicitly drops linkedIds + stack on clones to avoid cross wired references.
+- Walls and pathways are not lockable today because lockedIds keys by device id. The ref pattern from Pass 1.2 extends when they gain per item lock state.
+- Mobile / touch fallback button for Cmd K. Today the bar is meta / ctrl key only.
+
+### Risk notes for post deploy smoke test
+
+- The setDevices facade now snapshots into history before each mutation. If an existing flow was calling setDevices in a tight loop without coalescing, that could inflate history. Spot check: open Layers panel, marquee select 20 devices, drag — past stack should grow by 1, not 20.
+- Walls migration: local wall state is gone. VisionScan imports already wrote to Floor.walls so existing imported walls render unchanged. New walls drawn through the wall tool now persist across reload; verify by drawing a wall, navigating away, returning.
+- Store v17 → v18 → v19 migration is forward-only. Persist key `deeperVisionStore`. Users with v16 or earlier get the chained `canvasHistory` + `measurements` slices written on first hydrate; their existing data is untouched.
+
 ## Last verified
 
-- **Date:** 2026-05-17 (calibrated measurement hardening pass)
-- **Build:** `npm run build` — passing (vite v6.3.5, 1928 modules, no TS errors)
-- **Persist version:** `deeperVisionStore` v5 (auto-migrates pre-fix `scalePxToFt > 1` floors back to ft-per-px; adds the empty `surveyItems` slice)
+- **Date:** 2026-05-18 (Canvas V2 Pass 1 — Trust Restoration)
+- **Build:** `npm run build` — passing (vite v6.3.5, ~1941 modules, no TS errors)
+- **Persist version:** `deeperVisionStore` v19 (adds `measurements` slice on top of v18's `canvasHistory` slice; both forward-only with defensive coercion against tampered shapes)
 - **UI-verified flow** (real `MouseEvent('click')` + real `Event('input')` against the rendered DOM, then re-read from the same DOM):
   1. Fresh localStorage → `/project/p1/canvas` loads cleanly.
   2. Real native click on `[data-testid="device-CAM-101"]` → SelectionPill renders; Edit button visible.
