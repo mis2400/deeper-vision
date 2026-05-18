@@ -440,11 +440,47 @@ Inserted between Pass 1 and Pass 2 in commit order. Pass 2 was already on main w
 - ZoomControls could expose a compact two-button (zoom in / zoom out) version on mobile if user feedback shows pinch is insufficient.
 - "Default scale" + "Set scale" desktop chip wording could read more clearly as a status + action pair (currently two uppercase tags side by side).
 
+## 13 · Spine Completion SC.1 — Data Models foundation
+
+Sourced from `docs/MVP_SPINE_AUDIT.md` Batch A. Five of the eighteen spine steps were blocked because the underlying data models did not exist. SC.1 builds those models in the Zustand store as pure foundation; no UI work, no screen changes, no buttons. Each sub pass is its own commit with full review loop.
+
+- [x] **SC.1.1 Approval model (v22 → v23).** Replaces the flat `Project.customerApprovedAt` / `customerApprovedBy` pair with first class `Approval` records. Multiple approvals per project supported (design, scope, final, change order). v22 → v23 migration backfills legacy data with deterministic id `appr-${pid}-${ts}` so partial failure replay is idempotent. Project legacy fields kept for back compat; SC.3 retires them.
+- [x] **SC.1.2 Asset model (v23 → v24).** Post commission identity of a Device. Model decision: ONE Asset per Device, enforced via idempotent `createAssetFromDevice` (returns existing id on repeat). `assetForDevice` selector is a single record fetch, not a list.
+- [x] **SC.1.3 Warranty model (v24 → v25).** Coverage periods on Assets. Many per Asset (manufacturer + integrator + extended). `expiringWarranties(days = 90)` selector surfaces renewal pressure.
+- [x] **SC.1.4 ServiceTicket model (v25 → v26).** Last node in the spine. Auto generated human readable ticket number `DV-YYYY-NNNN` minted from per year max in current state (no separate counter slice). `updateTicket` strips immutable fields (id, ticketNumber, customerId, createdAt, notes, resolvedAt) so the audit trail can't be blanked via the generic patch path. Notes change only through `addTicketNote`. `resolvedAt` auto stamped once on first transition to `resolved`; preserved on subsequent transitions.
+- [x] **SC.1.5 cross model integrity sweep.** Runs in both `migrate` (version bumps) and `merge` (steady state loads). Walks Assets / Warranties / Tickets; flags orphans when required parents are missing. Cascade policy: ORPHAN, NEVER DELETE. Idempotent two way reconciliation (a restored parent clears the flag in the same pass).
+- [x] **SC.1.6 integrity test script.** `scripts/sc1-spine-integrity.mjs` prints the operator procedure for validating end to end persistence: reset → fixture loader (real action calls) → reload → inspector. Snippets paste straight into DevTools.
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass commit. No TS errors.
+- **Review loop**: task verifier COMPLETE on SC.1.1. Code reviewer caught issues on every sub pass; all CRITICAL + IMPORTANT findings addressed in the same commit:
+  - SC.1.1 — CRITICAL `resetDemoData` miss on the new slice; IMPORTANT migration idempotency by scan replaced with deterministic id check; IMPORTANT `addApproval` upsert preserves prior `createdAt`; IMPORTANT TODO on deprecated `Project.customerApprovedAt` fields.
+  - SC.1.2 — 0 CRITICAL / 0 IMPORTANT. Docstring drift on `createAssetFromDevice` fixed inline so SC.1.3 + SC.1.4 mirror the right pattern.
+  - SC.1.3 — clean.
+  - SC.1.4 — IMPORTANT `updateTicket` resolvedAt clobber via patch; IMPORTANT `updateTicket` immutable field strip (id / ticketNumber / customerId / createdAt / notes / resolvedAt); MINOR id collision in tight loops fixed via in `set` retry; MINOR strict 4 digit regex on ticket number parse; MINOR array entry guard in migration.
+- **Persist version**: `deeperVisionStore` v26. Four forward only migrations all defensively coerce tampered shapes (Array, null, string, missing nested arrays).
+- **Integrity sweep**: confirmed silent on a clean store; emits one console.warn line summarising flips when anything was flagged or cleared.
+
+### Known follow ups deferred to SC.3+
+
+- `CustomerPortal.tsx:115-116` still writes the legacy `Project.customerApprovedAt` / `customerApprovedBy` pair instead of calling `addApproval`. Migrating the writer lives in SC.3 (Batch B / Commissioning + Approval gate). Existing data is covered by the v22 → v23 backfill.
+- `Maintenance.tsx` + `ChangeOrders.tsx` are still hardcoded mocks. SC.6 / Batch F is the rewrite.
+- Asset `id` explicit override path can collide with another Device's record via the `id` parameter on `createAssetFromDevice`. No callers today; SC.1.6 fixture uses device id. Worth tightening when an explicit-id writer first appears.
+- `removeAsset` / `removeApproval` / `removeWarranty` / `removeTicket` return a fresh `assets` object even on miss. Pattern matches sibling CRUD slices; cheap to guard when an "audit pass for unnecessary re renders" lands.
+
+### Risk notes for post deploy smoke test
+
+- Store version jumped four steps in one batch (v22 → v23 → v24 → v25 → v26). Each migration is independent; partial failure on any one preserves the prior version.
+- Two new fields on existing types (`Warranty.isOrphaned`, `ServiceTicket.isOrphaned`) — both optional booleans, never required, so older serialised shapes round trip fine.
+- Approval backfill is idempotent: re running the v22 → v23 step on a state that already has approvals just preserves them.
+- Integrity sweep runs on every load. Cost is O(assets + warranties + tickets); negligible at MVP scale.
+
 ## Last verified
 
-- **Date:** 2026-05-18 (Canvas V2 Pass 1.5 — Mobile chrome hotfix on top of Pass 2)
+- **Date:** 2026-05-18 (MVP Spine Completion SC.1 — Data Models foundation on top of Canvas V2 Pass 1.5)
 - **Build:** `npm run build` — passing (vite v6.3.5, ~1941 modules, no TS errors)
-- **Persist version:** `deeperVisionStore` v22 (adds `annotations`, `rooms`, `currentFloorIdByProject`, plus Pass 1's `measurements` / `canvasHistory` / `siteCaptures`; all migrations forward-only with defensive coercion)
+- **Persist version:** `deeperVisionStore` v26 (adds SC.1's `approvals`, `assets`, `warranties`, `serviceTickets`, plus Canvas V2 Pass 2's `annotations`, `rooms`, `currentFloorIdByProject`, plus Pass 1's `measurements` / `canvasHistory` / `siteCaptures`; all migrations forward-only with defensive coercion + cross model integrity sweep on every load)
 - **UI-verified flow** (real `MouseEvent('click')` + real `Event('input')` against the rendered DOM, then re-read from the same DOM):
   1. Fresh localStorage → `/project/p1/canvas` loads cleanly.
   2. Real native click on `[data-testid="device-CAM-101"]` → SelectionPill renders; Edit button visible.
