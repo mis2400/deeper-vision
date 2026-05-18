@@ -47,6 +47,10 @@ export function AIAssistant() {
   // Only count context as "active" when it carries a real handle —
   // site, floor, or selection. Otherwise hide the chip.
   const ctxActive = assistantContext && (assistantContext.siteId || assistantContext.floorId || assistantContext.selectionId);
+  // V1 2A.7 — mobile sidebar toggle. Sidebar is hidden by default
+  // on small viewports; the operator can open it via the
+  // "Conversations" button in the thread header.
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Conversations for THIS project, most recent first.
   const projectConvs = useMemo(
@@ -137,6 +141,7 @@ export function AIAssistant() {
     const id = newConv(projectId);
     setActiveId(id);
     setDraft('');
+    setMobileSidebarOpen(false);
   };
 
   // V1 2A.5 — apply-action runtime. Executes the store mutation via
@@ -216,9 +221,25 @@ export function AIAssistant() {
       crumbs={[{ label: 'Projects', to: '/projects' }, { label: project.name, to: `/project/${projectId}` }, { label: 'Assistant' }]}
       fullBleed
     >
-      <div className="h-full grid grid-cols-[260px_minmax(0,1fr)]">
-        {/* Conversation sidebar */}
-        <aside className="border-r border-border bg-background/60 flex flex-col min-h-0">
+      {/* V1 2A.7 — mobile layout. Sidebar collapses to a slide-over
+          drawer on small viewports; thread + sticky input fill the
+          screen. Outer container uses 100dvh so the iOS virtual
+          keyboard doesn't push the sticky input off-screen. */}
+      <div className="grid lg:grid-cols-[260px_minmax(0,1fr)]" style={{ height: '100dvh', minHeight: '100%' }}>
+        {/* Mobile backdrop for the sidebar drawer */}
+        {mobileSidebarOpen && (
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            className="lg:hidden fixed inset-0 z-40 bg-black/40"
+            aria-label="Close conversations"
+          />
+        )}
+        {/* Conversation sidebar — desktop column, mobile drawer */}
+        <aside className={`border-r border-border bg-background flex flex-col min-h-0 z-50 ${
+          mobileSidebarOpen
+            ? 'fixed inset-y-0 left-0 w-[280px] lg:static lg:w-auto'
+            : 'hidden lg:flex'
+        }`}>
           <div className="p-3 border-b border-border">
             <button
               onClick={onNew}
@@ -240,7 +261,7 @@ export function AIAssistant() {
                     className={`group rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
                       isActive ? 'bg-secondary text-foreground' : 'hover:bg-secondary/50 text-muted-foreground'
                     }`}
-                    onClick={() => setActiveId(c.id)}
+                    onClick={() => { setActiveId(c.id); setMobileSidebarOpen(false); }}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <MessageSquare className="w-3.5 h-3.5 shrink-0" />
@@ -264,9 +285,18 @@ export function AIAssistant() {
         {/* Thread */}
         <div className="flex flex-col min-h-0">
           {/* Context strip */}
-          <div className="px-5 py-2.5 border-b border-border bg-background/60 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="px-4 py-2.5 border-b border-border bg-background/60 flex items-center gap-2 text-[11px] text-muted-foreground">
+            {/* V1 2A.7 — mobile-only sidebar opener. On desktop the
+                sidebar is always visible so this button hides. */}
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="lg:hidden inline-flex items-center gap-1 h-7 px-2 rounded-md border border-border hover:bg-secondary/40 text-foreground text-[11px]"
+              aria-label="Open conversations"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />Conversations
+            </button>
             <Sparkles className="w-3.5 h-3.5 text-primary" />
-            <span>Grounded in <span className="text-foreground">{project.name}</span></span>
+            <span className="truncate">Grounded in <span className="text-foreground">{project.name}</span></span>
           </div>
 
           {/* Messages */}
