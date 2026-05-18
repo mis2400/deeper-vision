@@ -5,20 +5,21 @@
 // is the page that makes Deeper Vision feel like ONE end-to-end platform
 // instead of a collection of screens.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import {
   Activity, ArrowRight, Check, Circle, CheckCircle2, AlertTriangle, ChevronRight, MapPin,
   Calendar, Clock, ShieldCheck, ShieldAlert, Shield, Sparkles, RotateCcw,
+  FileSignature, ChevronDown,
 } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import {
   PHASES, PHASE_TIMELINE, expandRoute, quickActionFor, progressPctFor,
   nextPhase, previousPhase, healthTone,
 } from '../lifecycle/phases';
-import type { LifecyclePhase } from '../store/types';
+import type { LifecyclePhase, Approval, ApprovalType } from '../store/types';
 
 export function ProjectCenter() {
   const { projectId = 'p1' } = useParams();
@@ -35,6 +36,11 @@ export function ProjectCenter() {
   const idfsMap      = useProjectStore((s) => s.idfs);
   const doorsMap     = useProjectStore((s) => s.doors);
   const activityMap  = useProjectStore((s) => s.activity);
+  // SC.2.2 — subscribe to raw approvals map; derive the project's
+  // list via useMemo so we don't trip Zustand's getSnapshot
+  // identity check (same reason every other slice is wired this
+  // way in this file).
+  const approvalsMap = useProjectStore((s) => s.approvals);
   const setNextAction = useProjectStore((s) => s.setNextAction);
   const advancePhase = useProjectStore((s) => s.advanceProjectPhase);
   const revertPhase = useProjectStore((s) => s.revertProjectPhase);
@@ -58,6 +64,12 @@ export function ProjectCenter() {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 20),
     [activityMap, projectId],
+  );
+  const approvals = useMemo(
+    () => Object.values(approvalsMap)
+      .filter((a) => a.projectId === projectId)
+      .sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime()),
+    [approvalsMap, projectId],
   );
 
   if (!project) {
@@ -275,6 +287,13 @@ export function ProjectCenter() {
               <Metric label="Pathways" value={counts.pathways} />
               <Metric label="IDFs"     value={counts.idfs} />
             </div>
+
+            {/* SC.2.2 — Approvals audit trail. Surfaces every
+                Approval record on this project newest first. Each
+                row expands inline to show comments. Empty state is
+                honest — points the operator to the Customer
+                Portal where approvals get created. */}
+            <ApprovalsList projectId={projectId} approvals={approvals} />
           </div>
 
           {/* ── Right: activity feed + health controls ─────────────── */}
@@ -396,4 +415,96 @@ function labelForRole(role: string): string {
     'pm': 'Project manager',
     'service': 'Service',
   } as Record<string, string>)[role] ?? role;
+}
+
+// ─────────────────────── Approvals audit trail (SC.2.2) ──────────
+const APPROVAL_TYPE_LABEL: Record<ApprovalType, string> = {
+  design: 'Design',
+  scope: 'Scope',
+  final: 'Final',
+  'change-order': 'Change order',
+};
+
+const APPROVAL_TYPE_TONE: Record<ApprovalType, string> = {
+  design:        'bg-sky-500/10 text-sky-300 border-sky-500/30',
+  scope:         'bg-violet-500/10 text-violet-300 border-violet-500/30',
+  final:         'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  'change-order': 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+};
+
+function ApprovalsList({ projectId, approvals }: { projectId: string; approvals: Approval[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  return (
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+        <h3 className="text-sm font-medium flex items-center gap-2">
+          <FileSignature className="w-3.5 h-3.5 text-muted-foreground" />
+          Approvals
+        </h3>
+        <span className="text-xs text-muted-foreground">{approvals.length}</span>
+      </div>
+      {approvals.length === 0 ? (
+        <div className="px-4 py-5 text-xs text-muted-foreground">
+          No approvals yet. The customer records approvals from the{' '}
+          <a className="text-primary hover:underline" href={`/portal/${projectId}`}>Customer Portal</a>.
+        </div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {approvals.map((a) => {
+            const expanded = expandedId === a.id;
+            return (
+              <li key={a.id} className="hover:bg-secondary/30">
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(expanded ? null : a.id)}
+                  className="w-full text-left px-4 py-3 flex items-start gap-3"
+                  data-testid={`approval-row-${a.id}`}
+                >
+                  <span
+                    className={`shrink-0 inline-flex items-center text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${APPROVAL_TYPE_TONE[a.approvalType]}`}
+                  >
+                    {APPROVAL_TYPE_LABEL[a.approvalType]}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate">
+                      {a.approverName}
+                      <span className="text-muted-foreground"> · {a.approverEmail}</span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {a.proposalVersion} · {new Date(a.approvedAt).toLocaleString()}
+                    </div>
+                    {a.comments && !expanded && (
+                      <div className="text-[11px] text-muted-foreground/80 mt-1 line-clamp-1">
+                        {a.comments}
+                      </div>
+                    )}
+                  </div>
+                  <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+                {expanded && (
+                  <div className="px-4 pb-4 pl-[68px] text-xs text-muted-foreground space-y-2 border-t border-border/40">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
+                      <div><span className="text-foreground/70">Type:</span> {APPROVAL_TYPE_LABEL[a.approvalType]}</div>
+                      <div><span className="text-foreground/70">Version:</span> {a.proposalVersion}</div>
+                      <div><span className="text-foreground/70">Approver:</span> {a.approverName}</div>
+                      <div><span className="text-foreground/70">Email:</span> {a.approverEmail}</div>
+                      <div><span className="text-foreground/70">Approved at:</span> {new Date(a.approvedAt).toLocaleString()}</div>
+                      <div className="font-mono text-[10px] truncate"><span className="text-foreground/70">ID:</span> {a.id}</div>
+                    </div>
+                    {a.comments ? (
+                      <div className="mt-2 rounded border border-border/60 bg-secondary/30 px-3 py-2 text-foreground/90 whitespace-pre-wrap">
+                        {a.comments}
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground/60 italic">No comments left by the approver.</div>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }
