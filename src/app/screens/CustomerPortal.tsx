@@ -15,13 +15,13 @@ import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   Calendar, FileText, Check, Download, Mail, Phone, MapPin,
-  Building2, Clock, ShieldCheck, ArrowRight,
+  Building2, Clock, ShieldCheck, ArrowRight, Package,
 } from 'lucide-react';
 
 import { Button } from '../components/Button';
 import { useProjectStore, selectors } from '../store/projectStore';
 import { PHASE_TIMELINE } from '../lifecycle/phases';
-import type { LifecyclePhase, Attachment, ApprovalType } from '../store/types';
+import type { LifecyclePhase, Attachment, ApprovalType, Asset, Device, Warranty } from '../store/types';
 
 /** SC.2.1 — roll a vN style proposal version forward by one when
  *  the prior approval used a recognisable vN tag. Non-matching
@@ -64,6 +64,19 @@ export function CustomerPortal() {
   // proposal version and surface "already approved" UX hints.
   const priorApprovals   = useProjectStore((s) => selectors.approvalsForProject(s, projectId));
   const latestApproval   = priorApprovals[0] ?? null;
+  // SC.3.6 — installed assets the customer is allowed to see.
+  // Only active assets (no decommissioned, no orphaned). Walks
+  // assets -> device -> floor for the location string.
+  const assetsMap       = useProjectStore((s) => s.assets);
+  const warrantiesMap   = useProjectStore((s) => s.warranties);
+  const devicesMap      = useProjectStore((s) => s.devices);
+  const floorsMap       = useProjectStore((s) => s.floors);
+  const installedAssets = useMemo(
+    () => Object.values(assetsMap)
+      .filter((a) => a.projectId === projectId && a.status === 'active')
+      .sort((a, b) => b.createdAt - a.createdAt),
+    [assetsMap, projectId],
+  );
 
   const projectSite = useMemo(
     () => Object.values(sitesMap).find((s) => s.projectId === projectId) ?? null,
@@ -334,6 +347,26 @@ export function CustomerPortal() {
               </div>
             )}
           </Card>
+
+          {/* SC.3.6 — Installed assets (read only, customer safe).
+              Hidden if there are no active assets yet so the
+              portal stays calm pre commissioning. Decommissioned
+              and orphaned assets are filtered out upstream. */}
+          {installedAssets.length > 0 && (
+            <Card icon={<Package className="w-4 h-4 text-muted-foreground" />} title="Installed equipment">
+              <div className="divide-y divide-border -mx-1">
+                {installedAssets.map((a) => (
+                  <InstalledAssetRow
+                    key={a.id}
+                    asset={a}
+                    device={devicesMap[a.deviceId]}
+                    floorName={floorsMap[devicesMap[a.deviceId]?.floorId ?? '']?.name}
+                    warranties={Object.values(warrantiesMap).filter((w) => w.assetId === a.id)}
+                  />
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
 
         <aside className="space-y-3">
@@ -527,6 +560,84 @@ function ScopeSummary({
           <span className="uppercase tracking-wider">Existing on site</span>
           <div className="text-foreground mt-0.5">{systems}</div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────── Installed asset row (SC.3.6) ──────────
+// Customer safe device type labels. Internal type codes get
+// translated to plain English. Anything not in this map falls
+// back to the device.label or the type code as a last resort.
+const ASSET_TYPE_LABEL: Record<string, string> = {
+  'cam.dome':         'Dome camera',
+  'cam.bullet':       'Bullet camera',
+  'cam.turret':       'Turret camera',
+  'cam.ptz':          'PTZ camera',
+  'cam.multisensor':  'Multisensor camera',
+  'cam.fisheye':      'Fisheye camera',
+  'cam.lpr':          'License plate camera',
+  'cam.thermal':      'Thermal camera',
+  'inf.door':         'Access door',
+  'inf.doubledoor':   'Double access door',
+  'inf.storefront':   'Storefront door',
+  'inf.gate':         'Gate',
+};
+
+function friendlyAssetTitle(asset: Asset, device?: Device): string {
+  if (!device) return `${asset.manufacturer} ${asset.model}`;
+  const t = String(device.type);
+  const direct = ASSET_TYPE_LABEL[t];
+  if (direct) return direct;
+  // Best effort: strip the category prefix from "cam.foo" -> "Foo".
+  const tail = t.split('.').slice(1).join(' ') || t;
+  return tail.charAt(0).toUpperCase() + tail.slice(1);
+}
+
+function InstalledAssetRow({ asset, device, floorName, warranties }: {
+  asset: Asset;
+  device?: Device;
+  floorName?: string;
+  warranties: Warranty[];
+}) {
+  const title = friendlyAssetTitle(asset, device);
+  // Pick the most relevant warranty status for the badge: prefer
+  // expired, then expiring, then active. Mirrors the "loudest
+  // signal first" pattern: if anything needs attention, surface
+  // that first.
+  const now = Date.now();
+  const badgeWty = (() => {
+    if (warranties.length === 0) return null;
+    const expired   = warranties.find((w) => new Date(w.endDate).getTime() < now);
+    if (expired) return { kind: 'expired'  as const, w: expired };
+    const expiring  = warranties.find((w) => {
+      const end = new Date(w.endDate).getTime();
+      return Number.isFinite(end) && end - now <= 90 * 24 * 60 * 60 * 1000;
+    });
+    if (expiring) return { kind: 'expiring' as const, w: expiring };
+    return { kind: 'active' as const, w: warranties[0] };
+  })();
+  const badge = badgeWty && (() => {
+    if (badgeWty.kind === 'expired')  return { label: 'Warranty expired',  tone: 'text-rose-700 border-rose-500/40 bg-rose-500/10' };
+    if (badgeWty.kind === 'expiring') return { label: 'Warranty expiring', tone: 'text-amber-700 border-amber-500/40 bg-amber-500/10' };
+    return { label: 'Under warranty', tone: 'text-success border-success/40 bg-success/10' };
+  })();
+
+  return (
+    <div className="flex items-start gap-3 px-1 py-2.5">
+      <Package className="w-4 h-4 text-muted-foreground flex-none mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm truncate">{title}</div>
+        <div className="text-[11px] text-muted-foreground">
+          {asset.manufacturer} {asset.model}
+          {floorName && <> · {floorName}</>}
+          <> · Installed {new Date(asset.commissionedAt).toLocaleDateString()}</>
+        </div>
+      </div>
+      {badge && (
+        <span className={`shrink-0 inline-flex items-center text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${badge.tone}`}>
+          {badge.label}
+        </span>
       )}
     </div>
   );
