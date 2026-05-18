@@ -55,6 +55,7 @@ export type UserRole =
 // loud only when the engineer asks for it.
 export type EngineeringLayer =
   | 'fov'          // FOV cones on cameras
+  | 'coverage'     // non camera coverage envelopes (Pass 2B.2)
   | 'labels'       // device id labels under each device
   | 'dimensions'   // dimension chains between adjacent cameras
   | 'pathways'     // pathway runs + cable counts
@@ -71,6 +72,7 @@ export type CanvasLayerState = Record<EngineeringLayer, boolean>;
  *  as they need it. */
 export const DEFAULT_CANVAS_LAYERS: CanvasLayerState = {
   fov:         true,
+  coverage:    false, // off by default — dense maps stay readable
   labels:      true,
   dimensions:  false,
   pathways:    true,

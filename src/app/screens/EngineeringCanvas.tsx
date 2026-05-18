@@ -8,7 +8,7 @@ import type {
   LabelDensity, BaseMapMode, DoorHardware, SurveyItemStatus,
   CanvasBomRow, CanvasBomCategory,
 } from '../store/types';
-import { DEFAULT_CANVAS_LAYERS, DEFAULT_DISPLAY_PREFS } from '../store/types';
+import { DEFAULT_CANVAS_LAYERS, DEFAULT_DISPLAY_PREFS, coverageForDevice } from '../store/types';
 import type { Device as StoreDevice } from '../store/types';
 import {
   MousePointer2, Hand, Ruler, Type, MessageSquare, ChevronRight, ChevronLeft,
@@ -6939,6 +6939,7 @@ function EngineeringLayersSection({ layers, onToggle }: { layers: CanvasLayerSta
   // until they paint something real.
   const rows: { id: EngineeringLayer; label: string; hint: string }[] = [
     { id: 'fov',         label: 'FOV cones',     hint: 'Camera coverage cones' },
+    { id: 'coverage',    label: 'Coverage',      hint: 'Motion / reader / AP / speaker ranges' },
     { id: 'labels',      label: 'Device labels', hint: 'IDs under each device' },
     { id: 'pathways',    label: 'Pathways',      hint: 'Cable runs and tray' },
     { id: 'dimensions',  label: 'Dimensions',    hint: 'Spacing between cameras' },
@@ -7455,6 +7456,61 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} />;
           })}
         </g>
+
+        {/* Canvas V2 Pass 2B.2 — non camera coverage. One overlay per
+            device whose CoverageProfile shape is not 'none'. Radius
+            shapes draw as filled translucent circles; cone shapes as
+            sector wedges anchored at the device origin and rotated by
+            the device's body rotation. Cameras intentionally excluded
+            (their cones are handled by FOV above and live on the
+            lenses[] data, which is richer than CoverageProfile). */}
+        {(layers.coverage || selId) && (
+          <g pointerEvents="none">
+            {renderedDevices.map((d) => {
+              if (TYPE_KIND[d.type] === 'camera') return null;
+              const isSel = d.id === selId;
+              if (!layers.coverage && !isSel) return null;
+              const profile = coverageForDevice(d as any);
+              if (profile.shape === 'none') return null;
+              if (currentFloorPxToFt <= 0) return null;
+              const alpha = ((selId ? (isSel ? 1 : 0.28) : 1) * coverageAlpha) * 0.32;
+              const tone = profile.tint ?? deviceTone(d);
+              if (profile.shape === 'radius' && profile.rangeFt) {
+                const rPx = profile.rangeFt / currentFloorPxToFt;
+                if (rPx < 1) return null;
+                return (
+                  <circle
+                    key={`cov-${d.id}`}
+                    cx={d.x} cy={d.y} r={rPx}
+                    fill={tone} fillOpacity={alpha * 0.55}
+                    stroke={tone} strokeOpacity={alpha} strokeWidth={1}
+                  />
+                );
+              }
+              if (profile.shape === 'cone' && profile.rangeFt && profile.fovDeg) {
+                const rPx = profile.rangeFt / currentFloorPxToFt;
+                if (rPx < 1) return null;
+                const half = (profile.fovDeg / 2) * Math.PI / 180;
+                const rotRad = ((d.rot ?? 0) - 90) * Math.PI / 180; // device 0° points right; cone centres on body
+                // Sector path: device origin, sweep across the FOV.
+                const ax = d.x + rPx * Math.cos(rotRad - half);
+                const ay = d.y + rPx * Math.sin(rotRad - half);
+                const bx = d.x + rPx * Math.cos(rotRad + half);
+                const by = d.y + rPx * Math.sin(rotRad + half);
+                const path = `M ${d.x} ${d.y} L ${ax} ${ay} A ${rPx} ${rPx} 0 ${profile.fovDeg > 180 ? 1 : 0} 1 ${bx} ${by} Z`;
+                return (
+                  <path
+                    key={`cov-${d.id}`}
+                    d={path}
+                    fill={tone} fillOpacity={alpha * 0.55}
+                    stroke={tone} strokeOpacity={alpha} strokeWidth={1}
+                  />
+                );
+              }
+              return null;
+            })}
+          </g>
+        )}
 
         {/* PathwaysOverlay paints BEFORE devices so device hit-targets sit on
             top in SVG paint order. A pathway's 12-px-wide transparent
