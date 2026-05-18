@@ -19,9 +19,22 @@ import {
 } from 'lucide-react';
 
 import { Button } from '../components/Button';
-import { useProjectStore } from '../store/projectStore';
+import { useProjectStore, selectors } from '../store/projectStore';
 import { PHASE_TIMELINE } from '../lifecycle/phases';
-import type { LifecyclePhase, Attachment } from '../store/types';
+import type { LifecyclePhase, Attachment, ApprovalType, Project } from '../store/types';
+
+/** SC.2.1 — roll a vN style proposal version forward by one when
+ *  the prior approval used a recognisable vN tag. Non-matching
+ *  versions (e.g. "v1-rev-A", "draft", "2026.04") pass through
+ *  unchanged so the customer can override. */
+function nextProposalVersion(prior: string | undefined): string {
+  if (!prior) return 'v1';
+  const m = prior.match(/^v(\d+)$/i);
+  if (!m) return prior;
+  const n = parseInt(m[1], 10);
+  if (!Number.isFinite(n)) return prior;
+  return `v${n + 1}`;
+}
 
 // Phases shown on the customer schedule. We collapse the internal
 // pipeline ('lead', 'discovery', 'walk_scheduled', 'survey',
@@ -46,6 +59,11 @@ export function CustomerPortal() {
   const members          = useProjectStore((s) => s.workspaceMembers);
   const attachments      = useProjectStore((s) => s.attachments);
   const updateProject    = useProjectStore((s) => s.updateProject);
+  const addApproval      = useProjectStore((s) => s.addApproval);
+  // SC.2.1 — read prior approvals so we can suggest the next
+  // proposal version and surface "already approved" UX hints.
+  const priorApprovals   = useProjectStore((s) => selectors.approvalsForProject(s, projectId));
+  const latestApproval   = priorApprovals[0] ?? null;
 
   const projectSite = useMemo(
     () => Object.values(sitesMap).find((s) => s.projectId === projectId) ?? null,
@@ -97,32 +115,104 @@ export function CustomerPortal() {
   const brandColor = workspaceSettings?.brandColor || 'var(--primary)';
   const brandLogo  = workspaceSettings?.logoDataUrl;
 
-  // Approval modal state
+  // SC.2.1 — full approval form. The legacy single-name modal is
+  // gone; the new form captures every field the Approval record
+  // requires (name + email + type + version + comments) and writes
+  // through addApproval (SC.1.1). The legacy updateProject({
+  // customerApprovedAt, customerApprovedBy }) write is kept until
+  // SC.2.3 retires those fields.
   const [approveOpen, setApproveOpen] = useState(false);
   const [approverName, setApproverName] = useState('');
+  const [approverEmail, setApproverEmail] = useState('');
+  const [approvalType, setApprovalType] = useState<ApprovalType>('design');
+  const [proposalVersion, setProposalVersion] = useState('v1');
+  const [approverComments, setApproverComments] = useState('');
   const [approveBusy, setApproveBusy] = useState(false);
+  const [approveErrors, setApproveErrors] = useState<{ name?: string; email?: string; version?: string }>({});
+
+  // When the sheet opens, seed proposal version from the prior
+  // approval, rolling a "vN" tag forward by one. The customer
+  // can override either direction.
+  const openApproveSheet = () => {
+    setProposalVersion(nextProposalVersion(latestApproval?.proposalVersion));
+    setApproverName('');
+    setApproverEmail('');
+    setApproverComments('');
+    setApprovalType('design');
+    setApproveErrors({});
+    setApproveOpen(true);
+  };
 
   const submitApproval = () => {
     if (!project) return;
+    // Required field validation. Email is a simple shape check, not
+    // RFC 5322 perfect — we just want to catch obvious typos.
+    const errs: typeof approveErrors = {};
+    const trimmedName = approverName.trim();
+    const trimmedEmail = approverEmail.trim();
+    const trimmedVersion = proposalVersion.trim();
+    if (!trimmedName) errs.name = 'Required';
+    if (!trimmedEmail) errs.email = 'Required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) errs.email = 'Enter a valid email';
+    if (!trimmedVersion) errs.version = 'Required';
+    if (Object.keys(errs).length > 0) {
+      setApproveErrors(errs);
+      return;
+    }
+
     setApproveBusy(true);
     try {
       const now = Date.now();
-      // Stamp the approval timestamp + optional approver name. Also
-      // advance the lifecyclePhase to 'approved' if the project is in
-      // a stage where approval makes sense.
+      // Random suffix avoids same millisecond collisions when a
+      // script (e.g. SC.2.7 integrity loader) fires multiple
+      // approvals back to back.
+      const approvalId = `appr-${project.id}-${now}-${Math.random().toString(36).slice(2, 8)}`;
+      addApproval({
+        id: approvalId,
+        projectId: project.id,
+        proposalVersion: trimmedVersion,
+        approverName: trimmedName,
+        approverEmail: trimmedEmail,
+        approvalType,
+        comments: approverComments.trim(),
+        approvedAt: new Date(now).toISOString(),
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Legacy mirror write — SC.2.3 removes both fields and the
+      // updateProject call. Still here so any reader that has not
+      // moved to approvalsForProject yet keeps working through the
+      // current deploy cycle.
       const phasesEligible: LifecyclePhase[] = ['proposal', 'customer_review'];
-      const patch: any = {
+      const patch: Partial<Project> & { customerApprovedAt?: number; customerApprovedBy?: string } = {
         customerApprovedAt: now,
-        customerApprovedBy: approverName.trim() || undefined,
+        customerApprovedBy: trimmedName,
         updatedAt: now,
       };
-      if (project.lifecyclePhase && phasesEligible.includes(project.lifecyclePhase)) {
+      // Lifecycle advance only fires on 'scope' or 'final' approvals
+      // (design approval signs off the drawing, not the contract).
+      if (
+        (approvalType === 'scope' || approvalType === 'final')
+        && project.lifecyclePhase
+        && phasesEligible.includes(project.lifecyclePhase)
+      ) {
         patch.lifecyclePhase = 'approved';
         patch.phaseStartedAt = now;
       }
       updateProject(project.id, patch);
-      toast.success('Thanks. Your approval was recorded.');
+
+      toast.success(`${approvalTypeLabel(approvalType)} approval recorded.`, {
+        description: `Thanks ${trimmedName}. Your team has been notified.`,
+      });
+
+      // Clear and close so a follow up approval (e.g. design then
+      // scope) starts from a blank slate.
       setApproveOpen(false);
+      setApproverName('');
+      setApproverEmail('');
+      setApproverComments('');
+      setApproveErrors({});
     } catch (err) {
       console.error('Customer approval failed', (err as any)?.name);
       toast.error('Could not save the approval. Try again.');
@@ -149,7 +239,6 @@ export function CustomerPortal() {
   const siteAddress = projectSite?.address || (customer?.addresses?.[0]
     ? [customer.addresses[0].street, customer.addresses[0].city, customer.addresses[0].state, customer.addresses[0].postal].filter(Boolean).join(', ')
     : '');
-  const approvedAt = project.customerApprovedAt;
 
   return (
     <div className="min-h-screen bg-secondary">
@@ -254,27 +343,43 @@ export function CustomerPortal() {
         </div>
 
         <aside className="space-y-3">
-          {/* Approval */}
+          {/* Approval — SC.2.1 progressive flow. Only a `final`
+              approval flips the card into the "Approved" success
+              state; design / scope / change-order approvals keep
+              the Approve button visible so the customer can move
+              through the gates without losing access. */}
           <div className="bg-card border border-border rounded-lg p-4">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Approval</div>
-            {approvedAt ? (
+            {latestApproval?.approvalType === 'final' ? (
               <div className="mt-2">
                 <div className="text-sm flex items-center gap-1.5 text-success">
                   <Check className="w-4 h-4" />
-                  Approved
+                  Final approval recorded
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  {new Date(approvedAt).toLocaleString()}
-                  {project.customerApprovedBy && <> · by {project.customerApprovedBy}</>}
+                  {new Date(latestApproval.approvedAt).toLocaleString()}
+                  {latestApproval.approverName && <> · by {latestApproval.approverName}</>}
                 </div>
               </div>
             ) : (
               <>
+                {latestApproval && (
+                  <div className="mt-2 mb-3 rounded-md border border-border bg-secondary/40 px-3 py-2">
+                    <div className="text-xs text-foreground">
+                      Latest: <span className="font-medium">{approvalTypeLabel(latestApproval.approvalType)}</span> approval ({latestApproval.proposalVersion})
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {new Date(latestApproval.approvedAt).toLocaleString()} · {latestApproval.approverName}
+                    </div>
+                  </div>
+                )}
                 <p className="text-sm mt-1.5 text-muted-foreground leading-relaxed">
-                  When you're ready, approve the current proposal so your team can release procurement.
+                  {latestApproval
+                    ? 'Record the next approval as the project progresses.'
+                    : 'When you are ready, approve the current proposal so your team can release procurement.'}
                 </p>
-                <Button className="w-full mt-3" onClick={() => setApproveOpen(true)}>
-                  Approve proposal <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                <Button className="w-full mt-3" onClick={openApproveSheet}>
+                  {latestApproval ? 'Record next approval' : 'Approve proposal'} <ArrowRight className="w-3.5 h-3.5 ml-1" />
                 </Button>
               </>
             )}
@@ -350,6 +455,15 @@ export function CustomerPortal() {
         <ApproveSheet
           name={approverName}
           onName={setApproverName}
+          email={approverEmail}
+          onEmail={setApproverEmail}
+          approvalType={approvalType}
+          onApprovalType={setApprovalType}
+          proposalVersion={proposalVersion}
+          onProposalVersion={setProposalVersion}
+          comments={approverComments}
+          onComments={setApproverComments}
+          errors={approveErrors}
           onCancel={() => setApproveOpen(false)}
           onConfirm={submitApproval}
           busy={approveBusy}
@@ -450,16 +564,42 @@ function DocRowItem({ doc }: { doc: Attachment }) {
 }
 
 // ─────────────────────── Approve sheet ───────────────────────────
+// SC.2.1 — full form. Five real fields land in the Approval record;
+// all required validation is local + inline. Mobile responsive
+// (bottom sheet under sm, centered modal above).
+const APPROVAL_TYPES: { id: ApprovalType; label: string; hint: string }[] = [
+  { id: 'design',        label: 'Design',        hint: 'Sign off the drawing / layout. Does not release procurement.' },
+  { id: 'scope',         label: 'Scope',         hint: 'Sign off the line items and totals. Releases procurement.' },
+  { id: 'final',         label: 'Final',         hint: 'Sign off the completed install. Triggers handoff to live support.' },
+  { id: 'change-order',  label: 'Change order',  hint: 'Approve a mid project change to scope or pricing.' },
+];
+
+function approvalTypeLabel(t: ApprovalType): string {
+  return APPROVAL_TYPES.find((x) => x.id === t)?.label ?? t;
+}
+
 function ApproveSheet({
-  name, onName, onCancel, onConfirm, busy, companyName,
+  name, onName, email, onEmail, approvalType, onApprovalType,
+  proposalVersion, onProposalVersion, comments, onComments,
+  errors, onCancel, onConfirm, busy, companyName,
 }: {
   name: string;
   onName: (v: string) => void;
+  email: string;
+  onEmail: (v: string) => void;
+  approvalType: ApprovalType;
+  onApprovalType: (v: ApprovalType) => void;
+  proposalVersion: string;
+  onProposalVersion: (v: string) => void;
+  comments: string;
+  onComments: (v: string) => void;
+  errors: { name?: string; email?: string; version?: string };
   onCancel: () => void;
   onConfirm: () => void;
   busy: boolean;
   companyName?: string;
 }) {
+  const activeTypeHint = APPROVAL_TYPES.find((t) => t.id === approvalType)?.hint;
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/40 p-0 sm:p-6">
       <div className="bg-card w-full sm:max-w-md sm:rounded-xl shadow-2xl border-t sm:border border-border max-h-[92vh] [@supports(height:100dvh)]:max-h-[92dvh] overflow-y-auto">
@@ -472,23 +612,95 @@ function ApproveSheet({
           </div>
         </div>
         <div className="px-5 py-4 space-y-3">
+          {/* Approval type */}
           <div>
-            <label className="text-xs text-muted-foreground">Your name (optional)</label>
+            <label className="text-xs text-muted-foreground">Approval type</label>
+            <div className="mt-1 grid grid-cols-2 gap-1.5">
+              {APPROVAL_TYPES.map((t) => {
+                const active = approvalType === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => onApprovalType(t.id)}
+                    className={`text-left text-xs px-2.5 py-2 rounded-md border transition-colors ${
+                      active
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                    }`}
+                    data-testid={`approve-type-${t.id}`}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+            {activeTypeHint && (
+              <div className="text-[11px] text-muted-foreground mt-1.5">{activeTypeHint}</div>
+            )}
+          </div>
+
+          {/* Proposal version */}
+          <div>
+            <label className="text-xs text-muted-foreground">Proposal version</label>
+            <input
+              value={proposalVersion}
+              onChange={(e) => onProposalVersion(e.target.value)}
+              placeholder="v1"
+              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm"
+              data-testid="approve-version"
+            />
+            {errors.version && <div className="text-[11px] text-destructive mt-1">{errors.version}</div>}
+          </div>
+
+          {/* Approver name */}
+          <div>
+            <label className="text-xs text-muted-foreground">Your name</label>
             <input
               value={name}
               onChange={(e) => onName(e.target.value)}
-              placeholder="Type your name to sign"
+              placeholder="Full name"
               autoFocus
               className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm"
+              data-testid="approve-name"
             />
-            <div className="text-[11px] text-muted-foreground mt-1.5">
-              We record the time and your name with the approval. This is not a binding e signature; it tells your team you said go.
-            </div>
+            {errors.name && <div className="text-[11px] text-destructive mt-1">{errors.name}</div>}
+          </div>
+
+          {/* Approver email */}
+          <div>
+            <label className="text-xs text-muted-foreground">Your email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => onEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm"
+              data-testid="approve-email"
+            />
+            {errors.email && <div className="text-[11px] text-destructive mt-1">{errors.email}</div>}
+          </div>
+
+          {/* Comments */}
+          <div>
+            <label className="text-xs text-muted-foreground">Comments (optional)</label>
+            <textarea
+              value={comments}
+              onChange={(e) => onComments(e.target.value)}
+              placeholder="Anything your team should know about this approval."
+              rows={3}
+              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm"
+              data-testid="approve-comments"
+            />
+          </div>
+
+          <div className="text-[11px] text-muted-foreground">
+            We record this approval with your name, email, type, version, and the time. This is not a binding e signature; it tells your team you said go.
           </div>
         </div>
         <div className="px-5 py-3 border-t border-border flex justify-end gap-2">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
-          <Button onClick={onConfirm} disabled={busy}>
+          <Button onClick={onConfirm} disabled={busy} data-testid="approve-submit">
             <Check className="w-3.5 h-3.5 mr-1" />
             {busy ? 'Saving…' : 'I approve'}
           </Button>
