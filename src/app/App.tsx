@@ -35,6 +35,7 @@ import { ChangeOrders } from './screens/ChangeOrders';
 import { KnowledgeBase } from './screens/KnowledgeBase';
 import { PipelineView } from './screens/PipelineView';
 import { AccountDetail } from './screens/AccountDetail';
+import { CustomerManager } from './screens/CustomerManager';
 import { Dashboard } from './screens/Dashboard';
 import { ProductCatalog } from './screens/ProductCatalog';
 import { ThreatDrillLibrary } from './screens/ThreatDrillLibrary';
@@ -84,6 +85,7 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/projects" element={<ProjectHub />} />
           <Route path="/crm" element={<PipelineView />} />
+          <Route path="/customers" element={<CustomerManager />} />
           <Route path="/account/:customerId" element={<AccountDetail />} />
           <Route path="/catalog" element={<ProductCatalog />} />
           <Route path="/project/:projectId" element={<ProjectCenter />} />
