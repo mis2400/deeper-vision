@@ -31,6 +31,7 @@ import {
   FileText, FileSignature, ScrollText, Layers, DollarSign, Lock,
   Save, Eye, EyeOff, Plus, Trash2,
   AlertTriangle, Send, Copy, Mail, Link as LinkIcon, Download,
+  GitBranch, History, ArrowRight as ArrowRightIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -164,6 +165,8 @@ export function ProposalBuilder() {
       projectName={project?.name ?? 'Project'}
       proposal={activeProposal}
       updateProposal={updateProposal}
+      projectProposals={projectProposals}
+      onPickVersion={(id) => setActiveIdOverride(id)}
     />
   );
 }
@@ -211,17 +214,22 @@ function NoProposalState({ projectId, onCreate, busy }: { projectId: string; onC
 }
 
 // ─────────────────────── Builder shell ──────────────────────────
-function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
+function BuilderShell({ projectId, projectName, proposal, updateProposal, projectProposals, onPickVersion }: {
   projectId: string;
   projectName: string;
   proposal: Proposal;
   updateProposal: (id: string, patch: Partial<Proposal>) => void;
+  projectProposals: Proposal[];
+  onPickVersion: (id: string) => void;
 }) {
   const [activeSection, setActiveSection] = useState<SectionId>('lines');
   const [viewerMode, setViewerMode] = useState<ViewerMode>('internal');
   // SC.4.7 — send dialog state. Opens on Send click; closes on
   // Cancel or after the persistence + URL surface step.
   const [sendOpen, setSendOpen] = useState(false);
+  // SC.4.9 — compare modal state. Opens from the version picker.
+  const [compareOpen, setCompareOpen] = useState(false);
+  const supersedeProposal = useProjectStore((s) => s.supersedeProposal);
 
   // SC.4.8 — workspace branding + customer context for the PDF
   // cover. Narrow subscriptions; the handler reads them via
@@ -291,6 +299,28 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
     [draft, proposal],
   );
 
+  // SC.4.9 — Create New Version. Supersedes the current proposal
+  // and creates a fresh draft pre populated with its content. Only
+  // meaningful on sent / approved versions (a draft can be edited
+  // directly; superseding a draft creates two drafts which is
+  // ambiguous). The store action does the supersedes pointer
+  // backfill atomically.
+  const handleCreateNewVersion = () => {
+    if (proposal.status !== 'sent' && proposal.status !== 'approved') {
+      toast.error('New versions only branch from sent or approved proposals.');
+      return;
+    }
+    const newId = supersedeProposal(proposal.id);
+    if (!newId) {
+      toast.error('Could not create a new version.');
+      return;
+    }
+    onPickVersion(newId);
+    toast.success(`Created draft v${proposal.version + 1}`, {
+      description: `Previous v${proposal.version} marked superseded.`,
+    });
+  };
+
   // SC.4.8 — Generate PDF handler. Reads the live customer
   // artifact (already stripped via toCustomerView) so the PDF can
   // never serialize internal cost / margin / labor data.
@@ -340,6 +370,10 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
       <div className="h-full flex flex-col bg-background text-foreground">
         <BuilderTopBar
           proposal={proposal}
+          projectProposals={projectProposals}
+          onPickVersion={onPickVersion}
+          onCompareVersions={() => setCompareOpen(true)}
+          onCreateNewVersion={handleCreateNewVersion}
           viewerMode={viewerMode}
           setViewerMode={setViewerMode}
           dirty={dirty}
@@ -391,13 +425,26 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
           onClose={() => setSendOpen(false)}
         />
       )}
+
+      {/* SC.4.9 — Compare versions modal. */}
+      {compareOpen && (
+        <CompareVersionsDialog
+          versions={projectProposals}
+          currentId={proposal.id}
+          onClose={() => setCompareOpen(false)}
+        />
+      )}
     </AppShell>
   );
 }
 
 // ─────────────────────── Top bar ────────────────────────────────
-function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave, onSend, onGeneratePdf, pdfBusy }: {
+function BuilderTopBar({ proposal, projectProposals, onPickVersion, onCompareVersions, onCreateNewVersion, viewerMode, setViewerMode, dirty, onSave, onSend, onGeneratePdf, pdfBusy }: {
   proposal: Proposal;
+  projectProposals: Proposal[];
+  onPickVersion: (id: string) => void;
+  onCompareVersions: () => void;
+  onCreateNewVersion: () => void;
   viewerMode: ViewerMode;
   setViewerMode: (m: ViewerMode) => void;
   dirty: boolean;
@@ -411,11 +458,20 @@ function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave, onS
   // draft must be saved first (so what's sent matches what's in
   // the store). A non draft is already locked.
   const canSend = proposal.status === 'draft' && !dirty;
+  // SC.4.9 — Create New Version is meaningful only when branching
+  // from a sent or approved proposal. On a draft, edit in place.
+  // On superseded / archived, switch back to the latest first.
+  const canBranchNewVersion = proposal.status === 'sent' || proposal.status === 'approved';
+
   return (
     <div className="shrink-0 border-b border-border bg-background/95 px-4 py-2.5 flex items-center gap-3">
       <div className="flex items-center gap-2 min-w-0">
         <FileSignature className="w-4 h-4 text-muted-foreground" />
-        <span className="text-sm font-medium truncate">Proposal · v{proposal.version}</span>
+        <VersionPicker
+          proposal={proposal}
+          versions={projectProposals}
+          onPick={onPickVersion}
+        />
         <span className={`inline-flex items-center text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${statusTone}`}>
           {proposal.status}
         </span>
@@ -424,8 +480,30 @@ function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave, onS
             Unsaved
           </span>
         )}
+        {projectProposals.length > 1 && (
+          <button
+            type="button"
+            onClick={onCompareVersions}
+            className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+            data-testid="proposal-compare-open"
+            title="Compare two versions"
+          >
+            <GitBranch className="w-3 h-3" />Compare
+          </button>
+        )}
       </div>
       <div className="flex-1" />
+
+      {canBranchNewVersion && (
+        <Button
+          onClick={onCreateNewVersion}
+          variant="outline"
+          data-testid="proposal-new-version"
+          title="Create new draft version, marking the current one superseded"
+        >
+          <History className="w-3.5 h-3.5 mr-1" />New version
+        </Button>
+      )}
 
       {/* Viewer toggle */}
       <div className="inline-flex items-stretch h-8 rounded-md border border-border overflow-hidden">
@@ -1431,6 +1509,236 @@ function SendDialog({ proposal, projectId, onClose }: {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────── Version picker (SC.4.9) ─────────────────
+function VersionPicker({ proposal, versions, onPick }: {
+  proposal: Proposal;
+  versions: Proposal[];
+  onPick: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const single = versions.length <= 1;
+  // Anchor the close-on-outside-click listener.
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('[data-testid="proposal-version-picker"]')) setOpen(false);
+    };
+    window.addEventListener('mousedown', onDoc);
+    return () => window.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div className="relative" data-testid="proposal-version-picker">
+      <button
+        type="button"
+        onClick={() => !single && setOpen((v) => !v)}
+        className={`text-sm font-medium truncate inline-flex items-center gap-1 ${single ? 'cursor-default' : 'hover:text-primary'}`}
+        title={single ? 'No other versions yet' : 'Switch version'}
+      >
+        Proposal · v{proposal.version}
+        {!single && <span className="text-muted-foreground">▾</span>}
+      </button>
+      {open && !single && (
+        <div className="absolute left-0 top-full mt-1 z-50 w-72 bg-card border border-border rounded-md shadow-xl overflow-hidden">
+          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground bg-secondary/30">
+            All versions
+          </div>
+          <ul className="max-h-72 overflow-y-auto">
+            {versions.map((v) => {
+              const isActive = v.id === proposal.id;
+              return (
+                <li key={v.id}>
+                  <button
+                    type="button"
+                    onClick={() => { onPick(v.id); setOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 border-t border-border/40 first:border-t-0 ${isActive ? 'bg-primary/10 text-primary' : 'hover:bg-secondary/40'}`}
+                    data-testid={`proposal-version-pick-${v.id}`}
+                  >
+                    <span className="font-medium">v{v.version}</span>
+                    <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${STATUS_TONE[v.status]}`}>
+                      {v.status}
+                    </span>
+                    <span className="text-muted-foreground ml-auto tabular-nums">
+                      {v.sentAt
+                        ? `sent ${new Date(v.sentAt).toLocaleDateString()}`
+                        : `created ${new Date(v.createdAt).toLocaleDateString()}`}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────── Compare dialog (SC.4.9) ─────────────────
+// Picks two versions and lists the deltas: added / removed /
+// modified BOM lines (by line id), narrative section changes
+// (header / scope / etc), pricing deltas (laborRate / burdenPct
+// / marginPct). Simple diff per the brief; richer side by side
+// rendering is a follow up.
+function CompareVersionsDialog({ versions, currentId, onClose }: {
+  versions: Proposal[];
+  currentId: string;
+  onClose: () => void;
+}) {
+  // versions arrives newest first. Default: compare currentId
+  // against the one immediately newer/older (whichever exists).
+  const currentIndex = versions.findIndex((v) => v.id === currentId);
+  const otherDefault = versions[currentIndex + 1]?.id ?? versions[currentIndex - 1]?.id ?? '';
+  const [leftId, setLeftId]   = useState<string>(otherDefault);
+  const [rightId, setRightId] = useState<string>(currentId);
+
+  const left  = versions.find((v) => v.id === leftId);
+  const right = versions.find((v) => v.id === rightId);
+
+  const diff = useMemo(() => {
+    if (!left || !right) return null;
+    const leftLines  = new Map(left.bomSnapshot.map((l) => [l.id, l]));
+    const rightLines = new Map(right.bomSnapshot.map((l) => [l.id, l]));
+    const added: ProposalLine[]   = [];
+    const removed: ProposalLine[] = [];
+    const modified: { id: string; before: ProposalLine; after: ProposalLine; changes: string[] }[] = [];
+    for (const [id, r] of rightLines.entries()) {
+      const l = leftLines.get(id);
+      if (!l) { added.push(r); continue; }
+      const changes: string[] = [];
+      if (l.description !== r.description) changes.push('description');
+      if (l.quantity    !== r.quantity)    changes.push(`qty ${l.quantity}→${r.quantity}`);
+      if (l.unitCost    !== r.unitCost)    changes.push(`cost $${l.unitCost.toFixed(2)}→$${r.unitCost.toFixed(2)}`);
+      if (l.unitPrice   !== r.unitPrice)   changes.push(`sell $${l.unitPrice.toFixed(2)}→$${r.unitPrice.toFixed(2)}`);
+      if ((l.laborHours ?? 0) !== (r.laborHours ?? 0)) changes.push(`labor ${l.laborHours ?? 0}→${r.laborHours ?? 0}h`);
+      if (!!l.hideFromCustomer !== !!r.hideFromCustomer) changes.push(l.hideFromCustomer ? 'unhidden' : 'hidden');
+      if (changes.length > 0) modified.push({ id, before: l, after: r, changes });
+    }
+    for (const [id, l] of leftLines.entries()) {
+      if (!rightLines.has(id)) removed.push(l);
+    }
+    const sectionChanges: string[] = [];
+    if (left.customerView.header !== right.customerView.header) sectionChanges.push('Header');
+    if (left.customerView.executiveSummary !== right.customerView.executiveSummary) sectionChanges.push('Executive summary');
+    if (left.customerView.scope !== right.customerView.scope) sectionChanges.push('Scope');
+    if (left.customerView.footer !== right.customerView.footer) sectionChanges.push('Acceptance');
+    if (left.customerView.terms !== right.customerView.terms) sectionChanges.push('Terms');
+    if ((left.customerView.paymentSchedule ?? '') !== (right.customerView.paymentSchedule ?? '')) sectionChanges.push('Payment schedule');
+    const pricingChanges: string[] = [];
+    if (left.internalView.laborRatePerHour !== right.internalView.laborRatePerHour)
+      pricingChanges.push(`Labor rate $${left.internalView.laborRatePerHour}/hr → $${right.internalView.laborRatePerHour}/hr`);
+    if (left.internalView.burdenPct !== right.internalView.burdenPct)
+      pricingChanges.push(`Burden ${(left.internalView.burdenPct * 100).toFixed(0)}% → ${(right.internalView.burdenPct * 100).toFixed(0)}%`);
+    if (left.internalView.marginPct !== right.internalView.marginPct)
+      pricingChanges.push(`Margin ${(left.internalView.marginPct * 100).toFixed(0)}% → ${(right.internalView.marginPct * 100).toFixed(0)}%`);
+    return { added, removed, modified, sectionChanges, pricingChanges };
+  }, [left, right]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/40 p-0 sm:p-6" data-testid="proposal-compare-dialog">
+      <div className="bg-card w-full sm:max-w-2xl sm:rounded-xl shadow-2xl border-t sm:border border-border max-h-[92vh] overflow-y-auto">
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium">Compare versions</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Internal view only. Surfaces every difference between the two selected versions.
+            </div>
+          </div>
+          <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground px-2">✕</button>
+        </div>
+        <div className="px-5 py-4 grid grid-cols-2 gap-3 border-b border-border">
+          <CompareVersionSelect label="From" value={leftId}  onChange={setLeftId}  versions={versions} testid="proposal-compare-left" />
+          <CompareVersionSelect label="To"   value={rightId} onChange={setRightId} versions={versions} testid="proposal-compare-right" />
+        </div>
+        <div className="px-5 py-4 space-y-4 text-[12.5px]">
+          {!diff && <div className="text-muted-foreground">Pick two versions to compare.</div>}
+          {diff && (
+            <>
+              <CompareSection label="Narrative sections changed">
+                {diff.sectionChanges.length === 0
+                  ? <span className="text-muted-foreground">No narrative changes.</span>
+                  : <ul className="list-disc pl-4">{diff.sectionChanges.map((s) => <li key={s}>{s}</li>)}</ul>}
+              </CompareSection>
+              <CompareSection label="Pricing changes">
+                {diff.pricingChanges.length === 0
+                  ? <span className="text-muted-foreground">No pricing changes.</span>
+                  : <ul className="list-disc pl-4">{diff.pricingChanges.map((s) => <li key={s}>{s}</li>)}</ul>}
+              </CompareSection>
+              <CompareSection label={`Added lines (${diff.added.length})`}>
+                {diff.added.length === 0
+                  ? <span className="text-muted-foreground">None.</span>
+                  : <ul className="list-disc pl-4">{diff.added.map((l) => <li key={l.id}>{l.description} · {l.quantity} {l.unit}</li>)}</ul>}
+              </CompareSection>
+              <CompareSection label={`Removed lines (${diff.removed.length})`}>
+                {diff.removed.length === 0
+                  ? <span className="text-muted-foreground">None.</span>
+                  : <ul className="list-disc pl-4">{diff.removed.map((l) => <li key={l.id}>{l.description} · {l.quantity} {l.unit}</li>)}</ul>}
+              </CompareSection>
+              <CompareSection label={`Modified lines (${diff.modified.length})`}>
+                {diff.modified.length === 0
+                  ? <span className="text-muted-foreground">No line modifications.</span>
+                  : (
+                    <ul className="space-y-1">
+                      {diff.modified.map((m) => (
+                        <li key={m.id} className="border border-border/60 rounded px-2 py-1.5">
+                          <div className="font-medium">{m.after.description}</div>
+                          <div className="text-muted-foreground text-[11px]">{m.changes.join(' · ')}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+              </CompareSection>
+            </>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t border-border flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center h-8 px-3 rounded-md text-[12px] border border-border hover:bg-secondary/40"
+          >Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompareVersionSelect({ label, value, onChange, versions, testid }: {
+  label: string;
+  value: string;
+  onChange: (id: string) => void;
+  versions: Proposal[];
+  testid: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-input-background border border-input-border rounded-md px-2 py-1.5 text-sm"
+        data-testid={testid}
+      >
+        {versions.map((v) => (
+          <option key={v.id} value={v.id}>
+            v{v.version} · {v.status}{v.sentAt ? ` · sent ${new Date(v.sentAt).toLocaleDateString()}` : ''}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function CompareSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+      <div>{children}</div>
     </div>
   );
 }
