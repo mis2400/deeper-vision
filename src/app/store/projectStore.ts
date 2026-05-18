@@ -16,11 +16,23 @@ import {
   ProjectMode, UserRole, EngineeringLayer, CanvasLayerState, DEFAULT_CANVAS_LAYERS,
   CanvasDisplayPrefs, DEFAULT_DISPLAY_PREFS, ProjectTechModel,
   SurveyItem, SurveyObjectType,
+  AiConversation, AiMsg, AiAppliedRecord,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
 import { pathwayLengthFt, ftPerPxForFloor } from '../lib/engineering';
 import { validateAttachment } from '../lib/attachmentValidation';
+
+/** Crypto-strong id when available, falls back to Date+Math.random.
+ *  Used by the AI Assistant slice where multiple writes can fire per
+ *  frame (streaming chunks, fast clicks) and collisions would patch
+ *  the wrong message. */
+function aiId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return (crypto as any).randomUUID().replace(/-/g, '').slice(0, 18);
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
 
 /** Map a lifecycle phase to its default operational mode. Used when no
  *  user override is set on a project. */
@@ -56,7 +68,7 @@ export const STAGE_PROBABILITY: Record<OpportunityStage, number> = {
 };
 
 // ─────────────────────────── State shape ──────────────────────────
-interface ProjectState {
+export interface ProjectState {
   customers:     Record<string, Customer>;
   contacts:      Record<string, Contact>;
   projects:      Record<string, Project>;
@@ -84,6 +96,12 @@ interface ProjectState {
    *  AttachmentPanel can scope lookups per device/door/pathway/WO
    *  without forcing per-entity arrays into other shapes. */
   attachments: Record<string, import('./types').Attachment>;
+  /** AI Assistant conversation history. Phase 2A.1 — keyed by
+   *  conversation id; each carries projectId so the assistant always
+   *  knows its scope. Messages are mutated in-place via the
+   *  granular actions below so streaming response patches don't
+   *  thrash the whole conversation. */
+  aiConversations: Record<string, AiConversation>;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -299,6 +317,29 @@ interface ProjectState {
   addWorkOrderPhotoPlaceholder: (woId: string, photo: { fileName: string; sizeKb?: number; tag?: string }) => void;
   removeWorkOrderPhotoPlaceholder: (woId: string, photoId: string) => void;
 
+  // ── AI Assistant conversation actions (Phase 2A.1) ──
+  /** Create a new empty conversation for a project. Returns the new id
+   *  so the caller can select it. */
+  newAiConversation: (projectId: string) => string;
+  /** Rename a conversation. */
+  renameAiConversation: (conversationId: string, title: string) => void;
+  /** Delete a conversation outright. */
+  deleteAiConversation: (conversationId: string) => void;
+  /** Append a message to the end of a conversation. Stamps updatedAt
+   *  on the conversation. Returns the new message id. */
+  appendAiMsg: (conversationId: string, msg: Omit<AiMsg, 'id'>) => string;
+  /** Append a chunk of text to an existing assistant message. Used by
+   *  the streaming engine so re-render cost stays per-token, not per
+   *  whole message. Caller passes the message id returned by
+   *  appendAiMsg. */
+  patchAiMsgText: (conversationId: string, msgId: string, chunk: string) => void;
+  /** Patch any other field on an existing message — citations,
+   *  confidence, actions, streaming flag, applied records. */
+  patchAiMsg: (conversationId: string, msgId: string, patch: Partial<AiMsg>) => void;
+  /** Log an apply-suggestion outcome onto a message so the
+   *  conversation thread shows what was done. */
+  recordAiApplied: (conversationId: string, msgId: string, applied: AiAppliedRecord) => void;
+
   // ── Reset / utility ──
   resetDemoData: () => void;
 }
@@ -331,6 +372,7 @@ export const useProjectStore = create<ProjectState>()(
       workOrderProgress: {},
       projectPricebooks: {},
       attachments:       {},
+      aiConversations:   {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1214,11 +1256,146 @@ export const useProjectStore = create<ProjectState>()(
           return { attachments: rest };
         }),
 
-      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {} })),
+      // ── AI Assistant actions (Phase 2A.1) ──
+      // localStorage hardening — the persisted state is shared with
+      // canvas devices, BOM, work orders, etc. A runaway conversation
+      // log can blow the ~5 MB quota and silently kill persistence
+      // for the entire app. Caps below FIFO-evict the oldest data.
+      newAiConversation: (projectId) => {
+        const id = `aic-${aiId()}`;
+        const now = Date.now();
+        set((s) => {
+          // Cap conversations per project (FIFO oldest first).
+          const PER_PROJECT_MAX = 50;
+          const projectConvs = Object.values(s.aiConversations)
+            .filter((c) => c.projectId === projectId)
+            .sort((a, b) => a.updatedAt - b.updatedAt);
+          const trimmed: Record<string, AiConversation> = { ...s.aiConversations };
+          while (projectConvs.length >= PER_PROJECT_MAX) {
+            const oldest = projectConvs.shift();
+            if (oldest) delete trimmed[oldest.id];
+          }
+          return {
+            aiConversations: {
+              ...trimmed,
+              [id]: {
+                id,
+                projectId,
+                title: 'New conversation',
+                createdAt: now,
+                updatedAt: now,
+                messages: [],
+              },
+            },
+          };
+        });
+        return id;
+      },
+      renameAiConversation: (cid, title) =>
+        set((s) => {
+          const conv = s.aiConversations[cid];
+          if (!conv) return s;
+          return {
+            aiConversations: {
+              ...s.aiConversations,
+              [cid]: { ...conv, title: title.trim() || 'Untitled conversation', updatedAt: Date.now() },
+            },
+          };
+        }),
+      deleteAiConversation: (cid) =>
+        set((s) => {
+          const { [cid]: _drop, ...rest } = s.aiConversations;
+          return { aiConversations: rest };
+        }),
+      appendAiMsg: (cid, msg) => {
+        const id = `m-${aiId()}`;
+        set((s) => {
+          const conv = s.aiConversations[cid];
+          if (!conv) return s;
+          // Cap messages per conversation. Once the cap is hit, drop
+          // the OLDEST messages (FIFO) so the most recent context
+          // stays in localStorage.
+          const PER_CONV_MAX = 200;
+          // Cap individual text payload. Truncate with a marker if a
+          // streamed answer ever runs away.
+          const TEXT_MAX = 32_000;
+          const next = { ...msg, id };
+          if (typeof next.text === 'string' && next.text.length > TEXT_MAX) {
+            next.text = next.text.slice(0, TEXT_MAX) + '\n…[truncated]';
+          }
+          let messages = [...conv.messages, next];
+          if (messages.length > PER_CONV_MAX) {
+            messages = messages.slice(messages.length - PER_CONV_MAX);
+          }
+          // Auto-title from the first user message — operator can rename
+          // any time. Clipped at 60 chars so the sidebar stays scannable.
+          const title = (conv.title === 'New conversation' && msg.role === 'user' && msg.text.trim())
+            ? msg.text.trim().slice(0, 60)
+            : conv.title;
+          return {
+            aiConversations: {
+              ...s.aiConversations,
+              [cid]: { ...conv, messages, title, updatedAt: Date.now() },
+            },
+          };
+        });
+        return id;
+      },
+      patchAiMsgText: (cid, msgId, chunk) =>
+        set((s) => {
+          const conv = s.aiConversations[cid];
+          if (!conv) return s;
+          // Same text cap as appendAiMsg — stop streaming into a
+          // message once it crosses the per-message ceiling.
+          const TEXT_MAX = 32_000;
+          const messages = conv.messages.map((m) => {
+            if (m.id !== msgId) return m;
+            const combined = m.text + chunk;
+            return combined.length > TEXT_MAX
+              ? { ...m, text: combined.slice(0, TEXT_MAX) + '\n…[truncated]' }
+              : { ...m, text: combined };
+          });
+          return {
+            aiConversations: {
+              ...s.aiConversations,
+              [cid]: { ...conv, messages, updatedAt: Date.now() },
+            },
+          };
+        }),
+      patchAiMsg: (cid, msgId, patch) =>
+        set((s) => {
+          const conv = s.aiConversations[cid];
+          if (!conv) return s;
+          const messages = conv.messages.map((m) =>
+            m.id === msgId ? { ...m, ...patch } : m,
+          );
+          return {
+            aiConversations: {
+              ...s.aiConversations,
+              [cid]: { ...conv, messages, updatedAt: Date.now() },
+            },
+          };
+        }),
+      recordAiApplied: (cid, msgId, applied) =>
+        set((s) => {
+          const conv = s.aiConversations[cid];
+          if (!conv) return s;
+          const messages = conv.messages.map((m) =>
+            m.id === msgId ? { ...m, applied: [...(m.applied ?? []), applied] } : m,
+          );
+          return {
+            aiConversations: {
+              ...s.aiConversations,
+              [cid]: { ...conv, messages, updatedAt: Date.now() },
+            },
+          };
+        }),
+
+      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {} })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 8,
+      version: 9,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1317,6 +1494,40 @@ export const useProjectStore = create<ProjectState>()(
           // entries for a given link target) as "no attachments yet".
           persisted.attachments ??= {};
         }
+        if (version < 9) {
+          // v8 → v9: introduce the AI Assistant conversation slice.
+          // Empty default is safe — every screen that reads the slice
+          // treats missing as "no conversations yet" and renders the
+          // empty state. We also defensively coerce shape: a tampered
+          // or corrupt persisted blob must not crash hydrate. Bad
+          // conversations are dropped; bad messages are coerced.
+          const raw = persisted.aiConversations;
+          if (!raw || typeof raw !== 'object') {
+            persisted.aiConversations = {};
+          } else {
+            const cleaned: Record<string, any> = {};
+            for (const [cid, conv] of Object.entries(raw as Record<string, any>)) {
+              if (!conv || typeof conv !== 'object') continue;
+              if (typeof conv.id !== 'string' || typeof conv.projectId !== 'string') continue;
+              const messages = Array.isArray(conv.messages) ? conv.messages : [];
+              cleaned[cid] = {
+                ...conv,
+                title: typeof conv.title === 'string' ? conv.title : 'Untitled conversation',
+                createdAt: typeof conv.createdAt === 'number' ? conv.createdAt : Date.now(),
+                updatedAt: typeof conv.updatedAt === 'number' ? conv.updatedAt : Date.now(),
+                messages: messages
+                  .filter((m: any) => m && typeof m === 'object' && typeof m.id === 'string')
+                  .map((m: any) => ({
+                    ...m,
+                    role: (m.role === 'user' || m.role === 'assistant') ? m.role : 'assistant',
+                    text: typeof m.text === 'string' ? m.text : String(m.text ?? ''),
+                    ts: typeof m.ts === 'number' ? m.ts : Date.now(),
+                  })),
+              };
+            }
+            persisted.aiConversations = cleaned;
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1369,6 +1580,7 @@ export const useProjectStore = create<ProjectState>()(
         workOrderProgress: s.workOrderProgress,
         projectPricebooks: s.projectPricebooks,
         attachments:       s.attachments,
+        aiConversations:   s.aiConversations,
       }),
     },
   ),

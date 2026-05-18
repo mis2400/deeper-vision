@@ -1235,3 +1235,83 @@ export interface Bus {
   status: 'draft' | 'engineered' | 'approved' | 'installed' | 'commissioned';
   notes?: string;
 }
+
+// ─────────────────────────── AI Assistant ─────────────────────────
+// Phase 2A — operator-facing project intelligence. Conversations are
+// the unit of persistence; each conversation belongs to a project so
+// the assistant always has implicit scope.
+
+export type AiMsgRole = 'user' | 'assistant';
+
+/** Source citation — points back at a concrete record the answer was
+ *  derived from. The assistant must never claim a number it didn't
+ *  cite; ungrounded statements are labeled 'inference'. */
+export interface AiCitation {
+  /** Display label rendered inside the chip ("CAM-101", "IDF-A"). */
+  label: string;
+  /** What kind of source — drives the open behavior on click. */
+  kind: 'device' | 'door' | 'pathway' | 'idf' | 'floor' | 'project' | 'report' | 'workorder';
+  /** Source id matching the entity record in the store. */
+  refId: string;
+  /** Optional explicit deep link override; otherwise derived from kind+refId. */
+  href?: string;
+}
+
+export interface AiMsg {
+  id: string;
+  role: AiMsgRole;
+  /** Body text. May be streamed in via patchAiMsgText. */
+  text: string;
+  /** Wall-clock when the message was created. */
+  ts: number;
+  /** Set true while a streaming response is still appending tokens. */
+  streaming?: boolean;
+  /** Inline source chips (only on assistant messages). */
+  citations?: AiCitation[];
+  /** Confidence tier when the message is a judgment / recommendation.
+   *  Omit on plain answers. */
+  confidence?: 'high' | 'medium' | 'low';
+  /** Optional explanation rendered on confidence-chip hover. */
+  confidenceWhy?: string;
+  /** When set, the message is labeled as inference (no direct source
+   *  data supports the specific claim). */
+  inference?: boolean;
+  /** Apply-suggestion buttons attached to the message. */
+  actions?: AiAction[];
+  /** Outcome log of any action the operator clicked Apply on. */
+  applied?: AiAppliedRecord[];
+}
+
+/** Concrete, executable suggestion the assistant offers. Each action
+ *  maps to a real store mutation; clicking Apply runs it and logs the
+ *  result back into the message. */
+export type AiAction =
+  | { id: string; kind: 'add-device'; label: string; deviceType: string; nearFloorId?: string; hint?: string }
+  | { id: string; kind: 'resolve-event'; label: string; refId: string; hint?: string }
+  | { id: string; kind: 'assign-workflow'; label: string; refId: string; assignTo: string; hint?: string }
+  | { id: string; kind: 'create-note'; label: string; body: string; hint?: string }
+  | { id: string; kind: 'schedule-check'; label: string; refId: string; dueInDays: number; hint?: string }
+  | { id: string; kind: 'generate-report'; label: string; reportKind: 'engineering' | 'customer' | 'commissioning'; hint?: string };
+
+export interface AiAppliedRecord {
+  actionId: string;
+  appliedAt: number;
+  /** Short user-visible result line ("Added CAM-110 on Ground floor"). */
+  result: string;
+  /** Whether the operator subsequently undid it. */
+  undone?: boolean;
+  /** Undo payload — opaque blob the action handler reads to reverse. */
+  undoPayload?: any;
+}
+
+export interface AiConversation {
+  id: string;
+  projectId: string;
+  /** First-message-derived title. The first user message becomes the
+   *  title; if blank, "Untitled conversation". Operator can rename. */
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Ordered message list. */
+  messages: AiMsg[];
+}
