@@ -806,6 +806,92 @@ export function EngineeringCanvas() {
   // Click any tile to dive in to that floor.
   const [overviewOpen, setOverviewOpen] = useState(false);
 
+  // Canvas V2 Pass 2B.3 + 2B.4 — coverage grid + stats. Computed once
+  // per render of EngineeringCanvas, consumed both by the heatmap SVG
+  // overlay (inside CanvasSurface) and the chrome-side
+  // CoverageStatsPanel. Heavy-ish so memoised over devices +
+  // background bounds + floor scale.
+  const coverageGrid = useMemo(() => {
+    if (currentFloorPxToFt <= 0) return null;
+    const w = (floorBackground?.naturalWidth ?? 800);
+    const h = (floorBackground?.naturalHeight ?? 600);
+    const COLS = 36;
+    const cellW = w / COLS;
+    const cellH = cellW;
+    const ROWS = Math.max(8, Math.round(h / cellH));
+    type ShapeRec =
+      | { kind: 'circle'; cx: number; cy: number; r: number; kindGroup: 'camera' | 'access' | 'sensor' | 'audio' | 'network' | 'other' }
+      | { kind: 'cone'; cx: number; cy: number; r: number; halfRad: number; rotRad: number; kindGroup: 'camera' | 'access' | 'sensor' | 'audio' | 'network' | 'other' };
+    const shapes: ShapeRec[] = [];
+    const groupForType = (t: string): ShapeRec['kindGroup'] => {
+      if (t.startsWith('cam.')) return 'camera';
+      if (t.startsWith('acc.')) return 'access';
+      if (t.startsWith('sen.')) return 'sensor';
+      if (t.startsWith('aud.')) return 'audio';
+      if (t.startsWith('net.')) return 'network';
+      return 'other';
+    };
+    for (const d of devices) {
+      const grp = groupForType(d.type);
+      if (grp === 'camera') {
+        const lens = (d.lenses as any)?.a ?? null;
+        const fov = lens?.fov ?? 90;
+        const range = lens?.range ?? 30;
+        const rPx = range / currentFloorPxToFt;
+        if (rPx < 1) continue;
+        shapes.push({ kind: 'cone', cx: d.x, cy: d.y, r: rPx, halfRad: (fov / 2) * Math.PI / 180, rotRad: ((d.rot ?? 0) - 90) * Math.PI / 180, kindGroup: 'camera' });
+        continue;
+      }
+      const profile = coverageForDevice(d as any);
+      if (profile.shape === 'radius' && profile.rangeFt) {
+        shapes.push({ kind: 'circle', cx: d.x, cy: d.y, r: profile.rangeFt / currentFloorPxToFt, kindGroup: grp });
+      } else if (profile.shape === 'cone' && profile.rangeFt && profile.fovDeg) {
+        shapes.push({ kind: 'cone', cx: d.x, cy: d.y, r: profile.rangeFt / currentFloorPxToFt, halfRad: (profile.fovDeg / 2) * Math.PI / 180, rotRad: ((d.rot ?? 0) - 90) * Math.PI / 180, kindGroup: grp });
+      }
+    }
+    type CellRec = { x: number; y: number; covered: boolean; groups: Set<ShapeRec['kindGroup']> };
+    const cellList: CellRec[] = [];
+    const coveredByGroup: Record<string, number> = { camera: 0, access: 0, sensor: 0, audio: 0, network: 0, other: 0 };
+    let coveredCount = 0;
+    for (let row = 0; row < ROWS; row += 1) {
+      for (let col = 0; col < COLS; col += 1) {
+        const cx = col * cellW + cellW / 2;
+        const cy = row * cellH + cellH / 2;
+        const groups = new Set<ShapeRec['kindGroup']>();
+        for (const s of shapes) {
+          const dx = cx - s.cx; const dy = cy - s.cy;
+          const d2 = dx * dx + dy * dy;
+          const r2 = s.r * s.r;
+          if (d2 > r2) continue;
+          if (s.kind === 'cone') {
+            const ang = Math.atan2(dy, dx) - s.rotRad;
+            const norm = Math.atan2(Math.sin(ang), Math.cos(ang));
+            if (Math.abs(norm) > s.halfRad) continue;
+          }
+          groups.add(s.kindGroup);
+        }
+        const covered = groups.size > 0;
+        if (covered) coveredCount += 1;
+        for (const g of groups) coveredByGroup[g] += 1;
+        cellList.push({ x: col * cellW, y: row * cellH, covered, groups });
+      }
+    }
+    const cellAreaFt = (cellW * currentFloorPxToFt) * (cellH * currentFloorPxToFt);
+    const totalArea = cellList.length * cellAreaFt;
+    return {
+      cells: cellList,
+      cellW,
+      cellH,
+      coveredCount,
+      totalCount: cellList.length,
+      coveragePct: cellList.length ? coveredCount / cellList.length : 0,
+      totalAreaFt: totalArea,
+      coveredAreaFt: coveredCount * cellAreaFt,
+      gapAreaFt: (cellList.length - coveredCount) * cellAreaFt,
+      areaByGroupFt: Object.fromEntries(Object.entries(coveredByGroup).map(([k, v]) => [k, v * cellAreaFt])) as Record<string, number>,
+    };
+  }, [devices, floorBackground, currentFloorPxToFt]);
+
   // setDevices facade: accepts either a new array OR an updater fn. Diffs
   // against the current store snapshot and dispatches add/update/remove for
   // each changed device. Keeps all in-component callers (move/rotate/dup/
@@ -2679,6 +2765,7 @@ export function EngineeringCanvas() {
               }}
               currentFloorPxToFt={currentFloorPxToFt}
               currentFloorId={currentFloorId}
+              coverageGrid={coverageGrid}
               snap={snap}
               dragging={!!drag}
               onSurfaceClick={(x, y) => {
@@ -3318,6 +3405,12 @@ export function EngineeringCanvas() {
             {/* Group toolbar — appears when 2+ devices are selected via
                 shift-click. Right side at the top of the canvas. Carries
                 the multi-device commands (Run to IDF, clear selection). */}
+            {/* Canvas V2 Pass 2B.4 — coverage stats. Auto shows when
+                the heatmap layer is on; chrome stays calm otherwise. */}
+            {layers.heatmap && coverageGrid && (
+              <CoverageStatsPanel grid={coverageGrid as any} />
+            )}
+
             {/* Canvas V2 Pass 2A.7 — multi floor overview toggle.
                 Floating chip top right. Hidden in canvas mode (already
                 immersive). Shown only when there are 2+ floors on the
@@ -3831,6 +3924,69 @@ function CmdKSection({ title, children }: { title: string; children: React.React
     <div>
       <div className="px-3 pt-2.5 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">{title}</div>
       {children}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COVERAGE STATS PANEL — Canvas V2 Pass 2B.4
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function CoverageStatsPanel({ grid }: {
+  grid: {
+    coveredCount: number;
+    totalCount: number;
+    coveragePct: number;
+    totalAreaFt: number;
+    coveredAreaFt: number;
+    gapAreaFt: number;
+    areaByGroupFt: Record<string, number>;
+  };
+}) {
+  const fmtFt2 = (n: number) => `${Math.round(n).toLocaleString()} ft²`;
+  const pct = Math.round(grid.coveragePct * 100);
+  const tone = pct >= 85 ? 'text-success' : pct >= 60 ? 'text-amber-400' : 'text-destructive';
+  const groups: Array<{ id: string; label: string; tone: string }> = [
+    { id: 'camera',  label: 'Cameras',  tone: '#2F81F7' },
+    { id: 'access',  label: 'Access',   tone: '#3FB950' },
+    { id: 'sensor',  label: 'Sensors',  tone: '#F08F3C' },
+    { id: 'audio',   label: 'Audio',    tone: '#A371F7' },
+    { id: 'network', label: 'Network',  tone: '#22D3EE' },
+  ];
+  return (
+    <div className="absolute top-16 right-3 z-30 w-[240px] bg-card/95 backdrop-blur-md border border-border rounded-lg shadow-md p-3 text-[12px]">
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Coverage</div>
+        <div className={`tabular-nums font-medium ${tone}`}>{pct}%</div>
+      </div>
+      <div className="h-1.5 bg-secondary rounded-full overflow-hidden mb-3">
+        <div className="h-full bg-success transition-all" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="space-y-1 text-[11px]">
+        <div className="flex justify-between"><span className="text-muted-foreground">Floor area</span><span className="tabular-nums">{fmtFt2(grid.totalAreaFt)}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Covered</span><span className="tabular-nums text-success">{fmtFt2(grid.coveredAreaFt)}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Gap</span><span className="tabular-nums text-destructive">{fmtFt2(grid.gapAreaFt)}</span></div>
+        <div className="flex justify-between text-[10px] text-muted-foreground/80"><span>Grid cells</span><span className="tabular-nums">{grid.coveredCount} / {grid.totalCount}</span></div>
+      </div>
+      <div className="border-t border-border mt-2.5 pt-2 space-y-1 text-[11px]">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">By kind</div>
+        {groups.map((g) => {
+          const a = grid.areaByGroupFt[g.id] ?? 0;
+          if (a < 1) return null;
+          const p = grid.totalAreaFt > 0 ? Math.round((a / grid.totalAreaFt) * 100) : 0;
+          return (
+            <div key={g.id} className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: g.tone }} />
+              <span className="flex-1 text-muted-foreground">{g.label}</span>
+              <span className="tabular-nums text-foreground">{fmtFt2(a)}</span>
+              <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">{p}%</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="border-t border-border mt-2.5 pt-1.5 text-[10px] text-muted-foreground">
+        Live · recomputes on every device move.
+      </div>
     </div>
   );
 }
@@ -7029,6 +7185,14 @@ interface SurfaceProps {
   /** Canvas V2 Pass 2A.3 — id of the floor currently being rendered.
    *  Pathways + downstream overlays filter on this. */
   currentFloorId: string;
+  /** Canvas V2 Pass 2B.3 + 2B.4 — pre computed coverage grid + stats.
+   *  Heat map render reads from this; CoverageStatsPanel reads the
+   *  same object. Null when the floor has no calibrated scale. */
+  coverageGrid?: {
+    cells: { x: number; y: number; covered: boolean }[];
+    cellW: number;
+    cellH: number;
+  } | null;
   snap: boolean;
   dragging: boolean;
   onSurfaceClick: (x: number, y: number) => void;
@@ -7126,7 +7290,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -7459,86 +7623,21 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         </g>
 
         {/* Canvas V2 Pass 2B.3 — coverage gap detection heat map.
-            Rasterises the plan into a coarse grid; each cell paints
-            green when covered by at least one device, red when not.
-            Camera lenses + non camera profiles both contribute.
-            Off by default (heatmap layer); recompute is memoised on
-            devices so pan / zoom does not trigger work. */}
-        {layers.heatmap && currentFloorPxToFt > 0 && (() => {
-          const w = (floorBackground?.naturalWidth ?? 800);
-          const h = (floorBackground?.naturalHeight ?? 600);
-          const COLS = 36;
-          const cellW = w / COLS;
-          const cellH = cellW;
-          const ROWS = Math.max(8, Math.round(h / cellH));
-          const cells: React.ReactNode[] = [];
-          // Pre-build device shape data so the per cell loop stays
-          // arithmetic only.
-          type ShapeRec =
-            | { kind: 'circle'; cx: number; cy: number; r: number }
-            | { kind: 'cone'; cx: number; cy: number; r: number; halfRad: number; rotRad: number };
-          const shapes: ShapeRec[] = [];
-          for (const d of renderedDevices) {
-            if (TYPE_KIND[d.type] === 'camera') {
-              // Use the device's primary lens for camera coverage
-              // contribution. Multi sensor lenses A/B/C/D approximated
-              // as one cone — good enough for a gap heat map.
-              const lens = (d.lenses as any)?.a ?? null;
-              const fov = lens?.fov ?? 90;
-              const range = lens?.range ?? 30;
-              const rPx = range / currentFloorPxToFt;
-              if (rPx < 1) continue;
-              const half = (fov / 2) * Math.PI / 180;
-              const rotRad = ((d.rot ?? 0) - 90) * Math.PI / 180;
-              shapes.push({ kind: 'cone', cx: d.x, cy: d.y, r: rPx, halfRad: half, rotRad });
-              continue;
-            }
-            const profile = coverageForDevice(d as any);
-            if (profile.shape === 'radius' && profile.rangeFt) {
-              shapes.push({ kind: 'circle', cx: d.x, cy: d.y, r: profile.rangeFt / currentFloorPxToFt });
-            } else if (profile.shape === 'cone' && profile.rangeFt && profile.fovDeg) {
-              shapes.push({
-                kind: 'cone', cx: d.x, cy: d.y,
-                r: profile.rangeFt / currentFloorPxToFt,
-                halfRad: (profile.fovDeg / 2) * Math.PI / 180,
-                rotRad: ((d.rot ?? 0) - 90) * Math.PI / 180,
-              });
-            }
-          }
-          const covered = (px: number, py: number): boolean => {
-            for (const s of shapes) {
-              const dx = px - s.cx; const dy = py - s.cy;
-              const d2 = dx * dx + dy * dy;
-              const r2 = s.r * s.r;
-              if (d2 > r2) continue;
-              if (s.kind === 'circle') return true;
-              // Cone — also check the bearing.
-              const ang = Math.atan2(dy, dx) - s.rotRad;
-              // Normalise to [-pi, pi].
-              const norm = Math.atan2(Math.sin(ang), Math.cos(ang));
-              if (Math.abs(norm) <= s.halfRad) return true;
-            }
-            return false;
-          };
-          for (let row = 0; row < ROWS; row += 1) {
-            for (let col = 0; col < COLS; col += 1) {
-              const cx = col * cellW + cellW / 2;
-              const cy = row * cellH + cellH / 2;
-              const isCov = covered(cx, cy);
-              cells.push(
-                <rect
-                  key={`hm-${row}-${col}`}
-                  x={col * cellW} y={row * cellH}
-                  width={cellW} height={cellH}
-                  fill={isCov ? '#22c55e' : '#ef4444'}
-                  fillOpacity={isCov ? 0.18 : 0.18}
-                  pointerEvents="none"
-                />,
-              );
-            }
-          }
-          return <g pointerEvents="none" style={{ mixBlendMode: 'multiply' }}>{cells}</g>;
-        })()}
+            Pulls the pre computed grid from the parent so the same
+            rasterisation drives the chrome-side stats panel. */}
+        {layers.heatmap && coverageGrid && (
+          <g pointerEvents="none" style={{ mixBlendMode: 'multiply' }}>
+            {coverageGrid.cells.map((c, i) => (
+              <rect
+                key={`hm-${i}`}
+                x={c.x} y={c.y}
+                width={coverageGrid.cellW} height={coverageGrid.cellH}
+                fill={c.covered ? '#22c55e' : '#ef4444'}
+                fillOpacity={0.18}
+              />
+            ))}
+          </g>
+        )}
 
         {/* Canvas V2 Pass 2B.2 — non camera coverage. One overlay per
             device whose CoverageProfile shape is not 'none'. Radius
