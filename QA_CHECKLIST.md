@@ -1518,6 +1518,115 @@ This pass DOES deploy to Vercel production. See the final report for the live UR
 
 ---
 
+## BOM / Estimate From Canvas Pass (2026-05-17, after Door Assembly UX pass)
+
+**Goal.** Project-level BOM you can read, audit, and export from inside the
+canvas — derived live from the floor plan, not a parallel form. Row click
+focuses the source object so the BOM is also a navigation surface.
+
+### What shipped this pass
+
+- New TopBar entry **BOM & Estimate** (left cluster, next to *Add plan*).
+  Opens the project BOM as a right-side drawer (460 px, blurred panel) so
+  the canvas stays visible while you audit.
+- New right-side drawer **ProjectBomDrawer**: header (project + line count),
+  totals card, filter pills, grouped rows, CSV export.
+- New helper `deriveCanvasBomRows(state, projectId)` in `projectStore.ts`.
+  Returns *per-source* rows (one row per device, one row per door-assembly
+  hardware item, one row per pathway, one row per IDF switch/UPS) so each
+  row is selectable on the canvas — unlike `deriveBOM` which aggregates
+  devices by catalog SKU for the legacy Estimator.
+- New shared types `CanvasBomCategory` + `CanvasBomRow` in `store/types.ts`.
+
+### What is honest vs heuristic
+
+- **Live**: rows come from `state.devices` / `state.doors` /
+  `state.pathways` / `state.idfs` via the new helper. Pathway length uses
+  the per-floor calibrated `scalePxToFt` via `pathwayLengthFt` so the BOM,
+  canvas labels, and PathwayDrawer all agree. Per-row `Proposed / Existing`
+  reads from `device.doorAssemblyState[hw]` (the flag the prior pass added).
+- **Heuristic**: pricing uses `UNIT_PRICE` / `DOOR_HARDWARE_PRICE` /
+  `CABLE_UNIT_PRICE` sample tables — same source as the legacy Estimator.
+  The totals card says explicitly: *"Pricing is preview-grade. Calibrate
+  against pricebook before quote."* Rows missing a price get a "No price"
+  pill and the count shows in an amber warning under the totals card.
+- CSV export is REAL: builds a UTF-8 CSV with BOM (so Excel renders
+  currency cleanly), RFC-4180-quoted fields, and triggers a real download
+  via `URL.createObjectURL` + `<a download>`. Verified end-to-end: a
+  2,332-byte CSV with the project-name-safe filename
+  `Acme_HQ_Austin-bom.csv` was produced from the seeded project.
+
+### What the user can verify in the browser
+
+- TopBar shows **BOM & Estimate** with `BarChart3` icon. Click → drawer
+  slides in from the right.
+- Totals card shows: Proposed material, Cable, Labor (hr + $), Existing
+  documented (struck-through), Sell total with markup %. The seeded
+  `/project/p1/canvas` reads `$23,031 / $16 / 30.8 hr · $2,921 / $285
+  struck / $30,642 @ 18%`.
+- Filter pills `All / Cameras / Access / Network / Cabling / Existing`
+  each show a live count and disable when empty. Counts on seed:
+  `25 / 5 / 16 / 3 / 1 / 1`.
+- Rows are grouped under category headers (`CAMERAS · 5`, `ACCESS
+  CONTROL · 16`, `NETWORK & POWER · 3`, `CABLE & PATHWAYS · 1`). Each
+  group header shows its proposed subtotal and (if any) its existing
+  subtotal struck through next to it.
+- Each row shows: small meta line (e.g. `Bullet · CAM-101`, `Opening ·
+  DR-100`, `Run · PW-1`), bold description, product line if known
+  (`Axis · P1468-LE`), labor hours, and right-aligned qty + unit price +
+  line total.
+- Door rows carry a **Proposed** (emerald) or **Existing** (amber) pill.
+  Existing rows render at lower opacity with line-through qty/unit/total
+  so the user can see they exist but don't count toward the proposed
+  total.
+- Row click: device or door row sets `selId` and slides the EditDrawer
+  in (BOM drawer closes); pathway row sets `selPathwayId` and slides the
+  PathwayDrawer in. Verified with CAM-101 → EditDrawer headline, PW-1 →
+  PathwayDrawer with `CAT6A · 10 ft · CAM-101 → IDF-1`.
+- **CSV** button in the drawer header: produces the per-row CSV plus a
+  trailing TOTALS block (devices on plan, proposed material, existing
+  documented, cable, labor hours, labor cost, markup, sell total). Shows
+  a toast on success.
+- Opening BOM clears any active EditDrawer / PathwayDrawer selection so
+  the right-side slot is exclusively the BOM until the user picks a row.
+
+### Regression checks
+
+- TopBar **Add plan** still opens the source picker (Upload / Satellite /
+  Blank / VisionScan-style options) — verified.
+- Camera select + EditDrawer headline still appears for `CAM-101` after a
+  BOM row click — verified.
+- PathwayDrawer still mounts on a pathway row click with correct cable
+  type + termination metadata — verified.
+- `npm run build` clean, 2.08 s. New bundle hash captured in the deploy
+  commit below.
+
+### Remaining risks
+
+- `deriveCanvasBomRows` and `deriveBOM` now both live in the store and
+  cover overlapping ground. The legacy Estimator view still uses
+  `deriveBOM` (group-by-SKU). They agree on totals when prices and
+  catalog data are identical, but a future pass could collapse them.
+- Pricing is preview-grade until the integrator wires their own
+  pricebook. The warning under the totals card states this explicitly.
+- Pathway labor uses `0.02 hr/ft × cableCount` as a flat estimate — fine
+  for a sanity check, not a quote. Same source as the legacy Estimator.
+- IDF and labor rows currently have no canvas glyph to focus on; row
+  click for those raises an informational toast rather than navigating.
+- Pre-existing Vite Fast Refresh notice around `DEFAULT_MULTISENSOR_LENSES`
+  still fires during dev edits. Production build clean.
+
+### Build result
+
+`npm run build` → exit 0, 2.08 s, new bundle hash captured below.
+
+### Deployment
+
+This pass DOES deploy to Vercel production. See the final report for the
+live URL + the source + build commit hashes.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already

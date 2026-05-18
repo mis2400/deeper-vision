@@ -704,6 +704,34 @@ export interface Estimate {
   notes?: string;
 }
 
+// Per-source BOM rows used by the canvas-side BOM drawer. Unlike
+// EstimateLine (which aggregates devices by SKU), one row = one
+// canvas object so the drawer can click a row and select the
+// originating device / door hardware / pathway on the floorplan.
+export type CanvasBomCategory = 'cameras' | 'access' | 'network' | 'cabling' | 'labor' | 'other';
+export interface CanvasBomRow {
+  id: string;
+  category: CanvasBomCategory;
+  /** Where the row came from on the canvas. Drives the row-click selection. */
+  sourceKind: 'device' | 'door' | 'pathway' | 'idf' | 'labor';
+  /** Device / door / pathway / idf id — selecting this on the canvas focuses the source object. */
+  sourceId?: string;
+  /** Whether this row represents existing (already-on-site) hardware. Existing rows
+   *  are documented but excluded from proposed totals. */
+  isExisting: boolean;
+  description: string;
+  /** Short context label (e.g. "Door · door-12", "Run · pw-04", "Bullet · cam-7"). */
+  meta?: string;
+  /** Manufacturer / model line when known. Empty otherwise. */
+  product?: string;
+  qty: number;
+  uom: string;               // 'ea' | 'ft' | 'hr'
+  unitPrice: number;
+  laborHours: number;
+  /** True when unitPrice came back as 0 (no catalog hit + no UNIT_PRICE entry). */
+  missingPrice: boolean;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // THREAT DRILL SIMULATOR — emergency-readiness planning module
 // ═══════════════════════════════════════════════════════════════════

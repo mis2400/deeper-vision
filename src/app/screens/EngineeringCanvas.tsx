@@ -1,11 +1,12 @@
 import { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
-import { useProjectStore, selectors as storeSelectors, deriveBOM, deriveDoorAssemblyLines } from '../store/projectStore';
+import { useProjectStore, selectors as storeSelectors, deriveBOM, deriveDoorAssemblyLines, deriveCanvasBomRows } from '../store/projectStore';
 import { SAMPLE_PRODUCTS as CATALOG, accessoriesFor as catalogAccessoriesFor, type Product as CatalogProduct } from '../lib/productCatalog';
 import type {
   EngineeringLayer, CanvasLayerState, CanvasDisplayPrefs, IconSize,
   LabelDensity, BaseMapMode, DoorHardware, SurveyItemStatus,
+  CanvasBomRow, CanvasBomCategory,
 } from '../store/types';
 import { DEFAULT_CANVAS_LAYERS, DEFAULT_DISPLAY_PREFS } from '../store/types';
 import type { Device as StoreDevice } from '../store/types';
@@ -20,7 +21,7 @@ import {
   ShieldCheck, Antenna, Volume2, Megaphone, Mic, Speaker, HardDrive, Database, Cloud, Monitor,
   Tv2, AppWindow, MonitorSmartphone, BatteryCharging, Zap, ShieldAlert, Sun, Thermometer, CloudFog,
   Droplets, Users2, Wind, Crosshair as CrosshairIcon, Calendar, ListChecks, Wrench, FileBarChart,
-  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink,
+  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown,
   PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
   ClipboardList,
@@ -995,6 +996,12 @@ export function EngineeringCanvas() {
   // "Add plan → Upload" flow can be triggered directly from the TopBar
   // without forcing the user through the section nav.
   const [canvasImportOpen, setCanvasImportOpen] = useState(false);
+  // Project BOM drawer — right-side, opened from the TopBar BOM &
+  // Estimate button. Renders per-source rows derived live from the
+  // canvas so the user can audit and CSV-export their proposed
+  // material + existing-documented split without leaving the floor
+  // plan.
+  const [canvasBomOpen, setCanvasBomOpen] = useState(false);
   // Report Builder modal — the new "real builder" entry; replaces the
   // scattered list of export rows as the primary report flow.
   const [reportOpen, setReportOpen] = useState(false);
@@ -1966,6 +1973,17 @@ export function EngineeringCanvas() {
             setViewMode={setViewMode}
             onOpenScanBuild={() => setScanBuildOpen(true)}
             onOpenReport={() => setReportOpen(true)}
+            onOpenBom={() => {
+              // Free the right-side slot so the BOM drawer is the only
+              // inspector visible. Without this, an EditDrawer / PathwayDrawer
+              // that the user "closed" via its X button is still mounted
+              // (just slid off-screen with selId/selPathwayId preserved) and
+              // would block the BOM mount under the previous gating.
+              setSelId(null);
+              setSelPathwayId(null);
+              setEditOpen(false);
+              setCanvasBomOpen(true);
+            }}
             compact={viewMode === 'field'}
             intelOpen={intelOpen}
             setIntelOpen={setIntelOpen}
@@ -2454,6 +2472,23 @@ export function EngineeringCanvas() {
                 Side panel, not a modal, so the user can edit cable type,
                 conduit assignment, terminations, ports, and accessories
                 in the standard right-side editing flow. */}
+            {canvasBomOpen && (
+              <ProjectBomDrawer
+                projectId={projectId}
+                onClose={() => setCanvasBomOpen(false)}
+                onSelectDevice={(id) => {
+                  setSelId(id);
+                  setSelPathwayId(null);
+                  setCanvasBomOpen(false);
+                  setEditOpen(true);
+                }}
+                onSelectPathway={(id) => {
+                  setSelPathwayId(id);
+                  setSelId(null);
+                  setCanvasBomOpen(false);
+                }}
+              />
+            )}
             {selPathwayId && (
               <PathwayDrawer
                 pathwayId={selPathwayId}
@@ -2941,6 +2976,7 @@ function TopBar(props: {
   setViewMode: (m: 'default' | 'field' | 'canvas') => void;
   onOpenScanBuild: () => void;
   onOpenReport: () => void;
+  onOpenBom: () => void;
   /** Compact = render only the essentials. Used in Field view so the bar
    *  is a thin operations strip rather than a full chrome row. */
   compact?: boolean;
@@ -2980,6 +3016,14 @@ function TopBar(props: {
           data-track="topbar-add-plan"
         >
           <Upload className="w-3.5 h-3.5" />Add plan
+        </button>
+        <button
+          onClick={props.onOpenBom}
+          title="BOM & Estimate — derived live from the canvas"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border hover:bg-secondary/50 text-foreground transition-colors"
+          data-track="topbar-bom"
+        >
+          <BarChart3 className="w-3.5 h-3.5" />BOM & Estimate
         </button>
       </div>
 
@@ -13878,5 +13922,329 @@ function SliderInline({ label, value, min, max, step = 1, unit, onChange }: {
         style={{ accentColor: '#5292DC' }}
       />
     </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ProjectBomDrawer — right-side drawer that surfaces the BOM rolled
+// up live from the canvas (devices, door hardware, pathways, IDFs).
+// Row click focuses the source object on the canvas. Honors the
+// Proposed / Existing flag set on each door-hardware item so existing
+// hardware is documented but excluded from proposed totals.
+// ══════════════════════════════════════════════════════════════════
+function ProjectBomDrawer({
+  projectId, onClose, onSelectDevice, onSelectPathway,
+}: {
+  projectId: string;
+  onClose: () => void;
+  onSelectDevice: (id: string) => void;
+  onSelectPathway: (id: string) => void;
+}) {
+  const state = useProjectStore();
+  const projectName = state.projects[projectId]?.name ?? 'Project';
+  const { rows, totals } = useMemo(() => deriveCanvasBomRows(state, projectId), [state, projectId]);
+
+  type FilterKey = 'all' | CanvasBomCategory | 'existing';
+  const [filter, setFilter] = useState<FilterKey>('all');
+
+  const FILTERS: { id: FilterKey; label: string }[] = [
+    { id: 'all',      label: 'All' },
+    { id: 'cameras',  label: 'Cameras' },
+    { id: 'access',   label: 'Access' },
+    { id: 'network',  label: 'Network' },
+    { id: 'cabling',  label: 'Cabling' },
+    { id: 'existing', label: 'Existing' },
+  ];
+
+  const filtered = useMemo(() => {
+    if (filter === 'all')      return rows;
+    if (filter === 'existing') return rows.filter((r) => r.isExisting);
+    return rows.filter((r) => r.category === filter);
+  }, [rows, filter]);
+
+  const grouped = useMemo(() => {
+    const groups = new Map<CanvasBomCategory, CanvasBomRow[]>();
+    for (const r of filtered) {
+      const arr = groups.get(r.category) ?? [];
+      arr.push(r);
+      groups.set(r.category, arr);
+    }
+    return groups;
+  }, [filtered]);
+
+  const fmt = (n: number) => '$' + Math.round(n).toLocaleString();
+  const exportCsv = () => {
+    const head = ['Category', 'Source', 'Description', 'Product', 'Status', 'Qty', 'UOM', 'Unit price', 'Line total', 'Labor hrs'];
+    const lines: (string | number)[][] = [head];
+    for (const r of rows) {
+      lines.push([
+        r.category,
+        r.meta ?? r.sourceId ?? '',
+        r.description,
+        r.product ?? '',
+        r.isExisting ? 'Existing' : 'Proposed',
+        r.qty,
+        r.uom,
+        r.unitPrice.toFixed(2),
+        (r.unitPrice * r.qty).toFixed(2),
+        r.laborHours.toFixed(2),
+      ]);
+    }
+    // Totals block
+    lines.push([]);
+    lines.push(['TOTALS']);
+    lines.push(['Devices on plan', totals.deviceCount]);
+    lines.push(['Proposed material', totals.proposedMaterial.toFixed(2)]);
+    lines.push(['Existing documented', totals.existingDocumented.toFixed(2)]);
+    lines.push(['Cable', totals.cable.toFixed(2)]);
+    lines.push(['Labor hours', totals.laborHours.toFixed(2)]);
+    lines.push(['Labor cost', totals.laborTotal.toFixed(2)]);
+    lines.push(['Markup', (totals.markup * 100).toFixed(1) + '%']);
+    lines.push(['Sell total', totals.sellTotal.toFixed(2)]);
+
+    const csvField = (v: unknown): string => {
+      const s = v == null ? '' : String(v);
+      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const body = lines.map((row) => row.map(csvField).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + body], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeProject = projectName.replace(/[^a-z0-9-_]+/gi, '_');
+    a.download = `${safeProject}-bom.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast.success('BOM exported', { description: `${rows.length} lines · ${a.download}`, duration: 3000 });
+  };
+
+  const CATEGORY_LABEL: Record<CanvasBomCategory, string> = {
+    cameras: 'Cameras',
+    access:  'Access control',
+    network: 'Network & power',
+    cabling: 'Cable & pathways',
+    labor:   'Labor',
+    other:   'Other',
+  };
+  const CATEGORY_ORDER: CanvasBomCategory[] = ['cameras', 'access', 'network', 'cabling', 'labor', 'other'];
+
+  return (
+    <div
+      data-canvas-chrome="drawer"
+      className="absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 translate-x-0 pointer-events-auto flex flex-col"
+      style={{
+        width: 460,
+        background: 'var(--drawer-background)',
+        color: 'var(--drawer-foreground)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        borderLeft: '1px solid var(--border)',
+        boxShadow: '-16px 0 40px -16px rgba(0,0,0,0.35)',
+        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      }}
+    >
+      {/* Header */}
+      <div className="px-5 pt-5 pb-3 border-b border-white/[0.05] shrink-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#22D3EE', boxShadow: '0 0 6px #22D3EE66' }} />
+              <span className="text-[11px] text-muted-foreground tracking-tight">Project BOM · derived live from canvas</span>
+            </div>
+            <div className="text-[18px] font-medium text-foreground tracking-tight truncate leading-tight">{projectName}</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">{rows.length} line{rows.length === 1 ? '' : 's'} · {totals.deviceCount} device{totals.deviceCount === 1 ? '' : 's'} on plan</div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={exportCsv}
+              title={`Export ${rows.length} BOM lines as CSV`}
+              disabled={rows.length === 0}
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-border bg-secondary/40 hover:bg-secondary text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              data-track="bom-export-csv"
+            >
+              <FileDown className="w-3.5 h-3.5" />CSV
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-md hover:bg-white/[0.05] text-muted-foreground hover:text-foreground transition-colors"
+              title="Close BOM drawer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Totals card */}
+      <div className="px-5 pt-3 pb-3 border-b border-white/[0.05] shrink-0">
+        <div className="rounded-lg p-3 bg-secondary/30 border border-border/60">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Proposed material</span>
+              <span className="text-[14px] font-medium tabular-nums">{fmt(totals.proposedMaterial)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Cable</span>
+              <span className="text-[14px] font-medium tabular-nums">{fmt(totals.cable)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Labor</span>
+              <span className="text-[14px] font-medium tabular-nums">{totals.laborHours.toFixed(1)} hr · {fmt(totals.laborTotal)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Existing documented</span>
+              <span className="text-[13px] tabular-nums text-muted-foreground line-through decoration-1">{fmt(totals.existingDocumented)}</span>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-border/40 flex items-end justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Sell total · {(totals.markup * 100).toFixed(0)}% markup</span>
+              <span className="text-[18px] font-medium tabular-nums text-foreground">{fmt(totals.sellTotal)}</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground text-right">
+              Pricing is preview-grade.<br />Calibrate against pricebook before quote.
+            </div>
+          </div>
+          {totals.missingPriceCount > 0 && (
+            <div className="mt-3 pt-3 border-t border-border/40 flex items-start gap-2 text-[10.5px] text-amber-400">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>
+                {totals.missingPriceCount} line{totals.missingPriceCount === 1 ? '' : 's'} missing price.
+                Catalog or UNIT_PRICE has no entry for the source product — totals undercount until set.
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Filter pills */}
+      <div className="px-5 pt-3 pb-3 border-b border-white/[0.05] shrink-0">
+        <div className="flex flex-wrap gap-1.5">
+          {FILTERS.map((f) => {
+            const active = filter === f.id;
+            // Quick count per filter so the pill feels alive.
+            const count = f.id === 'all' ? rows.length
+              : f.id === 'existing' ? rows.filter((r) => r.isExisting).length
+              : rows.filter((r) => r.category === f.id).length;
+            return (
+              <button
+                key={f.id}
+                onClick={() => setFilter(f.id)}
+                disabled={count === 0 && f.id !== 'all'}
+                className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] tracking-tight transition-colors ${
+                  active ? 'bg-primary/15 text-primary border border-primary/40'
+                         : 'bg-secondary/30 text-muted-foreground border border-border hover:bg-secondary/60'
+                } disabled:opacity-30 disabled:cursor-not-allowed`}
+                data-track={`bom-filter-${f.id}`}
+              >
+                {f.label}<span className="text-[10px] opacity-70 tabular-nums">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Rows */}
+      <div className="flex-1 overflow-y-auto px-3 pt-3 pb-6 space-y-4">
+        {filtered.length === 0 && (
+          <div className="text-center text-[11.5px] text-muted-foreground py-8 px-4">
+            {rows.length === 0
+              ? 'No devices, doors, or pathways on the canvas yet. Drop hardware from the bottom bar or draw a cable run to populate the BOM.'
+              : 'No rows match this filter.'}
+          </div>
+        )}
+        {CATEGORY_ORDER.map((cat) => {
+          const group = grouped.get(cat);
+          if (!group || group.length === 0) return null;
+          const groupTotal = group.reduce((s, r) => s + (r.isExisting ? 0 : r.unitPrice * r.qty), 0);
+          const groupExisting = group.reduce((s, r) => s + (r.isExisting ? r.unitPrice * r.qty : 0), 0);
+          return (
+            <div key={cat}>
+              <div className="px-2 pb-1.5 flex items-end justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{CATEGORY_LABEL[cat]}</span>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">· {group.length}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] tabular-nums">
+                  {groupExisting > 0 && (
+                    <span className="text-muted-foreground line-through decoration-1">{fmt(groupExisting)}</span>
+                  )}
+                  <span className="text-foreground">{fmt(groupTotal)}</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {group.map((r) => (
+                  <BomRow
+                    key={r.id}
+                    row={r}
+                    fmt={fmt}
+                    onSelect={() => {
+                      if (r.sourceKind === 'pathway' && r.sourceId)            onSelectPathway(r.sourceId);
+                      else if ((r.sourceKind === 'device' || r.sourceKind === 'door') && r.sourceId) onSelectDevice(r.sourceId);
+                      else toast.message(`Source: ${r.meta ?? r.sourceId ?? '(none)'}`, { duration: 2200 });
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BomRow({ row, fmt, onSelect }: { row: CanvasBomRow; fmt: (n: number) => string; onSelect: () => void }) {
+  const lineTotal = row.unitPrice * row.qty;
+  const canSelect = !!row.sourceId && (row.sourceKind === 'device' || row.sourceKind === 'door' || row.sourceKind === 'pathway');
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={!canSelect}
+      className={`w-full text-left rounded-md p-2.5 border transition-colors ${
+        row.isExisting ? 'border-border/40 bg-secondary/10 opacity-75 hover:opacity-100' : 'border-border/60 bg-secondary/20 hover:bg-secondary/40'
+      } ${canSelect ? 'cursor-pointer' : 'cursor-default'}`}
+      title={canSelect ? 'Highlight this source on the canvas' : undefined}
+      data-track={`bom-row-${row.sourceKind}`}
+    >
+      <div className="flex items-start gap-2.5">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 mb-0.5">
+            {row.meta && <span className="text-[10px] text-muted-foreground tracking-tight truncate">{row.meta}</span>}
+            {row.isExisting && (
+              <span className="text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400 border border-amber-400/30">Existing</span>
+            )}
+            {!row.isExisting && row.sourceKind === 'door' && (
+              <span className="text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-400 border border-emerald-400/30">Proposed</span>
+            )}
+            {row.missingPrice && (
+              <span className="text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/20" title="No catalog price on file">No price</span>
+            )}
+          </div>
+          <div className="text-[12px] font-medium text-foreground truncate">{row.description}</div>
+          {row.product && (
+            <div className="text-[10.5px] text-muted-foreground truncate">{row.product}</div>
+          )}
+          {row.laborHours > 0 && (
+            <div className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">{row.laborHours.toFixed(2)} hr labor</div>
+          )}
+        </div>
+        <div className="shrink-0 text-right">
+          <div className={`text-[12px] tabular-nums ${row.isExisting ? 'text-muted-foreground line-through decoration-1' : 'text-foreground'}`}>
+            {row.qty.toLocaleString(undefined, { maximumFractionDigits: row.uom === 'ft' ? 0 : 0 })} {row.uom}
+          </div>
+          <div className={`text-[10.5px] tabular-nums ${row.isExisting ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+            @ {fmt(row.unitPrice)}
+          </div>
+          <div className={`text-[12px] font-medium tabular-nums mt-0.5 ${row.isExisting ? 'text-muted-foreground line-through decoration-1' : 'text-foreground'}`}>
+            {fmt(lineTotal)}
+          </div>
+        </div>
+      </div>
+    </button>
   );
 }

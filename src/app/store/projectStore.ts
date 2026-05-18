@@ -1441,6 +1441,286 @@ export function deriveBOM(state: ProjectState, projectId: string): {
   return { lines, hardwareTotal, cableTotal, laborHours, laborTotal, total };
 }
 
+// ─────────────────── Per-source BOM rows (canvas drawer) ──────────
+// deriveBOM aggregates devices by catalog SKU, which is great for an
+// invoice but loses the link between a row and a specific glyph on
+// the canvas. The canvas-side BOM drawer needs the inverse: one row
+// per canvas object so clicking a row can focus its source. This
+// helper returns those per-source rows, plus categorisation and the
+// Proposed / Existing flag for door-assembly hardware.
+export function deriveCanvasBomRows(
+  state: ProjectState,
+  projectId: string,
+): {
+  rows: import('./types').CanvasBomRow[];
+  totals: {
+    deviceCount: number;
+    proposedMaterial: number;
+    existingDocumented: number;
+    cable: number;
+    laborHours: number;
+    laborTotal: number;
+    sellTotal: number;
+    missingPriceCount: number;
+    laborRate: number;
+    markup: number;
+  };
+} {
+  const laborRate = state.estimates[`est-${projectId}`]?.laborRate ?? 95;
+  const markup = state.estimates[`est-${projectId}`]?.markup ?? 0.18;
+
+  const devices = selectors.devicesForProject(state, projectId);
+  const doors = Object.values(state.doors).filter((d) => d.projectId === projectId);
+  const pathways = selectors.pathwaysForProject(state, projectId);
+  const idfs = selectors.idfsForProject(state, projectId);
+
+  let catalogProducts: any[] = [];
+  try { catalogProducts = (globalThis as any).__catalogProducts ?? []; } catch { /* noop */ }
+
+  function categoryFromType(t: string): import('./types').CanvasBomCategory {
+    if (t.startsWith('cam'))                 return 'cameras';
+    if (t.startsWith('acc') || t.startsWith('aud.intercom') || t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor')) return 'access';
+    if (t.startsWith('net') || t.startsWith('sto') || t.startsWith('pwr') || t === 'inf.rack' || t === 'inf.mdf') return 'network';
+    return 'other';
+  }
+
+  function shortKindLabel(t: string): string {
+    if (t === 'cam.bullet')      return 'Bullet';
+    if (t === 'cam.dome')        return 'Dome';
+    if (t === 'cam.ptz')         return 'PTZ';
+    if (t === 'cam.multisensor') return 'Multisensor';
+    if (t === 'cam.fisheye')     return 'Fisheye';
+    if (t === 'cam.thermal')     return 'Thermal';
+    if (t === 'cam.lpr')         return 'LPR';
+    if (t === 'cam.body')        return 'Body cam';
+    if (t === 'acc.reader')      return 'Reader';
+    if (t === 'acc.biometric')   return 'Biometric';
+    if (t === 'acc.intercom')    return 'Intercom';
+    if (t === 'aud.intercom')    return 'Intercom';
+    if (t === 'net.switch')      return 'Switch';
+    if (t === 'net.firewall')    return 'Firewall';
+    if (t === 'net.ap')          return 'AP';
+    if (t === 'pwr.ups')         return 'UPS';
+    if (t === 'sto.nvr')         return 'NVR';
+    if (t === 'sto.server')      return 'Server';
+    if (t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor')) return 'Opening';
+    if (t === 'inf.rack' || t === 'inf.mdf' || t === 'net.idf' || t === 'net.mdf') return 'Rack';
+    return t;
+  }
+
+  const rows: import('./types').CanvasBomRow[] = [];
+
+  // ── Per-device rows. Door-class openings emit one row per hardware
+  // item (honoring doorAssemblyState for Proposed / Existing). All
+  // other devices emit one row per device id.
+  for (const d of devices as any[]) {
+    const t = String(d?.type ?? '');
+    const isOpening = t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
+    if (isOpening) {
+      const assembly: import('./types').DoorHardware[] = d.doorAssembly ?? [];
+      const stateMap = (d.doorAssemblyState ?? {}) as Partial<Record<import('./types').DoorHardware, 'proposed' | 'existing'>>;
+      // Always show the opening itself even with no hardware, so the user
+      // can see the door appears in the BOM (e.g. for labor budgeting).
+      if (assembly.length === 0) {
+        rows.push({
+          id: `door-asm-${d.id}-none`,
+          category: 'access',
+          sourceKind: 'door',
+          sourceId: d.id,
+          isExisting: false,
+          description: 'Opening (no hardware specified yet)',
+          meta: `${shortKindLabel(t)} · ${d.id}`,
+          qty: 1, uom: 'ea',
+          unitPrice: 0,
+          laborHours: 0,
+          missingPrice: false,
+        });
+        continue;
+      }
+      for (const hw of assembly) {
+        const meta = DOOR_HARDWARE_PRICE[hw];
+        if (!meta) continue;
+        const isExisting = stateMap[hw] === 'existing';
+        rows.push({
+          id: `door-asm-${d.id}-${hw}`,
+          category: 'access',
+          sourceKind: 'door',
+          sourceId: d.id,
+          isExisting,
+          description: meta.desc,
+          meta: `${shortKindLabel(t)} · ${d.id}`,
+          qty: 1, uom: 'ea',
+          unitPrice: meta.price,
+          laborHours: meta.labor,
+          missingPrice: meta.price === 0,
+        });
+      }
+      continue;
+    }
+    // Non-opening device — single row.
+    const cat = catalogProducts.find((cp: any) => cp.id === d.product);
+    const fallback = UNIT_PRICE[t];
+    const price = cat?.msrp ?? fallback?.price ?? 0;
+    const labor = cat?.laborUnits ?? fallback?.labor ?? 0;
+    const product = cat ? `${cat.manufacturer} · ${cat.model}` : undefined;
+    rows.push({
+      id: `dev-${d.id}`,
+      category: categoryFromType(t),
+      sourceKind: 'device',
+      sourceId: d.id,
+      isExisting: false,
+      description: fallback?.desc ?? t,
+      meta: `${shortKindLabel(t)} · ${d.id}`,
+      product,
+      qty: 1, uom: 'ea',
+      unitPrice: price,
+      laborHours: labor,
+      missingPrice: price === 0,
+    });
+  }
+
+  // ── Canonical door records (state.doors). These predate the
+  // door-as-Device pattern; they get one row per hardware item with
+  // no Proposed/Existing distinction (the legacy schema doesn't carry
+  // that flag).
+  for (const door of doors) {
+    if (!door.hardware || door.hardware.length === 0) {
+      rows.push({
+        id: `door-${door.id}-none`,
+        category: 'access',
+        sourceKind: 'door',
+        sourceId: door.id,
+        isExisting: false,
+        description: 'Opening (no hardware specified yet)',
+        meta: `Door · ${door.id}`,
+        qty: 1, uom: 'ea',
+        unitPrice: 0,
+        laborHours: 0,
+        missingPrice: false,
+      });
+      continue;
+    }
+    for (const hw of door.hardware) {
+      const meta = DOOR_HARDWARE_PRICE[hw];
+      if (!meta) continue;
+      rows.push({
+        id: `door-${door.id}-${hw}`,
+        category: 'access',
+        sourceKind: 'door',
+        sourceId: door.id,
+        isExisting: false,
+        description: meta.desc,
+        meta: `Door · ${door.id}`,
+        qty: 1, uom: 'ea',
+        unitPrice: meta.price,
+        laborHours: meta.labor,
+        missingPrice: meta.price === 0,
+      });
+    }
+  }
+
+  // ── Pathways. One row per cable run; length uses the per-floor
+  // calibrated px-to-ft scale so the BOM agrees with the canvas
+  // labels and the pathway drawer.
+  for (const p of pathways) {
+    const floor = p.floorId ? state.floors[p.floorId] : undefined;
+    const ft = pathwayLengthFt(p, floor);
+    const unitFt = CABLE_UNIT_PRICE[p.cableType] ?? 0.5;
+    const qty = ft * p.cableCount;
+    rows.push({
+      id: `pw-${p.id}`,
+      category: 'cabling',
+      sourceKind: 'pathway',
+      sourceId: p.id,
+      isExisting: false,
+      description: `${p.cableType.toUpperCase()} · ${p.cableCount}× · ${ft} ft`,
+      meta: `Run · ${p.id}`,
+      qty,
+      uom: 'ft',
+      unitPrice: unitFt,
+      laborHours: ft * 0.02 * p.cableCount,
+      missingPrice: unitFt === 0,
+    });
+  }
+
+  // ── IDFs. Switch + UPS rows.
+  for (const idf of idfs) {
+    for (const sw of idf.switches ?? []) {
+      const meta = UNIT_PRICE['net.switch'];
+      rows.push({
+        id: `idf-${idf.id}-sw-${sw.model}`,
+        category: 'network',
+        sourceKind: 'idf',
+        sourceId: idf.id,
+        isExisting: false,
+        description: `${sw.model} · ${sw.portsTotal} ports`,
+        meta: `Rack · ${idf.id}`,
+        qty: 1, uom: 'ea',
+        unitPrice: meta.price,
+        laborHours: meta.labor,
+        missingPrice: meta.price === 0,
+      });
+    }
+    if (idf.power?.upsModel) {
+      const meta = UNIT_PRICE['pwr.ups'];
+      rows.push({
+        id: `idf-${idf.id}-ups`,
+        category: 'network',
+        sourceKind: 'idf',
+        sourceId: idf.id,
+        isExisting: false,
+        description: `${idf.power.upsModel} · ~${idf.power.upsRuntimeMin ?? 30} min runtime`,
+        meta: `Rack · ${idf.id}`,
+        qty: 1, uom: 'ea',
+        unitPrice: meta.price,
+        laborHours: meta.labor,
+        missingPrice: meta.price === 0,
+      });
+    }
+  }
+
+  // ── Totals. Existing rows are documented but excluded from
+  // proposed material; cable is its own column; labor is rolled up
+  // across all non-existing rows.
+  let proposedMaterial = 0;
+  let existingDocumented = 0;
+  let cable = 0;
+  let laborHours = 0;
+  let deviceCount = 0;
+  let missingPriceCount = 0;
+  for (const r of rows) {
+    const lineTotal = r.unitPrice * r.qty;
+    if (r.sourceKind === 'pathway') {
+      cable += lineTotal;
+    } else if (r.isExisting) {
+      existingDocumented += lineTotal;
+    } else {
+      proposedMaterial += lineTotal;
+    }
+    if (!r.isExisting) laborHours += r.laborHours;
+    if (r.sourceKind === 'device' || r.sourceKind === 'door' || r.sourceKind === 'idf') deviceCount += r.qty;
+    if (r.missingPrice) missingPriceCount += 1;
+  }
+  const laborTotal = laborHours * laborRate;
+  const sellTotal = (proposedMaterial + cable + laborTotal) * (1 + markup);
+
+  return {
+    rows,
+    totals: {
+      deviceCount,
+      proposedMaterial,
+      existingDocumented,
+      cable,
+      laborHours,
+      laborTotal,
+      sellTotal,
+      missingPriceCount,
+      laborRate,
+      markup,
+    },
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // THREAT DRILL — GAP ANALYSIS + READINESS SCORE
 // ═══════════════════════════════════════════════════════════════════
