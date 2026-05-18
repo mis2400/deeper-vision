@@ -5,6 +5,7 @@ import { Button } from './Button';
 import {
   Command, Search, Settings, HelpCircle, ChevronRight, X, Check,
   User as UserIcon, Layers as LayersIcon,
+  LayoutDashboard, FolderKanban, Sparkles, BookOpen, Package, BarChart3, LogOut, ChevronDown,
 } from 'lucide-react';
 import { useProjectStore, defaultModeForPhase } from '../store/projectStore';
 import type { ProjectMode, UserRole } from '../store/types';
@@ -55,9 +56,7 @@ export function AppShell({
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       {/* Header — 52px, single line */}
       <header className="h-[52px] shrink-0 border-b border-border bg-background flex items-center px-4 gap-3">
-        <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 shrink-0" title="Dashboard">
-          <BrandLogo variant="compact" theme="dark" height={22} />
-        </button>
+        <AppMenu />
 
         <div className="h-5 w-px bg-border mx-1" />
 
@@ -125,6 +124,108 @@ export function AppShell({
       </div>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// AppMenu — the brand wordmark is the menu trigger. Clicking opens a
+// compact popover with the global app routes (Dashboard, Projects,
+// CRM, AI, Catalog, Devices, KB, Settings, Help, Log out). Pattern
+// follows Linear / Notion / GitHub: the workspace mark IS the nav.
+// ─────────────────────────────────────────────────────────────────
+
+const APP_MENU_GROUPS: { id: string; label: string | null; items: { to: string; icon: any; label: string; hint?: string }[] }[] = [
+  {
+    id: 'work', label: null, items: [
+      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard',        hint: 'Daily home' },
+      { to: '/projects',  icon: FolderKanban,    label: 'Projects',         hint: 'Every active site' },
+      { to: '/crm',       icon: BarChart3,       label: 'Pipeline',         hint: 'Pre-project sales' },
+    ],
+  },
+  {
+    id: 'build', label: 'Build', items: [
+      { to: '/ai/p1',     icon: Sparkles,        label: 'AI Assistant',     hint: 'Project-grounded' },
+      { to: '/catalog',   icon: Package,         label: 'Product catalog',  hint: 'Manufacturer feeds' },
+      { to: '/devices',   icon: Package,         label: 'Device library',   hint: 'Your priced pricebook' },
+    ],
+  },
+  {
+    id: 'workspace', label: 'Workspace', items: [
+      { to: '/kb',        icon: BookOpen,        label: 'Knowledge base' },
+      { to: '/settings',  icon: Settings,        label: 'Settings' },
+      { to: '/help',      icon: HelpCircle,      label: 'Help' },
+    ],
+  },
+];
+
+function AppMenu() {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey  = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded-md transition-colors ${open ? 'bg-secondary' : 'hover:bg-secondary'}`}
+        title="App menu"
+        data-track="appshell-app-menu"
+      >
+        <BrandLogo variant="compact" theme="dark" height={22} />
+        <ChevronDown className={`w-3 h-3 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1.5 z-50 w-[260px] bg-card border border-border-strong rounded-lg shadow-2xl overflow-hidden"
+          style={{ backdropFilter: 'blur(14px)' }}
+        >
+          {APP_MENU_GROUPS.map((g, gi) => (
+            <div key={g.id} className={gi > 0 ? 'border-t border-border/60' : ''}>
+              {g.label && (
+                <div className="px-3 pt-2.5 pb-1 text-[10px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70">
+                  {g.label}
+                </div>
+              )}
+              <div className="px-1 pb-1.5">
+                {g.items.map((item) => (
+                  <button
+                    key={item.to}
+                    onClick={() => { setOpen(false); navigate(item.to); }}
+                    className="w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2.5 hover:bg-secondary transition-colors"
+                  >
+                    <item.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block leading-tight">{item.label}</span>
+                      {item.hint && <span className="block text-[10px] text-muted-foreground leading-tight mt-0.5">{item.hint}</span>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          {/* Log out lives at the bottom, separated, treated as a
+              destructive action so it doesn't sit next to nav routes. */}
+          <div className="border-t border-border/60 px-1 py-1.5">
+            <button
+              onClick={() => { setOpen(false); navigate('/login'); }}
+              className="w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2.5 hover:bg-destructive/10 hover:text-destructive transition-colors text-muted-foreground"
+            >
+              <LogOut className="w-3.5 h-3.5 shrink-0" />
+              <span>Log out</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
