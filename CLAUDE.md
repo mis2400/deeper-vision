@@ -13,6 +13,25 @@ Mohammad Esmaeil Shirmohammadi. Direct, results focused, expects work to be done
 - No corporate fluff. Just do the work and explain what you did.
 - If something is a bad idea, say so plainly. Push back when you disagree.
 
+## Voice and writing rules (every user visible string)
+
+These apply to every label, button, tooltip, empty state, error message, toast description, and PDF export the product ships. Audited at commit time.
+
+- **No hyphens in prose.** "Real time" not "real-time". "Long term" not "long-term". "Cloud based" not "cloud-based". Code identifiers (kebab-case filenames, CSS classes, MIME types, route segments) are unaffected.
+- **No corporate fluff or AI-sounding language.** Banned: "seamlessly", "leverage", "robust", "best in class", "empower", "unlock", "harness", "delight", "supercharge", "revolutionize". Direct, confident, modern instead.
+- **No em dashes pretending to be hyphens.** Use periods, commas, or rewrite the sentence.
+- **Active voice. Short sentences. No filler.**
+- Reads like Linear, Notion, or Verkada. Not Salesforce.
+
+## Honesty contract for not-yet-wired features
+
+V1 policy: hide controls that don't work; do not show "Preview only" / "Not connected" / "Coming soon" labels on the primary surface.
+
+- If a feature doesn't work, the control doesn't render. No disabled buttons with disclaimer text. No "we'll wire it later" footnotes in user surfaces.
+- Stub routes (V2 differentiators) get a clean, branded "Coming Q3" landing page with email capture. That's the only place future-feature copy lives.
+- Internal debug surfaces gated behind `?debug=1` may still surface developer notes. User surfaces may not.
+- Build version + commit + timestamp in footer stays (that's professional, not developer language).
+
 ## How to handle every request
 
 Before writing any code, do this in order:
@@ -85,9 +104,11 @@ Single page React app. No backend. State persists to localStorage via a versione
 - UI primitives: Radix UI (`@radix-ui/react-*`), Lucide icons, sonner toasts, MUI for a few isolated surfaces.
 - Store: one Zustand store under persist key `deeperVisionStore` (currently v8). Schema lives in `src/app/store/types.ts`; all entities (devices, doors, pathways, IDFs, attachments, work orders, pricebook, snapshots) hang off it.
 - Routing: `BrowserRouter` in `src/app/App.tsx`. Canvas is the heart: `/project/:projectId/canvas` (`src/app/screens/EngineeringCanvas.tsx`, ~14k LOC).
-- Layout rules on the canvas are non negotiable: tools on the left rail only, devices on the bottom bar only. Out of scope by default: Bus Designer, Threat Drill, Dashboard / CRM, Quote / Proposal builders, `deepervision-ai` (separate repo).
+- Layout rules on the canvas are non negotiable: tools on the left rail only, devices on the bottom bar only.
+- All 42 routes are in scope under the V1 mission. The prior "out of scope by default" list (Bus Designer, Threat Drill, Dashboard / CRM, Quote / Proposal builders) was removed when the V1 brief landed. `deepervision-ai` remains a separate repo and is the only off-limits codebase.
+- Sibling repo `quote-engine` at `/Users/mis/Projects/quote-engine` (Next.js 16 + Prisma + Neon) owns pricing logic for Estimator, Proposal Builder, Change Orders, and Customer Portal pricing displays. Do not duplicate pricing math in this repo; call the quote-engine API. If an endpoint is missing, stub with realistically shaped data and document the gap rather than block.
 - Deploy: `vercel.json` is configured to ship the committed `dist/` directly (`buildCommand: "echo skip-build-using-prebuilt-dist"`). Every shipped change is a two commit ritual: source commit, then `git add dist && git commit -m "build: dist with <short-sha> stamp ..."`, then `npx vercel deploy --prod --yes`. The bundle carries `__COMMIT_HASH__` injected by `vite.config.ts` so the live URL can be diffed against the source SHA.
-- Honesty rule: visible dead controls are forbidden. Anything not wired must be labelled (e.g. "Preview only · file persistence not wired") or hidden.
+- Honesty rule: visible dead controls are forbidden. V1 default is HIDE, not "label as preview". See the Voice and honesty contract sections above for the full policy.
 - Per pass acceptance criteria live in `docs/MVP_ACCEPTANCE_CHECKLIST.md`; manual walkthrough QA lives in `QA_CHECKLIST.md`. Extend the existing sections rather than starting parallel audit docs.
 
 ## Commands to run before declaring done
@@ -126,11 +147,6 @@ npx vercel deploy --prod --yes                                 # 4. ship
 - `package.json` / `package-lock.json` — no new dependencies, no version bumps, no script changes without permission.
 - `.mcp.json` — local MCP config, never committed (standing rule).
 - `.claude/` — local Claude Code settings + the new subagent definitions; gitignored except where explicitly added.
-- Out of scope screens (do not edit unless the task names them):
-  - `src/app/screens/BusDesigner.tsx`, `src/app/screens/BusFleet.tsx`
-  - `src/app/screens/ThreatDrillEditor.tsx`, `src/app/screens/ThreatDrillLibrary.tsx`
-  - `src/app/screens/Dashboard.tsx`, `src/app/screens/PipelineView.tsx`, `src/app/screens/AccountDetail.tsx`
-  - `src/app/screens/ProposalBuilder.tsx`
 - Root level audit / handoff docs are reference material, not casual edit targets:
   - `AUDIT.md`, `CANVAS_AUDIT.md`, `SURVEYOR_*.md`, `FINAL_*.md`, `DEEPER_VISION_*.md`
   - Append to `QA_CHECKLIST.md` per pass; don't rewrite earlier sections.
