@@ -2066,6 +2066,51 @@ export function EngineeringCanvas() {
         return;
       }
       // ── Normal floor drop ──
+      // Canvas V2 Pass 1.7 — door hardware can no longer orphan on the
+      // floor. If the dropped product maps onto a DoorHardware slot
+      // (strike, maglock, rex, dps, reader, keypad, biometric) AND no
+      // door was within HOST_RANGE at drop time, we look for the
+      // nearest door within a generous 120 unit fallback range. If
+      // one exists, route to it. If none exists, reject the drop with
+      // an honest prompt instead of silently creating a floating
+      // accessory device that pollutes the BOM.
+      {
+        const droppedHw = productTypeToDoorHardware(drag.product.type);
+        if (droppedHw) {
+          const cx = (e.clientX - r.left - pan.x) / zoom;
+          const cy = (e.clientY - r.top  - pan.y) / zoom;
+          let bestDoor: { dev: Device; d: number } | null = null;
+          for (const dev of devices) {
+            if (!isStackableHost(dev.type)) continue;
+            const d = Math.hypot(dev.x - cx, dev.y - cy);
+            if (d <= 120 && (!bestDoor || d < bestDoor.d)) bestDoor = { dev, d };
+          }
+          if (bestDoor) {
+            // Auto attach to the nearest door inside the fallback range.
+            const host = bestDoor.dev;
+            const cur = (host.doorAssembly ?? []) as DoorHardware[];
+            const next = cur.includes(droppedHw) ? cur : [...cur, droppedHw];
+            const curState = ((host as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
+            const nextState = cur.includes(droppedHw) ? curState : { ...curState, [droppedHw]: 'proposed' as const };
+            setDevices((ds) => ds.map((dd) => dd.id === host.id ? { ...dd, doorAssembly: next, doorAssemblyState: nextState, stack: undefined, linkedIds: undefined } : dd));
+            setSelId(host.id);
+            setSelPathwayId(null);
+            toast.success(`Attached ${droppedHw} to ${host.id}`, {
+              description: `Snapped to nearest door (${Math.round(bestDoor.d)} units away). Drag closer next time to skip the fallback.`,
+              duration: 4500,
+            });
+            setDrag(null); setHoverHost(null);
+            return;
+          }
+          // No door anywhere reasonable. Refuse the drop honestly.
+          toast.error(`${droppedHw} needs to attach to a door`, {
+            description: 'Drag it onto a door on the plan. No door nearby was found — place a door first or drop closer to one.',
+            duration: 6000,
+          });
+          setDrag(null); setHoverHost(null);
+          return;
+        }
+      }
       const rawX = (e.clientX - r.left - pan.x) / zoom;
       const rawY = (e.clientY - r.top  - pan.y) / zoom;
       const x = snap ? Math.round(rawX / 20) * 20 : rawX;
