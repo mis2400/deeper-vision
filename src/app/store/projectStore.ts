@@ -2278,7 +2278,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'deeperVisionStore',
-      version: 26,
+      version: 27,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -2701,6 +2701,24 @@ export const useProjectStore = create<ProjectState>()(
               if (!t || typeof t !== 'object' || Array.isArray(t)) { delete persisted.serviceTickets[tid]; continue; }
               if (!Array.isArray((t as any).notes)) (t as any).notes = [];
             }
+          }
+        }
+        if (version < 27) {
+          // v26 -> v27 (SC.2.3): retire the legacy
+          // `Project.customerApprovedAt` / `customerApprovedBy`
+          // pair. The v22 -> v23 backfill (SC.1.1) already pushed
+          // every prior value into an `Approval` record, so this
+          // is pure cleanup. Defensive against tampered shapes.
+          const projects: Record<string, any> =
+            (persisted.projects && typeof persisted.projects === 'object' && !Array.isArray(persisted.projects))
+              ? persisted.projects
+              : {};
+          for (const p of Object.values(projects)) {
+            if (!p || typeof p !== 'object') continue;
+            // Use the operator form (not delete on each iteration in
+            // a hot path) to make the intent obvious.
+            if ('customerApprovedAt' in p) delete (p as any).customerApprovedAt;
+            if ('customerApprovedBy' in p) delete (p as any).customerApprovedBy;
           }
         }
         // SC.1.5 cross model integrity sweep. Runs after every

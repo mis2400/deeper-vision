@@ -337,17 +337,12 @@ export interface Project {
   /** Budget bracket selected at intake. Operator-readable label. */
   budgetRange?: 'under-50k' | '50k-150k' | '150k-500k' | '500k-2m' | 'over-2m';
 
-  // ── Customer portal approval (Phase 4F) ──
-  /** SC.1.1 DEPRECATED for writes. Read only. Approvals now live in
-   *  the dedicated `approvals` slice. The v23 migration backfills
-   *  any prior value here into an `Approval` record. Do NOT add new
-   *  writers — call `addApproval` instead. Field stays on Project
-   *  for back compat with read paths that haven't moved over yet;
-   *  SC.3 retires the field once the UI consumers swap. */
-  customerApprovedAt?: number;
-  /** SC.1.1 DEPRECATED for writes. Read only. See `customerApprovedAt`
-   *  note. Use `Approval.approverName` going forward. */
-  customerApprovedBy?: string;
+  // SC.2.3 — `customerApprovedAt` and `customerApprovedBy` retired.
+  // The v23 migration backfilled their values into Approval
+  // records. The v27 migration strips the fields from persisted
+  // Project blobs. The migration reader at projectStore.ts still
+  // reads the fields off legacy blobs cast through `any`; nothing
+  // in app code references them.
 }
 
 // ───────────────────────── Approval records ───────────────────────

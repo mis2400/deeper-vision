@@ -21,7 +21,7 @@ import {
 import { Button } from '../components/Button';
 import { useProjectStore, selectors } from '../store/projectStore';
 import { PHASE_TIMELINE } from '../lifecycle/phases';
-import type { LifecyclePhase, Attachment, ApprovalType, Project } from '../store/types';
+import type { LifecyclePhase, Attachment, ApprovalType } from '../store/types';
 
 /** SC.2.1 — roll a vN style proposal version forward by one when
  *  the prior approval used a recognisable vN tag. Non-matching
@@ -115,12 +115,11 @@ export function CustomerPortal() {
   const brandColor = workspaceSettings?.brandColor || 'var(--primary)';
   const brandLogo  = workspaceSettings?.logoDataUrl;
 
-  // SC.2.1 — full approval form. The legacy single-name modal is
-  // gone; the new form captures every field the Approval record
-  // requires (name + email + type + version + comments) and writes
-  // through addApproval (SC.1.1). The legacy updateProject({
-  // customerApprovedAt, customerApprovedBy }) write is kept until
-  // SC.2.3 retires those fields.
+  // SC.2.1 + SC.2.3 — full approval form writes through
+  // addApproval (SC.1.1). Lifecycle phase still advances via
+  // updateProject on scope / final approvals so the operator
+  // workflow keeps moving. Legacy Project.customerApprovedAt /
+  // customerApprovedBy are gone (v26 -> v27 migration).
   const [approveOpen, setApproveOpen] = useState(false);
   const [approverName, setApproverName] = useState('');
   const [approverEmail, setApproverEmail] = useState('');
@@ -180,27 +179,22 @@ export function CustomerPortal() {
         updatedAt: now,
       });
 
-      // Legacy mirror write — SC.2.3 removes both fields and the
-      // updateProject call. Still here so any reader that has not
-      // moved to approvalsForProject yet keeps working through the
-      // current deploy cycle.
+      // SC.2.3 — legacy mirror write retired. Lifecycle phase
+      // advance still fires on scope / final approvals so the
+      // operator-side workflow keeps moving; everything else now
+      // reads from the Approval record via approvalsForProject.
       const phasesEligible: LifecyclePhase[] = ['proposal', 'customer_review'];
-      const patch: Partial<Project> & { customerApprovedAt?: number; customerApprovedBy?: string } = {
-        customerApprovedAt: now,
-        customerApprovedBy: trimmedName,
-        updatedAt: now,
-      };
-      // Lifecycle advance only fires on 'scope' or 'final' approvals
-      // (design approval signs off the drawing, not the contract).
       if (
         (approvalType === 'scope' || approvalType === 'final')
         && project.lifecyclePhase
         && phasesEligible.includes(project.lifecyclePhase)
       ) {
-        patch.lifecyclePhase = 'approved';
-        patch.phaseStartedAt = now;
+        updateProject(project.id, {
+          lifecyclePhase: 'approved',
+          phaseStartedAt: now,
+          updatedAt: now,
+        });
       }
-      updateProject(project.id, patch);
 
       toast.success(`${approvalTypeLabel(approvalType)} approval recorded.`, {
         description: `Thanks ${trimmedName}. Your team has been notified.`,
@@ -278,11 +272,11 @@ export function CustomerPortal() {
               <MapPin className="w-3.5 h-3.5" />{siteAddress}
             </div>
           )}
-          {approvedAt && (
+          {latestApproval?.approvalType === 'final' && (
             <div className="mt-3 inline-flex items-center gap-1.5 text-xs bg-success/15 text-success border border-success/40 rounded-full px-2.5 py-1">
               <Check className="w-3 h-3" />
-              Approved {new Date(approvedAt).toLocaleDateString()}
-              {project.customerApprovedBy ? ` by ${project.customerApprovedBy}` : ''}
+              Final approval {new Date(latestApproval.approvedAt).toLocaleDateString()}
+              {latestApproval.approverName ? ` by ${latestApproval.approverName}` : ''}
             </div>
           )}
         </div>
