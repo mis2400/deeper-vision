@@ -180,6 +180,13 @@ export interface ProjectState {
    *  highlights / callouts). Keyed by id; each carries floorId. */
   annotations: Record<string, import('./types').Annotation>;
 
+  /** MVP Spine Completion SC.1.2 — post commission asset inventory.
+   *  Keyed by asset id. One Asset per Device (enforced by
+   *  `createAssetFromDevice` upsert behaviour). The Device captures
+   *  design intent on the canvas; the Asset captures the installed
+   *  reality (serial number, commission timestamp, status). */
+  assets: Record<string, import('./types').Asset>;
+
   /** MVP Spine Completion SC.1.1 — first class customer approvals.
    *  Keyed by approval id. Each carries `projectId`, the proposal
    *  version it ratifies, the approver's name + email + comments,
@@ -354,6 +361,33 @@ export interface ProjectState {
   addAnnotation:    (a: import('./types').Annotation) => void;
   updateAnnotation: (id: string, patch: Partial<import('./types').Annotation>) => void;
   removeAnnotation: (id: string) => void;
+
+  // ── Asset CRUD (SC.1.2) ──
+  /** Idempotent. If an Asset already exists for `deviceId`, returns
+   *  that existing Asset's id without creating a duplicate; the
+   *  one Device <-> one Asset rule is enforced here. On create,
+   *  `createdAt` + `updatedAt` are stamped to `Date.now()`. On
+   *  upsert, both are preserved from the existing record. Returns
+   *  the asset id (new or existing) so callers don't have to grep
+   *  state afterwards. */
+  createAssetFromDevice: (input: {
+    deviceId: string;
+    projectId: string;
+    customerId: string;
+    manufacturer: string;
+    model: string;
+    serialNumber?: string;
+    commissionedAt?: string;
+    commissionedBy?: string;
+    status?: import('./types').AssetStatus;
+    notes?: string;
+    /** Optional explicit id; when omitted the action mints
+     *  `asset-${deviceId}` (deterministic, so repeat calls return
+     *  the same record). */
+    id?: string;
+  }) => string;
+  updateAsset: (id: string, patch: Partial<import('./types').Asset>) => void;
+  removeAsset: (id: string) => void;
 
   // ── Approval CRUD (SC.1.1) ──
   /** Persist a new customer approval. Caller is responsible for
@@ -555,6 +589,7 @@ export const useProjectStore = create<ProjectState>()(
       rooms:             {},
       annotations:       {},
       approvals:         {},
+      assets:            {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1178,6 +1213,45 @@ export const useProjectStore = create<ProjectState>()(
           : s),
       removeApproval: (id) =>
         set((s) => { const { [id]: _, ...rest } = s.approvals; return { approvals: rest }; }),
+
+      // ── Asset CRUD (SC.1.2) ──────────────────────────────────────
+      // Idempotent create-from-device: the existing record wins on
+      // re-invocation. We never have two Assets pointing at the same
+      // Device. The returned id is whatever id the record actually
+      // has now — caller-supplied, deterministic `asset-${deviceId}`,
+      // or the original on upsert.
+      createAssetFromDevice: (input) => {
+        let returnedId = input.id ?? `asset-${input.deviceId}`;
+        set((s) => {
+          // Existing Asset already pointing at this Device wins.
+          const existing = Object.values(s.assets).find((a) => a.deviceId === input.deviceId);
+          if (existing) { returnedId = existing.id; return s; }
+          const now = Date.now();
+          const asset: import('./types').Asset = {
+            id: returnedId,
+            deviceId: input.deviceId,
+            projectId: input.projectId,
+            customerId: input.customerId,
+            manufacturer: input.manufacturer,
+            model: input.model,
+            serialNumber: input.serialNumber,
+            commissionedAt: input.commissionedAt ?? new Date(now).toISOString(),
+            commissionedBy: input.commissionedBy ?? '',
+            status: input.status ?? 'active',
+            notes: input.notes ?? '',
+            createdAt: now,
+            updatedAt: now,
+          };
+          return { assets: { ...s.assets, [asset.id]: asset } };
+        });
+        return returnedId;
+      },
+      updateAsset: (id, patch) =>
+        set((s) => s.assets[id]
+          ? { assets: { ...s.assets, [id]: { ...s.assets[id], ...patch, updatedAt: Date.now() } } }
+          : s),
+      removeAsset: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.assets; return { assets: rest }; }),
 
       // ── Floor CRUD (Pass 2A.5) ───────────────────────────────────
       removeFloor: (id) =>
@@ -1896,12 +1970,13 @@ export const useProjectStore = create<ProjectState>()(
           // SC.1.1 — explicit empty so resetDemoData doesn't leave the
           // slice as undefined. SC.1.2/1.3/1.4 must each add a sibling.
           approvals: {},
+          assets: {},
         };
       }),
     }),
     {
       name: 'deeperVisionStore',
-      version: 23,
+      version: 24,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -2296,6 +2371,14 @@ export const useProjectStore = create<ProjectState>()(
           }
           persisted.approvals = approvals;
         }
+        if (version < 24) {
+          // v23 -> v24: introduce the assets slice (SC.1.2). Greenfield;
+          // no backfill source. Defensive coercion against tampered blobs.
+          const raw = persisted.assets;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            persisted.assets = {};
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -2369,6 +2452,7 @@ export const useProjectStore = create<ProjectState>()(
         rooms:           s.rooms,
         annotations:     s.annotations,
         approvals:       s.approvals,
+        assets:          s.assets,
       }),
     },
   ),
@@ -2470,6 +2554,23 @@ export const selectors = {
     list.sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime());
     return list[0];
   },
+
+  // ── Asset selectors (SC.1.2) ─────────────────────────────────────
+  /** All Assets on a project, newest first by `createdAt`. */
+  assetsForProject: (s: ProjectState, projectId: string): import('./types').Asset[] =>
+    Object.values(s.assets)
+      .filter((a) => a.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+
+  /** All Assets for a customer (across all their projects). */
+  assetsForCustomer: (s: ProjectState, customerId: string): import('./types').Asset[] =>
+    Object.values(s.assets)
+      .filter((a) => a.customerId === customerId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+
+  /** The single Asset for a Device, or null. One-to-one rule. */
+  assetForDevice: (s: ProjectState, deviceId: string): import('./types').Asset | null =>
+    Object.values(s.assets).find((a) => a.deviceId === deviceId) ?? null,
 
   /** Project activity feed, newest first. */
   activityForProject: (s: ProjectState, projectId: string, limit = 50): ActivityItem[] =>

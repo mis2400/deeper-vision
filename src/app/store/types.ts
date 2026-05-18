@@ -385,6 +385,48 @@ export interface Approval {
   updatedAt: number;
 }
 
+// ─────────────────────────── Asset records ───────────────────────
+// MVP Spine Completion SC.1.2. An Asset is the post commission
+// identity of a Device. The Device is the design intent ("a camera
+// goes here, model X, lens Y"); the Asset is the installed thing
+// ("the camera that actually got bolted to that ceiling, serial
+// 12345, commissioned 2026 06 01").
+//
+// Model decision: ONE Asset per Device, enforced. Replacing a
+// physical unit creates a new Device (or replaces the device id;
+// SC.3 will choose). `createAssetFromDevice` is idempotent: a
+// second call with the same deviceId returns the existing Asset
+// instead of creating a duplicate. The lookup `assetForDevice` is
+// therefore a single record fetch, not a list.
+//
+// Linkage: Asset -> Device (deviceId), Asset -> Project (projectId,
+// denormalised for fast project rollups), Asset -> Customer
+// (customerId, denormalised for customer wide asset queries on the
+// customer portal). All three parent ids are required.
+
+export type AssetStatus = 'active' | 'decommissioned' | 'service-required' | 'orphaned';
+
+export interface Asset {
+  id: string;
+  /** The canvas Device this Asset materialises. One Device maps to
+   *  at most one Asset (enforced by createAssetFromDevice). */
+  deviceId: string;
+  projectId: string;
+  customerId: string;
+  manufacturer: string;
+  model: string;
+  /** Often unknown at commissioning time. Filled in later. */
+  serialNumber?: string;
+  /** ISO 8601 timestamp of commissioning. */
+  commissionedAt: string;
+  /** Free text name of the engineer / installer who signed off. */
+  commissionedBy: string;
+  status: AssetStatus;
+  notes: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ─────────────────────────── Activity feed ────────────────────────
 // One log entry per meaningful change. Surfaced on the project command
 // center; later we may roll up across projects for a global feed.
