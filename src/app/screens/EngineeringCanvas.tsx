@@ -1765,7 +1765,7 @@ export function EngineeringCanvas() {
         if (scanBuildOpen)         { setScanBuildOpen(false); return; }
         // Cancel a pending click-to-arm placement before generic deselect.
         if (armedProduct)          { setArmedProduct(null); toast.message('Placement cancelled', { duration: 2000 }); return; }
-        setSelId(null); setDrag(null); setOpenCat(null); setOpenType(null);
+        setSelId(null); setSelIds(new Set()); setDrag(null); setOpenCat(null); setOpenType(null);
         setWallStart(null);
         setMeasure({ start: null, end: null, cursor: null });
         setCableDraw((c) => ({ points: [], cursor: null, cableType: c.cableType }));
@@ -1799,6 +1799,17 @@ export function EngineeringCanvas() {
       if ((e.metaKey || e.ctrlKey) && e.key === '0') { e.preventDefault(); setZoom(1); }
       if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); setZoom((z) => Math.min(4, z * 1.2)); }
       if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); setZoom((z) => Math.max(0.25, z / 1.2)); }
+      // Pass 1.3 — Cmd / Ctrl + A selects every visible device on the
+      // current canvas surface. Locked items are skipped unless Shift
+      // is held (Cmd-Shift-A = include locked).
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        const includeLocked = e.shiftKey;
+        const visible = devices.filter((d) => !hiddenIds.has(d.id) && (includeLocked || !lockedIds.has(d.id)));
+        setSelIds(new Set(visible.map((d) => d.id)));
+        if (visible[0]) setSelId(visible[0].id);
+        toast.message(`Selected ${visible.length} ${visible.length === 1 ? 'device' : 'devices'}`, { duration: 1800 });
+      }
       // Canvas V2 Pass 1.1 — undo / redo. Cmd-Z undo, Cmd-Shift-Z redo.
       // Ctrl-Y also redos (Windows convention). Esc earlier in this
       // handler cancels in-flight edits and pushes nothing to history.
@@ -6404,7 +6415,8 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               // path that doesn't fight the drag flow.
               onClick={(e) => {
                 e.stopPropagation();
-                if (e.shiftKey) {
+                if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                  // Pass 1.3 — Cmd / Ctrl click toggles like Shift click.
                   (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(new CustomEvent('dv-shift-pick', { detail: { id: d.id }, bubbles: true }));
                 } else {
                   onPick(d.id);
@@ -6428,9 +6440,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 // without changing the primary selection. Plain click sets
                 // the primary selection AND replaces the multi-selection
                 // so the user can re-start a group action by clicking once.
-                if (e.shiftKey) {
+                if (e.shiftKey || e.metaKey || e.ctrlKey) {
                   e.stopPropagation();
                   // Dispatch up to the parent — the parent owns selIds.
+                  // Pass 1.3 — Cmd / Ctrl click toggles like Shift click.
                   (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(new CustomEvent('dv-shift-pick', { detail: { id: d.id }, bubbles: true }));
                 } else {
                   onPick(d.id);
