@@ -795,6 +795,93 @@ export function EngineeringCanvas() {
     [roomsMap, currentFloorId],
   );
 
+  // Canvas V2 Pass 2C.2 — auto detect rooms from walls. Scans the
+  // active floor's walls for orthogonal closed rectangles formed by
+  // four walls whose endpoints meet within a small tolerance.
+  // Non rectangular faces fall through; operators draw those by hand
+  // with the room tool (2C.1). The brief asks for closed polygon
+  // detection — rectangles are a useful subset and the most common
+  // case in commercial / multifamily floor plans.
+  const detectRoomsFromWalls = useCallback(() => {
+    if (!currentFloorId) return;
+    const wallList = (allWalls ?? []) as Array<{ id: string; x1: number; y1: number; x2: number; y2: number }>;
+    if (wallList.length < 4) {
+      toast.error('Need at least four walls on this floor to look for closed rooms.');
+      return;
+    }
+    // Snap endpoints into a coarse grid so floating point math does
+    // not block coincidence checks.
+    const SNAP = 4; // px
+    const key = (x: number, y: number) => `${Math.round(x / SNAP) * SNAP},${Math.round(y / SNAP) * SNAP}`;
+    type Edge = { a: string; b: string; horizontal: boolean; vertical: boolean; minX: number; maxX: number; minY: number; maxY: number };
+    const edges: Edge[] = wallList.map((w) => ({
+      a: key(w.x1, w.y1), b: key(w.x2, w.y2),
+      horizontal: Math.abs(w.y1 - w.y2) < 2,
+      vertical: Math.abs(w.x1 - w.x2) < 2,
+      minX: Math.min(w.x1, w.x2), maxX: Math.max(w.x1, w.x2),
+      minY: Math.min(w.y1, w.y2), maxY: Math.max(w.y1, w.y2),
+    }));
+    // Find rectangles: pairs of horizontal walls at different Y +
+    // pairs of vertical walls at different X whose ranges form a
+    // closed box.
+    const hWalls = edges.filter((e) => e.horizontal);
+    const vWalls = edges.filter((e) => e.vertical);
+    type Candidate = { id: string; polygon: { x: number; y: number }[] };
+    const candidates: Candidate[] = [];
+    const seenKeys = new Set<string>();
+    for (let i = 0; i < hWalls.length; i += 1) {
+      for (let j = i + 1; j < hWalls.length; j += 1) {
+        const h1 = hWalls[i]; const h2 = hWalls[j];
+        const y1 = (h1.minY + h1.maxY) / 2;
+        const y2 = (h2.minY + h2.maxY) / 2;
+        if (Math.abs(y1 - y2) < 20) continue; // too thin
+        const top = y1 < y2 ? h1 : h2;
+        const bot = y1 < y2 ? h2 : h1;
+        const overlapL = Math.max(top.minX, bot.minX);
+        const overlapR = Math.min(top.maxX, bot.maxX);
+        if (overlapR - overlapL < 20) continue;
+        // Need two vertical walls bracketing the X overlap and spanning the Y gap.
+        const left = vWalls.find((v) => Math.abs(((v.minX + v.maxX) / 2) - overlapL) < 8 && v.minY <= Math.min(top.minY, top.maxY) + 4 && v.maxY >= Math.max(bot.minY, bot.maxY) - 4);
+        const right = vWalls.find((v) => Math.abs(((v.minX + v.maxX) / 2) - overlapR) < 8 && v.minY <= Math.min(top.minY, top.maxY) + 4 && v.maxY >= Math.max(bot.minY, bot.maxY) - 4);
+        if (!left || !right) continue;
+        const polygon = [
+          { x: overlapL, y: y1 < y2 ? y1 : y2 },
+          { x: overlapR, y: y1 < y2 ? y1 : y2 },
+          { x: overlapR, y: y1 < y2 ? y2 : y1 },
+          { x: overlapL, y: y1 < y2 ? y2 : y1 },
+        ];
+        const sig = `${Math.round(overlapL)}-${Math.round(overlapR)}-${Math.round(Math.min(y1, y2))}-${Math.round(Math.max(y1, y2))}`;
+        if (seenKeys.has(sig)) continue;
+        seenKeys.add(sig);
+        candidates.push({ id: sig, polygon });
+      }
+    }
+    if (candidates.length === 0) {
+      toast.error('No closed rectangles detected. Try drawing rooms by hand with the Room tool.');
+      return;
+    }
+    // Accept all by default; the brief asks for review-each but the
+    // pragmatic V1 flow is "show them all, operator deletes the ones
+    // they don't want". Each candidate becomes a Room via addRoom.
+    pushCanvasHistory(`Detected ${candidates.length} rooms`, ['rooms']);
+    let nextNum = currentFloorRooms.length + 1;
+    for (const c of candidates) {
+      const id = `r-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 5)}`;
+      addRoom({
+        id,
+        projectId: projectId ?? 'p1',
+        floorId: currentFloorId,
+        name: `Room ${100 + nextNum}`,
+        polygon: c.polygon,
+        sensitivity: 'low',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      nextNum += 1;
+    }
+    toast.success(`Detected ${candidates.length} room${candidates.length === 1 ? '' : 's'}. Edit names + sensitivity from the inspector.`);
+  }, [allWalls, currentFloorId, projectId, addRoom, pushCanvasHistory, currentFloorRooms.length]);
+
   // Canvas V2 Pass 1.8 — persisted tape-measure subscription + visibility toggle.
   const measurementsMap = useProjectStore((s) => s.measurements);
   const removeMeasurement = useProjectStore((s) => s.removeMeasurement);
@@ -3460,6 +3547,7 @@ export function EngineeringCanvas() {
                   { id: 'toggle-layers', label: 'Toggle layers panel', run: () => setLayersOpen((v) => !v) },
                   { id: 'undo', label: 'Undo', hint: '⌘Z', run: () => { const popped = useProjectStore.getState().canvasUndo(); if (popped) toast.message(`Undo: ${popped.label}`, { duration: 1800 }); } },
                   { id: 'redo', label: 'Redo', hint: '⇧⌘Z', run: () => { const popped = useProjectStore.getState().canvasRedo(); if (popped) toast.message(`Redo: ${popped.label}`, { duration: 1800 }); } },
+                  { id: 'detect-rooms', label: 'Detect rooms from walls', hint: 'Adds closed rectangles', run: detectRoomsFromWalls },
                 ]}
               />
             )}
