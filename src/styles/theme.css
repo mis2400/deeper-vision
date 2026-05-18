@@ -3,27 +3,43 @@
 /* ─────────────────────────────────────────────────────────────────────
    DEEPER VISION — three-theme system
    ─────────────────────────────────────────────────────────────────────
-   The surveyor supports three visual languages, switchable per session.
+   V1 default is Light Drafting. Slate Engineering and Dark Command are
+   opt-in via Settings → Appearance.
 
    * Light Drafting — off-white drafting paper feel. Architectural and
-     construction-document oriented. Default for daylight reviews.
-   * Slate Engineering — balanced default. Medium slate workspace with
-     light panels, the surveyor's primary visual language.
-   * Dark Command — the previous dark-navy palette, retained for
-     night-ops / projector contexts.
+     construction-document oriented. V1 default. Reads best for floor
+     plans, photos, and proposal PDFs.
+   * Slate Engineering — medium slate workspace, the prior default. Kept
+     for engineers who prefer it.
+   * Dark Command — deep navy palette for night-ops / projector contexts.
 
    Theme selection is wired through a `data-theme` attribute on <html>
-   set by ThemeProvider; tokens below override the :root defaults when
-   the attribute is `light` or `dark`. All semantic colors map to
-   --background / --card / --foreground etc. so component code never
-   needs to branch on the active theme.
+   set by ThemeProvider. The structural tokens (font sizes, weights,
+   radius) live on :root and apply regardless of theme. Color tokens
+   live on the per-theme blocks below; :root inherits the LIGHT block
+   so absence of data-theme yields a usable page (no FOUC during
+   hydration).
+
+   All semantic colors map to --background / --card / --foreground etc.
+   so component code never branches on the active theme.
    ───────────────────────────────────────────────────────────────────── */
 
-:root,
-[data-theme="slate"] {
+:root {
+  /* Structural tokens — apply in every theme. */
   --font-size: 14px;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --radius: 0.5rem;
+  --text-2xl: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-lg: 1.125rem;
+  --text-base: 1rem;
+  --text-sm: 0.875rem;
+  --text-xs: 0.75rem;
+}
 
-  /* ── SLATE ENGINEERING — the default. ──
+[data-theme="slate"] {
+  /* ── SLATE ENGINEERING — opt-in. ──
      Medium slate workspace with light panels. The accent is a softer
      blueprint blue. Pure black is banned. */
   --background: #2A3548;
@@ -64,9 +80,6 @@
   --input-border: #51607D;
   --switch-background: #51607D;
 
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-
   --ring: #5DA0E8;
 
   --coverage-detect:    rgba(93, 160, 232, 0.18);
@@ -84,8 +97,6 @@
   --chart-3: #4FB87E;
   --chart-4: #E5A23A;
   --chart-5: #A78BFA;
-
-  --radius: 0.5rem;
 
   --sidebar:                      #232D40;
   --sidebar-foreground:           #EAEFF6;
@@ -122,18 +133,14 @@
   --cable-audio:    #22D3EE;
   --cable-fire:     #E55B5B;
   --cable-conduit:  #9CA3AF;
-
-  --text-2xl: 1.5rem;
-  --text-xl: 1.25rem;
-  --text-lg: 1.125rem;
-  --text-base: 1rem;
-  --text-sm: 0.875rem;
-  --text-xs: 0.75rem;
 }
 
-/* ── LIGHT DRAFTING — architectural drafting paper. ──
+/* ── LIGHT DRAFTING — architectural drafting paper. V1 default. ──
    Off-white canvas, warm gray panels, slate text. Reads like
-   construction drawings. */
+   construction drawings. Bound to :root so absence of data-theme
+   (e.g. SSR, pre-hydration paint) yields the V1 default and avoids a
+   slate-flashing FOUC. */
+:root,
 [data-theme="light"] {
   --background: #EEF1F6;
   --foreground: #1F2738;
