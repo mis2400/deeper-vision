@@ -320,6 +320,13 @@ export interface ProjectState {
    *  clear the override (falls back to first floor of the project). */
   setCurrentFloorIdForProject: (projectId: string, floorId: string) => void;
 
+  // ── Floor CRUD (Pass 2A.5) ──
+  /** Remove a single Floor record. Does NOT cascade into dependent
+   *  devices / doors / pathways / measurements — callers wrap this in
+   *  a canvasHistory push and manually clean those slices first so
+   *  undo can restore the whole removal atomically. */
+  removeFloor: (id: string) => void;
+
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
   updateScenario: (id: string, patch: Partial<Scenario>) => void;
@@ -1084,6 +1091,20 @@ export const useProjectStore = create<ProjectState>()(
           return {
             currentFloorIdByProject: { ...s.currentFloorIdByProject, [projectId]: floorId },
           };
+        }),
+
+      // ── Floor CRUD (Pass 2A.5) ───────────────────────────────────
+      removeFloor: (id) =>
+        set((s) => {
+          if (!s.floors[id]) return s;
+          const { [id]: _, ...rest } = s.floors;
+          // Drop sticky entries pointing at the now-gone floor so the
+          // canvas falls back to the project's default floor.
+          const stickyNext: Record<string, string> = {};
+          for (const [pid, fid] of Object.entries(s.currentFloorIdByProject)) {
+            if (fid !== id) stickyNext[pid] = fid;
+          }
+          return { floors: rest, currentFloorIdByProject: stickyNext };
         }),
 
       // ── Threat Drill ─────────────────────────────────────────────
