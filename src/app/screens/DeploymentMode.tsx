@@ -142,6 +142,7 @@ export function DeploymentMode() {
         projectName={project.name}
         tallies={tallies}
         onOpenEngineering={() => nav(`/project/${projectId}/canvas`)}
+        onOpenMobile={() => nav(`/project/${projectId}/deployment/m`)}
       />
 
       <div className="flex-1 grid grid-cols-[400px_minmax(0,1fr)] min-h-0">
@@ -235,10 +236,11 @@ export function DeploymentMode() {
 
 // ─────────────────────────── Top bar ──────────────────────────────
 
-function DeploymentTopBar({ projectName, tallies, onOpenEngineering }: {
+function DeploymentTopBar({ projectName, tallies, onOpenEngineering, onOpenMobile }: {
   projectName: string;
   tallies: { total: number; open: number; complete: number; blocked: number; hours: number };
   onOpenEngineering: () => void;
+  onOpenMobile?: () => void;
 }) {
   const pct = tallies.total === 0 ? 0 : Math.round((tallies.complete / tallies.total) * 100);
   return (
@@ -251,6 +253,16 @@ function DeploymentTopBar({ projectName, tallies, onOpenEngineering }: {
           <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Deeper Vision · Field Deployment</span>
           <span className="text-[14px] font-semibold tracking-tight text-foreground">{projectName}</span>
         </div>
+        {onOpenMobile && (
+          <button
+            onClick={onOpenMobile}
+            title="Open the mobile field view in this tab"
+            className="ml-2 inline-flex items-center gap-1 h-6 px-1.5 rounded text-[10px] uppercase tracking-[0.10em] border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+            data-track="deployment-open-mobile"
+          >
+            Mobile view
+          </button>
+        )}
       </div>
 
       {/* Project progress bar */}

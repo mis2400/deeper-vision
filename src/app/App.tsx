@@ -5,6 +5,7 @@ import { ProjectCenter } from './screens/ProjectCenter';
 import { EngineeringCanvas } from './screens/EngineeringCanvas';
 import { ReviewMode } from './screens/ReviewMode';
 import { DeploymentMode } from './screens/DeploymentMode';
+import { DeploymentModeMobile } from './screens/DeploymentModeMobile';
 import { ReportsCenter } from './screens/ReportsCenter';
 import { VisionScan } from './screens/VisionScan';
 import { DeviceLibrary } from './screens/DeviceLibrary';
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="/project/:projectId/canvas" element={<EngineeringCanvas />} />
           <Route path="/project/:projectId/review" element={<ReviewMode />} />
           <Route path="/project/:projectId/deployment" element={<DeploymentMode />} />
+          <Route path="/project/:projectId/deployment/m" element={<DeploymentModeMobile />} />
           <Route path="/project/:projectId/reports" element={<ReportsCenter />} />
           <Route path="/visionscan" element={<VisionScan />} />
           <Route path="/devices" element={<DeviceLibrary />} />
