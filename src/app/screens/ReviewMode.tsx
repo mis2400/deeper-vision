@@ -1014,7 +1014,7 @@ function DeviceDetail({ d, floor }: { d: Device; floor: Floor | undefined }) {
         )}
       </div>
       {product && (
-        <KvRow k="Model" v={`${product.mfr} · ${product.model}`} />
+        <KvRow k="Model" v={`${product.manufacturer} · ${product.model}`} />
       )}
       {k === 'camera' && (
         <>

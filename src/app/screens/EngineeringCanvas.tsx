@@ -21,7 +21,7 @@ import {
   ShieldCheck, Antenna, Volume2, Megaphone, Mic, Speaker, HardDrive, Database, Cloud, Monitor,
   Tv2, AppWindow, MonitorSmartphone, BatteryCharging, Zap, ShieldAlert, Sun, Thermometer, CloudFog,
   Droplets, Users2, Wind, Crosshair as CrosshairIcon, Calendar, ListChecks, Wrench, FileBarChart,
-  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown, Presentation,
+  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown, Presentation, HardHat,
   PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
   ClipboardList,
@@ -1985,6 +1985,7 @@ export function EngineeringCanvas() {
               setCanvasBomOpen(true);
             }}
             onOpenReview={() => nav(`/project/${projectId}/review`)}
+            onOpenDeployment={() => nav(`/project/${projectId}/deployment`)}
             compact={viewMode === 'field'}
             intelOpen={intelOpen}
             setIntelOpen={setIntelOpen}
@@ -2980,6 +2981,8 @@ function TopBar(props: {
   onOpenBom: () => void;
   /** Opens the customer / reviewer presentation route. */
   onOpenReview: () => void;
+  /** Opens the field deployment / work orders route. */
+  onOpenDeployment: () => void;
   /** Compact = render only the essentials. Used in Field view so the bar
    *  is a thin operations strip rather than a full chrome row. */
   compact?: boolean;
@@ -3035,6 +3038,14 @@ function TopBar(props: {
           data-track="topbar-review"
         >
           <Presentation className="w-3.5 h-3.5" />Present
+        </button>
+        <button
+          onClick={props.onOpenDeployment}
+          title="Open Field Deployment — work orders generated live from the canvas"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 text-amber-600 transition-colors"
+          data-track="topbar-deploy"
+        >
+          <HardHat className="w-3.5 h-3.5" />Deploy
         </button>
       </div>
 

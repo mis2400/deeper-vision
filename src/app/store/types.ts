@@ -704,6 +704,73 @@ export interface Estimate {
   notes?: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// FIELD DEPLOYMENT / WORK ORDERS
+// ═══════════════════════════════════════════════════════════════════
+// Work orders are derived from canvas state (one per camera / door /
+// pathway / IDF) and merged with persisted progress in WorkOrderProgress.
+// Progress is mutable: status, completed checklist ids, photo
+// placeholders, serial / MAC, blocker text, and field notes. The
+// generated WorkOrder shape (kind, title, checklist) re-derives every
+// render so a freshly added device gets its WO without any export step.
+
+export type WorkOrderStatus = 'ready' | 'assigned' | 'on-site' | 'installing' | 'testing' | 'complete' | 'blocked';
+export type WorkOrderKind = 'camera' | 'door' | 'pathway' | 'idf';
+
+export interface WorkOrderChecklistItem {
+  id: string;
+  label: string;
+}
+
+export interface WorkOrderPhotoPlaceholder {
+  id: string;
+  fileName: string;
+  /** Best-effort field; we capture metadata only because real upload is pending. */
+  sizeKb?: number;
+  addedAt: number;
+  /** Optional tag — e.g. "before", "after", "wiring", "labeling". */
+  tag?: string;
+}
+
+/** Persisted, mutable progress for a derived work order. Keyed by
+ *  `wo-${kind}-${sourceId}` so the same record sticks to a device even
+ *  if other fields change. */
+export interface WorkOrderProgress {
+  id: string;
+  status: WorkOrderStatus;
+  /** Stored when status flips to 'blocked' so unblock can restore. */
+  prevStatus?: WorkOrderStatus;
+  /** IDs of WorkOrderChecklistItem the field user has marked done. */
+  completed: string[];
+  assignedTo?: string;
+  serial?: string;
+  mac?: string;
+  fieldNotes?: string;
+  /** Active blocker text. Empty / undefined = no blocker. */
+  blocker?: string;
+  photoPlaceholders?: WorkOrderPhotoPlaceholder[];
+  updatedAt: number;
+}
+
+/** Derived work order shape — assembled by `deriveWorkOrders`. The
+ *  `progress` field is the merged persisted record (with seeded defaults
+ *  when the WO has never been touched). */
+export interface WorkOrder {
+  id: string;
+  kind: WorkOrderKind;
+  sourceId: string;
+  title: string;
+  subtitle?: string;
+  /** Building / floor summary. */
+  location?: string;
+  /** Default role label — "Camera tech", "Access integrator", etc. */
+  role: string;
+  priority: 'low' | 'med' | 'high';
+  estLaborHours: number;
+  checklist: WorkOrderChecklistItem[];
+  progress: WorkOrderProgress;
+}
+
 // Per-source BOM rows used by the canvas-side BOM drawer. Unlike
 // EstimateLine (which aggregates devices by SKU), one row = one
 // canvas object so the drawer can click a row and select the

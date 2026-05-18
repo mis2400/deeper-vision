@@ -1752,6 +1752,150 @@ live URL + the source + build commit hashes.
 
 ---
 
+## Field Deployment / Work Orders Pass (2026-05-17, after Presentation / Review pass)
+
+**Goal.** Turn approved/proposed canvas objects into field work orders a
+technician / project manager can execute. New route
+`/project/:projectId/deployment`. Status + checklist + serial/MAC +
+photo placeholders + blockers all persist across reloads via a new
+`workOrderProgress` slice on the Zustand store (persist version bumped
+v5 → v6).
+
+### What shipped this pass
+
+- New TopBar entry **Deploy** on the Engineering Canvas (amber pill,
+  `HardHat` icon, sits to the right of *Present*). Sits next to BOM /
+  Present, doesn't replace them.
+- New route `/project/:projectId/deployment` → `screens/DeploymentMode
+  .tsx`.
+- New helper `deriveWorkOrders(state, projectId)` in `projectStore.ts`.
+  Emits one work order per camera, per door opening with an assembly
+  (legacy `state.doors` records included with de-dup), per pathway run,
+  and per IDF rack. Title, subtitle, location, default role, priority,
+  estimated labor (rolled up from `UNIT_PRICE` / `DOOR_HARDWARE_PRICE`
+  / pathway labor formula), and checklist are derived live from canvas
+  state. Mutable progress (status, completed-ids, photo placeholders,
+  serial/MAC, blocker, field notes) is merged in from the new
+  `workOrderProgress` slice.
+- New types in `store/types.ts`: `WorkOrder`, `WorkOrderStatus`,
+  `WorkOrderKind`, `WorkOrderChecklistItem`, `WorkOrderPhotoPlaceholder`,
+  `WorkOrderProgress`.
+- New store actions: `patchWorkOrderProgress`,
+  `toggleWorkOrderChecklist`, `setWorkOrderStatus`,
+  `addWorkOrderPhotoPlaceholder`, `removeWorkOrderPhotoPlaceholder`.
+- v5 → v6 persist migration: ensures the empty `workOrderProgress`
+  slice exists on existing users' state.
+
+### Layout
+
+Three-pane: 400 px left WO list with search + status + type filters,
+center detail panel with header + status timeline + assigned tech +
+serial/MAC + source summary + mini floor preview + field notes + photos,
+400 px right checklist panel.
+
+### Honest vs preview-only
+
+- **Honest, real**:
+  - Work order list is derived live from canvas. Add a camera on
+    `/canvas`, jump to `/deployment` — a new WO appears.
+  - Status (Ready / Assigned / On site / Installing / Testing /
+    Complete / Blocked), per-checklist-item completion, serial #, MAC,
+    blocker text, and field notes all persist in `workOrderProgress` via
+    Zustand + localStorage. Verified end-to-end with a hard reload:
+    status, checklist, serial, MAC, photo metadata all survived.
+  - Each work order's labor estimate, location ("Building A · Ground
+    floor"), and source summary reflect the canvas state.
+  - Mini floor preview reuses the calibrated background + walls + glyph
+    rendering; the highlighted source object pulses with an SVG animation
+    so the tech can see WHERE on the plan.
+  - Door work orders honor `doorAssemblyState`: Proposed / Existing
+    pills carry through; the title summary reads "3 proposed hardware
+    items · 1 existing".
+- **Preview-only, clearly labelled**:
+  - Photo upload is metadata only. Each photo card carries a
+    "PREVIEW · METADATA ONLY" badge and a "Real upload lands when blob
+    storage is wired" footnote. Filename + tag + addedAt are persisted.
+  - Tech assignment is a mock roster ("Sam Ortiz · Cam crew", etc.) —
+    real dispatch lands with backend work. Note under the selector
+    states this.
+  - Footer disclaimer: "Status + checklist progress persist across
+    reloads. Photo upload is preview-only."
+
+### Work order kinds + their checklists
+
+- **Camera** (8 items): Mount, Pull cable, Terminate RJ45, Label,
+  Aim, Verify DORI, Upload install photo, Record MAC + serial.
+- **Door** (variable, 4–10 items): Verify opening, then conditional
+  rows per assembly (Install reader if reader present, Install lock if
+  strike/maglock, Install DPS if dps/contact, Install REX if rex, Mount
+  controller/PSU if controller/psu), then Wire-back, Test egress,
+  Commission cycle 10×, Upload photos.
+- **Pathway** (7 items): Stage, Pull (respect bend radius), Support
+  every 4–5 ft, Label both ends, Terminate, Certify, Upload photo.
+- **IDF** (7 items): Mount, Bond ground, Land power + UPS, Patch,
+  Verify network, Label, Upload finished-rack photo.
+
+### What the user can verify in the browser
+
+1. `/project/p1/canvas` → click **Deploy** in the TopBar (amber, right
+   of *Present*).
+2. Lands on `/project/p1/deployment`. Header shows project name + 0%
+   install progress + 0 complete / 9 open pills.
+3. Left rail has 9 WOs visible (5 cameras, 1 door, 1 idf, 2 pathways
+   — varies with seed). Each row shows id, title, subtitle, status pill,
+   progress bar, hr estimate, and priority.
+4. Click any camera WO — detail shows model (Axis · P1468-LE), coverage
+   (70° × 50 ft), Status timeline, Mark-complete / Flag-blocker
+   actions, Assigned tech selector, Serial / MAC inputs, Source · camera
+   summary, Location on plan (pulsing orange ring around the source),
+   Field notes, Install photos.
+5. Click a status step → status pill flips. Click checklist items in
+   right panel → progress bar in the WO row updates.
+6. Filter to **Door** → 1 row. Click DOOR-101 → checklist shows 9
+   items conditional on the assembly hardware. Proposed/Existing pills
+   reflect canvas state.
+7. Filter to **Blocked** + click *Flag blocker* on the open detail →
+   row appears in Blocked filter. Type blocker text → persists on
+   blur. Clear blocker → row leaves Blocked.
+8. Type a photo filename + pick a tag (before / after / wiring /
+   label / other) + click ＋ → row appears with tag + size estimate +
+   "Preview · metadata only" badge.
+9. Set Serial # + MAC → persists.
+10. **Hard reload** → all status, checklist, serial, MAC, photo
+    metadata, and blocker text survives.
+11. Click **Open in Engineering** → returns to `/canvas`; all engineering
+    workflows still work.
+
+### Regression checks (Engineering Canvas + Review)
+
+- TopBar **Add plan**, **BOM & Estimate**, **Present**, **Deploy** all
+  visible and clickable — verified.
+- Drawing tool rail still mounts — verified.
+- BOM drawer still opens — verified (prior pass numbers unchanged).
+- ReviewMode `Open in Engineering` still navigates back — fixed a
+  shared product-model display typo (`product.mfr` → `product.manufacturer`)
+  in both Deployment and Review screens so the catalog manufacturer
+  string actually renders. No other Review changes.
+
+### Build result
+
+`npm run build` → exit 0, 1.94 s. New bundle hash captured in the
+deploy commit below.
+
+### Persistence migration
+
+`deeperVisionStore` bumped from v5 → v6. Migration adds an empty
+`workOrderProgress: {}` slice if missing. Existing users keep all
+their canvas state untouched; they just gain a `workOrderProgress`
+record per work order as they touch them.
+
+### Deployment
+
+This pass DOES deploy to Vercel production. See the final report for the
+live URL + the source + build commit hashes.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already

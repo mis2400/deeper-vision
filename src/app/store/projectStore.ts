@@ -67,6 +67,11 @@ interface ProjectState {
   pathways:      Record<string, Pathway>;
   idfs:          Record<string, IDF>;
   estimates:     Record<string, Estimate>;
+  /** Field-deployment work order progress. Keyed by the derived WO id
+   *  (`wo-${kind}-${sourceId}`). The full WorkOrder shape is re-derived
+   *  from canvas state via `deriveWorkOrders`; this slice carries only
+   *  the mutable progress (status, completed checklist, photos, etc.). */
+  workOrderProgress: Record<string, import('./types').WorkOrderProgress>;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -231,6 +236,22 @@ interface ProjectState {
   /** Set or clear the floor background (imported PNG/JPG/PDF or generated). */
   setFloorBackground: (floorId: string, bg: Floor['background'] | null) => void;
 
+  // ── Field deployment / work order actions ──
+  /** Patch the persisted progress for a derived work order. The progress
+   *  record is created on first write; `updatedAt` is stamped on every
+   *  call. WorkOrders are derived from canvas state each render, so only
+   *  the progress here is persisted. */
+  patchWorkOrderProgress: (woId: string, patch: Partial<import('./types').WorkOrderProgress>) => void;
+  /** Toggle a single checklist item by id within a work order. */
+  toggleWorkOrderChecklist: (woId: string, itemId: string) => void;
+  /** Set the WO's status. When flipping to 'blocked', the previous status
+   *  is stashed so unblocking restores it. */
+  setWorkOrderStatus: (woId: string, status: import('./types').WorkOrderStatus) => void;
+  /** Add a placeholder photo entry. We capture filename + optional size +
+   *  optional tag, no real blob — file uploads land with backend work. */
+  addWorkOrderPhotoPlaceholder: (woId: string, photo: { fileName: string; sizeKb?: number; tag?: string }) => void;
+  removeWorkOrderPhotoPlaceholder: (woId: string, photoId: string) => void;
+
   // ── Reset / utility ──
   resetDemoData: () => void;
 }
@@ -260,6 +281,7 @@ export const useProjectStore = create<ProjectState>()(
       projectTechModels: {},
       currentRole:       'engineer',
       canvasTheme:       'light',
+      workOrderProgress: {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -776,11 +798,112 @@ export const useProjectStore = create<ProjectState>()(
         return { busChecks: checks };
       }),
 
-      resetDemoData: () => set(() => ({ ...buildSeed() })),
+      // ── Work order progress actions ─────────────────────────────
+      // The full WorkOrder shape (kind / title / checklist) is re-derived
+      // every render by `deriveWorkOrders` from current canvas state. We
+      // only persist the mutable bits here. Every write stamps updatedAt.
+      patchWorkOrderProgress: (woId, patch) =>
+        set((s) => {
+          const prev = s.workOrderProgress[woId] ?? {
+            id: woId,
+            status: 'ready' as import('./types').WorkOrderStatus,
+            completed: [],
+            updatedAt: Date.now(),
+          };
+          return {
+            workOrderProgress: {
+              ...s.workOrderProgress,
+              [woId]: { ...prev, ...patch, id: woId, updatedAt: Date.now() },
+            },
+          };
+        }),
+      toggleWorkOrderChecklist: (woId, itemId) =>
+        set((s) => {
+          const prev = s.workOrderProgress[woId] ?? {
+            id: woId,
+            status: 'ready' as import('./types').WorkOrderStatus,
+            completed: [],
+            updatedAt: Date.now(),
+          };
+          const has = prev.completed.includes(itemId);
+          const completed = has ? prev.completed.filter((c) => c !== itemId) : [...prev.completed, itemId];
+          return {
+            workOrderProgress: {
+              ...s.workOrderProgress,
+              [woId]: { ...prev, completed, updatedAt: Date.now() },
+            },
+          };
+        }),
+      setWorkOrderStatus: (woId, status) =>
+        set((s) => {
+          const prev = s.workOrderProgress[woId];
+          const prevStatus = prev?.status;
+          const base: import('./types').WorkOrderProgress = prev ?? {
+            id: woId,
+            status,
+            completed: [],
+            updatedAt: Date.now(),
+          };
+          // When the user flips to blocked, stash the prior status so a
+          // later unblock can restore. When flipping out of blocked, drop
+          // the stash so the toggle isn't sticky.
+          const next: import('./types').WorkOrderProgress = {
+            ...base,
+            status,
+            prevStatus: status === 'blocked' ? prevStatus : undefined,
+            // Clear the blocker text when leaving blocked status.
+            blocker: status === 'blocked' ? base.blocker : undefined,
+            updatedAt: Date.now(),
+          };
+          return { workOrderProgress: { ...s.workOrderProgress, [woId]: next } };
+        }),
+      addWorkOrderPhotoPlaceholder: (woId, photo) =>
+        set((s) => {
+          const prev = s.workOrderProgress[woId] ?? {
+            id: woId,
+            status: 'ready' as import('./types').WorkOrderStatus,
+            completed: [],
+            updatedAt: Date.now(),
+          };
+          const photoEntry: import('./types').WorkOrderPhotoPlaceholder = {
+            id: `pp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            fileName: photo.fileName,
+            sizeKb: photo.sizeKb,
+            addedAt: Date.now(),
+            tag: photo.tag,
+          };
+          return {
+            workOrderProgress: {
+              ...s.workOrderProgress,
+              [woId]: {
+                ...prev,
+                photoPlaceholders: [...(prev.photoPlaceholders ?? []), photoEntry],
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        }),
+      removeWorkOrderPhotoPlaceholder: (woId, photoId) =>
+        set((s) => {
+          const prev = s.workOrderProgress[woId];
+          if (!prev?.photoPlaceholders) return s;
+          return {
+            workOrderProgress: {
+              ...s.workOrderProgress,
+              [woId]: {
+                ...prev,
+                photoPlaceholders: prev.photoPlaceholders.filter((p) => p.id !== photoId),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        }),
+
+      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {} })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -856,6 +979,14 @@ export const useProjectStore = create<ProjectState>()(
             }
           }
         }
+        if (version < 6) {
+          // v5 → v6: introduce the field-deployment workOrderProgress slice
+          // (per-work-order persisted status + checklist completion + photo
+          // placeholders + serial/MAC + notes + blocker). Empty default is
+          // safe because deriveWorkOrders treats a missing entry as a
+          // freshly-generated WO in 'ready' status.
+          persisted.workOrderProgress ??= {};
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -905,6 +1036,7 @@ export const useProjectStore = create<ProjectState>()(
         busEvents:         s.busEvents,
         busChecks:         s.busChecks,
         surveyItems:       s.surveyItems,
+        workOrderProgress: s.workOrderProgress,
       }),
     },
   ),
@@ -1719,6 +1851,238 @@ export function deriveCanvasBomRows(
       markup,
     },
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FIELD DEPLOYMENT / WORK ORDERS — derived from canvas state
+// ═══════════════════════════════════════════════════════════════════
+// One work order per camera, per door opening with an assembly, per
+// pathway run, and per IDF rack. The WO's title, checklist, default
+// role, and labor estimate are derived; the mutable progress (status,
+// completed-ids, photos, serial/MAC, blocker) lives on the
+// workOrderProgress slice and is merged in via woProgress() so a
+// reload returns the user to where they left off.
+//
+// Stable WO ids of the form `wo-${kind}-${sourceId}` mean the same
+// physical install carries its progress across renders even when the
+// device list reorders.
+
+function defaultProgress(woId: string): import('./types').WorkOrderProgress {
+  return { id: woId, status: 'ready', completed: [], updatedAt: 0 };
+}
+
+function buildLocation(state: ProjectState, floorId: string | undefined): string | undefined {
+  if (!floorId) return undefined;
+  const floor = state.floors[floorId];
+  if (!floor) return undefined;
+  const bld = state.buildings[floor.buildingId];
+  return bld ? `${bld.name} · ${floor.name}` : floor.name;
+}
+
+function cameraChecklist(): import('./types').WorkOrderChecklistItem[] {
+  return [
+    { id: 'mount',      label: 'Mount camera at marked location' },
+    { id: 'cable-pull', label: 'Pull cable to nearest IDF / PoE switch' },
+    { id: 'terminate',  label: 'Terminate RJ45 (T568B both ends)' },
+    { id: 'label',      label: 'Label cable + jack with WO id' },
+    { id: 'aim',        label: 'Aim camera per coverage plan' },
+    { id: 'verify',     label: 'Verify DORI target with calibrated subject' },
+    { id: 'photo',      label: 'Upload install photo' },
+    { id: 'serial-mac', label: 'Record MAC + serial' },
+  ];
+}
+
+function doorChecklist(assembly: import('./types').DoorHardware[]): import('./types').WorkOrderChecklistItem[] {
+  const items: import('./types').WorkOrderChecklistItem[] = [
+    { id: 'verify-opening', label: 'Verify opening type + handing matches design' },
+  ];
+  const have = new Set(assembly);
+  if (have.has('reader') || have.has('intercom') || have.has('panic')) {
+    items.push({ id: 'install-reader', label: 'Install reader / intercom on mullion or wall' });
+  }
+  if (have.has('strike') || have.has('maglock')) {
+    items.push({ id: 'install-lock',  label: 'Install strike / maglock + secure power transfer' });
+  }
+  if (have.has('dps') || have.has('contact')) {
+    items.push({ id: 'install-dps',   label: 'Install door position sensor on frame + door' });
+  }
+  if (have.has('rex')) {
+    items.push({ id: 'install-rex',   label: 'Install REX motion / button on egress side' });
+  }
+  if (have.has('controller') || have.has('psu')) {
+    items.push({ id: 'install-head',  label: 'Mount controller + PSU in IDF or head-end' });
+  }
+  items.push(
+    { id: 'wire-back',    label: 'Pull + terminate wiring back to controller' },
+    { id: 'test-egress',  label: 'Test free egress (REX, panic, fail-safe behaviour)' },
+    { id: 'commission',   label: 'Commission opening + cycle 10 times under load' },
+    { id: 'photo-door',   label: 'Upload before + after photo of opening' },
+  );
+  return items;
+}
+
+function pathwayChecklist(): import('./types').WorkOrderChecklistItem[] {
+  return [
+    { id: 'stage',        label: 'Stage cable + tools at start of run' },
+    { id: 'pull',         label: 'Pull cable along planned route (respect bend radius)' },
+    { id: 'support',      label: 'Support every 4–5 ft (J-hook / tray / conduit)' },
+    { id: 'label-both',   label: 'Label both ends with run id + termination' },
+    { id: 'terminate',    label: 'Terminate both ends + dress patch panel side' },
+    { id: 'test',         label: 'Certify run (continuity / PoE budget / length)' },
+    { id: 'photo-run',    label: 'Upload representative photo of finished pull' },
+  ];
+}
+
+function idfChecklist(): import('./types').WorkOrderChecklistItem[] {
+  return [
+    { id: 'rack-mount',   label: 'Mount switch + UPS in IDF rack' },
+    { id: 'ground-bond',  label: 'Bond rack ground to building ground bar' },
+    { id: 'power',        label: 'Land conditioned power + verify UPS runtime' },
+    { id: 'patch',        label: 'Patch terminated runs to switch ports' },
+    { id: 'network',      label: 'Verify uplink + VLAN config' },
+    { id: 'label-rack',   label: 'Label rack + port assignments' },
+    { id: 'photo-rack',   label: 'Upload finished-rack photo' },
+  ];
+}
+
+/** Look up persisted progress, falling back to a fresh ready record. */
+function woProgress(state: ProjectState, woId: string): import('./types').WorkOrderProgress {
+  return state.workOrderProgress[woId] ?? defaultProgress(woId);
+}
+
+export function deriveWorkOrders(state: ProjectState, projectId: string): import('./types').WorkOrder[] {
+  const orders: import('./types').WorkOrder[] = [];
+  const devices = selectors.devicesForProject(state, projectId);
+  const doors   = Object.values(state.doors).filter((d) => d.projectId === projectId);
+  const pathways = selectors.pathwaysForProject(state, projectId);
+  const idfs    = selectors.idfsForProject(state, projectId);
+
+  let catalogProducts: any[] = [];
+  try { catalogProducts = (globalThis as any).__catalogProducts ?? []; } catch { /* noop */ }
+
+  // ── Cameras ───────────────────────────────────────────────────
+  for (const d of devices as any[]) {
+    const t = String(d.type);
+    if (!t.startsWith('cam')) continue;
+    const id = `wo-camera-${d.id}`;
+    const cat = catalogProducts.find((cp: any) => cp.id === d.product);
+    const subtitle = cat ? `${cat.manufacturer} · ${cat.model}` : (UNIT_PRICE[t]?.desc ?? t);
+    const labor = (cat?.laborUnits ?? UNIT_PRICE[t]?.labor ?? 1.5);
+    orders.push({
+      id,
+      kind: 'camera',
+      sourceId: d.id,
+      title: `Install ${d.id}`,
+      subtitle,
+      location: buildLocation(state, d.floorId),
+      role: 'Camera tech',
+      priority: t === 'cam.ptz' || t === 'cam.multisensor' ? 'high' : 'med',
+      estLaborHours: labor,
+      checklist: cameraChecklist(),
+      progress: woProgress(state, id),
+    });
+  }
+
+  // ── Doors (devices with doorAssembly + legacy state.doors) ───
+  // 1) door-as-Device records (the canvas-native flow). One WO per
+  //    opening with the checklist tailored to which hardware exists.
+  for (const d of devices as any[]) {
+    const t = String(d.type);
+    const isOpening = t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
+    if (!isOpening) continue;
+    const assembly = (d.doorAssembly ?? []) as import('./types').DoorHardware[];
+    const id = `wo-door-${d.id}`;
+    // Sum labor across hardware items so the estimate reflects assembly size.
+    const labor = assembly.reduce((s, hw) => s + (DOOR_HARDWARE_PRICE[hw]?.labor ?? 0), 0);
+    const stateMap = (d.doorAssemblyState ?? {}) as Partial<Record<import('./types').DoorHardware, 'proposed' | 'existing'>>;
+    const proposedCount = assembly.filter((hw) => stateMap[hw] !== 'existing').length;
+    orders.push({
+      id,
+      kind: 'door',
+      sourceId: d.id,
+      title: `Install ${d.id} access control opening`,
+      subtitle: assembly.length === 0
+        ? 'No hardware specified yet'
+        : `${proposedCount} proposed hardware item${proposedCount === 1 ? '' : 's'}${proposedCount !== assembly.length ? ` · ${assembly.length - proposedCount} existing` : ''}`,
+      location: buildLocation(state, d.floorId),
+      role: 'Access integrator',
+      priority: assembly.length >= 4 ? 'high' : assembly.length >= 1 ? 'med' : 'low',
+      estLaborHours: Math.max(labor, 1.0),
+      checklist: doorChecklist(assembly),
+      progress: woProgress(state, id),
+    });
+  }
+  // 2) legacy Door records. Treated the same shape so the field user
+  //    sees them in one list.
+  for (const door of doors) {
+    const id = `wo-door-${door.id}`;
+    if (orders.some((o) => o.id === id)) continue; // de-dup if both representations exist
+    const labor = (door.hardware ?? []).reduce((s, hw) => s + (DOOR_HARDWARE_PRICE[hw]?.labor ?? 0), 0);
+    orders.push({
+      id,
+      kind: 'door',
+      sourceId: door.id,
+      title: `Install ${door.id} access control opening`,
+      subtitle: door.hardware?.length ? `${door.hardware.length} hardware items` : 'No hardware specified yet',
+      location: buildLocation(state, door.floorId),
+      role: 'Access integrator',
+      priority: (door.hardware?.length ?? 0) >= 4 ? 'high' : (door.hardware?.length ?? 0) >= 1 ? 'med' : 'low',
+      estLaborHours: Math.max(labor, 1.0),
+      checklist: doorChecklist((door.hardware ?? []) as import('./types').DoorHardware[]),
+      progress: woProgress(state, id),
+    });
+  }
+
+  // ── Pathways ──────────────────────────────────────────────────
+  for (const p of pathways) {
+    const id = `wo-pathway-${p.id}`;
+    const floor = p.floorId ? state.floors[p.floorId] : undefined;
+    const ft = pathwayLengthFt(p, floor);
+    const labor = Math.round(ft * 0.02 * p.cableCount * 10) / 10;
+    orders.push({
+      id,
+      kind: 'pathway',
+      sourceId: p.id,
+      title: `Pull cable ${p.id}`,
+      subtitle: `${(p.cableType ?? 'cat6a').toUpperCase()} · ${p.cableCount}× · ${ft} ft`,
+      location: buildLocation(state, p.floorId),
+      role: 'Cable installer',
+      priority: ft > 200 ? 'high' : 'low',
+      estLaborHours: Math.max(labor, 0.5),
+      checklist: pathwayChecklist(),
+      progress: woProgress(state, id),
+    });
+  }
+
+  // ── IDFs ──────────────────────────────────────────────────────
+  for (const idf of idfs) {
+    const id = `wo-idf-${idf.id}`;
+    const hasUps = !!idf.power?.upsModel;
+    const switchCount = (idf.switches ?? []).length;
+    orders.push({
+      id,
+      kind: 'idf',
+      sourceId: idf.id,
+      title: `Install ${idf.id} rack equipment`,
+      subtitle: `${switchCount} switch${switchCount === 1 ? '' : 'es'}${hasUps ? ' · UPS' : ''}`,
+      location: buildLocation(state, idf.floorId),
+      role: 'Network technician',
+      priority: switchCount >= 2 || hasUps ? 'high' : 'med',
+      estLaborHours: (switchCount * 3) + (hasUps ? 1.5 : 0),
+      checklist: idfChecklist(),
+      progress: woProgress(state, id),
+    });
+  }
+
+  // Sort by kind (cameras → doors → pathways → idf) then by source id.
+  const KIND_ORDER: Record<import('./types').WorkOrderKind, number> = {
+    camera: 0, door: 1, pathway: 2, idf: 3,
+  };
+  orders.sort((a, b) => {
+    if (KIND_ORDER[a.kind] !== KIND_ORDER[b.kind]) return KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
+    return a.sourceId.localeCompare(b.sourceId);
+  });
+  return orders;
 }
 
 // ═══════════════════════════════════════════════════════════════════
