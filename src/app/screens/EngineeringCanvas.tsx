@@ -16317,6 +16317,32 @@ function ProjectBomDrawer({
     return (state.floors as any)[fid]?.name ?? '—';
   }, [floorIdForRow, state]);
 
+  // Canvas V2 Pass 2C.4 — per row room lookup. A device row's "room"
+  // is the polygon whose bounds contain the device origin. Pathways
+  // don't currently report rooms (their geometry is a polyline; the
+  // first-vertex room is a sensible fallback but added complexity).
+  const roomNameForRow = useCallback((r: CanvasBomRow): string | null => {
+    const sid = (r as any).sourceId as string | undefined;
+    if (!sid) return null;
+    const dev = (state.devices as any)[sid];
+    if (!dev) return null;
+    const projectRooms = Object.values(state.rooms).filter((rm: any) => rm.projectId === projectId && rm.floorId === dev.floorId);
+    for (const rm of projectRooms as any[]) {
+      // Ray-casting point in polygon.
+      let inside = false;
+      const poly = rm.polygon as { x: number; y: number }[];
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+        const xi = poly[i].x, yi = poly[i].y;
+        const xj = poly[j].x, yj = poly[j].y;
+        const intersect = ((yi > dev.y) !== (yj > dev.y)) &&
+          (dev.x < (xj - xi) * (dev.y - yi) / ((yj - yi) || 1) + xi);
+        if (intersect) inside = !inside;
+      }
+      if (inside) return rm.name;
+    }
+    return null;
+  }, [state, projectId]);
+
   const filtered = useMemo(() => {
     let out = rows;
     if (filter === 'existing') out = out.filter((r) => r.isExisting);
@@ -16585,6 +16611,7 @@ function ProjectBomDrawer({
                     row={r}
                     fmt={fmt}
                     floorName={projectFloors.length > 1 ? floorNameForRow(r) : undefined}
+                    roomName={roomNameForRow(r) ?? undefined}
                     onSelect={() => {
                       if (r.sourceKind === 'pathway' && r.sourceId)            onSelectPathway(r.sourceId);
                       else if ((r.sourceKind === 'device' || r.sourceKind === 'door') && r.sourceId) onSelectDevice(r.sourceId);
@@ -16601,7 +16628,7 @@ function ProjectBomDrawer({
   );
 }
 
-function BomRow({ row, fmt, onSelect, floorName }: { row: CanvasBomRow; fmt: (n: number) => string; onSelect: () => void; floorName?: string }) {
+function BomRow({ row, fmt, onSelect, floorName, roomName }: { row: CanvasBomRow; fmt: (n: number) => string; onSelect: () => void; floorName?: string; roomName?: string }) {
   const lineTotal = row.unitPrice * row.qty;
   const canSelect = !!row.sourceId && (row.sourceKind === 'device' || row.sourceKind === 'door' || row.sourceKind === 'pathway');
   return (
@@ -16637,6 +16664,14 @@ function BomRow({ row, fmt, onSelect, floorName }: { row: CanvasBomRow; fmt: (n:
                 title="Floor this line lives on"
               >
                 {floorName}
+              </span>
+            )}
+            {roomName && (
+              <span
+                className="text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/30"
+                title="Room this line lives in"
+              >
+                {roomName}
               </span>
             )}
           </div>
