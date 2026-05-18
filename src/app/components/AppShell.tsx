@@ -136,14 +136,17 @@ export function AppShell({
 // intentional, not enterprise-cluttered.
 // ─────────────────────────────────────────────────────────────────
 
-const ROLE_META: { id: UserRole; label: string; hint: string }[] = [
-  { id: 'sales',     label: 'Sales',     hint: 'Pipeline, accounts, proposals' },
-  { id: 'estimator', label: 'Estimator', hint: 'BOM, pricing, margin' },
-  { id: 'engineer',  label: 'Engineer',  hint: 'Canvas, devices, pathways' },
-  { id: 'pm',        label: 'PM',        hint: 'Deployment, schedule, owners' },
-  { id: 'field',     label: 'Field tech', hint: 'Install, commissioning, punch' },
-  { id: 'service',   label: 'Service',   hint: 'Maintenance, change orders' },
-  { id: 'customer',  label: 'Customer',  hint: 'Portal view (read-only)' },
+// Role tones — kept calm and persona-coded so the header pill reads as
+// an identity, not a status badge. Used by the colored dot on the pill
+// and the active treatment inside the popover.
+const ROLE_META: { id: UserRole; label: string; hint: string; tone: string }[] = [
+  { id: 'sales',     label: 'Sales',     hint: 'Pipeline, accounts, proposals',   tone: '#22C55E' },
+  { id: 'estimator', label: 'Estimator', hint: 'BOM, pricing, margin',            tone: '#F08F3C' },
+  { id: 'engineer',  label: 'Engineer',  hint: 'Canvas, devices, pathways',       tone: '#2D6FB8' },
+  { id: 'pm',        label: 'PM',        hint: 'Deployment, schedule, owners',    tone: '#8B5CF6' },
+  { id: 'field',     label: 'Field tech', hint: 'Install, commissioning, punch',  tone: '#14B8A6' },
+  { id: 'service',   label: 'Service',   hint: 'Maintenance, change orders',      tone: '#64748B' },
+  { id: 'customer',  label: 'Customer',  hint: 'Portal view, read only',          tone: '#E5B23A' },
 ];
 
 const MODE_META: { id: ProjectMode; label: string; hint: string }[] = [
@@ -199,21 +202,27 @@ function ModeRolePill() {
     };
   }, [open]);
 
-  const roleLabel = ROLE_META.find((r) => r.id === currentRole)?.label ?? 'Engineer';
+  const roleEntry = ROLE_META.find((r) => r.id === currentRole) ?? ROLE_META[2];
+  const roleLabel = roleEntry.label;
+  const roleTone  = roleEntry.tone;
   const modeLabel = mode ? MODE_META.find((m) => m.id === mode)?.label : null;
 
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs transition-colors ${open ? 'border-border-strong bg-secondary' : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'}`}
+        className={`hidden md:flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs transition-colors ${open ? 'border-border-strong bg-secondary' : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'}`}
         title="Current role and mode"
       >
-        <UserIcon className="w-3 h-3" />
-        <span className="text-foreground">{roleLabel}</span>
+        <span
+          className="w-2 h-2 rounded-full shrink-0 shadow-[0_0_0_2px_rgba(255,255,255,0.55)]"
+          style={{ background: roleTone }}
+          aria-hidden
+        />
+        <span className="text-foreground font-medium">{roleLabel}</span>
         {modeLabel && (
           <>
-            <span className="text-muted-foreground/60">·</span>
+            <span className="text-muted-foreground/50">·</span>
             <span className="text-muted-foreground">{modeLabel}</span>
           </>
         )}
@@ -237,8 +246,12 @@ function ModeRolePill() {
                     onClick={() => { setUserRole(r.id); }}
                     className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-start gap-2 transition-colors ${currentRole === r.id ? 'bg-primary/10 text-primary' : 'hover:bg-secondary'}`}
                   >
-                    <span className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${currentRole === r.id ? 'text-primary' : 'text-transparent'}`}>
-                      <Check className="w-3.5 h-3.5" />
+                    <span className="w-3.5 h-3.5 mt-0.5 shrink-0 flex items-center justify-center">
+                      {currentRole === r.id ? (
+                        <Check className="w-3.5 h-3.5 text-primary" />
+                      ) : (
+                        <span className="w-2 h-2 rounded-full" style={{ background: r.tone }} aria-hidden />
+                      )}
                     </span>
                     <span className="min-w-0">
                       <span className="block leading-tight">{r.label}</span>

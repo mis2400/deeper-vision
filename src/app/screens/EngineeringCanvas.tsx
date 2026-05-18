@@ -13006,6 +13006,50 @@ function BottomDeviceBar({
   const trayCat = cats.find((c) => c.id === open) ?? null;
   const trayProducts = open ? (productsByCat[open] ?? []) : [];
 
+  // V1 P0.5 — count badges. The dock subscribes directly to devices +
+  // pathways for the active floor so the parent's prop surface stays
+  // clean and every store change flows in without extra plumbing.
+  const { projectId: routeProjectId = 'p1' } = useParams();
+  const projectIdForCounts = routeProjectId;
+  const currentFloorIdForCounts = useProjectStore((s) =>
+    storeSelectors.firstFloorOfProject(s, projectIdForCounts)?.id ?? '',
+  );
+  const storeDevicesForCounts = useProjectStore((s) => s.devices);
+  const storePathwaysForCounts = useProjectStore((s) => s.pathways);
+  const floorDevices = useMemo(
+    () => Object.values(storeDevicesForCounts).filter(
+      (d) => d.projectId === projectIdForCounts && (currentFloorIdForCounts === '' || d.floorId === currentFloorIdForCounts),
+    ),
+    [storeDevicesForCounts, projectIdForCounts, currentFloorIdForCounts],
+  );
+  const floorPathways = useMemo(
+    () => Object.values(storePathwaysForCounts).filter(
+      (p) => p.projectId === projectIdForCounts && (currentFloorIdForCounts === '' || p.floorId === currentFloorIdForCounts),
+    ),
+    [storePathwaysForCounts, projectIdForCounts, currentFloorIdForCounts],
+  );
+  const countByCat = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const c of cats) {
+      if (c.id === 'cable') {
+        // Cable runs = pathways that aren't conduit infrastructure.
+        out[c.id] = floorPathways.filter((p) => p.type !== 'conduit').length;
+        continue;
+      }
+      if (c.id === 'conduit') {
+        out[c.id] = floorPathways.filter((p) => p.type === 'conduit').length;
+        continue;
+      }
+      if (!c.types) { out[c.id] = 0; continue; }
+      out[c.id] = floorDevices.filter((d) =>
+        c.types!.some((t) => d.type === t || (d.type as string).startsWith(t + '-')),
+      ).length;
+    }
+    return out;
+    // cats is a stable literal; depending on it would force re-eval every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floorDevices, floorPathways]);
+
   return (
     <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-30" ref={trayRef} data-canvas-chrome="tray">
       {/* Tray (renders above the bar when a category is open) */}
@@ -13459,6 +13503,19 @@ function BottomDeviceBar({
               />
               <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
               <span className="text-[10px] tracking-tight font-medium">{c.label}</span>
+              {/* V1 P0.5 count badge — placed devices on the current floor.
+                  Hidden at zero so the dock stays calm on a fresh canvas. */}
+              {(countByCat[c.id] ?? 0) > 0 && !dead && (
+                <span
+                  className={`absolute top-1 right-2.5 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
+                    active
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-secondary text-foreground/80 border border-border'
+                  }`}
+                >
+                  {countByCat[c.id]! > 99 ? '99+' : countByCat[c.id]}
+                </span>
+              )}
               {/* Active underline */}
               <span
                 className="absolute left-3 right-3 bottom-0 h-[2px] rounded-full transition-opacity"
