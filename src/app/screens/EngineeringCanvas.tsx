@@ -790,10 +790,12 @@ export function EngineeringCanvas() {
 
   // Canvas V2 Pass 2C.1 — rooms subscription, filtered to active floor.
   const roomsMap = useProjectStore((s) => s.rooms);
+  const updateRoom = useProjectStore((s) => s.updateRoom);
   const currentFloorRooms = useMemo(
     () => Object.values(roomsMap).filter((r) => r.floorId === currentFloorId),
     [roomsMap, currentFloorId],
   );
+  const [selRoomId, setSelRoomId] = useState<string | null>(null);
 
   // Canvas V2 Pass 2C.2 — auto detect rooms from walls. Scans the
   // active floor's walls for orthogonal closed rectangles formed by
@@ -2898,7 +2900,7 @@ export function EngineeringCanvas() {
               coverageGrid={coverageGrid}
               rooms={currentFloorRooms}
               roomDraw={tool === 'room' ? roomDraw : undefined}
-              onPickRoom={(rid) => toast.message(`Room: ${roomsMap[rid]?.name ?? rid}`, { duration: 1500 })}
+              onPickRoom={(rid) => setSelRoomId(rid)}
               snap={snap}
               dragging={!!drag}
               onSurfaceClick={(x, y) => {
@@ -3561,6 +3563,23 @@ export function EngineeringCanvas() {
               <CoverageStatsPanel grid={coverageGrid as any} />
             )}
 
+            {/* Canvas V2 Pass 2C.3 — room inspector. Opens when a room
+                polygon is clicked; lets the operator name it, set
+                description, occupancy, sensitivity, and delete. */}
+            {selRoomId && roomsMap[selRoomId] && (
+              <RoomInspector
+                room={roomsMap[selRoomId]}
+                pxToFt={currentFloorPxToFt}
+                onPatch={(patch) => updateRoom(selRoomId, patch)}
+                onDelete={() => {
+                  pushCanvasHistory(`Removed ${roomsMap[selRoomId]?.name ?? 'room'}`, ['rooms']);
+                  useProjectStore.getState().removeRoom(selRoomId);
+                  setSelRoomId(null);
+                }}
+                onClose={() => setSelRoomId(null)}
+              />
+            )}
+
             {/* Canvas V2 Pass 2A.7 — multi floor overview toggle.
                 Floating chip top right. Hidden in canvas mode (already
                 immersive). Shown only when there are 2+ floors on the
@@ -4137,6 +4156,86 @@ function CoverageStatsPanel({ grid }: {
       <div className="border-t border-border mt-2.5 pt-1.5 text-[10px] text-muted-foreground">
         Live · recomputes on every device move.
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ROOM INSPECTOR — Canvas V2 Pass 2C.3
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function RoomInspector({ room, pxToFt, onPatch, onDelete, onClose }: {
+  room: import('../store/types').Room;
+  pxToFt: number;
+  onPatch: (patch: Partial<import('../store/types').Room>) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  // Shoelace area in square feet, using the active floor's scale.
+  const areaFt2 = useMemo(() => {
+    if (!room.polygon || room.polygon.length < 3 || pxToFt <= 0) return 0;
+    let sum = 0;
+    for (let i = 0; i < room.polygon.length; i += 1) {
+      const a = room.polygon[i];
+      const b = room.polygon[(i + 1) % room.polygon.length];
+      sum += a.x * b.y - b.x * a.y;
+    }
+    const px2 = Math.abs(sum) / 2;
+    return px2 * pxToFt * pxToFt;
+  }, [room.polygon, pxToFt]);
+  return (
+    <div className="absolute top-16 right-3 z-30 w-[280px] bg-card/95 backdrop-blur-md border border-border rounded-lg shadow-md p-3 text-[12px]">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Room</div>
+        <button onClick={onClose} className="p-1 rounded hover:bg-secondary text-muted-foreground"><X className="w-3 h-3" /></button>
+      </div>
+      <input
+        value={room.name}
+        onChange={(e) => onPatch({ name: e.target.value })}
+        className="w-full bg-input-background border border-input-border rounded px-2 py-1.5 text-sm mb-2 focus:outline-none focus:border-primary"
+        placeholder="Room name"
+      />
+      <textarea
+        value={room.description ?? ''}
+        onChange={(e) => onPatch({ description: e.target.value })}
+        rows={2}
+        className="w-full bg-input-background border border-input-border rounded px-2 py-1.5 text-[12px] mb-2 resize-none focus:outline-none focus:border-primary"
+        placeholder="Description (optional)"
+      />
+      <div className="flex items-center gap-2 mb-2">
+        <label className="text-[11px] text-muted-foreground flex-none w-20">Occupancy</label>
+        <input
+          type="number"
+          min={0}
+          value={room.occupancyEstimate ?? ''}
+          onChange={(e) => onPatch({ occupancyEstimate: e.target.value ? Number(e.target.value) : undefined })}
+          className="flex-1 bg-input-background border border-input-border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-primary"
+          placeholder="—"
+        />
+      </div>
+      <div className="flex items-center gap-2 mb-2">
+        <label className="text-[11px] text-muted-foreground flex-none w-20">Sensitivity</label>
+        <select
+          value={room.sensitivity ?? 'low'}
+          onChange={(e) => onPatch({ sensitivity: e.target.value as any })}
+          className="flex-1 bg-input-background border border-input-border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-primary"
+        >
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+      </div>
+      <div className="flex items-center justify-between border-t border-border pt-2 mb-2 text-[11px]">
+        <span className="text-muted-foreground">Area</span>
+        <span className="tabular-nums">{areaFt2 > 0 ? `${Math.round(areaFt2).toLocaleString()} ft²` : '—'}</span>
+      </div>
+      <button
+        onClick={onDelete}
+        className="w-full inline-flex items-center justify-center gap-1.5 h-7 rounded text-[11px] text-destructive hover:bg-destructive/10"
+      >
+        <Trash2 className="w-3 h-3" />Remove room
+      </button>
     </div>
   );
 }
@@ -7760,18 +7859,42 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
 
         {/* Canvas V2 Pass 2C.1 — committed rooms (filled polygons) +
             in-flight room draw polyline. Rooms paint before walls so
-            wall lines stay readable on top. */}
-        {rooms && rooms.map((r) => (
-          <polygon
-            key={`room-${r.id}`}
-            points={r.polygon.map((p) => `${p.x},${p.y}`).join(' ')}
-            fill="rgba(47, 129, 247, 0.10)"
-            stroke="rgba(47, 129, 247, 0.55)"
-            strokeWidth={1.5}
-            style={{ cursor: onPickRoom ? 'pointer' : 'default' }}
-            onClick={(e) => { e.stopPropagation(); onPickRoom?.(r.id); }}
-          />
-        ))}
+            wall lines stay readable on top.
+            Pass 2C.3 — name labels render at the polygon centroid
+            when the rooms layer is on. Sensitivity tints the fill so
+            critical rooms read at a glance. */}
+        {rooms && rooms.map((r) => {
+          const sensTint =
+            r.sensitivity === 'critical' ? 'rgba(239, 68, 68, 0.16)'
+            : r.sensitivity === 'high'     ? 'rgba(245, 158, 11, 0.14)'
+            : r.sensitivity === 'medium'   ? 'rgba(47, 129, 247, 0.12)'
+            : 'rgba(47, 129, 247, 0.08)';
+          const sensStroke =
+            r.sensitivity === 'critical' ? 'rgba(239, 68, 68, 0.70)'
+            : r.sensitivity === 'high'     ? 'rgba(245, 158, 11, 0.60)'
+            : 'rgba(47, 129, 247, 0.55)';
+          // Centroid for the label.
+          let cx = 0; let cy = 0;
+          for (const p of r.polygon) { cx += p.x; cy += p.y; }
+          if (r.polygon.length) { cx /= r.polygon.length; cy /= r.polygon.length; }
+          return (
+            <g key={`room-${r.id}`}>
+              <polygon
+                points={r.polygon.map((p) => `${p.x},${p.y}`).join(' ')}
+                fill={sensTint}
+                stroke={sensStroke}
+                strokeWidth={1.5}
+                style={{ cursor: onPickRoom ? 'pointer' : 'default' }}
+                onClick={(e) => { e.stopPropagation(); onPickRoom?.(r.id); }}
+              />
+              {layers.rooms && r.name && (
+                <text x={cx} y={cy} textAnchor="middle" fontSize={11} fontWeight={500} fill="var(--foreground)" pointerEvents="none">
+                  {r.name}
+                </text>
+              )}
+            </g>
+          );
+        })}
         {roomDraw && roomDraw.points.length > 0 && (
           <g pointerEvents="none">
             <polyline
