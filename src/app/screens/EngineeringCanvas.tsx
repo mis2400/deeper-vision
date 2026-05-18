@@ -22,7 +22,7 @@ import {
   Tv2, AppWindow, MonitorSmartphone, BatteryCharging, Zap, ShieldAlert, Sun, Thermometer, CloudFog,
   Droplets, Users2, Wind, Crosshair as CrosshairIcon, Calendar, ListChecks, Wrench, FileBarChart,
   Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown, Presentation, HardHat, FileText as FileTextIcon,
-  PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
+  PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
   ClipboardList, Paperclip,
 } from 'lucide-react';
@@ -2087,6 +2087,7 @@ export function EngineeringCanvas() {
         {viewMode !== 'canvas' && (
           <TopBar
             floor={floor} setFloor={setFloor}
+            floorName={currentFloorName ?? 'Floor'}
             snap={snap} setSnap={setSnap}
             units={units} setUnits={setUnits}
             onScan={() => nav('/visionscan')}
@@ -2987,7 +2988,6 @@ export function EngineeringCanvas() {
         {!onboarded && (
           <Onboarding
             onPick={(s) => { setPlanSource(s); setOnboarded(true); }}
-            onAddress={(addr) => { setSiteAddress(addr); setPlanSource('satellite'); setOnboarded(true); }}
             onClose={() => setOnboarded(true)}
           />
         )}
@@ -3067,79 +3067,40 @@ export function EngineeringCanvas() {
    ONBOARDING — "How do you want to start?"
    ═══════════════════════════════════════════════════════════════════════ */
 
-function Onboarding({ onPick, onAddress, onClose }: { onPick: (s: 'blueprint' | 'blank') => void; onAddress: (addr: string) => void; onClose: () => void }) {
-  const [step, setStep] = useState<'pick' | 'address'>('pick');
-  const [addr, setAddr] = useState('');
+function Onboarding({ onPick, onClose }: { onPick: (s: 'blueprint' | 'blank') => void; onClose: () => void }) {
   return (
     <div className="absolute inset-0 z-40 bg-background/85 backdrop-blur-sm flex items-center justify-center p-8">
       <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
         <div className="px-7 py-5 border-b border-border flex items-start justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">New canvas</div>
-            <h2 className="text-xl mt-1">{step === 'pick' ? 'How would you like to start?' : 'Where is the site?'}</h2>
+            <h2 className="text-xl mt-1">How would you like to start?</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {step === 'pick' ? "Pick the source. We'll calibrate scale and import the geometry for you." : "Enter a street address. We'll pull satellite imagery and the parcel outline."}
+              Pick the source. We'll ask you to set scale once a plan is loaded.
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded hover:bg-secondary text-muted-foreground"><X className="w-4 h-4" /></button>
         </div>
 
-        {step === 'pick' && (
-          <>
-            <div className="p-5 grid grid-cols-3 gap-3">
-              <StartCard
-                icon={Upload} title="Upload a blueprint"
-                sub="PDF, PNG, DWG, or DXF. We'll vectorize and ask for two reference points to set scale."
-                onClick={() => onPick('blueprint')}
-              />
-              <StartCard
-                icon={MapPin} title="Use an address"
-                sub="Drop a pin. We'll pull satellite imagery and parcel outline to design exteriors and rooftops."
-                onClick={() => setStep('address')}
-                accent
-              />
-              <StartCard
-                icon={PencilLine} title="Start blank"
-                sub="Sketch walls and rooms with the wall tool. Best for renovations and tenant fit-outs."
-                onClick={() => onPick('blank')}
-              />
-            </div>
-            <div className="px-5 pb-5 text-xs text-muted-foreground">
-              You can change the source later. Site walks, vision scans, and import all attach to whichever you start with.
-            </div>
-          </>
-        )}
-
-        {step === 'address' && (
-          <div className="p-5">
-            <div className="relative">
-              <Crosshair className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                autoFocus
-                value={addr}
-                onChange={(e) => setAddr(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && addr.trim()) onAddress(addr.trim()); }}
-                placeholder="500 Terry A. Francois Blvd, San Francisco, CA"
-                className="w-full bg-input-background border border-input-border rounded-xl pl-10 pr-3 py-3 text-sm focus:outline-none focus:border-primary"
-              />
-            </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              Address geocoding is mocked in this preview — any address will resolve to a sample aerial image.
-            </div>
-            <div className="mt-5 flex items-center justify-between">
-              <button onClick={() => setStep('pick')} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-                <ChevronLeft className="w-3.5 h-3.5" />Back
-              </button>
-              <button
-                onClick={() => addr.trim() && onAddress(addr.trim())}
-                disabled={!addr.trim()}
-                className="inline-flex items-center gap-1.5 text-xs px-4 py-2 rounded-full bg-primary text-primary-foreground disabled:opacity-40"
-              >
-                <Check className="w-3.5 h-3.5" />Use this location
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Canvas V2 Pass 1.0 — "Use an address" was removed. It opened
+            a mocked geocoding step that resolved any address to a
+            sample aerial image. The blueprint and blank paths both
+            ship real backing. */}
+        <div className="p-5 grid grid-cols-2 gap-3">
+          <StartCard
+            icon={Upload} title="Upload a blueprint"
+            sub="PDF, PNG, or JPG. We'll ask for two reference points to set scale."
+            onClick={() => onPick('blueprint')}
+          />
+          <StartCard
+            icon={PencilLine} title="Start blank"
+            sub="Sketch walls and rooms with the wall tool. Best for renovations and tenant fit outs."
+            onClick={() => onPick('blank')}
+          />
+        </div>
+        <div className="px-5 pb-5 text-xs text-muted-foreground">
+          You can change the source later. Site walks, vision scans, and import all attach to whichever you start with.
+        </div>
       </div>
     </div>
   );
@@ -3163,6 +3124,10 @@ function StartCard({ icon: Icon, title, sub, onClick, accent }: { icon: any; tit
 
 function TopBar(props: {
   floor: number; setFloor: (n: number) => void;
+  /** Display name of the active floor, read from the store so the badge
+   *  is honest. Multi-floor switching is Pass 2 work; until then this
+   *  badge is a label, not a picker. */
+  floorName: string;
   snap: boolean; setSnap: (b: boolean) => void;
   units: 'ft' | 'm'; setUnits: (u: 'ft' | 'm') => void;
   onScan: () => void; onSetup: () => void;
@@ -3216,7 +3181,18 @@ function TopBar(props: {
       {/* Left — floor + scan/build. Tighter than the previous bar; the project
           title is in the breadcrumb above, so we don't duplicate it here. */}
       <div className="flex items-center gap-2 min-w-0">
-        <Dropdown label={FLOORS[props.floor]} options={FLOORS} onPick={(i) => props.setFloor(i)} />
+        {/* Active floor badge. Static for now — multi floor switching
+            lands in Canvas V2 Pass 2 when the floor model gains a real
+            selector. Operators see the actual floor name from the
+            store, not a hardcoded sample list. */}
+        <span
+          title="Single floor for now. Multi floor coming."
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border bg-background text-foreground select-none"
+          data-track="topbar-floor-label"
+        >
+          <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+          {props.floorName || 'Floor'}
+        </span>
         <button
           onClick={props.onOpenScanBuild}
           title="Add a floor plan — upload PDF/image, trace satellite, scan demo, or start blank"
@@ -4345,32 +4321,23 @@ function ScanBuildFloorplanDialog({
   onDrawScratch: () => void;
 }) {
   type Opt = { id: string; icon: any; tone: string; title: string; sub: string; honest?: string; onClick: () => void; recommended?: boolean; track: string };
+  // Canvas V2 Pass 1.0 — removed the "satellite / address base" card
+  // (live tiles not connected; the card carried a "preview only"
+  // disclaimer that violated CLAUDE.md's honesty rule) and the "demo
+  // site scan" card (mocked AR/LiDAR with a "Demo workflow" disclaimer
+  // on the primary surface). Upload and Blank both ship real backing.
   const opts: Opt[] = [
     {
       id: 'upload', icon: FolderUp, tone: '#A371F7', track: 'scan-build-upload',
       title: 'Upload a plan',
-      sub: 'PNG, JPG, or PDF. Most users start here — drop in a floor plan, set the scale, and plot devices.',
+      sub: 'PNG, JPG, or PDF. Most users start here. Drop in a floor plan, set the scale, and plot devices.',
       onClick: onUpload, recommended: true,
-    },
-    {
-      id: 'satellite', icon: SatelliteIcon, tone: '#34D399', track: 'scan-build-satellite',
-      title: 'Use a satellite / address base',
-      sub: 'Enter an address and trace exterior walls, parking, and rooflines on aerial imagery.',
-      honest: 'Live satellite tiles are not connected yet. The base shown is a stylised preview using the address you enter.',
-      onClick: onSatellite,
     },
     {
       id: 'draw', icon: PencilLine, tone: '#F08F3C', track: 'scan-build-draw',
       title: 'Start with a blank canvas',
       sub: 'Sketch walls, rooms, and openings from scratch. Snap to grid is on.',
       onClick: onDrawScratch,
-    },
-    {
-      id: 'scan', icon: CameraIcon, tone: '#22D3EE', track: 'scan-build-camera',
-      title: 'Run a demo site scan',
-      sub: 'Try the AR / LiDAR walkthrough mock end-to-end. Useful for product walkthroughs.',
-      honest: 'Demo workflow — capture is simulated. Use Upload to bring in a real plan.',
-      onClick: onScanCamera,
     },
   ];
   return (
@@ -4497,10 +4464,13 @@ function AddFloorDialog({ buildingName, onClose, onSubmit }: {
   const [name, setName] = useState('');
   const [source, setSource] = useState<SiteFloor['source']>('blueprint');
   const valid = name.trim().length > 0;
+  // Canvas V2 Pass 1.0 — satellite source removed. The render branch
+  // (line ~7056) ships a simulated aerial with a "Simulated" badge;
+  // a real tile provider lands in a later pass. Until then, only the
+  // honest sources (real upload or sketch) are pickable.
   const SOURCES: { id: SiteFloor['source']; label: string; hint: string }[] = [
-    { id: 'blueprint',  label: 'Blueprint',  hint: 'Upload a DWG / PDF / image' },
-    { id: 'satellite',  label: 'Satellite',  hint: 'Trace from an aerial photo' },
-    { id: 'sketch',     label: 'Sketch',     hint: 'Hand-draw a layout on canvas' },
+    { id: 'blueprint',  label: 'Blueprint',  hint: 'Upload a PDF or image' },
+    { id: 'sketch',     label: 'Sketch',     hint: 'Hand draw a layout on canvas' },
   ];
   return (
     <div className="absolute inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center" onClick={onClose}>
@@ -4522,7 +4492,7 @@ function AddFloorDialog({ buildingName, onClose, onSubmit }: {
           </label>
           <div>
             <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Source</span>
-            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
               {SOURCES.map((s) => (
                 <button
                   key={s.id}
@@ -8243,8 +8213,10 @@ function CategoryGlyph({ kind, active }: { kind: DeviceKind; active?: boolean })
 type EditTab =
   | 'overview' | 'lens' | 'ai' | 'network' | 'power' | 'mounting'
   | 'compliance' | 'telemetry' | 'linked' | 'notes'
-  // V18 surveyor redesign — new sections rendered in the 3-icon grid
-  | 'accessories' | 'media' | 'history'
+  // V18 surveyor redesign — accessory editor in the 3-icon grid. Media
+  // and History were removed in Canvas V2 Pass 1.0; the union will be
+  // re-extended when those features have real backing.
+  | 'accessories'
   // MVP foundation pass — object-linked survey capture
   | 'survey'
   // Attachments / Files foundation pass — real shared file system
@@ -8993,11 +8965,14 @@ function MoreButton({ items, tone }: { items: ToolbarAction[]; tone: string }) {
    EDIT DRAWER — right-side engineering inspector with 10 tabs
    ═══════════════════════════════════════════════════════════════════════ */
 
-// Twelve drawer sections rendered as a 3-icon-per-row grid in the
-// redesigned right sidebar. One section = one tile = one bodyShows branch.
-// Layout matches the field-ready spec: General, Placement, Coverage,
-// Power, Network, Accessories, Compatibility, Notes, Media, History,
-// Stack, AI.
+// Drawer sections rendered as a 3-icon-per-row grid in the redesigned
+// right sidebar. One section = one tile = one bodyShows branch.
+// Media and History were removed in Canvas V2 Pass 1.0 — the Media tab
+// rendered a disabled "Add media" stub with a "Preview only · file
+// persistence not wired" disclaimer, and History claimed a per-object
+// change log that never shipped. Both violated the honesty contract.
+// Files (AttachmentPanel) covers media; History returns when the audit
+// store ships.
 const EDIT_TABS: { id: EditTab; label: string; icon: any; covers: EditTab[] }[] = [
   { id: 'overview',   label: 'General',       icon: ListChecks,      covers: ['overview'] },
   { id: 'mounting',   label: 'Placement',     icon: Wrench,          covers: ['mounting'] },
@@ -9007,8 +8982,6 @@ const EDIT_TABS: { id: EditTab; label: string; icon: any; covers: EditTab[] }[] 
   { id: 'accessories',label: 'Accessories',   icon: PencilRuler,     covers: ['accessories'] },
   { id: 'compliance', label: 'Compatibility', icon: ShieldCheck,     covers: ['compliance'] },
   { id: 'notes',      label: 'Notes',         icon: FileText,        covers: ['notes'] },
-  { id: 'media',      label: 'Media',         icon: ImageIcon,       covers: ['media'] },
-  { id: 'history',    label: 'History',       icon: HistoryIcon,     covers: ['history'] },
   { id: 'linked',     label: 'Stack',         icon: Layers,          covers: ['linked'] },
   { id: 'ai',         label: 'AI',            icon: Sparkles,        covers: ['ai'] },
   { id: 'survey',     label: 'Survey',        icon: ClipboardList,    covers: ['survey'] },
@@ -10313,9 +10286,12 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
             'Lower mount to 7 ft for prosecution-grade face capture',
           ]
         ).map((s, i) => (
-          <button key={i} className="w-full text-left text-[11.5px] text-foreground px-2 py-1.5 mb-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5" disabled aria-disabled="true">
+          // Static checklist row. Was a disabled button which violated
+          // the "no disabled controls with disclaimer text" rule from
+          // CLAUDE.md; rendered as a plain list instead.
+          <div key={i} className="w-full text-left text-[11.5px] text-foreground px-2 py-1.5 mb-1 rounded border border-white/10">
             <Sparkles className="w-3 h-3 inline mr-1.5" style={{ color: tone }} />{s}
-          </button>
+          </div>
         ))}
       </DrawerSection>
       {/* The previous "Analytics" block claimed live telemetry — face
@@ -11458,41 +11434,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           />
         )}
 
-        {bodyShows(tab, 'media') && (
-          <DrawerSection title="Media">
-            <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
-              Preview only · file persistence not wired
-            </div>
-            <div className="text-[11.5px] text-muted-foreground mb-2">
-              Uploads do not persist yet. The media-store integration is on the
-              roadmap; until then, attach photos / datasheets in your
-              project-management tool of record and link them in the Notes tab.
-            </div>
-            <button
-              disabled
-              aria-disabled="true"
-              className="w-full px-3 py-5 rounded-md border-2 border-dashed border-border/60 text-[12px] text-muted-foreground/70 cursor-not-allowed flex items-center justify-center gap-2"
-              title="Disabled — no persistence backing"
-              data-testid="media-disabled-button"
-            >
-              <FolderUp className="w-4 h-4" /> Add media (disabled)
-            </button>
-          </DrawerSection>
-        )}
-
-        {bodyShows(tab, 'history') && (
-          <DrawerSection title="Change history">
-            <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
-              Session preview · audit log not wired
-            </div>
-            <div className="text-[11.5px] text-muted-foreground">
-              Per-object change history is not yet captured. Once the
-              activity-store integration ships, edits to this device
-              (placement, FOV / range changes, hardware swaps, notes) will
-              appear here with author + timestamp.
-            </div>
-          </DrawerSection>
-        )}
+        {/* Media + History sections removed in Canvas V2 Pass 1.0 —
+            both were dead controls with "preview only" disclaimers.
+            Files (AttachmentPanel) replaces Media; History returns
+            with the per-object audit log. */}
       </div>
     </div>
   );
@@ -13689,7 +13634,11 @@ function BottomDeviceBar({
                     const isCableCat   = c.id === 'cable';
                     // Cable + Conduit have their own tray bodies (no PRODUCTS
                     // catalog gating); never mark them disabled.
+                    // Canvas V2 Pass 1.0 — dead categories (no products,
+                    // no tool, no tray) used to render as disabled
+                    // buttons with "coming soon" tooltips. Hide them.
                     const dead = !isToolCat && !isConduitCat && !isCableCat && count === 0;
+                    if (dead) return null;
                     return (
                       <button
                         key={c.id}
@@ -13697,15 +13646,12 @@ function BottomDeviceBar({
                           if (isToolCat && c.tool) { onPickTool(c.tool); setOpen(null); return; }
                           setOpen(open === c.id ? null : c.id);
                         }}
-                        disabled={dead}
-                        title={dead ? `${c.label} — coming soon` : c.label}
+                        title={c.label}
                         data-track={`bottombar-cat-${c.id}`}
                         className={`group relative flex flex-col items-center justify-center gap-1 w-[72px] pt-1.5 pb-2 transition-colors ${
                           active
                             ? 'text-primary'
-                            : dead
-                              ? 'text-muted-foreground/40 cursor-not-allowed'
-                              : 'text-muted-foreground hover:text-foreground'
+                            : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
                         <span className="absolute inset-x-1.5 top-1 bottom-1.5 rounded-md -z-10 transition-colors"
@@ -13715,7 +13661,7 @@ function BottomDeviceBar({
                         <span className="text-[10px] tracking-tight font-medium">{c.label}</span>
                         {/* V1 P0.5 count badge — placed devices on the current floor.
                             Hidden at zero so the dock stays calm on a fresh canvas. */}
-                        {(countByCat[c.id] ?? 0) > 0 && !dead && (
+                        {(countByCat[c.id] ?? 0) > 0 && (
                           <span
                             className={`absolute top-0.5 right-2 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
                               active
