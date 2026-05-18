@@ -549,11 +549,60 @@ Sourced from `docs/MVP_SPINE_AUDIT.md` Batch C. Closes audit CRITICAL gap #3 by 
 - Side effect chain runs INSIDE `setDeviceCommissioning`, so every caller (UI form, integrity script, future API webhook) gets the same Asset + Warranty creation automatically. No risk of forgetting to call.
 - `createAssetFromDevice` idempotency relies on a deviceId-keyed scan in the assets slice. On a project with thousands of devices the scan is O(devices) per pass; acceptable at MVP scale.
 
+## 16 · Spine Completion SC.4 — Proposal Builder real wiring
+
+Closes audit CRITICAL gap #1. Replaces the 143 line hardcoded fixture proposal builder with a real one that derives from the project's BOM (now including walls + conduit + accessories per SC.4.2), supports internal vs customer safe viewer modes via a data layer split, computes a pricing waterfall with margin / burden / labor rate, sends real proposals, generates customer safe PDFs, and tracks versions with supersede + compare. SC.2 approvals now reference real proposal versions with audit trail integrity preserved across supersedes.
+
+- [x] **SC.4.1 Proposal data model.** `Proposal` interface with split customerView / internalView shapes, `ProposalLine` with section + cost + price + labor + hideFromCustomer, `ProposalStatus` union (draft / sent / approved / superseded / archived). createProposal auto increments version per project from inside the set callback. updateProposal strips immutable fields (id, projectId, version, createdAt). supersedeProposal marks prior superseded + creates new draft pre populated + backfills supersededBy pointer. v27 → v28 migration (greenfield). isOrphaned added for SC.1.5 integrity sweep.
+- [x] **SC.4.2 BOM derivation gap fixes.** Conduit pathways emit a conduit line at CONDUIT_UNIT_PRICE_PER_FT (was billed as cable). New walls aggregation line per project (linear feet via Euclidean distance × floor.scalePxToFt). Accessory iteration parity between deriveBOM and deriveCanvasBomRows via shared constants (ACCESSORY_DEFAULT_PRICE, ACCESSORY_DEFAULT_LABOR_HOURS). CanvasBomCategory extended with 'conduit' + 'walls' buckets.
+- [x] **SC.4.3 Customer-safe vs internal view split.** New `src/app/lib/proposalView.ts`. `toCustomerView(proposal)` returns `ProposalCustomerArtifact` with ZERO internal fields (hidden lines stripped, unitCost / laborHours / internalNote projected away). `deriveProposalInternalTotals(proposal)` returns the full cost waterfall (loadedCost, sellTotal, grossProfit, gpPct, customerSubtotal). `customerArtifactContainsInternalLeaks(artifact)` is the SC.4.11 integrity assertion. `bomRowToProposalLine`, `applyMarginToLines`, `repriceAllLinesByMargin` helpers.
+- [x] **SC.4.4 + 4.5 + 4.6 Proposal Builder UI scaffolding + BOM lines + pricing.** Full rewrite of `ProposalBuilder.tsx`. Empty state with Create CTA. Two column body (section nav + section editor). Eight sections (Header, Executive summary, Scope, BOM Lines, Pricing, Terms, Acceptance, Internal notes). BOM Lines grouped by section with column header row, per row qty / unit / cost / sell / line sell / labor hrs editing, hide from customer toggle, custom line add per section (auto hidden until priced). Pricing waterfall with labor rate / burden / target margin inputs (bounded at 95%). Customer line items total surfaced as separate row + Reprice every line action so customer total tracks operator target.
+- [x] **SC.4.7 Send to Customer flow.** Send button only renders on draft AND no dirty edits. SendDialog: two phases (confirm + share). Confirm has contact dropdown + validation (header, ≥1 visible line, customer total > 0). Share surfaces real portal URL with Copy + mailto helper. Lock banner above section editor when status !== 'draft' + every input disabled. Customer Portal renders the sent proposal via toCustomerView. Pre existing priorApprovals infinite loop fix (raw subscription + useMemo instead of fresh-array selector). Approve-after-send: architectural decision documented in code (option b — explicit Create New Version, not silent draft spawn).
+- [x] **SC.4.8 Generate PDF.** New `src/app/lib/proposalPdf.ts` using jsPDF (dynamic import). Pure function over `ProposalCustomerArtifact` so the PDF physically cannot leak internal data. Letter portrait multi page with cover (brand bar + logo + integrator + title + version + prepared for + project total), executive summary, scope, line items table grouped by SECTION_ORDER (deterministic), per group subtotal, mid section page break repaints header + column labels, project total, payment schedule, acceptance with signature block, terms (own page), per page footer. Logo format auto detected from data URL prefix. parseColor supports 3-digit hex shorthand. Per-line pagination for long paragraphs.
+- [x] **SC.4.9 Version history + supersede + compare.** Top bar: VersionPicker dropdown listing all versions (newest first, status badge, sent / created date). New version button (renders on sent / approved only) calls supersedeProposal + switches to the new draft. Compare button (visible when 2+ versions exist) opens CompareVersionsDialog: pick two versions, see added / removed / modified BOM lines, changed narrative sections, pricing parameter deltas.
+- [x] **SC.4.10 Approval flow integration with versions.** Customer Portal ApproveSheet seeds proposalVersion from `v${sentProposal.version}`. Version field locked + reads "automatic" when a live sent proposal exists (customer can't invent a version number). Newer version banner on approval card when latestApproval.proposalVersion ≠ live sent proposal's version label. Approval records retain their original proposalVersion across supersedes (audit trail intact).
+- [x] **SC.4.11 SC.4 integrity test script.** `scripts/sc4-spine-integrity.mjs` prints a seven step DevTools paste procedure: reset → create → assert view split has zero leaks → send → approve → supersede + send v2 → portal banner walkthrough. Plus a PDF visual inspection checklist.
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass commit. No TS errors.
+- **Persist version**: `deeperVisionStore` v28 (SC.4.1 added the proposals slice; greenfield migration).
+- **Review loop**: code reviewer caught:
+  - SC.4.4-4.6 — 2 CRITICAL + 7 IMPORTANT + 4 MINOR. All CRITICAL + IMPORTANT addressed.
+  - SC.4.7 — 3 IMPORTANT + 4 MINOR. All IMPORTANT addressed.
+  - SC.4.8 — 4 IMPORTANT + 3 MINOR. All IMPORTANT addressed.
+  - SC.4.1 / 4.2 / 4.3 / 4.9 / 4.10 — clean.
+- **Browser verified** per sub pass via preview server with DOM scanning + eval based assertions:
+  - View split: zero forbidden internal strings (Cost, Internal note, Burden, margin, Loaded, GP, labor rate, unitCost, hideFromCustomer) in customer preview / portal proposal card.
+  - Send: status flips, sentAt persisted, share URL surfaces.
+  - PDF: 17.6 KB blob with `application/pdf` MIME, no error toast.
+  - Supersede: v1 marked superseded with supersededBy pointer, v2 draft created.
+  - Compare: 1 modified line surfaced after a price bump on v2.
+  - Version mismatch banner: correct copy after the supersede+send flow.
+  - Approve sheet version field locked to live sent proposal's version label.
+
+### Known follow ups deferred
+
+- Rich text editor for narrative sections (currently plain textareas with paragraph break rendering).
+- Bulk product swap on BOM Lines (deferred per SC.4.5 brief).
+- Per device type test checklist overrides for commissioning (mentioned in SC.3.1, still pending).
+- Real email send infrastructure. Today the SendDialog surfaces the portal URL + mailto helper; no SMTP / API.
+- ProposalLine.laborHours semantic clarification (column header now reads "Labor hrs" with tooltip; the persisted shape carries totals not per unit values; documented in the type).
+- Compare modal could grow a side by side narrative diff for richer textual changes. V1 surfaces "which sections changed" only.
+- Quote-engine sibling repo integration (per CLAUDE.md). Local pricing math stays in this repo until the API endpoint exists.
+
+### Risk notes for post deploy smoke test
+
+- New v28 migration is greenfield (no data backfill). Existing persisted blobs round trip cleanly.
+- Proposal records persist via partialize. Send flow + supersede flow are atomic store actions; no localStorage race.
+- PDF generator dynamically imports jspdf so the proposal builder initial bundle stays small.
+- Customer Portal proposal card hidden unless a sent or approved proposal exists. Pre SC.4 projects render the portal as before.
+
 ## Last verified
 
-- **Date:** 2026-05-18 (MVP Spine Completion SC.3 — Commissioning writes back on top of SC.2)
+- **Date:** 2026-05-18 (MVP Spine Completion SC.4 — Proposal Builder real wiring on top of SC.3)
 - **Build:** `npm run build` — passing (vite v6.3.5, ~1941 modules, no TS errors)
-- **Persist version:** `deeperVisionStore` v27 (SC.3 made no schema bumps; the new `device.commissioning` field is type only — the prior placeholder field was never written so no migration needed)
+- **Persist version:** `deeperVisionStore` v28 (SC.4.1 v27 → v28 migration adds the `proposals` slice; greenfield, no backfill)
 - **UI-verified flow** (real `MouseEvent('click')` + real `Event('input')` against the rendered DOM, then re-read from the same DOM):
   1. Fresh localStorage → `/project/p1/canvas` loads cleanly.
   2. Real native click on `[data-testid="device-CAM-101"]` → SelectionPill renders; Edit button visible.
