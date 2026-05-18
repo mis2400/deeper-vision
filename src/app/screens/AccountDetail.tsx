@@ -12,15 +12,18 @@ import { Button } from '../components/Button';
 import {
   Building2, Mail, Phone, Globe, MapPin, Plus, ChevronRight, ArrowRight,
   Users, DollarSign, Briefcase, Activity as ActivityIcon, CheckCircle2,
-  Star, Calendar, Clock,
+  Star, Calendar, Clock, Package, Hash, MapPinned,
 } from 'lucide-react';
 import { useProjectStore, STAGE_PROBABILITY } from '../store/projectStore';
 import { PHASES } from '../lifecycle/phases';
 import type {
   Contact, Opportunity, Project, Touch, Task, OpportunityStage,
+  Site, Asset, ServiceTicket,
 } from '../store/types';
+import { NewOpportunityDialog } from '../components/NewOpportunityDialog';
+import { LogTouchDialog, NewContactDialog, NewProjectDialog, NewSiteDialog } from '../components/crmDialogs';
 
-type Tab = 'contacts' | 'opportunities' | 'projects' | 'activity' | 'tasks';
+type Tab = 'contacts' | 'opportunities' | 'projects' | 'sites' | 'assets' | 'tickets' | 'activity' | 'tasks';
 
 const STAGE_TONE: Record<OpportunityStage, string> = {
   inquiry:     'text-slate-300 border-slate-600/60',
@@ -57,6 +60,10 @@ export function AccountDetail() {
   const touchesMap       = useProjectStore((s) => s.touches);
   const tasksMap         = useProjectStore((s) => s.tasks);
   const activityMap      = useProjectStore((s) => s.activity);
+  // SC.5.2 — sites, assets, and service tickets at customer scope.
+  const sitesMap         = useProjectStore((s) => s.sites);
+  const assetsMap        = useProjectStore((s) => s.assets);
+  const ticketsMap       = useProjectStore((s) => s.serviceTickets);
 
   const setOppStage   = useProjectStore((s) => s.setOpportunityStage);
   const convertOpp    = useProjectStore((s) => s.convertOpportunityToProject);
@@ -96,6 +103,25 @@ export function AccountDetail() {
       }),
     [tasksMap, customerId],
   );
+  // SC.5.2 — sites at customer scope (via projects).
+  const customerProjectIds = useMemo(() => new Set(Object.values(projectsMap).filter((p) => p.customerId === customerId).map((p) => p.id)), [projectsMap, customerId]);
+  const sites: Site[] = useMemo(
+    () => Object.values(sitesMap).filter((s) => customerProjectIds.has(s.projectId)),
+    [sitesMap, customerProjectIds],
+  );
+  const assets: Asset[] = useMemo(
+    () => Object.values(assetsMap)
+      .filter((a) => a.customerId === customerId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+    [assetsMap, customerId],
+  );
+  const tickets: ServiceTicket[] = useMemo(
+    () => Object.values(ticketsMap)
+      .filter((t) => t.customerId === customerId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+    [ticketsMap, customerId],
+  );
+  const openTicketCount = tickets.filter((t) => t.status !== 'closed' && t.status !== 'resolved').length;
 
   // Activity scoped to customer: explicitly tagged + activities on this
   // customer's projects.
@@ -140,9 +166,19 @@ export function AccountDetail() {
     { id: 'opportunities', label: 'Opportunities', count: opportunities.length, icon: <DollarSign className="w-3.5 h-3.5" /> },
     { id: 'contacts',      label: 'Contacts',      count: contacts.length,      icon: <Users className="w-3.5 h-3.5" /> },
     { id: 'projects',      label: 'Projects',      count: projects.length,      icon: <Briefcase className="w-3.5 h-3.5" /> },
+    { id: 'sites',         label: 'Sites',         count: sites.length,         icon: <MapPinned className="w-3.5 h-3.5" /> },
+    { id: 'assets',        label: 'Assets',        count: assets.length,        icon: <Package className="w-3.5 h-3.5" /> },
+    { id: 'tickets',       label: 'Tickets',       count: openTicketCount,      icon: <Hash className="w-3.5 h-3.5" /> },
     { id: 'activity',      label: 'Activity',      count: activity.length,      icon: <ActivityIcon className="w-3.5 h-3.5" /> },
     { id: 'tasks',         label: 'Tasks',         count: openTaskCount,        icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
   ];
+
+  // SC.5.2 — dialog state for the wired actions.
+  const [touchOpen, setTouchOpen]     = useState(false);
+  const [oppOpen, setOppOpen]         = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [siteOpen, setSiteOpen]       = useState(false);
 
   return (
     <AppShell
@@ -159,8 +195,18 @@ export function AccountDetail() {
       ].filter(Boolean).join(' · ')}
       actions={
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline"><Plus className="w-3.5 h-3.5 mr-1" />Log touch</Button>
-          <Button size="sm"><Plus className="w-3.5 h-3.5 mr-1" />New opportunity</Button>
+          <Button size="sm" variant="outline" onClick={() => setTouchOpen(true)} data-testid="account-log-touch">
+            <Plus className="w-3.5 h-3.5 mr-1" />Log touch
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setContactOpen(true)} data-testid="account-new-contact">
+            <Plus className="w-3.5 h-3.5 mr-1" />New contact
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setProjectOpen(true)} data-testid="account-new-project">
+            <Plus className="w-3.5 h-3.5 mr-1" />New project
+          </Button>
+          <Button size="sm" onClick={() => setOppOpen(true)} data-testid="account-new-opportunity">
+            <Plus className="w-3.5 h-3.5 mr-1" />New opportunity
+          </Button>
         </div>
       }
     >
@@ -267,6 +313,9 @@ export function AccountDetail() {
           )}
           {tab === 'contacts' && <ContactsTab contacts={contacts} customer={customer} />}
           {tab === 'projects' && <ProjectsTab projects={projects} onOpen={(id) => navigate(`/project/${id}`)} />}
+          {tab === 'sites' && <SitesTab sites={sites} projects={projects} onNew={() => setSiteOpen(true)} />}
+          {tab === 'assets' && <AssetsTab assets={assets} projects={projects} onOpen={(pid) => navigate(`/project/${pid}`)} />}
+          {tab === 'tickets' && <TicketsTab tickets={tickets} projects={projects} />}
           {tab === 'activity' && <ActivityTab items={activity} touches={touches} />}
           {tab === 'tasks' && (
             <TasksTab
@@ -276,6 +325,14 @@ export function AccountDetail() {
           )}
         </div>
       </div>
+
+      {/* SC.5.2 dialog mounts. Customer is locked because we're
+          already in that customer's context. */}
+      {touchOpen && <LogTouchDialog customerId={customerId} onClose={() => setTouchOpen(false)} />}
+      {oppOpen && <NewOpportunityDialog defaultCustomerId={customerId} onClose={() => setOppOpen(false)} />}
+      {contactOpen && <NewContactDialog defaultCustomerId={customerId} onClose={() => setContactOpen(false)} />}
+      {projectOpen && <NewProjectDialog defaultCustomerId={customerId} onClose={() => setProjectOpen(false)} />}
+      {siteOpen && <NewSiteDialog defaultCustomerId={customerId} onClose={() => setSiteOpen(false)} />}
     </AppShell>
   );
 }
@@ -506,6 +563,109 @@ function InfoRow({ icon, label, children }: { icon: React.ReactNode; label: stri
 
 function EmptyState({ label }: { label: string }) {
   return <div className="text-center py-12 text-sm text-muted-foreground bg-card border border-border rounded-lg">{label}</div>;
+}
+
+// SC.5.2 — Sites tab. Sites belong to projects in the current
+// schema; we surface them at customer scope by joining via
+// project.customerId.
+function SitesTab({ sites, projects, onNew }: { sites: Site[]; projects: Project[]; onNew: () => void }) {
+  if (sites.length === 0) {
+    return (
+      <div className="bg-card border border-border rounded-lg p-6 text-center">
+        <MapPinned className="w-5 h-5 text-muted-foreground mx-auto" />
+        <div className="text-sm mt-2">No sites yet</div>
+        <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+          A site is a physical location for a project. Add one to scope buildings and floors against it.
+        </p>
+        <Button size="sm" className="mt-3" onClick={onNew}><Plus className="w-3.5 h-3.5 mr-1" />New site</Button>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-2 border-b border-border flex items-center justify-between bg-secondary/20">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Sites at this customer</div>
+        <Button size="sm" variant="outline" onClick={onNew}><Plus className="w-3.5 h-3.5 mr-1" />New site</Button>
+      </div>
+      <ul className="divide-y divide-border">
+        {sites.map((s) => {
+          const proj = projects.find((p) => p.id === s.projectId);
+          return (
+            <li key={s.id} className="px-4 py-3 flex items-center gap-3" data-testid={`account-site-row-${s.id}`}>
+              <MapPinned className="w-4 h-4 text-muted-foreground" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm truncate">{s.name}</div>
+                {s.address && <div className="text-[11px] text-muted-foreground truncate">{s.address}</div>}
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate">{proj?.name ?? '—'}</div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// SC.5.2 — Assets tab. Customer-scoped commissioned hardware.
+function AssetsTab({ assets, projects, onOpen }: { assets: Asset[]; projects: Project[]; onOpen: (projectId: string) => void }) {
+  if (assets.length === 0) {
+    return <EmptyState label="No commissioned assets yet. Assets appear after Commission on the project deployment surface." />;
+  }
+  return (
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="grid grid-cols-[1fr_140px_110px_110px] gap-3 px-4 py-2 border-b border-border bg-secondary/20 text-[10px] uppercase tracking-wider text-muted-foreground">
+        <div>Asset</div><div>Project</div><div>Status</div><div>Commissioned</div>
+      </div>
+      <ul className="divide-y divide-border">
+        {assets.map((a) => {
+          const proj = projects.find((p) => p.id === a.projectId);
+          return (
+            <li key={a.id} className="grid grid-cols-[1fr_140px_110px_110px] gap-3 px-4 py-2.5 items-center text-sm" data-testid={`account-asset-row-${a.id}`}>
+              <div className="min-w-0">
+                <div className="truncate">{a.manufacturer} {a.model}</div>
+                {a.serialNumber && <div className="text-[11px] text-muted-foreground truncate">SN {a.serialNumber}</div>}
+              </div>
+              <button
+                type="button"
+                onClick={() => proj && onOpen(proj.id)}
+                className="text-[11px] text-primary hover:underline truncate text-left"
+              >{proj?.name ?? '—'}</button>
+              <div className="text-[11px] text-muted-foreground capitalize">{a.status}</div>
+              <div className="text-[11px] text-muted-foreground tabular-nums">{new Date(a.commissionedAt).toLocaleDateString()}</div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// SC.5.2 — Tickets tab. Customer-scoped service tickets.
+function TicketsTab({ tickets, projects }: { tickets: ServiceTicket[]; projects: Project[] }) {
+  if (tickets.length === 0) {
+    return <EmptyState label="No service tickets yet." />;
+  }
+  return (
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="grid grid-cols-[110px_1fr_120px_110px_110px] gap-3 px-4 py-2 border-b border-border bg-secondary/20 text-[10px] uppercase tracking-wider text-muted-foreground">
+        <div>Number</div><div>Title</div><div>Project</div><div>Status</div><div>Priority</div>
+      </div>
+      <ul className="divide-y divide-border">
+        {tickets.map((t) => {
+          const proj = projects.find((p) => p.id === t.projectId);
+          return (
+            <li key={t.id} className="grid grid-cols-[110px_1fr_120px_110px_110px] gap-3 px-4 py-2.5 items-center text-sm" data-testid={`account-ticket-row-${t.id}`}>
+              <div className="font-mono text-[11px] text-muted-foreground">{t.ticketNumber}</div>
+              <div className="truncate">{t.title}</div>
+              <div className="text-[11px] text-muted-foreground truncate">{proj?.name ?? '—'}</div>
+              <div className="text-[11px] capitalize">{t.status.replace(/_/g, ' ')}</div>
+              <div className="text-[11px] capitalize text-muted-foreground">{t.priority}</div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }
 
 // ─── helpers ──────────────────────────────────────────────────────
