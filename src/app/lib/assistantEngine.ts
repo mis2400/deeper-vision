@@ -24,7 +24,7 @@
 
 import type { ProjectState } from '../store/projectStore';
 import { selectors, deriveCanvasBomRows, deriveWorkOrders } from '../store/projectStore';
-import type { AiCitation, AiMsg, AssistantContext } from '../store/types';
+import type { AiCitation, AiMsg, AiAction, AssistantContext } from '../store/types';
 
 /** Result of pattern-matching the question against a capability. */
 export interface AnswerMeta {
@@ -32,6 +32,7 @@ export interface AnswerMeta {
   confidence?: AiMsg['confidence'];
   confidenceWhy?: AiMsg['confidenceWhy'];
   inference?: boolean;
+  actions?: AiAction[];
 }
 
 export interface AnswerChunk {
@@ -222,9 +223,24 @@ function answerCounts(state: ProjectState, projectId: string, scope: ResolvedSco
     ...floors.map((f): AiCitation => ({ label: f.name, kind: 'floor', refId: f.id })),
   ];
 
+  // V1 2A.5 — apply actions. Counts is a natural moment to capture
+  // a survey note ("snapshot the count for the field crew").
+  const targetFloor = scope.floorId && scope.floorName
+    ? { id: scope.floorId, name: scope.floorName }
+    : floors[0] ? { id: floors[0].id, name: floors[0].name } : null;
+  const actions: AiAction[] = targetFloor ? [
+    {
+      id: `a-${Date.now().toString(36)}-note`,
+      kind: 'create-note',
+      label: `Pin a survey note on ${targetFloor.name}`,
+      body: `Inventory snapshot: ${devices.length} devices total.`,
+      hint: 'Adds a note that shows in survey / review surfaces.',
+    },
+  ] : [];
+
   return {
     text: lines.join(' '),
-    meta: { citations },
+    meta: { citations, actions },
   };
 }
 
@@ -279,6 +295,30 @@ function answerCoverage(state: ProjectState, projectId: string, scope: ResolvedS
     ...cameras.map((c): AiCitation => ({ label: c.label || c.id, kind: 'device', refId: c.id })),
   ];
 
+  // V1 2A.5 — apply actions. Floors with zero cameras get an
+  // add-device hint. Also offer to schedule a coverage walk so the
+  // operator can re-check after placements.
+  const emptyFloors = floors.filter((f) => !cameras.some((c) => c.floorId === f.id));
+  const actions: AiAction[] = [];
+  if (emptyFloors[0]) {
+    actions.push({
+      id: `a-${Date.now().toString(36)}-cam`,
+      kind: 'add-device',
+      label: `Drop a camera on ${emptyFloors[0].name}`,
+      deviceType: 'cam.dome',
+      nearFloorId: emptyFloors[0].id,
+      hint: 'Adds a dome camera at the canvas center. You can drag it into place.',
+    });
+  }
+  actions.push({
+    id: `a-${Date.now().toString(36)}-walk`,
+    kind: 'schedule-check',
+    label: 'Schedule a coverage re-walk in 7 days',
+    refId: projectId,
+    dueInDays: 7,
+    hint: 'Creates a task so you remember to verify coverage on-site.',
+  });
+
   return {
     text: lines.join(' '),
     meta: {
@@ -286,6 +326,7 @@ function answerCoverage(state: ProjectState, projectId: string, scope: ResolvedS
       confidence: 'medium',
       confidenceWhy: 'Computed from device positions and declared ranges. True coverage depends on FOV angles + obstructions, which need the canvas overlay to evaluate.',
       inference: true,
+      actions,
     },
   };
 }
@@ -322,6 +363,15 @@ function answerBOM(state: ProjectState, projectId: string, _scope: ResolvedScope
         citations,
         confidence: 'high',
         confidenceWhy: 'Derived directly from the canvas BOM rollup with the active project pricebook.',
+        actions: [
+          {
+            id: `a-${Date.now().toString(36)}-rep`,
+            kind: 'generate-report',
+            label: 'Open the engineering report',
+            reportKind: 'engineering',
+            hint: 'Jumps to the proposal package generator.',
+          },
+        ],
       },
     };
   } catch {
@@ -354,6 +404,20 @@ function answerPower(state: ProjectState, projectId: string, _scope: ResolvedSco
 
   const citations: AiCitation[] = idfs.map((i): AiCitation => ({ label: i.name ?? i.id, kind: 'idf', refId: i.id }));
 
+  // V1 2A.5 — apply action. If the camera count is heavy relative to
+  // IDF count, suggest adding another IDF so the rule of thumb math
+  // can split across more switches.
+  const actions: AiAction[] = [];
+  if (cameras.length > idfs.length * 24) {
+    actions.push({
+      id: `a-${Date.now().toString(36)}-idf`,
+      kind: 'add-device',
+      label: 'Drop another IDF on the canvas',
+      deviceType: 'net.idf',
+      hint: 'Adds a placeholder IDF you can drag near the next switch closet.',
+    });
+  }
+
   return {
     text: lines.join(' '),
     meta: {
@@ -361,6 +425,7 @@ function answerPower(state: ProjectState, projectId: string, _scope: ResolvedSco
       confidence: 'medium',
       confidenceWhy: '8 W / 25.5 W per camera is a rule of thumb. Switch model + cable distance produces the real budget.',
       inference: true,
+      actions,
     },
   };
 }
@@ -384,12 +449,48 @@ function answerSchedule(state: ProjectState, projectId: string, _scope: Resolved
   if (blocked.length) lines.push(`${blocked.length} work order${blocked.length === 1 ? '' : 's'} blocked. Review on the deployment screen.`);
 
   const citations: AiCitation[] = wos.map((w): AiCitation => ({ label: w.title, kind: 'workorder', refId: w.id }));
+
+  // V1 2A.5 — apply actions. Concrete options the operator can
+  // execute without leaving the conversation.
+  const actions: AiAction[] = [];
+  const firstBlocked = wos.find((w) => w.progress.status === 'blocked');
+  if (firstBlocked) {
+    actions.push({
+      id: `a-${Date.now().toString(36)}-resolve`,
+      kind: 'resolve-event',
+      label: `Mark "${firstBlocked.title}" complete`,
+      refId: firstBlocked.id,
+      hint: 'Flips status from blocked to complete.',
+    });
+  }
+  const firstUnassigned = wos.find((w) => w.progress.status !== 'complete' && !w.progress.assignedTo);
+  if (firstUnassigned) {
+    actions.push({
+      id: `a-${Date.now().toString(36)}-assign`,
+      kind: 'assign-workflow',
+      label: `Assign "${firstUnassigned.title}" to the on-call tech`,
+      refId: firstUnassigned.id,
+      assignTo: 'on-call',
+      hint: 'Stamps the work order with an assignment. You can change it on the deployment screen.',
+    });
+  }
+  if (complete.length > 0) {
+    actions.push({
+      id: `a-${Date.now().toString(36)}-commission`,
+      kind: 'generate-report',
+      label: 'Open the commissioning report',
+      reportKind: 'commissioning',
+      hint: 'Jumps to the report generator scoped to completed work.',
+    });
+  }
+
   return {
     text: lines.join(' '),
     meta: {
       citations,
       confidence: 'high',
       confidenceWhy: 'Derived from the same work order rollup the deployment screen uses.',
+      actions,
     },
   };
 }

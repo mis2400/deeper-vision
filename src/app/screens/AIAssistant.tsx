@@ -15,11 +15,13 @@ import { useParams, useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { useProjectStore } from '../store/projectStore';
 import { streamAnswer, suggestPrompts } from '../lib/assistantEngine';
+import { executeAction, undoAction } from '../lib/assistantActions';
 import {
   Sparkles, Send, User, Plus, Trash2, MessageSquare, Lightbulb, X as XIcon,
-  Crosshair, Info,
+  Crosshair, Info, CheckCircle2, Undo2, Zap,
 } from 'lucide-react';
-import type { AiCitation, AiMsg } from '../store/types';
+import { toast } from 'sonner';
+import type { AiCitation, AiMsg, AiAction, AiAppliedRecord } from '../store/types';
 
 export function AIAssistant() {
   const { projectId = 'p1' } = useParams();
@@ -39,6 +41,8 @@ export function AIAssistant() {
   // narrows automatically. Operator can clear from the chip below.
   const assistantContext = useProjectStore((s) => s.assistantContext);
   const clearAssistantContext = useProjectStore((s) => s.setAssistantContext);
+  const recordAiApplied = useProjectStore((s) => s.recordAiApplied);
+  const patchAiMsg = useProjectStore((s) => s.patchAiMsg);
   // Only count context as "active" when it carries a real handle —
   // site, floor, or selection. Otherwise hide the chip.
   const ctxActive = assistantContext && (assistantContext.siteId || assistantContext.floorId || assistantContext.selectionId);
@@ -126,6 +130,50 @@ export function AIAssistant() {
     setActiveId(id);
     setDraft('');
   };
+
+  // V1 2A.5 — apply-action runtime. Executes the store mutation via
+  // assistantActions, then logs the outcome onto the message via
+  // recordAiApplied so the conversation thread shows what was done
+  // and offers Undo.
+  const onApplyAction = useCallback((msgId: string, action: AiAction) => {
+    if (!active) return;
+    const outcome = executeAction(action, projectId);
+    if (outcome.refused) {
+      toast.error(outcome.result, { duration: 4500 });
+      return;
+    }
+    const applied: AiAppliedRecord = {
+      actionId: action.id,
+      appliedAt: Date.now(),
+      result: outcome.result,
+      undoPayload: outcome.undoPayload,
+    };
+    recordAiApplied(active.id, msgId, applied);
+    toast.success(outcome.result, { duration: 4000 });
+    if (outcome.navigateTo) nav(outcome.navigateTo);
+  }, [active, projectId, recordAiApplied, nav]);
+
+  const onUndoApplied = useCallback((msgId: string, applied: AiAppliedRecord) => {
+    if (!active) return;
+    const result = undoAction(applied);
+    if (!result) {
+      toast.error('Cannot undo this action.', { duration: 4000 });
+      return;
+    }
+    // Mark the applied record undone in place so the bubble flips the
+    // chip from "Applied" to "Undone".
+    const conv = useProjectStore.getState().aiConversations[active.id];
+    if (!conv) return;
+    const msg = conv.messages.find((m) => m.id === msgId);
+    if (!msg) return;
+    const nextApplied = (msg.applied ?? []).map((a) =>
+      a.actionId === applied.actionId && a.appliedAt === applied.appliedAt
+        ? { ...a, undone: true }
+        : a,
+    );
+    patchAiMsg(active.id, msgId, { applied: nextApplied });
+    toast.message(result, { duration: 3000 });
+  }, [active, patchAiMsg]);
 
   const onDelete = (cid: string) => {
     if (!confirm('Delete this conversation? This cannot be undone.')) return;
@@ -224,6 +272,8 @@ export function AIAssistant() {
                     projectId={projectId}
                     onOpenCitation={(c) => nav(citationHref(c, projectId))}
                     onVerifyFollowup={() => { void send('Walk me through where you got that, citing each device or record I should look at.'); }}
+                    onApplyAction={(action) => onApplyAction(m.id, action)}
+                    onUndoApplied={(applied) => onUndoApplied(m.id, applied)}
                   />
                 ))}
                 <div ref={endRef} />
@@ -315,11 +365,13 @@ function citationHref(c: AiCitation, projectId: string): string {
   }
 }
 
-function MessageBubble({ msg, projectId, onOpenCitation, onVerifyFollowup }: {
+function MessageBubble({ msg, projectId, onOpenCitation, onVerifyFollowup, onApplyAction, onUndoApplied }: {
   msg: AiMsg;
   projectId: string;
   onOpenCitation: (c: AiCitation) => void;
   onVerifyFollowup: () => void;
+  onApplyAction: (action: AiAction) => void;
+  onUndoApplied: (applied: AiAppliedRecord) => void;
 }) {
   const isUser = msg.role === 'user';
   const text = msg.text;
@@ -329,6 +381,10 @@ function MessageBubble({ msg, projectId, onOpenCitation, onVerifyFollowup }: {
   // Phase 2A.4 — confidence chip + Low-confidence verify follow-up.
   const showConfidence = !isUser && !streaming && msg.confidence;
   const isLow = msg.confidence === 'low';
+  // Phase 2A.5 — apply-suggestion buttons + applied log.
+  const actions = isUser ? undefined : msg.actions;
+  const applied = isUser ? undefined : msg.applied;
+  const appliedActionIds = new Set((applied ?? []).filter((a) => !a.undone).map((a) => a.actionId));
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center ${isUser ? 'bg-secondary text-muted-foreground' : 'bg-primary/15 text-primary'}`}>
@@ -373,6 +429,62 @@ function MessageBubble({ msg, projectId, onOpenCitation, onVerifyFollowup }: {
                 Would you like me to verify?
               </button>
             )}
+          </div>
+        )}
+        {/* V1 2A.5 — apply suggestions. Each pending action renders
+            as a primary-tinted button. Once applied (and not undone),
+            the action collapses to an "Applied" chip with Undo. */}
+        {!isUser && !streaming && actions && actions.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1.5" data-testid="ai-actions">
+            {actions.map((a) => {
+              const isApplied = appliedActionIds.has(a.id);
+              const appliedRec = applied?.find((r) => r.actionId === a.id && !r.undone);
+              if (isApplied && appliedRec) {
+                return (
+                  <div key={a.id} className="inline-flex items-center justify-between gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5">
+                    <span className="inline-flex items-center gap-1.5 text-[11.5px] text-emerald-700">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{appliedRec.result}</span>
+                    </span>
+                    {appliedRec.undoPayload && (
+                      <button
+                        onClick={() => onUndoApplied(appliedRec)}
+                        className="inline-flex items-center gap-1 text-[10.5px] text-emerald-700/80 hover:text-emerald-800"
+                        title="Reverse this action"
+                      >
+                        <Undo2 className="w-3 h-3" />Undo
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => onApplyAction(a)}
+                  title={a.hint ?? a.label}
+                  className="inline-flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/10 hover:bg-primary/15 px-2.5 py-1.5 transition-colors group"
+                  data-testid={`ai-action-${a.kind}`}
+                >
+                  <span className="inline-flex items-center gap-1.5 text-[11.5px] text-primary">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>{a.label}</span>
+                  </span>
+                  <span className="text-[10px] uppercase tracking-[0.10em] text-primary/70 group-hover:text-primary">Apply</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {/* Render any UNDONE applied records as inert footnotes so the
+            audit trail is intact even after undo. */}
+        {!isUser && applied && applied.some((a) => a.undone) && (
+          <div className="mt-1.5 flex flex-col gap-0.5 text-[10px] text-muted-foreground/70">
+            {applied.filter((a) => a.undone).map((a) => (
+              <span key={`${a.actionId}-${a.appliedAt}`} className="inline-flex items-center gap-1">
+                <Undo2 className="w-2.5 h-2.5" />Undone: {a.result}
+              </span>
+            ))}
           </div>
         )}
       </div>
