@@ -23,6 +23,31 @@ Before writing any code, do this in order:
 4. Confirm before non trivial work. If the task touches more than 3 files, modifies auth, deletes anything, changes data models, or affects external integrations, stop and confirm the plan first.
 5. Implement only what was asked. No scope creep.
 
+## Autonomy mode
+
+Default behavior: run autonomously through assigned tasks without asking for plan approval. Do not pause for permission unless one of the trigger conditions below fires.
+
+For every task:
+1. Restate the request in one sentence.
+2. List the acceptance criteria.
+3. State the plan at a file level (what will change, what stays untouched).
+4. Implement. Do not wait for approval on the plan unless a trigger fires.
+5. Run the full review loop (task-verifier → code-reviewer → security-reviewer if applicable → npm run build).
+6. Address all CRITICAL and IMPORTANT findings before declaring done.
+7. Commit with a clear message. Do not push.
+8. Move to the next task in the batch if one was specified.
+
+Pause and ask Mohammad ONLY when one of these triggers fires:
+- The plan would touch more than 5 files OR modify the store schema OR change auth OR delete anything substantial.
+- A reviewer returns SCOPE DRIFT or REWRITE.
+- npm run build fails AND you cannot fix the failure cleanly within 2 attempts.
+- A request is ambiguous in a way that has multiple defensible interpretations.
+- You discover the task as written conflicts with shipped code or CLAUDE.md.
+
+When you pause, post: a one line headline of why, what you've completed so far, and the specific question you need answered.
+
+When you complete a batch of tasks, post a single end of batch summary covering each task: what shipped, what reviewers caught, what cleanup got deferred, and any followups worth filing.
+
 ## The review loop (mandatory)
 
 You may not declare any task complete until you have run this sequence:
