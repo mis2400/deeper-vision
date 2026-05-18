@@ -19,9 +19,10 @@ import {
 } from 'lucide-react';
 
 import { Button } from '../components/Button';
-import { useProjectStore, selectors } from '../store/projectStore';
+import { useProjectStore } from '../store/projectStore';
+import { toCustomerView, type ProposalCustomerArtifact } from '../lib/proposalView';
 import { PHASE_TIMELINE } from '../lifecycle/phases';
-import type { LifecyclePhase, Attachment, ApprovalType, Asset, Device, Warranty } from '../store/types';
+import type { LifecyclePhase, Attachment, ApprovalType, Asset, Device, Warranty, ProposalLine } from '../store/types';
 
 /** SC.2.1 — roll a vN style proposal version forward by one when
  *  the prior approval used a recognisable vN tag. Non-matching
@@ -60,9 +61,17 @@ export function CustomerPortal() {
   const attachments      = useProjectStore((s) => s.attachments);
   const updateProject    = useProjectStore((s) => s.updateProject);
   const addApproval      = useProjectStore((s) => s.addApproval);
-  // SC.2.1 — read prior approvals so we can suggest the next
-  // proposal version and surface "already approved" UX hints.
-  const priorApprovals   = useProjectStore((s) => selectors.approvalsForProject(s, projectId));
+  // SC.2.1 — read prior approvals. Raw subscription + useMemo
+  // (matches every other screen's pattern) so the selector's
+  // fresh-array return doesn't trip React 18's getSnapshot
+  // identity check.
+  const approvalsMap     = useProjectStore((s) => s.approvals);
+  const priorApprovals   = useMemo(
+    () => Object.values(approvalsMap)
+      .filter((a) => a.projectId === projectId)
+      .sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime()),
+    [approvalsMap, projectId],
+  );
   const latestApproval   = priorApprovals[0] ?? null;
   // SC.3.6 — installed assets the customer is allowed to see.
   // Only active assets (no decommissioned, no orphaned). Walks
@@ -76,6 +85,33 @@ export function CustomerPortal() {
       .filter((a) => a.projectId === projectId && a.status === 'active')
       .sort((a, b) => b.createdAt - a.createdAt),
     [assetsMap, projectId],
+  );
+
+  // SC.4.7 — pick the live customer facing proposal. Prefer the
+  // latest sent / approved version. Only fall back to a superseded
+  // version if it is the LATEST one AND a newer (sent / approved)
+  // record exists; otherwise hiding the card is more honest than
+  // promising a link that does not yet exist. The portal renders
+  // its customer view only; toCustomerView strips every internal
+  // field at the data layer so a screenshot or DevTools dump can't
+  // leak cost / margin / labor numbers.
+  const proposalsMap = useProjectStore((s) => s.proposals);
+  const sentProposal = useMemo(() => {
+    const projectProposals = Object.values(proposalsMap).filter((p) => p.projectId === projectId);
+    if (projectProposals.length === 0) return null;
+    const liveCandidates = projectProposals.filter((p) => p.status === 'sent' || p.status === 'approved');
+    if (liveCandidates.length > 0) {
+      return liveCandidates.reduce((max, p) => (p.version > max.version ? p : max), liveCandidates[0]);
+    }
+    // No sent / approved version exists at all. Even if there's a
+    // superseded record, it's not honest to surface a "newer one
+    // is coming" banner when no newer one has been sent. Hide the
+    // card.
+    return null;
+  }, [proposalsMap, projectId]);
+  const proposalArtifact = useMemo(
+    () => sentProposal ? toCustomerView(sentProposal) : null,
+    [sentProposal],
   );
 
   const projectSite = useMemo(
@@ -332,6 +368,15 @@ export function CustomerPortal() {
               </div>
             )}
           </Card>
+
+          {/* SC.4.7 — sent proposal card. Renders only when a
+              proposal has been sent. Reads from toCustomerView so
+              internal cost / margin / labor never reach the DOM. */}
+          {proposalArtifact && (
+            <Card icon={<FileText className="w-4 h-4 text-muted-foreground" />} title={`Proposal v${proposalArtifact.version}`}>
+              <ProposalCard artifact={proposalArtifact} />
+            </Card>
+          )}
 
           {/* Documents */}
           <Card icon={<FileText className="w-4 h-4 text-muted-foreground" />} title="Documents">
@@ -641,6 +686,114 @@ function InstalledAssetRow({ asset, device, floorName, warranties }: {
       )}
     </div>
   );
+}
+
+// ─────────────────────── Proposal card (SC.4.7) ─────────────────
+// Customer facing render of the sent proposal. Reads from the
+// stripped ProposalCustomerArtifact only — no internal fields are
+// in scope. Line items group by section with a per section subtotal
+// and a project total at the bottom.
+const PROPOSAL_SECTION_LABEL: Record<ProposalLine['section'], string> = {
+  cameras:        'Cameras',
+  access:         'Access control',
+  cabling:        'Cabling',
+  conduit:        'Conduit',
+  walls:          'Walls',
+  infrastructure: 'Infrastructure',
+  labor:          'Labor',
+  other:          'Other',
+};
+
+function ProposalCard({ artifact }: {
+  artifact: ProposalCustomerArtifact;
+}) {
+  const grouped = useMemo(() => {
+    const m = new Map<ProposalLine['section'], typeof artifact.lines>();
+    for (const l of artifact.lines) {
+      const arr = m.get(l.section) ?? [];
+      arr.push(l);
+      m.set(l.section, arr);
+    }
+    return m;
+  }, [artifact]);
+
+  return (
+    <div className="space-y-5" data-testid="portal-proposal-card">
+      <div>
+        <div className="text-base font-medium leading-tight">{artifact.customerView.header}</div>
+        {artifact.sentAt && (
+          <div className="text-[11px] text-muted-foreground mt-1">
+            Sent {new Date(artifact.sentAt).toLocaleDateString()}
+          </div>
+        )}
+      </div>
+
+      {artifact.customerView.executiveSummary && (
+        <ProposalBlock title="Executive summary">{artifact.customerView.executiveSummary}</ProposalBlock>
+      )}
+      {artifact.customerView.scope && (
+        <ProposalBlock title="Scope of work">{artifact.customerView.scope}</ProposalBlock>
+      )}
+
+      {grouped.size > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Line items</div>
+          <div className="space-y-3">
+            {Array.from(grouped.entries()).map(([section, lines]) => {
+              const sub = lines.reduce((s, l) => s + l.lineTotal, 0);
+              return (
+                <div key={section} className="border border-border rounded-md overflow-hidden">
+                  <div className="px-3 py-1.5 bg-secondary/40 flex items-center justify-between text-[11px]">
+                    <span className="font-medium uppercase tracking-wider">{PROPOSAL_SECTION_LABEL[section]}</span>
+                    <span className="text-muted-foreground tabular-nums">${money(sub)}</span>
+                  </div>
+                  <table className="w-full text-[12px]">
+                    <tbody>
+                      {lines.map((l) => (
+                        <tr key={l.id} className="border-t border-border first:border-t-0">
+                          <td className="px-3 py-1.5">{l.description}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums w-24 text-muted-foreground">{l.quantity} {l.unit}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums w-24">${money(l.lineTotal)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="border-t border-border pt-3 flex items-center justify-between text-base font-medium">
+        <span>Project total</span>
+        <span className="tabular-nums">${money(artifact.totals.sellTotal)}</span>
+      </div>
+      {artifact.paymentSchedule && (
+        <div className="text-[12px] text-muted-foreground">{artifact.paymentSchedule}</div>
+      )}
+
+      {artifact.customerView.footer && (
+        <ProposalBlock title="Acceptance">{artifact.customerView.footer}</ProposalBlock>
+      )}
+      {artifact.customerView.terms && (
+        <ProposalBlock title="Terms">{artifact.customerView.terms}</ProposalBlock>
+      )}
+    </div>
+  );
+}
+
+function ProposalBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{title}</div>
+      <div className="text-[14px] leading-relaxed whitespace-pre-wrap">{children}</div>
+    </div>
+  );
+}
+
+function money(n: number): string {
+  return (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // ─────────────────────── Doc row ─────────────────────────────────

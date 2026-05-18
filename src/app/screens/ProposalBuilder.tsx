@@ -30,7 +30,7 @@ import { Button } from '../components/Button';
 import {
   FileText, FileSignature, ScrollText, Layers, DollarSign, Lock,
   Save, Eye, EyeOff, Plus, Trash2,
-  AlertTriangle,
+  AlertTriangle, Send, Copy, Mail, Link as LinkIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -167,6 +167,27 @@ export function ProposalBuilder() {
   );
 }
 
+/**
+ * SC.4.7 — semantics decision: edits after sending.
+ *
+ * When an operator clicks Save on a proposal whose status is no
+ * longer `draft` (because it was sent, approved, superseded, or
+ * archived), the save is REJECTED. The operator must explicitly
+ * Create New Version (SC.4.9) to spawn a fresh draft.
+ *
+ * Alternative considered: silently mint a draft v(n+1) on the
+ * first edit after sending. Rejected because it makes the version
+ * graph ambiguous (two people looking at the same project would
+ * see phantom v2 drafts appear from typos), and it splits operator
+ * intent across "edit means draft new version" vs the explicit
+ * Create New Version button.
+ *
+ * Chosen approach matches the audit's CRITICAL #2 finding on
+ * approval / proposal version integrity: every persisted record
+ * is the result of an explicit operator action, never a silent
+ * side effect.
+ */
+
 // ─────────────────────── Empty state ─────────────────────────────
 function NoProposalState({ projectId, onCreate, busy }: { projectId: string; onCreate: () => void; busy: boolean }) {
   return (
@@ -197,6 +218,9 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
 }) {
   const [activeSection, setActiveSection] = useState<SectionId>('lines');
   const [viewerMode, setViewerMode] = useState<ViewerMode>('internal');
+  // SC.4.7 — send dialog state. Opens on Send click; closes on
+  // Cancel or after the persistence + URL surface step.
+  const [sendOpen, setSendOpen] = useState(false);
 
   // Local working copy. The user's edits accumulate here and land
   // on the store on Save. Reset whenever the proposal id changes.
@@ -252,6 +276,19 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
     [draft, proposal],
   );
 
+  // SC.4.7 — lock state. A proposal that isn't a draft cannot
+  // accept edits via this builder (per the architectural decision
+  // documented above the BuilderShell function). Pass `locked`
+  // through every editor so inputs render disabled instead of
+  // pretending to accept input that will silently vanish.
+  const locked = proposal.status !== 'draft';
+  const lockedReason: string | null =
+    proposal.status === 'sent'        ? 'This version was sent to the customer. Use Create New Version to revise.'
+    : proposal.status === 'approved'  ? 'This version was approved by the customer. Use Create New Version to revise.'
+    : proposal.status === 'superseded' ? 'This version was superseded by a newer one. Open the newer version to make edits.'
+    : proposal.status === 'archived'  ? 'This version is archived. Open or create a draft to make edits.'
+    : null;
+
   return (
     <AppShell
       fullBleed
@@ -264,7 +301,18 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
           setViewerMode={setViewerMode}
           dirty={dirty}
           onSave={handleSave}
+          onSend={() => setSendOpen(true)}
         />
+
+        {/* SC.4.7 — lock banner for non draft proposals. Honest
+            warning that edits won't persist + a pointer at the
+            recovery path (Create New Version, SC.4.9). */}
+        {lockedReason && (
+          <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[12px] text-amber-700 flex items-center gap-2" data-testid="proposal-lock-banner">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>{lockedReason}</span>
+          </div>
+        )}
 
         {viewerMode === 'customer' ? (
           <div className="flex-1 min-h-0 overflow-auto">
@@ -282,24 +330,40 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
                 draft={draft}
                 setDraft={setDraft}
                 totals={totals}
+                locked={locked}
               />
             </div>
           </div>
         )}
       </div>
+
+      {/* SC.4.7 — Send to Customer dialog. Renders only when
+          opened from the top bar. Two phases: confirm + share. */}
+      {sendOpen && (
+        <SendDialog
+          proposal={proposal}
+          projectId={projectId}
+          onClose={() => setSendOpen(false)}
+        />
+      )}
     </AppShell>
   );
 }
 
 // ─────────────────────── Top bar ────────────────────────────────
-function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave }: {
+function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave, onSend }: {
   proposal: Proposal;
   viewerMode: ViewerMode;
   setViewerMode: (m: ViewerMode) => void;
   dirty: boolean;
   onSave: () => void;
+  onSend: () => void;
 }) {
   const statusTone = STATUS_TONE[proposal.status];
+  // SC.4.7 — Send is only available on a clean draft. A dirty
+  // draft must be saved first (so what's sent matches what's in
+  // the store). A non draft is already locked.
+  const canSend = proposal.status === 'draft' && !dirty;
   return (
     <div className="shrink-0 border-b border-border bg-background/95 px-4 py-2.5 flex items-center gap-3">
       <div className="flex items-center gap-2 min-w-0">
@@ -334,17 +398,45 @@ function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave }: {
         </button>
       </div>
 
-      {/* Save. Send + PDF + Versions land in SC.4.7 / 4.8 / 4.9. */}
       <Button
         onClick={onSave}
         disabled={!dirty || proposal.status !== 'draft'}
         data-testid="proposal-save"
+        variant="outline"
       >
         <Save className="w-3.5 h-3.5 mr-1" />Save
       </Button>
+
+      {/* SC.4.7 — Send to Customer. Only renders on a draft so
+          the honesty contract holds (no disabled "Send" sitting
+          on a sent proposal pretending the action is meaningful).
+          Non draft statuses get a status hint so the operator
+          isn't staring at empty space wondering why Send is gone. */}
+      {proposal.status === 'draft' ? (
+        <Button
+          onClick={onSend}
+          disabled={!canSend}
+          data-testid="proposal-send"
+          title={canSend ? 'Send to customer' : 'Save your changes before sending'}
+        >
+          <Send className="w-3.5 h-3.5 mr-1" />Send to customer
+        </Button>
+      ) : (
+        <span className="text-[11px] text-muted-foreground" data-testid="proposal-status-hint">
+          {STATUS_HINT[proposal.status]} {proposal.sentAt ? new Date(proposal.sentAt).toLocaleDateString() : ''}
+        </span>
+      )}
     </div>
   );
 }
+
+const STATUS_HINT: Record<Proposal['status'], string> = {
+  draft:      'Draft',
+  sent:       'Sent',
+  approved:   'Approved',
+  superseded: 'Superseded',
+  archived:   'Archived',
+};
 
 const STATUS_TONE: Record<Proposal['status'], string> = {
   draft:       'border-border text-muted-foreground bg-secondary',
@@ -389,11 +481,12 @@ type Draft = {
   bomSnapshot: ProposalLine[];
 };
 
-function SectionEditor({ section, draft, setDraft, totals }: {
+function SectionEditor({ section, draft, setDraft, totals, locked }: {
   section: SectionId;
   draft: Draft;
   setDraft: React.Dispatch<React.SetStateAction<Draft>>;
   totals: ReturnType<typeof deriveProposalInternalTotals>;
+  locked: boolean;
 }) {
   const cv = draft.customerView;
   const iv = draft.internalView;
@@ -412,6 +505,7 @@ function SectionEditor({ section, draft, setDraft, totals }: {
           onChange={(v) => patchCv({ header: v })}
           minRows={2}
           testid="proposal-edit-header"
+          locked={locked}
         />
       );
     case 'execSummary':
@@ -423,6 +517,7 @@ function SectionEditor({ section, draft, setDraft, totals }: {
           onChange={(v) => patchCv({ executiveSummary: v })}
           minRows={4}
           testid="proposal-edit-exec"
+          locked={locked}
         />
       );
     case 'scope':
@@ -434,6 +529,7 @@ function SectionEditor({ section, draft, setDraft, totals }: {
           onChange={(v) => patchCv({ scope: v })}
           minRows={6}
           testid="proposal-edit-scope"
+          locked={locked}
         />
       );
     case 'terms':
@@ -445,6 +541,7 @@ function SectionEditor({ section, draft, setDraft, totals }: {
           onChange={(v) => patchCv({ terms: v })}
           minRows={10}
           testid="proposal-edit-terms"
+          locked={locked}
         />
       );
     case 'acceptance':
@@ -456,6 +553,7 @@ function SectionEditor({ section, draft, setDraft, totals }: {
           onChange={(v) => patchCv({ footer: v })}
           minRows={3}
           testid="proposal-edit-acceptance"
+          locked={locked}
         >
           <div className="mt-4">
             <label className="text-xs text-muted-foreground">Payment schedule (optional)</label>
@@ -464,7 +562,8 @@ function SectionEditor({ section, draft, setDraft, totals }: {
               onChange={(e) => patchCv({ paymentSchedule: e.target.value })}
               placeholder="50% on signing · 40% at substantial completion · 10% on commissioning"
               rows={3}
-              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm"
+              disabled={locked}
+              className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               data-testid="proposal-edit-payment-schedule"
             />
           </div>
@@ -479,6 +578,7 @@ function SectionEditor({ section, draft, setDraft, totals }: {
           onChange={(v) => patchIv({ notes: v })}
           minRows={6}
           testid="proposal-edit-internal-notes"
+          locked={locked}
         />
       );
     case 'lines':
@@ -486,6 +586,7 @@ function SectionEditor({ section, draft, setDraft, totals }: {
         <BomLinesSection
           lines={draft.bomSnapshot}
           setLines={(updater) => setDraft((d) => ({ ...d, bomSnapshot: typeof updater === 'function' ? updater(d.bomSnapshot) : updater }))}
+          locked={locked}
         />
       );
     case 'pricing':
@@ -494,6 +595,7 @@ function SectionEditor({ section, draft, setDraft, totals }: {
           internalView={draft.internalView}
           patchIv={patchIv}
           totals={totals}
+          locked={locked}
           onApplyMarginToLines={() => {
             setDraft((d) => ({
               ...d,
@@ -510,13 +612,14 @@ function SectionEditor({ section, draft, setDraft, totals }: {
   }
 }
 
-function NarrativeSection({ title, subtitle, value, onChange, minRows, testid, children }: {
+function NarrativeSection({ title, subtitle, value, onChange, minRows, testid, locked, children }: {
   title: string;
   subtitle: string;
   value: string;
   onChange: (v: string) => void;
   minRows: number;
   testid: string;
+  locked?: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -527,7 +630,8 @@ function NarrativeSection({ title, subtitle, value, onChange, minRows, testid, c
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={minRows}
-        className="mt-3 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm leading-relaxed"
+        disabled={locked}
+        className="mt-3 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm leading-relaxed disabled:opacity-60 disabled:cursor-not-allowed"
         data-testid={testid}
       />
       {children}
@@ -547,9 +651,10 @@ const SECTION_LABEL: Record<ProposalLine['section'], string> = {
   other:          'Other',
 };
 
-function BomLinesSection({ lines, setLines }: {
+function BomLinesSection({ lines, setLines, locked }: {
   lines: ProposalLine[];
   setLines: (updater: ProposalLine[] | ((prev: ProposalLine[]) => ProposalLine[])) => void;
+  locked: boolean;
 }) {
   const grouped = useMemo(() => {
     const m = new Map<ProposalLine['section'], ProposalLine[]>();
@@ -601,36 +706,40 @@ function BomLinesSection({ lines, setLines }: {
             onPatch={patchLine}
             onRemove={removeLine}
             onAdd={() => addCustomLine(section)}
+            locked={locked}
           />
         ))}
-        <div className="border border-dashed border-border rounded-lg p-3">
-          <div className="text-xs text-muted-foreground mb-2">Add a line to a new section</div>
-          <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(SECTION_LABEL) as ProposalLine['section'][])
-              .filter((s) => !grouped.has(s))
-              .map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => addCustomLine(s)}
-                  className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
-                >
-                  <Plus className="w-3 h-3" />{SECTION_LABEL[s]}
-                </button>
-              ))}
+        {!locked && (
+          <div className="border border-dashed border-border rounded-lg p-3">
+            <div className="text-xs text-muted-foreground mb-2">Add a line to a new section</div>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(SECTION_LABEL) as ProposalLine['section'][])
+                .filter((s) => !grouped.has(s))
+                .map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => addCustomLine(s)}
+                    className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
+                  >
+                    <Plus className="w-3 h-3" />{SECTION_LABEL[s]}
+                  </button>
+                ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-function BomLinesSectionGroup({ section, lines, onPatch, onRemove, onAdd }: {
+function BomLinesSectionGroup({ section, lines, onPatch, onRemove, onAdd, locked }: {
   section: ProposalLine['section'];
   lines: ProposalLine[];
   onPatch: (id: string, patch: Partial<ProposalLine>) => void;
   onRemove: (id: string) => void;
   onAdd: () => void;
+  locked: boolean;
 }) {
   const subtotalCost = lines.reduce((s, l) => s + l.unitCost * l.quantity, 0);
   const subtotalSell = lines
@@ -658,27 +767,30 @@ function BomLinesSectionGroup({ section, lines, onPatch, onRemove, onAdd }: {
       </div>
       <div className="divide-y divide-border">
         {lines.map((l) => (
-          <BomLineRow key={l.id} line={l} onPatch={onPatch} onRemove={onRemove} />
+          <BomLineRow key={l.id} line={l} onPatch={onPatch} onRemove={onRemove} locked={locked} />
         ))}
       </div>
-      <footer className="px-3 py-2 border-t border-border/50">
-        <button
-          type="button"
-          onClick={onAdd}
-          className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
-          data-testid={`proposal-bom-add-${section}`}
-        >
-          <Plus className="w-3 h-3" />Add custom line
-        </button>
-      </footer>
+      {!locked && (
+        <footer className="px-3 py-2 border-t border-border/50">
+          <button
+            type="button"
+            onClick={onAdd}
+            className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+            data-testid={`proposal-bom-add-${section}`}
+          >
+            <Plus className="w-3 h-3" />Add custom line
+          </button>
+        </footer>
+      )}
     </section>
   );
 }
 
-function BomLineRow({ line, onPatch, onRemove }: {
+function BomLineRow({ line, onPatch, onRemove, locked }: {
   line: ProposalLine;
   onPatch: (id: string, patch: Partial<ProposalLine>) => void;
   onRemove: (id: string) => void;
+  locked: boolean;
 }) {
   const lineCost = line.unitCost * line.quantity;
   const lineSell = line.unitPrice * line.quantity;
@@ -692,14 +804,16 @@ function BomLineRow({ line, onPatch, onRemove }: {
         <input
           value={line.description}
           onChange={(e) => onPatch(line.id, { description: e.target.value })}
-          className="w-full bg-transparent border-b border-transparent hover:border-border focus:border-primary px-1 py-0.5 truncate"
+          disabled={locked}
+          className="w-full bg-transparent border-b border-transparent hover:border-border focus:border-primary px-1 py-0.5 truncate disabled:hover:border-transparent"
           data-testid={`proposal-bom-desc-${line.id}`}
         />
         <input
           value={line.internalNote ?? ''}
           onChange={(e) => onPatch(line.id, { internalNote: e.target.value })}
           placeholder="Internal note (operator only)"
-          className="w-full bg-transparent border-b border-transparent hover:border-border focus:border-primary px-1 text-[10.5px] text-muted-foreground italic"
+          disabled={locked}
+          className="w-full bg-transparent border-b border-transparent hover:border-border focus:border-primary px-1 text-[10.5px] text-muted-foreground italic disabled:hover:border-transparent"
           data-testid={`proposal-bom-note-${line.id}`}
         />
       </div>
@@ -708,21 +822,24 @@ function BomLineRow({ line, onPatch, onRemove }: {
         value={line.quantity}
         min={0}
         step={1}
+        disabled={locked}
         onChange={(e) => onPatch(line.id, { quantity: Number(e.target.value) || 0 })}
         className="bg-input-background border border-input-border rounded px-1.5 py-1 text-right tabular-nums"
       />
       <input
         value={line.unit}
         onChange={(e) => onPatch(line.id, { unit: e.target.value })}
-        className="bg-input-background border border-input-border rounded px-1.5 py-1 text-center"
+        disabled={locked}
+        className="bg-input-background border border-input-border rounded px-1.5 py-1 text-center disabled:opacity-60"
       />
       <input
         type="number"
         value={line.unitCost}
         min={0}
         step={0.01}
+        disabled={locked}
         onChange={(e) => onPatch(line.id, { unitCost: Number(e.target.value) || 0 })}
-        className="bg-input-background border border-input-border rounded px-1.5 py-1 text-right tabular-nums"
+        className="bg-input-background border border-input-border rounded px-1.5 py-1 text-right tabular-nums disabled:opacity-60"
         title="Internal unit cost. Never shown to customer."
       />
       <input
@@ -730,8 +847,9 @@ function BomLineRow({ line, onPatch, onRemove }: {
         value={line.unitPrice}
         min={0}
         step={0.01}
+        disabled={locked}
         onChange={(e) => onPatch(line.id, { unitPrice: Number(e.target.value) || 0 })}
-        className="bg-input-background border border-input-border rounded px-1.5 py-1 text-right tabular-nums"
+        className="bg-input-background border border-input-border rounded px-1.5 py-1 text-right tabular-nums disabled:opacity-60"
         title="Customer facing sell price per unit."
         data-testid={`proposal-bom-price-${line.id}`}
       />
@@ -743,16 +861,18 @@ function BomLineRow({ line, onPatch, onRemove }: {
         value={line.laborHours ?? 0}
         min={0}
         step={0.1}
+        disabled={locked}
         onChange={(e) => onPatch(line.id, { laborHours: Number(e.target.value) || 0 })}
-        className="bg-input-background border border-input-border rounded px-1.5 py-1 text-right tabular-nums"
+        className="bg-input-background border border-input-border rounded px-1.5 py-1 text-right tabular-nums disabled:opacity-60"
         title="Labor hours total for this line (not per unit)."
       />
       <div className="flex items-center justify-end gap-1">
         <button
           type="button"
           onClick={() => onPatch(line.id, { hideFromCustomer: !hidden })}
+          disabled={locked}
           title={hidden ? 'Hidden from customer view. Click to show.' : 'Visible to customer. Click to hide.'}
-          className={`p-1 rounded ${hidden ? 'text-muted-foreground/60' : 'text-foreground'} hover:bg-secondary`}
+          className={`p-1 rounded ${hidden ? 'text-muted-foreground/60' : 'text-foreground'} hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent`}
           data-testid={`proposal-bom-hide-${line.id}`}
         >
           {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -760,8 +880,9 @@ function BomLineRow({ line, onPatch, onRemove }: {
         <button
           type="button"
           onClick={() => onRemove(line.id)}
+          disabled={locked}
           title="Remove line"
-          className="p-1 rounded text-rose-400 hover:bg-rose-500/10"
+          className="p-1 rounded text-rose-400 hover:bg-rose-500/10 disabled:opacity-40 disabled:hover:bg-transparent"
           data-testid={`proposal-bom-remove-${line.id}`}
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -772,11 +893,12 @@ function BomLineRow({ line, onPatch, onRemove }: {
 }
 
 // ─────────────────────── Pricing section (SC.4.6) ───────────────
-function PricingSection({ internalView, patchIv, totals, onApplyMarginToLines }: {
+function PricingSection({ internalView, patchIv, totals, onApplyMarginToLines, locked }: {
   internalView: ProposalInternalView;
   patchIv: (patch: Partial<ProposalInternalView>) => void;
   totals: ReturnType<typeof deriveProposalInternalTotals>;
   onApplyMarginToLines: () => void;
+  locked: boolean;
 }) {
   const customerDelta = totals.customerSubtotal - totals.sellTotal;
   const customerDeltaSignificant = Math.abs(customerDelta) > 1;
@@ -797,6 +919,7 @@ function PricingSection({ internalView, patchIv, totals, onApplyMarginToLines }:
           suffix="$/hr"
           value={internalView.laborRatePerHour}
           step={1}
+          disabled={locked}
           onChange={(v) => patchIv({ laborRatePerHour: v })}
           testid="proposal-pricing-labor-rate"
         />
@@ -806,6 +929,7 @@ function PricingSection({ internalView, patchIv, totals, onApplyMarginToLines }:
           value={internalView.burdenPct * 100}
           step={1}
           max={95}
+          disabled={locked}
           onChange={(v) => patchIv({ burdenPct: clampPct(v / 100) })}
           testid="proposal-pricing-burden"
         />
@@ -815,6 +939,7 @@ function PricingSection({ internalView, patchIv, totals, onApplyMarginToLines }:
           value={internalView.marginPct * 100}
           step={1}
           max={95}
+          disabled={locked}
           onChange={(v) => patchIv({ marginPct: clampPct(v / 100) })}
           testid="proposal-pricing-margin"
         />
@@ -841,14 +966,16 @@ function PricingSection({ internalView, patchIv, totals, onApplyMarginToLines }:
               margin target ${formatMoney(totals.sellTotal)} by {customerDelta > 0 ? '+' : ''}${formatMoney(customerDelta)}.
               The customer signs the line items total; the target margin is operator only.
             </div>
-            <button
-              type="button"
-              onClick={onApplyMarginToLines}
-              className="mt-2 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/15"
-              data-testid="proposal-pricing-apply-margin"
-            >
-              Reprice every line at {pct(internalView.marginPct)} margin
-            </button>
+            {!locked && (
+              <button
+                type="button"
+                onClick={onApplyMarginToLines}
+                className="mt-2 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/15"
+                data-testid="proposal-pricing-apply-margin"
+              >
+                Reprice every line at {pct(internalView.marginPct)} margin
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -856,12 +983,13 @@ function PricingSection({ internalView, patchIv, totals, onApplyMarginToLines }:
   );
 }
 
-function PricingInput({ label, suffix, value, step, max, onChange, testid }: {
+function PricingInput({ label, suffix, value, step, max, disabled, onChange, testid }: {
   label: string;
   suffix: string;
   value: number;
   step: number;
   max?: number;
+  disabled?: boolean;
   onChange: (v: number) => void;
   testid: string;
 }) {
@@ -871,13 +999,14 @@ function PricingInput({ label, suffix, value, step, max, onChange, testid }: {
   return (
     <div>
       <label className="text-xs text-muted-foreground">{label}</label>
-      <div className="mt-1 flex items-center bg-input-background border border-input-border rounded-md overflow-hidden">
+      <div className={`mt-1 flex items-center bg-input-background border border-input-border rounded-md overflow-hidden ${disabled ? 'opacity-60' : ''}`}>
         <input
           type="number"
           value={displayValue}
           step={step}
           max={max}
           min={0}
+          disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value) || 0)}
           className="flex-1 bg-transparent px-3 py-2 text-sm text-right tabular-nums focus:outline-none"
           data-testid={testid}
@@ -1012,4 +1141,232 @@ function standardTerms(): string {
     'Substantial completion is defined as the moment all line items are installed and powered.',
     'Warranty terms attach as a separate document and follow each manufacturer\'s standard coverage period.',
   ].join('\n\n');
+}
+
+// ─────────────────────── Send dialog (SC.4.7) ────────────────────
+// Two phase modal. Phase 1 ("confirm"): pick a contact + validate
+// the proposal has the minimum required fields. Phase 2 ("share"):
+// surface the customer portal URL with a Copy button and a
+// mailto: helper that opens the operator's email client. The
+// honesty rule means no fake "Email sent" toasts; the operator
+// shares the link manually.
+function SendDialog({ proposal, projectId, onClose }: {
+  proposal: Proposal;
+  projectId: string;
+  onClose: () => void;
+}) {
+  // Build the contact options from the project's customer record.
+  const project = useProjectStore((s) => s.projects[projectId]);
+  const customer = useProjectStore((s) =>
+    project?.customerId ? s.customers[project.customerId] : undefined,
+  );
+  const allContacts = useProjectStore((s) => s.contacts);
+  const updateProposal = useProjectStore((s) => s.updateProposal);
+
+  const contacts = useMemo(() => {
+    if (!customer) return [];
+    const out = Object.values(allContacts).filter((c) => c.customerId === customer.id);
+    // Primary first.
+    out.sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0));
+    return out;
+  }, [allContacts, customer]);
+
+  const [phase, setPhase] = useState<'confirm' | 'share'>('confirm');
+  // Guard against an orphan `sentTo` (a contact id that no longer
+  // exists in the customer's contacts). Falls back to the first
+  // available contact id, then empty string.
+  const initialContactId = useMemo(() => {
+    if (proposal.sentTo && contacts.some((c) => c.id === proposal.sentTo)) return proposal.sentTo;
+    return contacts[0]?.id ?? '';
+  }, [proposal.sentTo, contacts]);
+  const [selectedContactId, setSelectedContactId] = useState<string>(initialContactId);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Validation. Required fields for sending: a non empty header,
+  // at least one BOM line visible to the customer, AND a non zero
+  // customer total. The last check protects against a $0 proposal
+  // (every visible line has qty 0 or price 0).
+  const visibleLines = proposal.bomSnapshot.filter((l) => !l.hideFromCustomer);
+  const customerTotal = visibleLines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  const validationErrors: string[] = [];
+  if (!proposal.customerView.header.trim()) validationErrors.push('Header is empty');
+  if (visibleLines.length === 0) validationErrors.push('Customer view has zero line items (every line is hidden)');
+  else if (customerTotal <= 0) validationErrors.push('Customer total is $0. Set quantities and sell prices before sending.');
+
+  const selectedContact = contacts.find((c) => c.id === selectedContactId);
+  const portalUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/portal/${projectId}`
+      : `/portal/${projectId}`;
+
+  const handleSend = () => {
+    if (validationErrors.length > 0) return;
+    setBusy(true);
+    try {
+      // Re read status from the store so a concurrent Send / supersede
+      // can't be silently overwritten.
+      const current = useProjectStore.getState().proposals[proposal.id];
+      if (!current || current.status !== 'draft') {
+        toast.error('Proposal is no longer a draft.');
+        setBusy(false);
+        return;
+      }
+      updateProposal(proposal.id, {
+        status: 'sent',
+        sentAt: Date.now(),
+        sentTo: selectedContactId || undefined,
+      });
+      setPhase('share');
+      toast.success(`Proposal v${proposal.version} marked sent.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(portalUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Could not copy to clipboard.');
+    }
+  };
+
+  const mailtoHref = (() => {
+    const to = selectedContact?.email ?? '';
+    const subject = encodeURIComponent(
+      `${proposal.customerView.header || 'Security proposal'} · v${proposal.version}`,
+    );
+    const greeting = selectedContact?.firstName ? `Hi ${selectedContact.firstName},\n\n` : '';
+    const body = encodeURIComponent(
+      `${greeting}Your proposal is ready to review and approve at the link below.\n\n${portalUrl}\n\nReach out if you have any questions.`,
+    );
+    return `mailto:${to}?subject=${subject}&body=${body}`;
+  })();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/40 p-0 sm:p-6" data-testid="proposal-send-dialog">
+      <div className="bg-card w-full sm:max-w-md sm:rounded-xl shadow-2xl border-t sm:border border-border max-h-[92vh] overflow-y-auto">
+        <div className="px-5 py-4 border-b border-border">
+          <div className="text-sm font-medium">
+            {phase === 'confirm' ? `Send proposal v${proposal.version}` : `Proposal v${proposal.version} sent`}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            {phase === 'confirm'
+              ? 'Marks the proposal sent and makes it visible on the customer portal. Edits will require Create New Version.'
+              : 'Share the link below with the customer so they can review and approve.'}
+          </div>
+        </div>
+
+        {phase === 'confirm' ? (
+          <div className="px-5 py-4 space-y-3">
+            {validationErrors.length > 0 && (
+              <div className="rounded-md border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-[11px] text-rose-300 flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <div>
+                  <div className="font-medium">Can't send yet</div>
+                  <ul className="list-disc pl-4 mt-1">
+                    {validationErrors.map((e) => <li key={e}>{e}</li>)}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs text-muted-foreground">Send to</label>
+              {contacts.length > 0 ? (
+                <select
+                  value={selectedContactId}
+                  onChange={(e) => setSelectedContactId(e.target.value)}
+                  className="mt-1 w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm"
+                  data-testid="proposal-send-contact"
+                >
+                  {contacts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {[c.firstName, c.lastName].filter(Boolean).join(' ')}{c.isPrimary ? ' · primary' : ''}{c.email ? ` · ${c.email}` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="mt-1 rounded-md border border-dashed border-border bg-secondary/20 px-3 py-2 text-[11px] text-muted-foreground">
+                  No contacts on file for this customer. The proposal will still be sent; you'll need to share the link manually after.
+                </div>
+              )}
+            </div>
+
+            <div className="text-[11px] text-muted-foreground">
+              The customer portal will show this proposal version as the current live version.
+              The Save button locks on send; revisions require Create New Version.
+            </div>
+          </div>
+        ) : (
+          <div className="px-5 py-4 space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground">Customer portal link</label>
+              <div className="mt-1 flex items-stretch border border-input-border rounded-md overflow-hidden">
+                <div className="flex-1 px-3 py-2 text-[12px] bg-input-background font-mono truncate" data-testid="proposal-share-url">
+                  {portalUrl}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="px-3 inline-flex items-center gap-1 text-[12px] border-l border-input-border hover:bg-secondary"
+                  data-testid="proposal-share-copy"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            {selectedContact?.email && (
+              <a
+                href={mailtoHref}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12px] border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                data-testid="proposal-share-mailto"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Open mail to {selectedContact.firstName || selectedContact.email}
+              </a>
+            )}
+
+            <div className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+              <LinkIcon className="w-3 h-3 mt-0.5 shrink-0" />
+              <span>
+                The portal is the live customer surface. Share this link by email, Slack, or any
+                channel you already use. No email is sent automatically.
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div className="px-5 py-3 border-t border-border flex justify-end gap-2">
+          {phase === 'confirm' ? (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={busy}
+                className="inline-flex items-center h-8 px-3 rounded-md text-[12px] text-muted-foreground hover:text-foreground border border-border"
+              >Cancel</button>
+              <Button
+                onClick={handleSend}
+                disabled={busy || validationErrors.length > 0}
+                data-testid="proposal-send-confirm"
+              >
+                <Send className="w-3.5 h-3.5 mr-1" />
+                {busy ? 'Sending…' : 'Confirm send'}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={onClose} data-testid="proposal-send-done">
+              Done
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
