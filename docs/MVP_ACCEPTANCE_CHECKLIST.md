@@ -511,11 +511,49 @@ Sourced from `docs/MVP_SPINE_AUDIT.md` Batch B. Wires SC.1's Approval record to 
 - Existing seed data: confirm Riverbend HQ (p1) has at least one Approval record after the v23 + v27 migrations run (the seed may need a fresh `resetDemoData()` to land cleanly).
 - `deriveWorkOrders` now gated. Any consumer that displayed "X work orders" on a project without approval now reads zero. Confirmed updates on: DeploymentMode, DeploymentModeMobile, ReportsCenter Executive Summary + Field Deployment Summary. Not audited: assistantEngine.ts, projectSync.ts, Dashboard.tsx rollups — those receive `[]` which is correct, but should be confirmed they don't surface misleading "0" copy.
 
+## 15 · Spine Completion SC.3 — Commissioning writes back
+
+Sourced from `docs/MVP_SPINE_AUDIT.md` Batch C. Closes audit CRITICAL gap #3 by wiring commissioning to first class records: the device gets a real `commissioning` field, a passing commission auto creates an Asset (per SC.1.2 one-to-one rule), and the same call opens a default 1y manufacturer Warranty against the Asset. Wires steps 14 → 15 → 16 of the MVP spine end to end.
+
+- [x] **SC.3.1 Commissioning form on deployment surface.** New shared module `src/app/components/CommissionSheet.tsx` exports the modal form + summary panel + default test list + status meta + `commissionStatusFromTests` helper. Form captures commissioner name, commissioning date (defaults to today), serial (optional), notes, and a four item test checklist (powered on / network reachable / recording verified / configured per spec). Status derives from test results: all pass = pass, mixed = partial, none = fail. DeploymentMode adds a Commission action button in the WO detail status row (with label that adapts to current state: Commission / Recommission / Resolve partial / Retry commission) plus a CommissionSummaryPanel below the status timeline. DeploymentModeMobile adds a 44 px Commissioning SectionCard. Pathways + IDFs + legacy state.doors get no Commission UI because they have no Device id to write commissioning against.
+- [x] **SC.3.2 + SC.3.3 Auto Asset + Warranty on pass.** `setDeviceCommissioning` chains side effects on `status === 'pass'`: resolves manufacturer + model from the catalog product, calls `createAssetFromDevice` (idempotent), calls `updateAsset` to bring serial / commissioner / date forward (without blanking prior serial when caller omits it), opens a default `wty-${assetId}-mfr` 1y manufacturer warranty if no manufacturer warranty exists. Date arithmetic anchored at local noon so timestamps survive DST + display the correct day in Pasadena. Defensive `if (!assetId) return` before warranty write. Partial + fail commissions persist the record but do NOT promote to Asset.
+- [x] **SC.3.4 Assets list on Project Center.** New Assets section under Approvals renders every project asset newest first with status badge (Active / Decommissioned / Service required / Orphaned), device label, manufacturer, model, commissioned date + by, serial when present, and linked warranty count. Click expands inline with full detail grid + warranties list (tone per warranty: Active green, Expiring within 90 days amber, Expired rose). Empty state links direct to `/project/:id/deployment`. SC.6 service ticket placeholder rendered as plain italic text (not a disabled button) so the honesty contract holds.
+- [x] **SC.3.5 Edit + decommission asset.** Asset expansion gains "Edit asset" toggle that flips serial / status / notes to inputs (manufacturer + model stay read only — they derive from the catalog). Decommission lives behind a two click confirm (rose toned). Decommission cascade: sets `asset.status = 'decommissioned'`, then for every linked warranty whose endDate is in the future calls `updateWarranty` to set endDate to today. History is preserved (records never deleted). Each warranty row has its own Edit toggle that flips to a form with provider select, type input, start + end date pickers, terms textarea, coverage textarea.
+- [x] **SC.3.6 Customer Portal installed assets preview.** New "Installed equipment" Card on the portal renders only active assets (decommissioned + orphaned hidden). Each row shows a plain English device label (Dome camera / Access door / etc) translated via `ASSET_TYPE_LABEL`, manufacturer + model, floor name (if available), installed date, and a warranty status badge with three tones (Under warranty / Warranty expiring / Warranty expired). Loudest signal wins so a single expired warranty surfaces over the others. No cost data, no internal jargon, no ids exposed. Card hides entirely when there are no active assets.
+- [x] **SC.3.7 SC.3 integrity test script.** `scripts/sc3-spine-integrity.mjs` prints a six step DevTools paste procedure: reset + open the gate → commission with PASS (assert Asset + Warranty spawn) → recommission (assert idempotency on both) → commission another device with PARTIAL (assert no Asset created) → decommission asset (assert cascade to warranties + history preserved) → hard reload then inspector.
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass commit. No TS errors.
+- **Persist version**: `deeperVisionStore` v27 (unchanged from SC.2; SC.3 made no schema bumps — the new `device.commissioning` field is `import('./types').DeviceCommissioning` which carries forward through the existing devices slice, no migration needed because the prior placeholder field was never written).
+- **Review loop**: code reviewer caught:
+  - SC.3.2 + SC.3.3 — 2 IMPORTANT (undefined serial blanks asset on recommission; UTC date parsing shifts displayed commissioning day west of UTC) + 4 MINOR. Both IMPORTANT addressed inline (filter undefineds + local noon anchor).
+  - SC.3.1 / SC.3.4 / SC.3.5 / SC.3.6 — clean.
+- **Chain semantics**: confirmed strict reading of brief.
+  - PASS triggers Asset + Warranty auto creation.
+  - PARTIAL + FAIL persist commissioning record only.
+  - Recommission with PASS is idempotent on Asset (one-to-one rule from SC.1.2) and on default manufacturer Warranty (only opened the first time).
+  - Decommissioned → active silent flip on recommission per inline comment; intentional V1 default.
+
+### Known follow ups deferred
+
+- SC.3.5 inline edit for asset notes also forwards `notes: ''` when the operator clears the field. Compared to the serial undefined fix this is intentional (notes are bulk free text the operator wants to clear) but worth documenting.
+- Decommissioning surfaces no toast confirming the cascade ("decommissioned X; ended Y warranties"). Worth a follow up polish pass.
+- Auto warranty resurrection: deleting the manufacturer warranty then recommissioning re creates the same `wty-${assetId}-mfr` id. Predictable but the audit trail loses the prior deletion record.
+- Activity log doesn't fire on Asset created or Warranty opened. Would need extending the `ActivityType` enum first.
+- Customer Portal asset row links to nothing (no detail drawer); deferred to SC.6.
+
+### Risk notes for post deploy smoke test
+
+- `device.commissioning` shape replaced; any prior persisted blobs had `install / firmware / network / signal / signedOff / notes` keys. None of those were ever written (audit-confirmed phantom field), so no real data exists to migrate. The shape change is type-only and the persisted record will be undefined for every device until commissioning is recorded fresh.
+- Side effect chain runs INSIDE `setDeviceCommissioning`, so every caller (UI form, integrity script, future API webhook) gets the same Asset + Warranty creation automatically. No risk of forgetting to call.
+- `createAssetFromDevice` idempotency relies on a deviceId-keyed scan in the assets slice. On a project with thousands of devices the scan is O(devices) per pass; acceptable at MVP scale.
+
 ## Last verified
 
-- **Date:** 2026-05-18 (MVP Spine Completion SC.2 — Approval Gate + WO Canonicalization on top of SC.1)
+- **Date:** 2026-05-18 (MVP Spine Completion SC.3 — Commissioning writes back on top of SC.2)
 - **Build:** `npm run build` — passing (vite v6.3.5, ~1941 modules, no TS errors)
-- **Persist version:** `deeperVisionStore` v27 (adds SC.2.3 v26 -> v27 migration that drops the deprecated `Project.customerApprovedAt` / `customerApprovedBy` fields; SC.1 v22 -> v26 ships `approvals` + `assets` + `warranties` + `serviceTickets`; all migrations forward-only with defensive coercion + cross model integrity sweep on every load)
+- **Persist version:** `deeperVisionStore` v27 (SC.3 made no schema bumps; the new `device.commissioning` field is type only — the prior placeholder field was never written so no migration needed)
 - **UI-verified flow** (real `MouseEvent('click')` + real `Event('input')` against the rendered DOM, then re-read from the same DOM):
   1. Fresh localStorage → `/project/p1/canvas` loads cleanly.
   2. Real native click on `[data-testid="device-CAM-101"]` → SelectionPill renders; Edit button visible.
