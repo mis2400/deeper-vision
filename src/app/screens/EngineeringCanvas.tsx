@@ -13552,7 +13552,7 @@ function BottomDeviceBar({
             <div key={g.id} className="flex items-stretch">
               {gi > 0 && <span aria-hidden className="self-stretch w-px bg-border/70 my-1.5" />}
               <div className="flex flex-col">
-                <div className="px-2 pt-1 text-[8.5px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
+                <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
                   {g.label}
                 </div>
                 <div className="flex items-stretch">

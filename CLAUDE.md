@@ -23,6 +23,52 @@ These apply to every label, button, tooltip, empty state, error message, toast d
 - **Active voice. Short sentences. No filler.**
 - Reads like Linear, Notion, or Verkada. Not Salesforce.
 
+## Tokens enforcement (typography, spacing, motion, color)
+
+`src/styles/theme.css` owns the design system. Every NEW user-visible
+string, control, or chrome surface MUST reach for these tokens before
+inventing values.
+
+Type scale (use the CSS variable, not a raw px):
+
+- Body / form / button text: `var(--text-base)` (16 px) for primary
+  body, `var(--text-sm)` (14 px) for forms, `var(--text-xs)` (12 px)
+  for fine print.
+- Headings: `h1..h4` are already styled. Don't restyle them inline.
+- Canvas chrome (anything inside the canvas / inspector / popovers,
+  which sits BELOW the base 14 px scale): use the chrome scale only.
+  No half-step values.
+    `--chrome-2xs` 9 px · `--chrome-xs` 10 px · `--chrome-sm` 11 px
+    `--chrome-md`  12 px · `--chrome-lg` 13 px
+  These match Tailwind arbitrary values `text-[9px]` / `text-[10px]`
+  / `text-[11px]` / `text-[12px]` / `text-[13px]`. Existing
+  `text-[10.5px]` / `text-[11.5px]` / `text-[12.5px]` are LEGACY —
+  do not introduce new ones; nearest-token-rounded when touched.
+
+Spacing scale (`--space-xs` 4 px → `--space-2xl` 32 px): prefer
+Tailwind's matching scale (`gap-1` / `p-2` / `mt-4` / etc.). New
+arbitrary spacing values (`p-[7px]`) need a real reason in a comment.
+
+Radii: `--radius-sm` / `-md` / `-lg` / `-xl` / `-pill`. Tailwind's
+`rounded-sm/md/lg/xl/full` map cleanly. No hand-rolled
+`rounded-[7px]`.
+
+Motion: `--motion-fast` 120 ms / `-standard` 200 ms / `-slow` 320 ms,
+easings `--ease-out` / `--ease-spring`. Don't write `transition-all
+duration-150` — use the tokens via inline `style={{ transitionDuration:
+'var(--motion-fast)' }}` or a shared util.
+
+Color: only semantic vars (`var(--primary)`, `var(--card)`,
+`var(--muted-foreground)`, etc.) so themes hot-swap correctly. Never
+hardcode a hex in a component except for the device-kind tone
+table in `EngineeringCanvas.tsx` (KIND_TONE) and the persona-role
+tone table in `AppShell.tsx` (ROLE_META), both of which are domain
+data, not chrome.
+
+Audit pass each phase: when a PR adds a new screen, scan its diff
+for raw `text-[Npx]` / hex colors / `transition-all duration-Nms` —
+either swap to the token or leave a `// REASON: ...` comment.
+
 ## Honesty contract for not-yet-wired features
 
 V1 policy: hide controls that don't work; do not show "Preview only" / "Not connected" / "Coming soon" labels on the primary surface.
