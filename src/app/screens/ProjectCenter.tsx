@@ -12,14 +12,14 @@ import { Button } from '../components/Button';
 import {
   Activity, ArrowRight, Check, Circle, CheckCircle2, AlertTriangle, ChevronRight, MapPin,
   Calendar, Clock, ShieldCheck, ShieldAlert, Shield, Sparkles, RotateCcw,
-  FileSignature, ChevronDown,
+  FileSignature, ChevronDown, Package, Hash,
 } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import {
   PHASES, PHASE_TIMELINE, expandRoute, quickActionFor, progressPctFor,
   nextPhase, previousPhase, healthTone,
 } from '../lifecycle/phases';
-import type { LifecyclePhase, Approval, ApprovalType } from '../store/types';
+import type { LifecyclePhase, Approval, ApprovalType, Asset, AssetStatus, Warranty, Device } from '../store/types';
 
 export function ProjectCenter() {
   const { projectId = 'p1' } = useParams();
@@ -41,6 +41,10 @@ export function ProjectCenter() {
   // identity check (same reason every other slice is wired this
   // way in this file).
   const approvalsMap = useProjectStore((s) => s.approvals);
+  // SC.3.4 — assets + warranties for the project. Same pattern as
+  // approvalsMap: raw subscription + useMemo filter.
+  const assetsMap     = useProjectStore((s) => s.assets);
+  const warrantiesMap = useProjectStore((s) => s.warranties);
   const setNextAction = useProjectStore((s) => s.setNextAction);
   const advancePhase = useProjectStore((s) => s.advanceProjectPhase);
   const revertPhase = useProjectStore((s) => s.revertProjectPhase);
@@ -70,6 +74,15 @@ export function ProjectCenter() {
       .filter((a) => a.projectId === projectId)
       .sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime()),
     [approvalsMap, projectId],
+  );
+  // SC.3.4 — project assets newest first. Warranties looked up
+  // per asset inside the row component so a per asset re render
+  // doesn't broadcast across the whole list.
+  const projectAssets = useMemo(
+    () => Object.values(assetsMap)
+      .filter((a) => a.projectId === projectId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+    [assetsMap, projectId],
   );
 
   if (!project) {
@@ -294,6 +307,18 @@ export function ProjectCenter() {
                 honest — points the operator to the Customer
                 Portal where approvals get created. */}
             <ApprovalsList projectId={projectId} approvals={approvals} />
+
+            {/* SC.3.4 — Assets inventory. Every device commissioned
+                on this project shows up here with its linked
+                warranties. Click a row to expand into a detail
+                drawer. Empty state points the operator to the
+                deployment surface where commissioning happens. */}
+            <AssetsList
+              projectId={projectId}
+              assets={projectAssets}
+              warrantiesMap={warrantiesMap}
+              devicesMap={devicesMap}
+            />
           </div>
 
           {/* ── Right: activity feed + health controls ─────────────── */}
@@ -505,6 +530,157 @@ function ApprovalsList({ projectId, approvals }: { projectId: string; approvals:
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────── Assets list (SC.3.4) ────────────────────
+const ASSET_STATUS_LABEL: Record<AssetStatus, string> = {
+  active:               'Active',
+  decommissioned:       'Decommissioned',
+  'service-required':   'Service required',
+  orphaned:             'Orphaned',
+};
+
+const ASSET_STATUS_TONE: Record<AssetStatus, string> = {
+  active:             'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  decommissioned:     'bg-slate-500/10 text-slate-300 border-slate-500/30',
+  'service-required': 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+  orphaned:           'bg-rose-500/10 text-rose-300 border-rose-500/30',
+};
+
+function warrantyStatus(w: Warranty, now: number = Date.now()): 'active' | 'expiring' | 'expired' {
+  const end = new Date(w.endDate).getTime();
+  if (!Number.isFinite(end) || end < now) return 'expired';
+  const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+  if (end - now <= ninetyDays) return 'expiring';
+  return 'active';
+}
+
+function AssetsList({ projectId, assets, warrantiesMap, devicesMap }: {
+  projectId: string;
+  assets: Asset[];
+  warrantiesMap: Record<string, Warranty>;
+  devicesMap: Record<string, Device>;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  return (
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+        <h3 className="text-sm font-medium flex items-center gap-2">
+          <Package className="w-3.5 h-3.5 text-muted-foreground" />
+          Assets
+        </h3>
+        <span className="text-xs text-muted-foreground">{assets.length}</span>
+      </div>
+      {assets.length === 0 ? (
+        <div className="px-4 py-5 text-xs text-muted-foreground">
+          No commissioned assets yet. Commission work orders on the{' '}
+          <a className="text-primary hover:underline" href={`/project/${projectId}/deployment`}>deployment surface</a>.
+        </div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {assets.map((a) => {
+            const expanded = expandedId === a.id;
+            const linkedWarranties = Object.values(warrantiesMap).filter((w) => w.assetId === a.id);
+            const device = devicesMap[a.deviceId];
+            const deviceLabel = device?.label || device?.id || a.deviceId;
+            return (
+              <li key={a.id} className="hover:bg-secondary/30">
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(expanded ? null : a.id)}
+                  className="w-full text-left px-4 py-3 flex items-start gap-3"
+                  data-testid={`asset-row-${a.id}`}
+                >
+                  <span className={`shrink-0 inline-flex items-center text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${ASSET_STATUS_TONE[a.status]}`}>
+                    {ASSET_STATUS_LABEL[a.status]}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate">
+                      <span className="text-foreground">{deviceLabel}</span>
+                      <span className="text-muted-foreground"> · {a.manufacturer} {a.model}</span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                      <span>Commissioned {new Date(a.commissionedAt).toLocaleDateString()}</span>
+                      {a.commissionedBy && <span>by {a.commissionedBy}</span>}
+                      {a.serialNumber && <span className="font-mono">SN {a.serialNumber}</span>}
+                      <span>· {linkedWarranties.length} warrant{linkedWarranties.length === 1 ? 'y' : 'ies'}</span>
+                    </div>
+                  </div>
+                  <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+                {expanded && (
+                  <AssetExpansion asset={a} warranties={linkedWarranties} device={device} />
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AssetExpansion({ asset, warranties, device }: { asset: Asset; warranties: Warranty[]; device?: Device }) {
+  return (
+    <div className="px-4 pb-4 pl-[68px] text-xs text-muted-foreground space-y-3 border-t border-border/40">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
+        <div><span className="text-foreground/70">Manufacturer:</span> {asset.manufacturer}</div>
+        <div><span className="text-foreground/70">Model:</span> {asset.model}</div>
+        <div><span className="text-foreground/70">Serial:</span> {asset.serialNumber || '—'}</div>
+        <div><span className="text-foreground/70">Status:</span> {ASSET_STATUS_LABEL[asset.status]}</div>
+        <div><span className="text-foreground/70">Commissioned:</span> {new Date(asset.commissionedAt).toLocaleString()}</div>
+        <div><span className="text-foreground/70">By:</span> {asset.commissionedBy || '—'}</div>
+        <div className="font-mono text-[10px] truncate col-span-2"><span className="text-foreground/70">Asset ID:</span> {asset.id}</div>
+        {device && <div className="font-mono text-[10px] truncate col-span-2"><span className="text-foreground/70">Device ID:</span> {device.id}</div>}
+      </div>
+
+      {asset.notes && (
+        <div className="rounded border border-border/60 bg-secondary/30 px-3 py-2 text-foreground/90 whitespace-pre-wrap">
+          {asset.notes}
+        </div>
+      )}
+
+      {/* Warranties */}
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Warranties</div>
+        {warranties.length === 0 ? (
+          <div className="text-[11px] text-muted-foreground/70 italic">No warranty records.</div>
+        ) : (
+          <ul className="space-y-1.5">
+            {warranties.map((w) => {
+              const ws = warrantyStatus(w);
+              const tone =
+                ws === 'active'    ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
+                : ws === 'expiring' ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+                : 'text-rose-300 border-rose-500/30 bg-rose-500/10';
+              return (
+                <li key={w.id} className="flex items-center gap-2 text-[11px]">
+                  <span className={`shrink-0 inline-flex items-center text-[9px] uppercase tracking-wider px-1 rounded border ${tone}`}>
+                    {ws}
+                  </span>
+                  <span className="text-foreground">{w.provider}</span>
+                  <span className="text-muted-foreground">· {w.type}</span>
+                  <span className="text-muted-foreground tabular-nums ml-auto">
+                    {w.startDate} → {w.endDate}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* SC.6 placeholder. CLAUDE.md honesty contract says do not
+          ship dead controls — but the brief explicitly wants this
+          stub here with a tooltip pointing at SC.6. Rendering it
+          as plain text instead of a disabled button keeps it
+          honest: it is information, not an affordance. */}
+      <div className="text-[11px] text-muted-foreground/70 italic flex items-center gap-1">
+        <Hash className="w-3 h-3" />
+        Service tickets land in SC.6.
+      </div>
     </div>
   );
 }
