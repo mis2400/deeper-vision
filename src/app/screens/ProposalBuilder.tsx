@@ -30,7 +30,7 @@ import { Button } from '../components/Button';
 import {
   FileText, FileSignature, ScrollText, Layers, DollarSign, Lock,
   Save, Eye, EyeOff, Plus, Trash2,
-  AlertTriangle, Send, Copy, Mail, Link as LinkIcon,
+  AlertTriangle, Send, Copy, Mail, Link as LinkIcon, Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -42,6 +42,7 @@ import {
   bomRowToProposalLine, applyMarginToLines, repriceAllLinesByMargin,
   DEFAULT_LABOR_RATE_PER_HOUR, DEFAULT_BURDEN_PCT, DEFAULT_MARGIN_PCT,
 } from '../lib/proposalView';
+import { generateProposalPdf } from '../lib/proposalPdf';
 import type {
   Proposal, ProposalLine, ProposalCustomerView, ProposalInternalView,
 } from '../store/types';
@@ -222,6 +223,20 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
   // Cancel or after the persistence + URL surface step.
   const [sendOpen, setSendOpen] = useState(false);
 
+  // SC.4.8 — workspace branding + customer context for the PDF
+  // cover. Narrow subscriptions; the handler reads them via
+  // closure when the button is clicked.
+  const workspaceSettings = useProjectStore((s) => s.workspaceSettings);
+  const customer = useProjectStore((s) => {
+    const proj = s.projects[projectId];
+    return proj?.customerId ? s.customers[proj.customerId] : undefined;
+  });
+  const primaryContact = useProjectStore((s) => {
+    const cId = customer?.primaryContactId;
+    return cId ? s.contacts[cId] : undefined;
+  });
+  const [pdfBusy, setPdfBusy] = useState(false);
+
   // Local working copy. The user's edits accumulate here and land
   // on the store on Save. Reset whenever the proposal id changes.
   const [draft, setDraft] = useState<{
@@ -276,6 +291,34 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
     [draft, proposal],
   );
 
+  // SC.4.8 — Generate PDF handler. Reads the live customer
+  // artifact (already stripped via toCustomerView) so the PDF can
+  // never serialize internal cost / margin / labor data.
+  const handleGeneratePdf = async () => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const branding = {
+        integratorName: workspaceSettings?.name,
+        brandColor: workspaceSettings?.brandColor,
+        logoDataUrl: workspaceSettings?.logoDataUrl,
+      };
+      const contactName = primaryContact
+        ? [primaryContact.firstName, primaryContact.lastName].filter(Boolean).join(' ')
+        : undefined;
+      const filename = await generateProposalPdf(customerArtifact, {
+        branding,
+        customer: { companyName: customer?.companyName, contactName },
+      });
+      toast.success('PDF generated', { description: filename });
+    } catch (err) {
+      console.error('Proposal PDF generation failed', err);
+      toast.error('Could not generate PDF. Try again.');
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   // SC.4.7 — lock state. A proposal that isn't a draft cannot
   // accept edits via this builder (per the architectural decision
   // documented above the BuilderShell function). Pass `locked`
@@ -302,6 +345,8 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
           dirty={dirty}
           onSave={handleSave}
           onSend={() => setSendOpen(true)}
+          onGeneratePdf={handleGeneratePdf}
+          pdfBusy={pdfBusy}
         />
 
         {/* SC.4.7 — lock banner for non draft proposals. Honest
@@ -351,13 +396,15 @@ function BuilderShell({ projectId, projectName, proposal, updateProposal }: {
 }
 
 // ─────────────────────── Top bar ────────────────────────────────
-function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave, onSend }: {
+function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave, onSend, onGeneratePdf, pdfBusy }: {
   proposal: Proposal;
   viewerMode: ViewerMode;
   setViewerMode: (m: ViewerMode) => void;
   dirty: boolean;
   onSave: () => void;
   onSend: () => void;
+  onGeneratePdf: () => void;
+  pdfBusy: boolean;
 }) {
   const statusTone = STATUS_TONE[proposal.status];
   // SC.4.7 — Send is only available on a clean draft. A dirty
@@ -406,6 +453,23 @@ function BuilderTopBar({ proposal, viewerMode, setViewerMode, dirty, onSave, onS
       >
         <Save className="w-3.5 h-3.5 mr-1" />Save
       </Button>
+
+      {/* SC.4.8 — Generate PDF. Renders on every status except
+          archived. PDF reads the customer view artifact only, so
+          it physically cannot leak internal data — same data layer
+          enforcement as the portal render and the Send dialog. */}
+      {proposal.status !== 'archived' && (
+        <Button
+          onClick={onGeneratePdf}
+          disabled={pdfBusy}
+          variant="outline"
+          data-testid="proposal-generate-pdf"
+          title="Generate a customer safe PDF of this proposal"
+        >
+          <Download className="w-3.5 h-3.5 mr-1" />
+          {pdfBusy ? 'Generating…' : 'PDF'}
+        </Button>
+      )}
 
       {/* SC.4.7 — Send to Customer. Only renders on a draft so
           the honesty contract holds (no disabled "Send" sitting
