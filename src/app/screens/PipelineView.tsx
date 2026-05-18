@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useProjectStore, STAGE_PROBABILITY } from '../store/projectStore';
 import type { OpportunityStage, Opportunity, Task } from '../store/types';
+import { NewOpportunityDialog } from '../components/NewOpportunityDialog';
 
 /** Display order + label for every opportunity stage. */
 const STAGE_META: Record<OpportunityStage, { label: string; tone: string; dot: string }> = {
@@ -68,6 +69,8 @@ export function PipelineView() {
   const [ownerFilter, setOwnerFilter] = useState<'all' | 'mine'>('all');
   const DEMO_USER = 'u-mei';
 
+  const [newOppOpen, setNewOppOpen] = useState(false);
+
   const opportunitiesByStage = useMemo(() => {
     const buckets: Record<OpportunityStage, Opportunity[]> = {
       inquiry: [], qualified: [], discovery: [], proposing: [], negotiating: [],
@@ -97,7 +100,7 @@ export function PipelineView() {
       title="Sales pipeline"
       subtitle={`${money(summary.open)} open · ${money(summary.weighted)} weighted · ${summary.openCount} active deals`}
       actions={
-        <Button size="sm">
+        <Button size="sm" onClick={() => setNewOppOpen(true)} data-testid="pipeline-new-opp">
           <Plus className="w-3.5 h-3.5 mr-1" />New opportunity
         </Button>
       }
@@ -222,6 +225,16 @@ export function PipelineView() {
           </div>
         </div>
       </div>
+
+      {newOppOpen && (
+        <NewOpportunityDialog
+          onClose={() => setNewOppOpen(false)}
+          onCreated={(id) => {
+            const opp = useProjectStore.getState().opportunities[id];
+            if (opp) navigate(`/account/${opp.customerId}`);
+          }}
+        />
+      )}
     </AppShell>
   );
 }
