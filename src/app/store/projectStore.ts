@@ -22,6 +22,7 @@ import {
   IntegrationId, IntegrationStatus, IntegrationRecord,
   WorkspaceMember, WorkspaceRoleId, WorkspaceInviteStatus,
   NotificationEventKey, NotificationPref, DEFAULT_NOTIFICATION_PREF,
+  SecurityState, DEFAULT_SECURITY, SsoConfig, ScimConfig, ApiKey, ApiKeyScope, Webhook, WebhookEvent, AuditEntry, AuditAction, SecuritySession, TwoFactor, DataResidency,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -127,6 +128,9 @@ export interface ProjectState {
   /** Per-event notification routing — Phase 3E. Keys absent from
    *  the map fall through to DEFAULT_NOTIFICATION_PREF. */
   notificationPrefs: Partial<Record<NotificationEventKey, NotificationPref>>;
+  /** Workspace security state — Phase 3F. SSO config, SCIM, API
+   *  keys, webhooks, audit log, sessions, 2FA, residency. */
+  security: SecurityState;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -392,6 +396,10 @@ export interface ProjectState {
   setNotificationPref: (key: NotificationEventKey, patch: Partial<NotificationPref>) => void;
   /** Reset all event preferences to default routing. */
   resetNotificationPrefs: () => void;
+  /** Patch the workspace security state. */
+  patchSecurity: (patch: Partial<SecurityState>) => void;
+  /** Append a single audit entry. Capped at 500 entries. */
+  appendAudit: (entry: AuditEntry) => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -432,6 +440,7 @@ export const useProjectStore = create<ProjectState>()(
       integrations:      {} as Record<IntegrationId, IntegrationRecord>,
       workspaceMembers:  {},
       notificationPrefs: {},
+      security:          { ...DEFAULT_SECURITY },
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1502,6 +1511,14 @@ export const useProjectStore = create<ProjectState>()(
         }),
       resetNotificationPrefs: () =>
         set(() => ({ notificationPrefs: {} })),
+      patchSecurity: (patch) =>
+        set((s) => ({ security: { ...s.security, ...patch } })),
+      appendAudit: (entry) =>
+        set((s) => {
+          const next = [entry, ...s.security.audit];
+          if (next.length > 500) next.length = 500;
+          return { security: { ...s.security, audit: next } };
+        }),
       setAssistantContext: (ctx) =>
         set((s) => {
           if (ctx == null) return { assistantContext: null };
@@ -1524,11 +1541,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 14,
+      version: 15,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1694,6 +1711,23 @@ export const useProjectStore = create<ProjectState>()(
           persisted.notificationPrefs ??= {};
           if (typeof persisted.notificationPrefs !== 'object') persisted.notificationPrefs = {};
         }
+        if (version < 15) {
+          // v14 → v15: introduce workspace security state. Deep-merge
+          // with defaults so a half-populated persisted blob ends up
+          // with every required sub-object present.
+          const prev = persisted.security && typeof persisted.security === 'object' ? persisted.security : {};
+          persisted.security = {
+            ...DEFAULT_SECURITY,
+            ...prev,
+            sso:       { ...DEFAULT_SECURITY.sso,       ...(prev as any).sso       ?? {} },
+            scim:      { ...DEFAULT_SECURITY.scim,      ...(prev as any).scim      ?? {} },
+            twoFactor: { ...DEFAULT_SECURITY.twoFactor, ...(prev as any).twoFactor ?? {} },
+            apiKeys:   typeof (prev as any).apiKeys  === 'object' ? (prev as any).apiKeys  : {},
+            webhooks:  typeof (prev as any).webhooks === 'object' ? (prev as any).webhooks : {},
+            sessions:  typeof (prev as any).sessions === 'object' ? (prev as any).sessions : {},
+            audit:     Array.isArray((prev as any).audit)         ? (prev as any).audit    : [],
+          };
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1752,6 +1786,7 @@ export const useProjectStore = create<ProjectState>()(
         integrations:      s.integrations,
         workspaceMembers:  s.workspaceMembers,
         notificationPrefs: s.notificationPrefs,
+        security:          s.security,
       }),
     },
   ),

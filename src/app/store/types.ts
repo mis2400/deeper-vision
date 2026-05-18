@@ -1533,3 +1533,140 @@ export const DEFAULT_NOTIFICATION_PREF: NotificationPref = {
   slack: false,
   teams: false,
 };
+
+// ─────────────────────────── Security (Phase 3F) ──────────────────
+// SSO config, SCIM, API keys, webhooks, audit log, 2FA, sessions,
+// data residency. UI is real V1; persistence is local. Real OAuth
+// handshakes / SAML / SCIM POSTs land with the auth backend.
+
+export type SsoProtocol = 'saml' | 'oidc';
+export interface SsoConfig {
+  enabled: boolean;
+  protocol: SsoProtocol;
+  /** SAML metadata URL or pasted XML. */
+  metadataUrl?: string;
+  /** OIDC issuer URL. */
+  issuer?: string;
+  /** OIDC client id. */
+  clientId?: string;
+  /** OIDC client secret. Persisted locally; cleared on log-out
+   *  surfaces ship. */
+  clientSecret?: string;
+  /** Email domains automatically enrolled via SSO. */
+  emailDomains: string[];
+  /** When the config was last updated. */
+  updatedAt?: number;
+}
+
+export interface ScimConfig {
+  enabled: boolean;
+  /** Generated endpoint the IdP POSTs to. */
+  endpointPath: string;
+  /** Bearer token the IdP uses. */
+  token: string;
+  /** When the token was rotated. */
+  rotatedAt: number;
+}
+
+export type ApiKeyScope = 'read' | 'write' | 'admin';
+export interface ApiKey {
+  id: string;
+  name: string;
+  /** First 8 chars of the token. The full secret is shown once on
+   *  create and never persisted in cleartext after. */
+  prefix: string;
+  scopes: ApiKeyScope[];
+  createdAt: number;
+  createdBy?: string;
+  lastUsedAt?: number;
+  revokedAt?: number;
+}
+
+export type WebhookEvent =
+  | 'project.created' | 'project.status_changed' | 'project.approved'
+  | 'workorder.completed' | 'workorder.blocked'
+  | 'threat.high_exposure'
+  | 'invoice.paid' | 'invoice.failed';
+
+export interface Webhook {
+  id: string;
+  url: string;
+  events: WebhookEvent[];
+  /** HMAC signing secret. Last 4 chars only kept after creation. */
+  secretLast4: string;
+  active: boolean;
+  createdAt: number;
+  lastDeliveredAt?: number;
+  lastStatus?: number;
+}
+
+export type AuditAction =
+  | 'member.invited' | 'member.removed' | 'role.changed'
+  | 'integration.connected' | 'integration.disconnected'
+  | 'apikey.created' | 'apikey.revoked'
+  | 'webhook.created' | 'webhook.deleted' | 'webhook.test_ping'
+  | 'sso.updated' | 'scim.rotated'
+  | 'project.exported' | 'workspace.signed_out_others';
+
+export interface AuditEntry {
+  id: string;
+  who: string;
+  action: AuditAction;
+  /** Free-form target (id or label of the touched record). */
+  target?: string;
+  detail?: string;
+  ts: number;
+  /** IP / region context — placeholder until the auth backend
+   *  attaches the real client IP. */
+  context?: string;
+}
+
+export type SecuritySessionStatus = 'active' | 'idle' | 'revoked';
+export interface SecuritySession {
+  id: string;
+  device: string;
+  browser: string;
+  location: string;
+  ip: string;
+  startedAt: number;
+  lastActiveAt: number;
+  status: SecuritySessionStatus;
+  current: boolean;
+}
+
+export type DataResidency = 'us' | 'eu' | 'anz';
+
+export interface TwoFactor {
+  enabled: boolean;
+  /** Base32 TOTP secret. Local-only; real enrollment + verification
+   *  happens server side when the auth backend ships. */
+  secret?: string;
+  /** Hashed-recovery codes are not in scope yet; the V1 UI shows
+   *  plain recovery codes once and warns the operator to copy
+   *  them. */
+  recoveryCodes?: string[];
+  enrolledAt?: number;
+}
+
+export interface SecurityState {
+  sso: SsoConfig;
+  scim: ScimConfig;
+  apiKeys: Record<string, ApiKey>;
+  webhooks: Record<string, Webhook>;
+  audit: AuditEntry[];
+  sessions: Record<string, SecuritySession>;
+  twoFactor: TwoFactor;
+  residency: DataResidency;
+}
+
+/** Default Security state on first hydrate. */
+export const DEFAULT_SECURITY: SecurityState = {
+  sso: { enabled: false, protocol: 'saml', emailDomains: [] },
+  scim: { enabled: false, endpointPath: '', token: '', rotatedAt: 0 },
+  apiKeys: {},
+  webhooks: {},
+  audit: [],
+  sessions: {},
+  twoFactor: { enabled: false },
+  residency: 'us',
+};

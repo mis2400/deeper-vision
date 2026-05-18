@@ -7,9 +7,9 @@
 import { useState, useMemo, useEffect, useRef, Fragment } from 'react';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { User, CreditCard, Plug, Users, Bell, Lock, Check, FileDown, Trash2, RefreshCw, Search, UserPlus, Upload as UploadIcon, MoreHorizontal } from 'lucide-react';
+import { User, CreditCard, Plug, Users, Bell, Lock, Check, FileDown, Trash2, RefreshCw, Search, UserPlus, Upload as UploadIcon, Copy, Eye, EyeOff, Key, Webhook as WebhookIcon, ShieldCheck, Globe, RotateCw } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
-import type { PlanTier, BillingCycle, Invoice, PaymentMethod, IntegrationId, WorkspaceMember, WorkspaceRoleId, NotificationEventKey, NotificationPref, EmailDigestCadence } from '../store/types';
+import type { PlanTier, BillingCycle, Invoice, PaymentMethod, IntegrationId, WorkspaceMember, WorkspaceRoleId, NotificationEventKey, NotificationPref, EmailDigestCadence, SsoProtocol, ApiKey, ApiKeyScope, Webhook, WebhookEvent, AuditEntry, AuditAction, SecuritySession, DataResidency } from '../store/types';
 import { DEFAULT_NOTIFICATION_PREF } from '../store/types';
 import { toast } from 'sonner';
 
@@ -1258,15 +1258,707 @@ function Notifications() {
   );
 }
 
+// ─────────────────────────── Security (Phase 3F) ──────────────────
+
+const SCOPE_LABEL: Record<ApiKeyScope, string> = { read: 'Read', write: 'Write', admin: 'Admin' };
+
+const WEBHOOK_EVENT_LIST: WebhookEvent[] = [
+  'project.created', 'project.status_changed', 'project.approved',
+  'workorder.completed', 'workorder.blocked',
+  'threat.high_exposure',
+  'invoice.paid', 'invoice.failed',
+];
+
+const AUDIT_LABEL: Record<AuditAction, string> = {
+  'member.invited':          'Member invited',
+  'member.removed':          'Member removed',
+  'role.changed':            'Role changed',
+  'integration.connected':   'Integration connected',
+  'integration.disconnected':'Integration disconnected',
+  'apikey.created':          'API key created',
+  'apikey.revoked':          'API key revoked',
+  'webhook.created':         'Webhook created',
+  'webhook.deleted':         'Webhook deleted',
+  'webhook.test_ping':       'Webhook test ping',
+  'sso.updated':             'SSO config updated',
+  'scim.rotated':            'SCIM token rotated',
+  'project.exported':        'Project exported',
+  'workspace.signed_out_others': 'Other sessions signed out',
+};
+
 function Security() {
+  const security = useProjectStore((s) => s.security);
+  const patchSecurity = useProjectStore((s) => s.patchSecurity);
+  const appendAudit = useProjectStore((s) => s.appendAudit);
+  const operatorName = useProjectStore((s) => s.userPrefs.fullName ?? s.userPrefs.email ?? 'Operator');
+
+  // Seed a couple of plausible sessions on first render so the
+  // panel has something honest to render against — derived from
+  // the browser's userAgent rather than fabricated.
+  useEffect(() => {
+    if (Object.keys(security.sessions).length === 0 && typeof navigator !== 'undefined') {
+      const ua = navigator.userAgent;
+      const browser = /Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : 'Browser';
+      const device = /Mac/.test(ua) ? 'Mac' : /Win/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'Device';
+      const id = 'sess-current';
+      patchSecurity({
+        sessions: {
+          [id]: {
+            id, device, browser,
+            location: 'This device',
+            ip: '—',
+            startedAt: Date.now() - 60_000,
+            lastActiveAt: Date.now(),
+            status: 'active',
+            current: true,
+          },
+        },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const sessions = useMemo(
+    () => Object.values(security.sessions).sort((a, b) => b.lastActiveAt - a.lastActiveAt),
+    [security.sessions],
+  );
+
+  const logAudit = (action: AuditAction, target?: string, detail?: string) => {
+    appendAudit({
+      id: `a-${Date.now().toString(36)}`,
+      who: operatorName,
+      action,
+      target,
+      detail,
+      ts: Date.now(),
+      context: security.residency.toUpperCase(),
+    });
+  };
+
   return (
     <>
-      <Panel title="Two factor authentication"><Button size="sm">Enable 2FA</Button></Panel>
-      <Panel title="Active sessions">
-        <div className="text-sm">MacBook Pro · Chrome · San Francisco</div>
-        <div className="text-xs text-muted-foreground">Last active 2 minutes ago</div>
-      </Panel>
+      <ComplianceBadges residency={security.residency} onChangeResidency={(r) => patchSecurity({ residency: r })} />
+      <SsoPanel sso={security.sso} patchSecurity={patchSecurity} logAudit={logAudit} />
+      <ScimPanel scim={security.scim} patchSecurity={patchSecurity} logAudit={logAudit} />
+      <ApiKeysPanel apiKeys={security.apiKeys} patchSecurity={patchSecurity} logAudit={logAudit} operatorName={operatorName} />
+      <WebhooksPanel webhooks={security.webhooks} patchSecurity={patchSecurity} logAudit={logAudit} />
+      <AuditLogPanel entries={security.audit} />
+      <TwoFactorPanel twoFactor={security.twoFactor} patchSecurity={patchSecurity} />
+      <SessionsPanel sessions={sessions} patchSecurity={patchSecurity} logAudit={logAudit} />
     </>
   );
+}
+
+// ─── Compliance / residency ─────────────────────────────────────────
+
+function ComplianceBadges({ residency, onChangeResidency }: { residency: DataResidency; onChangeResidency: (r: DataResidency) => void }) {
+  const REGIONS: Array<{ id: DataResidency; label: string; hint: string }> = [
+    { id: 'us',  label: 'US',  hint: 'us-east-1 primary, us-west-2 standby.' },
+    { id: 'eu',  label: 'EU',  hint: 'eu-west-1 primary, eu-central-1 standby.' },
+    { id: 'anz', label: 'ANZ', hint: 'ap-southeast-2 primary.' },
+  ];
+  return (
+    <Panel title="Compliance and residency" subtitle="Where your data lives, and what attestations we hold. Residency changes apply on the next billing cycle once the auth backend ships.">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+        <Badge label="SOC 2 Type II"  status="In progress" />
+        <Badge label="ISO 27001"      status="In progress" />
+        <Badge label="GDPR"           status="Compliant" />
+        <Badge label="HIPAA (BAA)"    status="On request" />
+      </div>
+      <Field label="Data residency" hint="Selecting a region pins all writes to that region's primary and replicates to the regional standby.">
+        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden text-[12px]" role="radiogroup" aria-label="Residency">
+          {REGIONS.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => { onChangeResidency(r.id); toast.success(`Residency set to ${r.label}.`); }}
+              role="radio"
+              aria-checked={residency === r.id}
+              className={`px-3 py-1.5 transition-colors ${residency === r.id ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary/40 text-muted-foreground'}`}
+              title={r.hint}
+              data-testid={`security-residency-${r.id}`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </Field>
+    </Panel>
+  );
+}
+
+function Badge({ label, status }: { label: string; status: 'Compliant' | 'In progress' | 'On request' }) {
+  const tone = status === 'Compliant' ? 'border-emerald-500/40 text-emerald-600 bg-emerald-500/10'
+    : status === 'In progress' ? 'border-amber-500/40 text-amber-600 bg-amber-500/10'
+    : 'border-border text-muted-foreground bg-secondary/40';
+  return (
+    <div className={`rounded-md border px-2.5 py-1.5 ${tone}`}>
+      <div className="text-[10.5px] uppercase tracking-[0.10em]">{status}</div>
+      <div className="text-[12.5px] font-medium">{label}</div>
+    </div>
+  );
+}
+
+// ─── SSO ───────────────────────────────────────────────────────────
+
+function SsoPanel({ sso, patchSecurity, logAudit }: { sso: ReturnType<typeof useProjectStore.getState>['security']['sso']; patchSecurity: (p: any) => void; logAudit: (a: AuditAction, t?: string) => void }) {
+  const [metadataUrl, setMetadataUrl] = useState(sso.metadataUrl ?? '');
+  const [issuer, setIssuer]           = useState(sso.issuer ?? '');
+  const [clientId, setClientId]       = useState(sso.clientId ?? '');
+  const [clientSecret, setClientSecret] = useState('');
+  const [domains, setDomains]         = useState((sso.emailDomains ?? []).join(', '));
+  const onSave = () => {
+    patchSecurity({
+      sso: {
+        ...sso,
+        metadataUrl: sso.protocol === 'saml' ? metadataUrl.trim() || undefined : undefined,
+        issuer:      sso.protocol === 'oidc' ? issuer.trim() || undefined      : undefined,
+        clientId:    sso.protocol === 'oidc' ? clientId.trim() || undefined    : undefined,
+        clientSecret: sso.protocol === 'oidc' && clientSecret ? clientSecret   : sso.clientSecret,
+        emailDomains: domains.split(',').map((d) => d.trim()).filter(Boolean),
+        updatedAt: Date.now(),
+      },
+    });
+    logAudit('sso.updated', sso.protocol);
+    toast.success('SSO configuration saved locally. Handshake lands with the auth backend.');
+  };
+  return (
+    <Panel title="Single sign on" subtitle="Configure SAML 2.0 or OIDC. Domains listed here auto-enroll on first sign in.">
+      <div className="flex items-center gap-3 mb-3">
+        <label className="inline-flex items-center gap-2 text-[12px]">
+          <input type="checkbox" checked={sso.enabled} onChange={(e) => patchSecurity({ sso: { ...sso, enabled: e.target.checked, updatedAt: Date.now() } })} className="accent-primary" />
+          Enable SSO
+        </label>
+        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden text-[12px]">
+          {(['saml', 'oidc'] as SsoProtocol[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => patchSecurity({ sso: { ...sso, protocol: p } })}
+              className={`px-3 py-1 uppercase ${sso.protocol === p ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary/40 text-muted-foreground'}`}
+              data-testid={`security-sso-${p}`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+      {sso.protocol === 'saml' ? (
+        <Field label="Metadata URL" hint="Or paste the SAML metadata XML below."><Input value={metadataUrl} onChange={(e) => setMetadataUrl(e.target.value)} placeholder="https://idp.example.com/metadata.xml" /></Field>
+      ) : (
+        <>
+          <Field label="Issuer URL"><Input value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="https://idp.example.com/" /></Field>
+          <Field label="Client ID"><Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="dv-client" /></Field>
+          <Field label="Client secret" hint={sso.clientSecret ? 'A secret is already saved. Leave blank to keep it.' : ''}><Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="••••••••" /></Field>
+        </>
+      )}
+      <Field label="Auto-enroll domains" hint="Comma separated. Users with these email domains enroll via SSO on first sign in."><Input value={domains} onChange={(e) => setDomains(e.target.value)} placeholder="company.com, eu.company.com" /></Field>
+      <div className="flex items-center justify-between pt-2">
+        <div className="text-[11px] text-muted-foreground">{sso.updatedAt ? `Last updated ${formatAgo(sso.updatedAt)}` : 'Not configured yet.'}</div>
+        <Button size="sm" onClick={onSave}>Save SSO config</Button>
+      </div>
+    </Panel>
+  );
+}
+
+// ─── SCIM ──────────────────────────────────────────────────────────
+
+function ScimPanel({ scim, patchSecurity, logAudit }: { scim: ReturnType<typeof useProjectStore.getState>['security']['scim']; patchSecurity: (p: any) => void; logAudit: (a: AuditAction, t?: string) => void }) {
+  const [show, setShow] = useState(false);
+  const ensureGenerated = () => {
+    if (!scim.endpointPath || !scim.token) {
+      const endpointPath = `/api/scim/v2/${randHex(8)}`;
+      const token = `scim_${randHex(24)}`;
+      patchSecurity({ scim: { ...scim, endpointPath, token, rotatedAt: Date.now(), enabled: true } });
+      logAudit('scim.rotated');
+      toast.success('SCIM endpoint generated. Paste it into your IdP.');
+    }
+  };
+  const onRotate = () => {
+    const token = `scim_${randHex(24)}`;
+    patchSecurity({ scim: { ...scim, token, rotatedAt: Date.now() } });
+    logAudit('scim.rotated');
+    toast.success('SCIM token rotated.');
+  };
+  const fullEndpoint = `${typeof window !== 'undefined' ? window.location.origin : ''}${scim.endpointPath || '/api/scim/v2/<generate>'}`;
+  return (
+    <Panel title="SCIM provisioning" subtitle="Auto-provision and de-provision users from your identity provider. Endpoint is local-only until the auth backend ships.">
+      <div className="flex items-center gap-3 mb-3">
+        <label className="inline-flex items-center gap-2 text-[12px]">
+          <input
+            type="checkbox"
+            checked={scim.enabled}
+            onChange={(e) => {
+              patchSecurity({ scim: { ...scim, enabled: e.target.checked } });
+              if (e.target.checked) ensureGenerated();
+            }}
+            className="accent-primary"
+          />
+          Enable SCIM
+        </label>
+        {scim.endpointPath && (
+          <Button size="sm" variant="outline" onClick={onRotate}><RotateCw className="w-3.5 h-3.5 mr-1" />Rotate token</Button>
+        )}
+      </div>
+      {!scim.endpointPath ? (
+        <Button size="sm" onClick={ensureGenerated}>Generate endpoint</Button>
+      ) : (
+        <>
+          <Field label="Endpoint URL">
+            <div className="flex items-center gap-2 flex-1">
+              <Input value={fullEndpoint} readOnly />
+              <Button size="sm" variant="ghost" onClick={() => copyToClipboard(fullEndpoint, 'Endpoint copied.')}><Copy className="w-3.5 h-3.5" /></Button>
+            </div>
+          </Field>
+          <Field label="Bearer token">
+            <div className="flex items-center gap-2 flex-1">
+              <Input type={show ? 'text' : 'password'} value={scim.token} readOnly />
+              <Button size="sm" variant="ghost" onClick={() => setShow((v) => !v)}>{show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}</Button>
+              <Button size="sm" variant="ghost" onClick={() => copyToClipboard(scim.token, 'Token copied.')}><Copy className="w-3.5 h-3.5" /></Button>
+            </div>
+          </Field>
+          <div className="text-[11px] text-muted-foreground mt-1">Rotated {scim.rotatedAt ? formatAgo(scim.rotatedAt) : 'never'}.</div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+// ─── API keys ──────────────────────────────────────────────────────
+
+function ApiKeysPanel({ apiKeys, patchSecurity, logAudit, operatorName }: { apiKeys: Record<string, ApiKey>; patchSecurity: (p: any) => void; logAudit: (a: AuditAction, t?: string) => void; operatorName: string }) {
+  const keys = useMemo(() => Object.values(apiKeys).sort((a, b) => b.createdAt - a.createdAt), [apiKeys]);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [scopes, setScopes] = useState<ApiKeyScope[]>(['read']);
+  const [justCreated, setJustCreated] = useState<{ id: string; secret: string } | null>(null);
+
+  const onCreate = () => {
+    if (!name.trim()) { toast.error('Name the key so it stays traceable.'); return; }
+    const secret = `dv_${randHex(40)}`;
+    const id = `key-${Date.now().toString(36)}`;
+    const newKey: ApiKey = {
+      id,
+      name: name.trim(),
+      prefix: secret.slice(0, 8),
+      scopes,
+      createdAt: Date.now(),
+      createdBy: operatorName,
+    };
+    patchSecurity({ apiKeys: { ...apiKeys, [id]: newKey } });
+    logAudit('apikey.created', name.trim());
+    setJustCreated({ id, secret });
+    setCreating(false); setName(''); setScopes(['read']);
+  };
+  const onRevoke = (k: ApiKey) => {
+    if (!confirm(`Revoke "${k.name}"? Requests using this key will fail immediately.`)) return;
+    patchSecurity({ apiKeys: { ...apiKeys, [k.id]: { ...k, revokedAt: Date.now() } } });
+    logAudit('apikey.revoked', k.name);
+    toast.message(`${k.name} revoked.`);
+  };
+  return (
+    <Panel title="API keys" subtitle="Programmatic access. Secrets are shown once on creation and never stored after that.">
+      <div className="flex items-center justify-end mb-3">
+        <Button size="sm" onClick={() => setCreating(true)}><Key className="w-3.5 h-3.5 mr-1" />Create key</Button>
+      </div>
+      {justCreated && (
+        <div className="mb-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
+          <div className="text-[12px] font-medium text-emerald-700">Copy this secret now. It will not be shown again.</div>
+          <div className="flex items-center gap-2 mt-2">
+            <code className="flex-1 text-[12px] bg-card border border-border rounded px-2 py-1 overflow-x-auto">{justCreated.secret}</code>
+            <Button size="sm" onClick={() => copyToClipboard(justCreated.secret, 'Secret copied.')}><Copy className="w-3.5 h-3.5" /></Button>
+            <Button size="sm" variant="ghost" onClick={() => setJustCreated(null)}>Dismiss</Button>
+          </div>
+        </div>
+      )}
+      {keys.length === 0 ? (
+        <div className="text-[12px] text-muted-foreground text-center py-6 border border-dashed border-border rounded-md">No API keys yet.</div>
+      ) : (
+        <div className="overflow-hidden border border-border rounded-md">
+          <table className="w-full text-[12px]">
+            <thead className="bg-secondary/40 text-[10px] uppercase tracking-[0.10em] text-muted-foreground">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Key</th>
+                <th className="text-left px-3 py-2 font-medium">Scopes</th>
+                <th className="text-left px-3 py-2 font-medium">Created</th>
+                <th className="text-left px-3 py-2 font-medium">Last used</th>
+                <th className="text-right px-3 py-2 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {keys.map((k) => (
+                <tr key={k.id} className="border-t border-border" data-testid={`api-key-${k.id}`}>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{k.name}</div>
+                    <div className="text-[10.5px] text-muted-foreground"><code>{k.prefix}…</code> · {k.createdBy ?? '—'}</div>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{k.scopes.map((s) => SCOPE_LABEL[s]).join(', ')}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatAgo(k.createdAt)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{k.lastUsedAt ? formatAgo(k.lastUsedAt) : 'never'}</td>
+                  <td className="px-3 py-2 text-right">
+                    {k.revokedAt ? (
+                      <span className="text-[10.5px] uppercase tracking-[0.10em] text-rose-600">Revoked</span>
+                    ) : (
+                      <button onClick={() => onRevoke(k)} className="text-muted-foreground hover:text-rose-500 p-1" title="Revoke">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {creating && (
+        <div role="dialog" aria-modal className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-card border border-border-strong rounded-xl shadow-2xl max-w-md w-full p-5">
+            <h2 className="text-base font-medium">Create API key</h2>
+            <p className="text-[12px] text-muted-foreground mt-1 mb-4">The secret is shown once. Save it somewhere safe.</p>
+            <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Production ingestor" autoFocus /></Field>
+            <Field label="Scopes" hint="Read = list / get. Write = mutate. Admin = full workspace control.">
+              <div className="flex items-center gap-3">
+                {(['read', 'write', 'admin'] as ApiKeyScope[]).map((s) => (
+                  <label key={s} className="inline-flex items-center gap-1.5 text-[12px]">
+                    <input type="checkbox" checked={scopes.includes(s)} onChange={(e) => setScopes((prev) => e.target.checked ? Array.from(new Set([...prev, s])) : prev.filter((x) => x !== s))} className="accent-primary" />
+                    {SCOPE_LABEL[s]}
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
+              <Button size="sm" onClick={onCreate}>Create key</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ─── Webhooks ──────────────────────────────────────────────────────
+
+function WebhooksPanel({ webhooks, patchSecurity, logAudit }: { webhooks: Record<string, Webhook>; patchSecurity: (p: any) => void; logAudit: (a: AuditAction, t?: string) => void }) {
+  const list = useMemo(() => Object.values(webhooks).sort((a, b) => b.createdAt - a.createdAt), [webhooks]);
+  const [creating, setCreating] = useState(false);
+  const [url, setUrl] = useState('');
+  const [events, setEvents] = useState<WebhookEvent[]>(['project.status_changed', 'workorder.completed']);
+
+  const onCreate = () => {
+    try { new URL(url); } catch { toast.error('Enter a full URL including https://.'); return; }
+    if (events.length === 0) { toast.error('Pick at least one event.'); return; }
+    const id = `wh-${Date.now().toString(36)}`;
+    const secret = `whsec_${randHex(32)}`;
+    const hook: Webhook = {
+      id, url, events, secretLast4: secret.slice(-4),
+      active: true, createdAt: Date.now(),
+    };
+    patchSecurity({ webhooks: { ...webhooks, [id]: hook } });
+    logAudit('webhook.created', url);
+    toast.success(`Webhook saved. Secret ends in ${hook.secretLast4} — full secret was generated and discarded; rotate to issue a new one.`);
+    setCreating(false); setUrl(''); setEvents(['project.status_changed', 'workorder.completed']);
+  };
+  const onDelete = (h: Webhook) => {
+    if (!confirm(`Delete webhook for ${h.url}?`)) return;
+    const next = { ...webhooks };
+    delete next[h.id];
+    patchSecurity({ webhooks: next });
+    logAudit('webhook.deleted', h.url);
+  };
+  const onTestPing = (h: Webhook) => {
+    const fakeStatus = Math.random() > 0.15 ? 200 : 502;
+    patchSecurity({ webhooks: { ...webhooks, [h.id]: { ...h, lastDeliveredAt: Date.now(), lastStatus: fakeStatus } } });
+    logAudit('webhook.test_ping', h.url, `status=${fakeStatus}`);
+    if (fakeStatus === 200) toast.success(`Test ping → ${fakeStatus} OK.`);
+    else                    toast.error(`Test ping → ${fakeStatus} simulated failure. Wired to backend when real delivery ships.`);
+  };
+  return (
+    <Panel title="Webhooks" subtitle="Push events to your systems. Test pings are local until the delivery backend ships.">
+      <div className="flex items-center justify-end mb-3">
+        <Button size="sm" onClick={() => setCreating(true)}><WebhookIcon className="w-3.5 h-3.5 mr-1" />Create webhook</Button>
+      </div>
+      {list.length === 0 ? (
+        <div className="text-[12px] text-muted-foreground text-center py-6 border border-dashed border-border rounded-md">No webhooks yet.</div>
+      ) : (
+        <ul className="space-y-1.5">
+          {list.map((h) => (
+            <li key={h.id} className="border border-border rounded-md p-2.5" data-testid={`webhook-${h.id}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12.5px] font-medium truncate">{h.url}</div>
+                  <div className="text-[10.5px] text-muted-foreground">
+                    {h.events.length} event{h.events.length === 1 ? '' : 's'} · secret …{h.secretLast4} · {h.active ? 'active' : 'paused'}
+                  </div>
+                  {h.lastDeliveredAt && (
+                    <div className="text-[10.5px] text-muted-foreground">
+                      Last ping {formatAgo(h.lastDeliveredAt)} · {h.lastStatus} {h.lastStatus && h.lastStatus < 300 ? 'OK' : 'failed'}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" onClick={() => onTestPing(h)} title="Send a test ping"><RotateCw className="w-3.5 h-3.5" /></Button>
+                  <button onClick={() => onDelete(h)} className="text-muted-foreground hover:text-rose-500 p-1.5" title="Delete">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {h.events.map((e) => (
+                  <span key={e} className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/50 text-muted-foreground">{e}</span>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {creating && (
+        <div role="dialog" aria-modal className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-card border border-border-strong rounded-xl shadow-2xl max-w-lg w-full p-5">
+            <h2 className="text-base font-medium">Create webhook</h2>
+            <p className="text-[12px] text-muted-foreground mt-1 mb-4">A signing secret is generated and shown in the toast on save. Only the last 4 chars are stored.</p>
+            <Field label="Endpoint URL"><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/dv-events" autoFocus /></Field>
+            <Field label="Events">
+              <div className="flex flex-wrap gap-1.5">
+                {WEBHOOK_EVENT_LIST.map((e) => {
+                  const active = events.includes(e);
+                  return (
+                    <button
+                      key={e}
+                      onClick={() => setEvents((prev) => active ? prev.filter((x) => x !== e) : [...prev, e])}
+                      className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${active ? 'border-primary/50 bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                    >
+                      {e}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
+              <Button size="sm" onClick={onCreate}>Create webhook</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ─── Audit log ─────────────────────────────────────────────────────
+
+function AuditLogPanel({ entries }: { entries: AuditEntry[] }) {
+  const [who, setWho] = useState('');
+  const [action, setAction] = useState<AuditAction | 'all'>('all');
+  const [days, setDays] = useState<7 | 30 | 90 | 0>(30);
+
+  const filtered = useMemo(() => {
+    const since = days === 0 ? 0 : Date.now() - days * 86_400_000;
+    return entries.filter((e) =>
+      e.ts >= since &&
+      (action === 'all' || e.action === action) &&
+      (who.trim() === '' || e.who.toLowerCase().includes(who.trim().toLowerCase()))
+    );
+  }, [entries, who, action, days]);
+
+  const onExportCsv = () => {
+    const header = ['timestamp', 'who', 'action', 'target', 'detail', 'context'];
+    const rows = filtered.map((e) => [
+      new Date(e.ts).toISOString(),
+      e.who,
+      AUDIT_LABEL[e.action] ?? e.action,
+      e.target ?? '',
+      e.detail ?? '',
+      e.context ?? '',
+    ]);
+    const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 250);
+    toast.success(`Exported ${filtered.length} audit entries.`);
+  };
+
+  return (
+    <Panel title="Audit log" subtitle={`${entries.length} entries on file. Capped at 500; oldest entries roll off.`}>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <input
+          type="text"
+          value={who}
+          onChange={(e) => setWho(e.target.value)}
+          placeholder="Filter by user"
+          className="bg-input-background border border-input-border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-primary"
+          data-testid="audit-filter-who"
+        />
+        <select
+          value={action}
+          onChange={(e) => setAction(e.target.value as AuditAction | 'all')}
+          className="bg-input-background border border-input-border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-primary"
+          data-testid="audit-filter-action"
+        >
+          <option value="all">All actions</option>
+          {(Object.keys(AUDIT_LABEL) as AuditAction[]).map((a) => <option key={a} value={a}>{AUDIT_LABEL[a]}</option>)}
+        </select>
+        <select
+          value={days}
+          onChange={(e) => setDays(Number(e.target.value) as 7 | 30 | 90 | 0)}
+          className="bg-input-background border border-input-border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-primary"
+        >
+          <option value={7}>Last 7 days</option>
+          <option value={30}>Last 30 days</option>
+          <option value={90}>Last 90 days</option>
+          <option value={0}>All time</option>
+        </select>
+        <Button size="sm" variant="outline" className="ml-auto" onClick={onExportCsv} disabled={filtered.length === 0}>
+          <FileDown className="w-3.5 h-3.5 mr-1" />Export CSV
+        </Button>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="text-[12px] text-muted-foreground text-center py-6 border border-dashed border-border rounded-md">
+          No entries match the filter. Audit entries land as you touch the Security panel (create a key, configure SSO, etc.).
+        </div>
+      ) : (
+        <div className="overflow-hidden border border-border rounded-md">
+          <table className="w-full text-[12px]">
+            <thead className="bg-secondary/40 text-[10px] uppercase tracking-[0.10em] text-muted-foreground">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">When</th>
+                <th className="text-left px-3 py-2 font-medium">Who</th>
+                <th className="text-left px-3 py-2 font-medium">Action</th>
+                <th className="text-left px-3 py-2 font-medium">Target</th>
+                <th className="text-left px-3 py-2 font-medium">Context</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((e) => (
+                <tr key={e.id} className="border-t border-border">
+                  <td className="px-3 py-2 text-muted-foreground tabular-nums">{new Date(e.ts).toLocaleString()}</td>
+                  <td className="px-3 py-2">{e.who}</td>
+                  <td className="px-3 py-2">{AUDIT_LABEL[e.action] ?? e.action}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{e.target ?? '—'}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{e.context ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ─── Two-factor ────────────────────────────────────────────────────
+
+function TwoFactorPanel({ twoFactor, patchSecurity }: { twoFactor: ReturnType<typeof useProjectStore.getState>['security']['twoFactor']; patchSecurity: (p: any) => void }) {
+  const onEnroll = () => {
+    const secret = randBase32(16);
+    const codes = Array.from({ length: 8 }, () => `${randHex(4)}-${randHex(4)}`);
+    patchSecurity({ twoFactor: { enabled: true, secret, recoveryCodes: codes, enrolledAt: Date.now() } });
+    toast.success('2FA enrolled locally. Scan the secret with your authenticator and store the recovery codes.');
+  };
+  const onDisable = () => {
+    if (!confirm('Disable 2FA? Your account will fall back to password-only sign in.')) return;
+    patchSecurity({ twoFactor: { enabled: false } });
+    toast.message('2FA disabled.');
+  };
+  return (
+    <Panel title="Two factor authentication" subtitle="Adds a TOTP step to sign in. Local enrollment; real verification ships with the auth backend.">
+      {!twoFactor.enabled ? (
+        <Button size="sm" onClick={onEnroll}><ShieldCheck className="w-3.5 h-3.5 mr-1" />Enable 2FA</Button>
+      ) : (
+        <>
+          <Field label="TOTP secret" hint="Add this to your authenticator app manually. Real QR generation lands with the auth backend.">
+            <div className="flex items-center gap-2 flex-1">
+              <Input value={twoFactor.secret ?? ''} readOnly />
+              <Button size="sm" variant="ghost" onClick={() => copyToClipboard(twoFactor.secret ?? '', 'Secret copied.')}><Copy className="w-3.5 h-3.5" /></Button>
+            </div>
+          </Field>
+          <Field label="Recovery codes" hint="Each works once. Copy them now.">
+            <div className="flex flex-col gap-1 flex-1">
+              <code className="text-[12px] bg-secondary/30 border border-border rounded px-2 py-2 leading-relaxed">
+                {(twoFactor.recoveryCodes ?? []).join(' · ')}
+              </code>
+              <Button size="sm" variant="outline" onClick={() => copyToClipboard((twoFactor.recoveryCodes ?? []).join('\n'), 'Recovery codes copied.')}>Copy all</Button>
+            </div>
+          </Field>
+          <div className="flex items-center justify-between pt-2">
+            <div className="text-[11px] text-muted-foreground">Enrolled {twoFactor.enrolledAt ? formatAgo(twoFactor.enrolledAt) : 'just now'}.</div>
+            <Button size="sm" variant="outline" onClick={onDisable}>Disable 2FA</Button>
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+// ─── Sessions ──────────────────────────────────────────────────────
+
+function SessionsPanel({ sessions, patchSecurity, logAudit }: { sessions: SecuritySession[]; patchSecurity: (p: any) => void; logAudit: (a: AuditAction, t?: string) => void }) {
+  const onSignOutOthers = () => {
+    if (!confirm('Sign every other session out of the workspace? This device stays signed in.')) return;
+    const next: Record<string, SecuritySession> = {};
+    for (const s of sessions) {
+      if (s.current) next[s.id] = s;
+      else next[s.id] = { ...s, status: 'revoked', lastActiveAt: Date.now() };
+    }
+    patchSecurity({ sessions: next });
+    logAudit('workspace.signed_out_others');
+    toast.message('Other sessions signed out.');
+  };
+  return (
+    <Panel title="Active sessions" subtitle="Browsers and devices currently signed in. Force sign-out on a single device or all others.">
+      {sessions.length === 0 ? (
+        <div className="text-[12px] text-muted-foreground">No active sessions tracked yet.</div>
+      ) : (
+        <>
+          <div className="flex items-center justify-end mb-3">
+            <Button size="sm" variant="outline" onClick={onSignOutOthers} disabled={sessions.filter((s) => !s.current && s.status === 'active').length === 0}>
+              Sign out other sessions
+            </Button>
+          </div>
+          <ul className="space-y-1.5">
+            {sessions.map((s) => (
+              <li key={s.id} className="border border-border rounded-md p-2.5 flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[12.5px] font-medium">{s.device} · {s.browser}</div>
+                  <div className="text-[10.5px] text-muted-foreground">{s.location} · {s.ip}</div>
+                  <div className="text-[10.5px] text-muted-foreground">Last active {formatAgo(s.lastActiveAt)}</div>
+                </div>
+                <div className="text-right">
+                  {s.current ? (
+                    <span className="text-[10px] uppercase tracking-[0.10em] text-primary">This device</span>
+                  ) : (
+                    <span className={`text-[10px] uppercase tracking-[0.10em] ${s.status === 'active' ? 'text-emerald-600' : s.status === 'idle' ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                      {s.status}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────
+
+function randHex(len: number): string {
+  const bytes = new Uint8Array(Math.ceil(len / 2));
+  if (typeof crypto !== 'undefined') crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, len);
+}
+function randBase32(len: number): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const bytes = new Uint8Array(len);
+  if (typeof crypto !== 'undefined') crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes).map((b) => alphabet[b % 32]).join('');
+}
+async function copyToClipboard(text: string, success: string): Promise<void> {
+  try { await navigator.clipboard.writeText(text); toast.success(success, { duration: 2000 }); }
+  catch { toast.error('Copy failed. Select the value manually.'); }
 }
 
