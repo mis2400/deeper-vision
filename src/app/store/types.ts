@@ -1440,3 +1440,26 @@ export const DEFAULT_BILLING: BillingState = {
   renewsAt: Date.now() + 30 * 86_400_000,
   invoices: [],
 };
+
+// ─────────────────────────── Integrations (Phase 3C) ───────────────
+// Marketplace state. Connections persist locally; real OAuth lands
+// with each integration's backend wiring. The UI is explicit about
+// "connection saved locally" so the operator doesn't think a real
+// handshake happened.
+
+export type IntegrationId =
+  | 'quickbooks' | 'hubspot' | 'salesforce' | 'servicetitan' | 'netsuite' | 'stripe-pay'
+  | 'slack' | 'msteams' | 'google-workspace'
+  | 'verkada' | 'axis' | 'genetec' | 'milestone'
+  | 'quote-engine';
+
+export type IntegrationStatus = 'connected' | 'available';
+
+export interface IntegrationRecord {
+  id: IntegrationId;
+  status: IntegrationStatus;
+  connectedAt?: number;
+  lastSyncAt?: number;
+  /** Operator's friendly note attached to the connection. */
+  note?: string;
+}

@@ -19,6 +19,7 @@ import {
   AiConversation, AiMsg, AiAppliedRecord, AssistantContext,
   UserPrefs, DEFAULT_USER_PREFS,
   BillingState, DEFAULT_BILLING, Invoice, PaymentMethod, PlanTier, BillingCycle,
+  IntegrationId, IntegrationStatus, IntegrationRecord,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -115,6 +116,10 @@ export interface ProjectState {
   /** Workspace billing state — Phase 3B. Local persistence; no
    *  real Stripe. */
   billing: BillingState;
+  /** Marketplace integration state — Phase 3C. Keyed by
+   *  IntegrationId. Only integrations the operator has touched are
+   *  in the map; anything missing is 'available'. */
+  integrations: Record<IntegrationId, IntegrationRecord>;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -365,6 +370,10 @@ export interface ProjectState {
   setPaymentMethod: (pm: PaymentMethod | null) => void;
   /** Append a generated invoice to the local invoice history. */
   addInvoice: (inv: Invoice) => void;
+  /** Mark an integration connected (stamps connectedAt) or available. */
+  setIntegrationStatus: (id: IntegrationId, status: IntegrationStatus) => void;
+  /** Record a sync timestamp on an integration. */
+  recordIntegrationSync: (id: IntegrationId) => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -402,6 +411,7 @@ export const useProjectStore = create<ProjectState>()(
       assistantContext:  null,
       userPrefs:         { ...DEFAULT_USER_PREFS },
       billing:           { ...DEFAULT_BILLING },
+      integrations:      {} as Record<IntegrationId, IntegrationRecord>,
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1427,6 +1437,31 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({ billing: { ...s.billing, paymentMethod: pm ?? undefined } })),
       addInvoice: (inv) =>
         set((s) => ({ billing: { ...s.billing, invoices: [inv, ...s.billing.invoices] } })),
+      setIntegrationStatus: (id, status) =>
+        set((s) => {
+          const next = { ...s.integrations };
+          if (status === 'connected') {
+            const prev = next[id];
+            next[id] = {
+              id,
+              status: 'connected',
+              connectedAt: prev?.connectedAt ?? Date.now(),
+              lastSyncAt: prev?.lastSyncAt,
+              note: prev?.note,
+            };
+          } else {
+            // Available state — remove the record so the map stays
+            // small. The UI treats absence as 'available' anyway.
+            delete next[id];
+          }
+          return { integrations: next };
+        }),
+      recordIntegrationSync: (id) =>
+        set((s) => {
+          const prev = s.integrations[id];
+          if (!prev) return s;
+          return { integrations: { ...s.integrations, [id]: { ...prev, lastSyncAt: Date.now() } } };
+        }),
       setAssistantContext: (ctx) =>
         set((s) => {
           if (ctx == null) return { assistantContext: null };
@@ -1449,11 +1484,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 11,
+      version: 12,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1603,6 +1638,12 @@ export const useProjectStore = create<ProjectState>()(
           const invs = Array.isArray((prev as any).invoices) ? (prev as any).invoices : [];
           persisted.billing = { ...DEFAULT_BILLING, ...prev, invoices: invs };
         }
+        if (version < 12) {
+          // v11 → v12: introduce marketplace integration state.
+          // Empty default; the UI treats absence as 'available'.
+          persisted.integrations ??= {};
+          if (typeof persisted.integrations !== 'object') persisted.integrations = {};
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1658,6 +1699,7 @@ export const useProjectStore = create<ProjectState>()(
         aiConversations:   s.aiConversations,
         userPrefs:         s.userPrefs,
         billing:           s.billing,
+        integrations:      s.integrations,
       }),
     },
   ),
