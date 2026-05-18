@@ -6133,6 +6133,14 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             || (d.type as string).startsWith('inf.storefront')
             || (d.type as string).startsWith('inf.doubledoor');
           const testId = isDoorish ? `door-${d.id}` : `device-${d.id}`;
+          // V1 1A.3 — native browser tooltip on hover with the three
+          // pieces of identity an engineer most often wants: location
+          // label, manufacturer + model, and the device id. Uses an
+          // SVG <title> element so it costs nothing, works in every
+          // theme, and doesn't pull in a custom positioning layer.
+          const hoverProduct = d.product ? PRODUCTS.find((p) => p.id === d.product) : undefined;
+          const hoverProductLabel = hoverProduct ? `${hoverProduct.mfr} ${hoverProduct.model}` : d.type;
+          const hoverTitle = [d.label, hoverProductLabel, d.id].filter(Boolean).join(' · ');
           return (
             <g
               key={d.id}
@@ -6261,6 +6269,8 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 onDragEnd();
               }}
             >
+              {/* Native browser tooltip on hover — label · mfr model · id. */}
+              <title>{hoverTitle}</title>
               {isSel && (
                 <circle
                   cx={d.x} cy={d.y} r={13 * iconScale} fill="none"
