@@ -1024,10 +1024,15 @@ export function EngineeringCanvas() {
     // Length: derive from points + the floor's calibrated scale via the
     // shared pathwayLengthFt helper so the BOM, canvas labels, and inspector
     // drawer all agree.
+    // Canvas V2 Pass 2A.4 — anchor the new pathway to the ACTIVE
+    // floor (the operator's current view), not the project's first
+    // floor. Falls back to first floor when the sticky is missing.
     const _state = useProjectStore.getState();
-    const _floor = storeSelectors.firstFloorOfProject(_state, projectId);
+    const _activeId = _state.currentFloorIdByProject[projectId];
+    const _floor = (_activeId ? (_state.floors as any)[_activeId] : null)
+      ?? storeSelectors.firstFloorOfProject(_state, projectId);
     const lengthFt = pathwayLengthFt({ points: prev.points }, _floor);
-    const fid = _state.sites[projectId.replace(/^p/, 's') + ''] ? '' : (_floor?.id ?? '');
+    const fid = _floor?.id ?? '';
     const isConduit = mode.kind === 'conduit';
     const isPathway = mode.kind === 'pathway';
     // Reset local draw state FIRST — pure state update, no side effects.
@@ -4964,8 +4969,13 @@ function RunToIdfDialog({
   // the IDF, plus 10% slack + a 3 ft service loop per termination.
   const totalLengthFt = useMemo(() => {
     if (!target) return 0;
+    // Canvas V2 Pass 2A.4 — use the active floor's scale, not the
+    // project's first floor scale. Selection is already filtered to
+    // the active floor so the distances match the visible plan.
     const _state = useProjectStore.getState();
-    const _floor = storeSelectors.firstFloorOfProject(_state, projectId);
+    const _activeId = _state.currentFloorIdByProject[projectId];
+    const _floor = (_activeId ? (_state.floors as any)[_activeId] : null)
+      ?? storeSelectors.firstFloorOfProject(_state, projectId);
     const pxToFt = ftPerPxForFloor(_floor);
     let sum = 0;
     selected.forEach((d) => {
@@ -4975,8 +4985,13 @@ function RunToIdfDialog({
   }, [selected, target, projectId]);
   const handleRun = () => {
     if (!target) return;
+    // Canvas V2 Pass 2A.4 — use the active floor's scale, not the
+    // project's first floor scale. Selection is already filtered to
+    // the active floor so the distances match the visible plan.
     const _state = useProjectStore.getState();
-    const _floor = storeSelectors.firstFloorOfProject(_state, projectId);
+    const _activeId = _state.currentFloorIdByProject[projectId];
+    const _floor = (_activeId ? (_state.floors as any)[_activeId] : null)
+      ?? storeSelectors.firstFloorOfProject(_state, projectId);
     const pxToFt = ftPerPxForFloor(_floor);
     const bundleId = `BUN-${Date.now().toString(36).slice(-5)}`.toUpperCase();
     selected.forEach((d) => {
@@ -5327,7 +5342,14 @@ function ImportFloorplanDialog({ onClose, onImported, onStartCalibrate }: { onCl
   const { projectId = 'p1' } = useParams();
   const setFloorBackground = useProjectStore((s) => s.setFloorBackground);
   const updateFloor = useProjectStore((s) => s.updateFloor);
-  const floor = useProjectStore((s) => storeSelectors.firstFloorOfProject(s, projectId) as any);
+  // Canvas V2 Pass 2A.4 — target the ACTIVE floor (from the sticky
+  // currentFloorIdByProject), not the project's first floor. Without
+  // this, uploading a plan while on Level 2 would silently land on
+  // Ground floor.
+  const stickyFloorId = useProjectStore((s) => s.currentFloorIdByProject[projectId]);
+  const fallbackFloorId = useProjectStore((s) => storeSelectors.firstFloorOfProject(s, projectId)?.id ?? '');
+  const targetFloorId = stickyFloorId || fallbackFloorId;
+  const floor = useProjectStore((s) => (targetFloorId ? (s.floors as any)[targetFloorId] : null) as any);
   const floorId = floor?.id ?? '';
   const floorName = floor?.name ?? 'Floor';
   const buildings = useProjectStore((s) => s.buildings);
@@ -14014,15 +14036,14 @@ function BottomDeviceBar({
   // V1 P0.5 — count badges. The dock subscribes directly to devices +
   // pathways for the active floor so the parent's prop surface stays
   // clean and every store change flows in without extra plumbing.
-  // TODO(multi-floor): mirrors the parent's "first floor of project"
-  // shortcut (EngineeringCanvas line ~720). Once the floor selector
-  // becomes state-driven, swap this for the selected floor id —
-  // otherwise these badges will silently count the wrong floor.
+  // Canvas V2 Pass 2A.4 — now reads the sticky currentFloorIdByProject
+  // so the count badges match the floor the operator is actually
+  // looking at, not the project's first floor.
   const { projectId: routeProjectId = 'p1' } = useParams();
   const projectIdForCounts = routeProjectId;
-  const currentFloorIdForCounts = useProjectStore((s) =>
-    storeSelectors.firstFloorOfProject(s, projectIdForCounts)?.id ?? '',
-  );
+  const stickyForCounts = useProjectStore((s) => s.currentFloorIdByProject[projectIdForCounts]);
+  const fallbackForCounts = useProjectStore((s) => storeSelectors.firstFloorOfProject(s, projectIdForCounts)?.id ?? '');
+  const currentFloorIdForCounts = stickyForCounts || fallbackForCounts;
   const storeDevicesForCounts = useProjectStore((s) => s.devices);
   const storePathwaysForCounts = useProjectStore((s) => s.pathways);
   const floorDevices = useMemo(
