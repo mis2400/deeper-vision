@@ -20,6 +20,9 @@ import { useState, useRef, useCallback, useMemo } from 'react';
 import {
   useProjectStore, attachmentsFor,
 } from '../../store/projectStore';
+import {
+  MAX_RAW_IMAGE_BYTES, MAX_DATAURL_BYTES, canFitInLocalStorage,
+} from '../../lib/attachmentValidation';
 import type { Attachment, AttachmentCategory, AttachmentLinkType } from '../../store/types';
 import {
   Paperclip, Upload, X, Image as ImageIcon, FileText, Film, FileSpreadsheet,
@@ -58,12 +61,15 @@ const CATEGORY_META: Record<AttachmentCategory, { label: string; icon: any; tone
   other:    { label: 'Other',    icon: FileQuestion, tone: '#94A3B8' },
 };
 
-/** Bytes threshold above which we skip the dataURL preview. */
-const PREVIEW_MAX_RAW_BYTES = 256 * 1024;
 /** Long-edge max after downsample (px). */
 const DOWNSAMPLE_MAX_EDGE = 800;
 /** JPEG quality used when downsampling. */
 const DOWNSAMPLE_QUALITY = 0.8;
+// Raw image cap + post-downsample cap come from the shared validation
+// module so the panel and the import path can never drift. Source
+// images up to MAX_RAW_IMAGE_BYTES (10 MB) get a downsample attempt;
+// the resulting dataURL is then capped at MAX_DATAURL_BYTES (256 KB)
+// before it lands in localStorage.
 
 function isImageMime(mime: string): boolean {
   return mime.startsWith('image/');
@@ -151,16 +157,37 @@ export function AttachmentPanel({
     const list = Array.from(files);
     if (list.length === 0) return;
     setBusy(true);
+    // Track per-file outcome so the closing toast tells the truth.
+    // The prior version fired toast.success unconditionally even when
+    // addAttachment's persist write was silently dropped by quota.
+    const accepted: string[] = [];
+    const skipped: { fileName: string; reason: string }[] = [];
+    // Cumulative bytes already committed in THIS batch. Each probe
+    // adds it to the candidate's bytes because Zustand's persist
+    // middleware flushes once asynchronously per microtask, so the
+    // probe on file N has to account for files 1..N-1 not having
+    // landed in localStorage yet. Without this, a batch of 5 files
+    // that each pass the individual probe could collectively
+    // overflow and silently fail at flush time.
+    let pendingBytes = 0;
     try {
       for (const file of list) {
         const category = inferCategoryFromMime(file.type, file.name, draftCategory);
         let dataUrl: string | undefined;
         let storageMode: 'local-preview' | 'local-meta' = 'local-meta';
-        // Try a preview only for image files within the raw cap.
-        if (isImageMime(file.type) && file.size <= PREVIEW_MAX_RAW_BYTES * 8) {
+        // Try a downsample preview only for images within the raw cap.
+        // Larger raw files fall through to metadata-only without
+        // attempting to decode them into memory.
+        if (isImageMime(file.type) && file.size <= MAX_RAW_IMAGE_BYTES) {
           try {
-            dataUrl = await downsampleImageToDataUrl(file);
-            if (dataUrl) storageMode = 'local-preview';
+            const candidate = await downsampleImageToDataUrl(file);
+            // Post-encode size check: if the downsampled JPEG still
+            // exceeds the preview cap, drop the preview and fall back
+            // to metadata-only rather than persisting a huge string.
+            if (candidate && candidate.length <= MAX_DATAURL_BYTES) {
+              dataUrl = candidate;
+              storageMode = 'local-preview';
+            }
           } catch {
             dataUrl = undefined;
           }
@@ -181,19 +208,52 @@ export function AttachmentPanel({
           dataUrl,
           storageMode,
         };
-        try {
-          addAttachment(att);
-        } catch (e: any) {
-          toast.error('Could not store attachment', { description: String(e?.message ?? e), duration: 6000 });
+        // Probe localStorage BEFORE the addAttachment call. Zustand's
+        // persist middleware writes asynchronously after `set()`
+        // returns, so a try/catch around addAttachment cannot see a
+        // QuotaExceededError — the panel would have lied and toasted
+        // success on a write that never landed. The probe is
+        // conservative; false negatives are acceptable, false
+        // positives are not. The cumulative `pendingBytes` accounts
+        // for files committed earlier in this same batch that
+        // haven't flushed yet.
+        let attBytes = 0;
+        try { attBytes = JSON.stringify(att).length; } catch { attBytes = (att.dataUrl?.length ?? 0) + 2048; }
+        if (!canFitInLocalStorage(pendingBytes + attBytes)) {
+          skipped.push({ fileName: file.name, reason: 'browser storage is full' });
           continue;
         }
+        try {
+          addAttachment(att);
+          accepted.push(file.name);
+          pendingBytes += attBytes;
+        } catch (e: any) {
+          skipped.push({ fileName: file.name, reason: String(e?.message ?? e) });
+        }
       }
-      setDraftNotes('');
-      setDraftInternal(false);
-      toast.success(`${list.length} attachment${list.length === 1 ? '' : 's'} added`, {
-        description: 'Stored in this browser. Cloud storage is not connected yet.',
-        duration: 3500,
-      });
+      // Only clear the draft fields if at least one file landed; if
+      // every file was skipped, the user's notes / internal-only
+      // choice stay so they can retry without retyping.
+      if (accepted.length > 0) {
+        setDraftNotes('');
+        setDraftInternal(false);
+        toast.success(`${accepted.length} attachment${accepted.length === 1 ? '' : 's'} added`, {
+          description: 'Stored in this browser. Cloud storage is not connected yet.',
+          duration: 3500,
+        });
+      }
+      if (skipped.length > 0) {
+        // Group identical reasons so the toast stays scannable when
+        // a batch hits the same quota wall multiple times.
+        const byReason = new Map<string, number>();
+        for (const s of skipped) byReason.set(s.reason, (byReason.get(s.reason) ?? 0) + 1);
+        const summary = Array.from(byReason.entries())
+          .map(([reason, count]) => `${count} · ${reason}`).join(' · ');
+        toast.error(`${skipped.length} attachment${skipped.length === 1 ? '' : 's'} could not be stored`, {
+          description: summary + ' · try smaller files, remove old attachments, or export + clear local state.',
+          duration: 7000,
+        });
+      }
     } finally {
       setBusy(false);
     }

@@ -20,6 +20,7 @@ import {
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
 import { pathwayLengthFt, ftPerPxForFloor } from '../lib/engineering';
+import { validateAttachment } from '../lib/attachmentValidation';
 
 /** Map a lifecycle phase to its default operational mode. Used when no
  *  user override is set on a project. */
@@ -936,12 +937,45 @@ export const useProjectStore = create<ProjectState>()(
         // other projects' attachments are preserved. Absence of an
         // `attachments` array in the envelope means "no attachments
         // on the source machine for this project".
+        //
+        // T2 layer (shape + size + projectId-match validation): drop
+        // entries that fail the same schema/size checks the upload
+        // path enforces, AND drop any whose projectId doesn't match
+        // the envelope's project so a malicious envelope can't
+        // overwrite another project's attachments via id collision.
+        // T3 will layer id-collision policy + summary toast on top
+        // of this baseline.
         const incomingAttachments = env.data.attachments ?? [];
         const keptAttachments: Record<string, import('./types').Attachment> = {};
         for (const [aid, a] of Object.entries(s.attachments)) {
           if (a.projectId !== pid) keptAttachments[aid] = a;
         }
-        for (const a of incomingAttachments) keptAttachments[a.id] = a;
+        let droppedOnImport = 0;
+        for (const candidate of incomingAttachments) {
+          const result = validateAttachment(candidate);
+          if (!result.ok) {
+            droppedOnImport++;
+            // eslint-disable-next-line no-console
+            console.warn(`[importProjectState] dropping invalid attachment: ${result.reason}`, candidate);
+            continue;
+          }
+          // Cross-project overwrite guard: even a shape-valid
+          // attachment must match the envelope's projectId. Without
+          // this, an envelope for project A carrying an attachment
+          // tagged projectId='B' would clobber project B's
+          // legitimate attachment if ids collided.
+          if (result.value.projectId !== pid) {
+            droppedOnImport++;
+            // eslint-disable-next-line no-console
+            console.warn(`[importProjectState] dropping attachment with mismatched projectId: ${result.value.projectId} != ${pid}`);
+            continue;
+          }
+          keptAttachments[result.value.id] = result.value;
+        }
+        if (droppedOnImport > 0) {
+          // eslint-disable-next-line no-console
+          console.warn(`[importProjectState] dropped ${droppedOnImport} invalid attachment(s) from ${incomingAttachments.length} incoming. T3 will surface a UI toast.`);
+        }
         patch.attachments = keptAttachments;
         return patch;
       }),
