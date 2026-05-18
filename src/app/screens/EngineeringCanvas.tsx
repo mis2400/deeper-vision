@@ -2762,8 +2762,10 @@ export function EngineeringCanvas() {
               onActual={() => { applyActualScale(); userTouchedViewRef.current = true; }}
             />
 
-            {/* Minimap (bottom-right) */}
-            <MiniMap devices={devices} />
+            {/* Minimap (bottom-right) — V1 1A.4 now shows real plan
+                extents (background + walls + devices) instead of the
+                seed 800x600 rectangle, and uses theme tokens. */}
+            <MiniMap devices={devices} walls={allWalls} background={floorBackground ?? null} />
 
             {/* Static North indicator — drafting-style: a needle inside a
                 thin circle with a single "N" tick. It is not interactive;
@@ -13715,7 +13717,11 @@ function ZoomDock({
   );
 }
 
-function MiniMap({ devices }: { devices: Device[] }) {
+function MiniMap({ devices, walls, background }: {
+  devices: Device[];
+  walls?: Wall[];
+  background?: { x: number; y: number; naturalWidth: number; naturalHeight: number; scale: number } | null;
+}) {
   // UX hard-reset: minimap defaults to OFF on the calm canvas. A single
   // eye icon in the bottom-right toggles it back when the engineer wants
   // a viewport overview. (Was visible-by-default, was "OVERVIEW" labelled.)
@@ -13725,24 +13731,73 @@ function MiniMap({ devices }: { devices: Device[] }) {
   useEffect(() => {
     try { localStorage.setItem('canvas:minimap:visible', visible ? '1' : '0'); } catch {}
   }, [visible]);
+  // V1 1A.4 — bounds compute matches the P0.7 canvas auto-fit: union
+  // floor background, walls, and devices so the minimap shows the
+  // actual plan, not the seed 800x600 default. Theme-safe colors so
+  // it reads in light / slate / dark.
+  const bounds = useMemo(() => {
+    let minX = 80, minY = 80, maxX = 720, maxY = 560;
+    if (background) {
+      minX = background.x;
+      minY = background.y;
+      maxX = background.x + background.naturalWidth * background.scale;
+      maxY = background.y + background.naturalHeight * background.scale;
+    }
+    for (const d of devices) {
+      if (typeof d.x !== 'number' || typeof d.y !== 'number') continue;
+      if (d.x < minX) minX = d.x;
+      if (d.y < minY) minY = d.y;
+      if (d.x > maxX) maxX = d.x;
+      if (d.y > maxY) maxY = d.y;
+    }
+    for (const w of walls ?? []) {
+      const wxL = Math.min(w.x1, w.x2), wxR = Math.max(w.x1, w.x2);
+      const wyT = Math.min(w.y1, w.y2), wyB = Math.max(w.y1, w.y2);
+      if (wxL < minX) minX = wxL;
+      if (wyT < minY) minY = wyT;
+      if (wxR > maxX) maxX = wxR;
+      if (wyB > maxY) maxY = wyB;
+    }
+    const pad = 24;
+    return { x: minX - pad, y: minY - pad, w: (maxX - minX) + pad * 2, h: (maxY - minY) + pad * 2 };
+  }, [devices, walls, background]);
   if (!visible) return (
     <button onClick={() => setVisible(true)} title="Show minimap" data-track="canvas-minimap-show" className="absolute bottom-5 right-5 z-20 w-9 h-9 rounded-xl bg-card/85 backdrop-blur-xl border border-border/80 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] flex items-center justify-center text-muted-foreground hover:text-foreground">
       <MapIcon className="w-4 h-4" />
     </button>
   );
   return (
-    <div className="absolute bottom-5 right-5 z-20 w-48 bg-card/85 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)] overflow-hidden">
+    <div className="absolute bottom-5 right-5 z-20 w-[200px] bg-card/90 backdrop-blur-xl border border-border/80 rounded-xl shadow-[var(--shadow-floating)] overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><CircleDot className="w-3 h-3" />Overview</span>
-        <button onClick={() => setVisible(false)} className="hover:text-foreground"><EyeOff className="w-3 h-3" /></button>
+        <button onClick={() => setVisible(false)} title="Hide minimap" className="hover:text-foreground"><EyeOff className="w-3 h-3" /></button>
       </div>
       <div className="p-2">
-        <svg viewBox="0 0 800 600" className="w-full h-24 rounded-md" style={{ background: '#0D1117' }}>
-          <rect x="80" y="80" width="640" height="480" fill="#1A2030" stroke="#E6EDF3" strokeWidth="6" />
-          {devices.map((d) => (
-            <circle key={d.id} cx={d.x} cy={d.y} r="18" fill={KIND_TONE[TYPE_KIND[d.type]]} />
+        <svg
+          viewBox={`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="w-full rounded-md"
+          style={{ height: '150px', background: 'var(--secondary)' }}
+        >
+          {background && (
+            <rect
+              x={background.x} y={background.y}
+              width={background.naturalWidth * background.scale}
+              height={background.naturalHeight * background.scale}
+              fill="var(--card)" stroke="var(--border-strong)" strokeWidth={Math.max(2, bounds.w / 240)}
+            />
+          )}
+          {(walls ?? []).map((w) => (
+            <line key={w.id} x1={w.x1} y1={w.y1} x2={w.x2} y2={w.y2} stroke="var(--foreground)" strokeWidth={Math.max(2, bounds.w / 320)} strokeLinecap="round" />
           ))}
-          <rect x="80" y="80" width="640" height="480" fill="none" stroke="#2F81F7" strokeWidth="6" strokeDasharray="18 10" />
+          {devices.map((d) => (
+            <circle
+              key={d.id}
+              cx={d.x} cy={d.y}
+              r={Math.max(5, bounds.w / 90)}
+              fill={KIND_TONE[TYPE_KIND[d.type]]}
+            />
+          ))}
         </svg>
       </div>
     </div>
