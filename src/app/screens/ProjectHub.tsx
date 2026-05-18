@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { Search, Plus, MapPin, Users, Calendar, ChevronRight, LayoutGrid, List as ListIcon, RotateCcw, ArrowRight, Columns3, ArrowUpDown } from 'lucide-react';
+import { Search, Plus, MapPin, Users, Calendar, ChevronRight, LayoutGrid, List as ListIcon, ArrowRight, Columns3, ArrowUpDown } from 'lucide-react';
 import { useProjectStore, selectors as sel } from '../store/projectStore';
 import { PHASES, quickActionFor, healthTone, progressPctFor } from '../lifecycle/phases';
 import type { LifecyclePhase } from '../store/types';
@@ -68,7 +68,6 @@ export function ProjectHub() {
   const projectsMap   = useProjectStore((s) => s.projects);
   const storeCustomers = useProjectStore((s) => s.customers);
   const storeDevices   = useProjectStore((s) => s.devices);
-  const resetDemoData  = useProjectStore((s) => s.resetDemoData);
 
   const storeProjects = useMemo(
     () => Object.values(projectsMap).sort((a, b) => b.updatedAt - a.updatedAt),
@@ -163,26 +162,11 @@ export function ProjectHub() {
     <AppShell
       crumbs={[{ label: 'Projects' }]}
       actions={
-        <div className="flex items-center gap-2">
-          {/* Dev-only escape hatch: restore every project, device, lens, pathway
-              and note back to the seed. Intentionally unobtrusive (ghost
-              button, no glow) so it doesn't compete with primary actions. */}
-          <button
-            onClick={() => {
-              if (confirm('Reset all demo data? Every change you’ve made — moved cameras, edited lens configs, drawn pathways, etc. — will be replaced with the original seed.')) {
-                resetDemoData();
-              }
-            }}
-            className="text-[11.5px] text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded"
-            title="Reset demo data"
-          >
-            <RotateCcw className="w-3 h-3" />
-            Reset demo
-          </button>
-          <Button size="sm" onClick={() => navigate('/intake/new')}>
-            <Plus className="w-3.5 h-3.5 mr-1" />New project
-          </Button>
-        </div>
+        // V1 Phase 3G — Reset demo relocated to Settings → Advanced.
+        // ProjectHub's primary action row stays focused on New project.
+        <Button size="sm" onClick={() => navigate('/intake/new')}>
+          <Plus className="w-3.5 h-3.5 mr-1" />New project
+        </Button>
       }
     >
       <div className="max-w-[1400px] mx-auto px-6 py-6">

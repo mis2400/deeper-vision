@@ -23,6 +23,7 @@ import {
   WorkspaceMember, WorkspaceRoleId, WorkspaceInviteStatus,
   NotificationEventKey, NotificationPref, DEFAULT_NOTIFICATION_PREF,
   SecurityState, DEFAULT_SECURITY, SsoConfig, ScimConfig, ApiKey, ApiKeyScope, Webhook, WebhookEvent, AuditEntry, AuditAction, SecuritySession, TwoFactor, DataResidency,
+  WorkspaceSettings, DEFAULT_WORKSPACE_SETTINGS,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -131,6 +132,8 @@ export interface ProjectState {
   /** Workspace security state — Phase 3F. SSO config, SCIM, API
    *  keys, webhooks, audit log, sessions, 2FA, residency. */
   security: SecurityState;
+  /** Workspace identity + white-label + dev mode — Phase 3G. */
+  workspaceSettings: WorkspaceSettings;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -400,6 +403,8 @@ export interface ProjectState {
   patchSecurity: (patch: Partial<SecurityState>) => void;
   /** Append a single audit entry. Capped at 500 entries. */
   appendAudit: (entry: AuditEntry) => void;
+  /** Patch the workspace identity + white-label + dev mode state. */
+  patchWorkspaceSettings: (patch: Partial<WorkspaceSettings>) => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -441,6 +446,7 @@ export const useProjectStore = create<ProjectState>()(
       workspaceMembers:  {},
       notificationPrefs: {},
       security:          { ...DEFAULT_SECURITY },
+      workspaceSettings: { ...DEFAULT_WORKSPACE_SETTINGS },
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1519,6 +1525,8 @@ export const useProjectStore = create<ProjectState>()(
           if (next.length > 500) next.length = 500;
           return { security: { ...s.security, audit: next } };
         }),
+      patchWorkspaceSettings: (patch) =>
+        set((s) => ({ workspaceSettings: { ...s.workspaceSettings, ...patch } })),
       setAssistantContext: (ctx) =>
         set((s) => {
           if (ctx == null) return { assistantContext: null };
@@ -1541,11 +1549,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security, workspaceSettings: s.workspaceSettings })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 15,
+      version: 16,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1728,6 +1736,13 @@ export const useProjectStore = create<ProjectState>()(
             audit:     Array.isArray((prev as any).audit)         ? (prev as any).audit    : [],
           };
         }
+        if (version < 16) {
+          // v15 → v16: introduce workspace identity + white-label +
+          // dev mode. Defaults preserve operator's existing workspace
+          // name when present.
+          const prev = persisted.workspaceSettings && typeof persisted.workspaceSettings === 'object' ? persisted.workspaceSettings : {};
+          persisted.workspaceSettings = { ...DEFAULT_WORKSPACE_SETTINGS, ...prev };
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1787,6 +1802,7 @@ export const useProjectStore = create<ProjectState>()(
         workspaceMembers:  s.workspaceMembers,
         notificationPrefs: s.notificationPrefs,
         security:          s.security,
+        workspaceSettings: s.workspaceSettings,
       }),
     },
   ),

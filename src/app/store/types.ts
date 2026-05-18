@@ -1670,3 +1670,30 @@ export const DEFAULT_SECURITY: SecurityState = {
   twoFactor: { enabled: false },
   residency: 'us',
 };
+
+// ─────────────────────────── Workspace (Phase 3G) ─────────────────
+// Advanced tab — workspace identity, white-label, dev mode.
+
+export interface WorkspaceSettings {
+  /** Display name shown on cover pages + footers. */
+  name: string;
+  /** Optional logo as a data URL (so it persists locally without a
+   *  CDN). Operators can paste / pick a PNG. */
+  logoDataUrl?: string;
+  /** Brand color used in customer-facing exports (PDFs, portal
+   *  themes). Distinct from the operator's UI accent so the work
+   *  surface and the deliverable can differ. */
+  brandColor?: string;
+  /** Custom domain for white-label portal links. Validated against
+   *  a basic hostname regex; DNS verification ships with backend. */
+  customDomain?: string;
+  /** Developer mode toggles internal debug surfaces. Persisted so
+   *  the dev / staff operator doesn't have to re-enable per
+   *  session. */
+  devMode: boolean;
+}
+
+export const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
+  name: 'Access Tech Security',
+  devMode: false,
+};

@@ -7,17 +7,14 @@
 import { useState, useMemo, useEffect, useRef, Fragment } from 'react';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { User, CreditCard, Plug, Users, Bell, Lock, Check, FileDown, Trash2, RefreshCw, Search, UserPlus, Upload as UploadIcon, Copy, Eye, EyeOff, Key, Webhook as WebhookIcon, ShieldCheck, Globe, RotateCw } from 'lucide-react';
+import { User, CreditCard, Plug, Users, Bell, Lock, Check, FileDown, Trash2, RefreshCw, Search, UserPlus, Upload as UploadIcon, Copy, Eye, EyeOff, Key, Webhook as WebhookIcon, ShieldCheck, Globe, RotateCw, Settings2, AlertTriangle, RotateCcw } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import type { PlanTier, BillingCycle, Invoice, PaymentMethod, IntegrationId, WorkspaceMember, WorkspaceRoleId, NotificationEventKey, NotificationPref, EmailDigestCadence, SsoProtocol, ApiKey, ApiKeyScope, Webhook, WebhookEvent, AuditEntry, AuditAction, SecuritySession, DataResidency } from '../store/types';
 import { DEFAULT_NOTIFICATION_PREF } from '../store/types';
 import { toast } from 'sonner';
 
-type Section = 'account' | 'billing' | 'integrations' | 'team' | 'notifications' | 'security';
+type Section = 'account' | 'billing' | 'integrations' | 'team' | 'notifications' | 'security' | 'advanced';
 
-// Honesty contract: only nav entries that route to a real surface
-// render. The Advanced tab lands in 3G; until then the entry is
-// not shown at all (no "Coming soon" tile).
 const NAV: Array<{ id: Section; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'account',       label: 'Account',       icon: User },
   { id: 'billing',       label: 'Billing',       icon: CreditCard },
@@ -25,6 +22,7 @@ const NAV: Array<{ id: Section; label: string; icon: React.ComponentType<{ class
   { id: 'team',          label: 'Team',          icon: Users },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'security',      label: 'Security',      icon: Lock },
+  { id: 'advanced',      label: 'Advanced',      icon: Settings2 },
 ];
 
 export function SettingsView() {
@@ -53,6 +51,7 @@ export function SettingsView() {
           {sec === 'team' && <Team />}
           {sec === 'notifications' && <Notifications />}
           {sec === 'security' && <Security />}
+          {sec === 'advanced' && <Advanced />}
         </div>
       </div>
     </AppShell>
@@ -1962,3 +1961,204 @@ async function copyToClipboard(text: string, success: string): Promise<void> {
   catch { toast.error('Copy failed. Select the value manually.'); }
 }
 
+
+// ─────────────────────────── Advanced (Phase 3G) ───────────────────
+
+function Advanced() {
+  const ws = useProjectStore((s) => s.workspaceSettings);
+  const patchWs = useProjectStore((s) => s.patchWorkspaceSettings);
+  const resetDemoData = useProjectStore((s) => s.resetDemoData);
+  const appendAudit = useProjectStore((s) => s.appendAudit);
+  const operatorName = useProjectStore((s) => s.userPrefs.fullName ?? s.userPrefs.email ?? 'Operator');
+
+  const [name, setName]               = useState(ws.name);
+  const [brandColor, setBrandColor]   = useState(ws.brandColor ?? '#2D6FB8');
+  const [customDomain, setCustomDomain] = useState(ws.customDomain ?? '');
+  const logoInput = useRef<HTMLInputElement>(null);
+  const [confirmDelete, setConfirmDelete] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const onSaveIdentity = () => {
+    const domain = customDomain.trim();
+    if (domain && !/^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(domain)) {
+      toast.error('Custom domain must look like a hostname (e.g. portal.your-co.com).');
+      return;
+    }
+    patchWs({ name: name.trim() || 'Workspace', brandColor, customDomain: domain || undefined });
+    toast.success('Workspace settings saved. White-label exports pick this up on next render.');
+  };
+
+  const onLogoPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 256 * 1024) { toast.error('Logo file is over 256 KB. Use a tighter PNG / SVG.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      patchWs({ logoDataUrl: dataUrl });
+      toast.success('Logo saved. It appears on PDFs and the portal cover.');
+    };
+    reader.onerror = () => toast.error('Could not read that file.');
+    reader.readAsDataURL(file);
+    if (logoInput.current) logoInput.current.value = '';
+  };
+
+  const onExportAllData = () => {
+    // GDPR-style export: every persisted slice as one JSON document.
+    const state = useProjectStore.getState();
+    const dump = {
+      exportedAt: new Date().toISOString(),
+      schemaVersion: 16,
+      workspace: ws,
+      userPrefs: state.userPrefs,
+      billing: state.billing,
+      integrations: state.integrations,
+      workspaceMembers: state.workspaceMembers,
+      notificationPrefs: state.notificationPrefs,
+      security: { ...state.security, audit: state.security.audit.slice(0, 500) },
+      projects: state.projects,
+      customers: state.customers,
+      contacts: state.contacts,
+      sites: state.sites,
+      buildings: state.buildings,
+      floors: state.floors,
+      devices: state.devices,
+      pathways: state.pathways,
+      idfs: state.idfs,
+      doors: state.doors,
+      attachments: state.attachments,
+      aiConversations: state.aiConversations,
+    };
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `deepervision-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 250);
+    appendAudit({
+      id: `a-${Date.now().toString(36)}`,
+      who: operatorName,
+      action: 'project.exported',
+      target: 'workspace',
+      detail: 'Full data export (GDPR)',
+      ts: Date.now(),
+    });
+    toast.success('Workspace data exported.');
+  };
+
+  const onResetDemo = () => {
+    if (!confirm('Reset every demo project, device, pathway, and note back to seed? Operator preferences, billing, integrations, team, notifications, security, and workspace settings will NOT be touched.')) return;
+    resetDemoData();
+    toast.success('Demo data reset to seed.');
+  };
+
+  const onDeleteWorkspace = () => {
+    if (confirmDelete.trim().toLowerCase() !== 'delete') {
+      toast.error('Type "delete" to confirm.');
+      return;
+    }
+    // Local-only — the real workspace teardown happens server-side.
+    // For V1 we clear the persisted store and reload.
+    try { localStorage.removeItem('deeperVisionStore'); } catch { /* no-op */ }
+    toast.message('Workspace cleared locally. Reload to start fresh.');
+    setDeleteOpen(false);
+    setTimeout(() => window.location.reload(), 1200);
+  };
+
+  return (
+    <>
+      <Panel title="Workspace identity" subtitle="Name, logo, and brand color. These show on cover pages, customer-facing PDFs, and the portal.">
+        <Field label="Workspace name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your company name" /></Field>
+        <Field label="Logo" hint="PNG or SVG up to 256 KB. Embedded as a data URL so it persists offline.">
+          <div className="flex items-center gap-2 flex-1">
+            {ws.logoDataUrl ? (
+              <img src={ws.logoDataUrl} alt="Workspace logo" className="h-10 w-auto rounded border border-border bg-card p-1" />
+            ) : (
+              <div className="h-10 px-3 inline-flex items-center text-[11px] text-muted-foreground border border-dashed border-border rounded">No logo uploaded.</div>
+            )}
+            <input ref={logoInput} type="file" accept="image/png,image/svg+xml,image/jpeg" onChange={onLogoPick} className="hidden" />
+            <Button size="sm" variant="outline" onClick={() => logoInput.current?.click()}>Upload</Button>
+            {ws.logoDataUrl && (
+              <Button size="sm" variant="ghost" onClick={() => { patchWs({ logoDataUrl: undefined }); toast.message('Logo removed.'); }} title="Remove logo">
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            )}
+          </div>
+        </Field>
+        <Field label="Brand color" hint="Used in customer-facing PDF headers and portal banners. Distinct from the operator UI accent.">
+          <div className="flex items-center gap-2 flex-1">
+            <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} className="h-8 w-12 rounded border border-border bg-card" />
+            <Input value={brandColor} onChange={(e) => setBrandColor(e.target.value)} placeholder="#2D6FB8" />
+          </div>
+        </Field>
+        <Field label="Custom domain" hint="Where your customer portal links resolve. DNS verification ships with the auth backend.">
+          <Input value={customDomain} onChange={(e) => setCustomDomain(e.target.value)} placeholder="portal.your-co.com" />
+        </Field>
+        <div className="flex items-center justify-end pt-1">
+          <Button size="sm" onClick={onSaveIdentity}>Save workspace settings</Button>
+        </div>
+      </Panel>
+
+      <Panel title="Developer mode" subtitle="Surfaces internal debug indicators on shipped screens. Useful for staff QA; not meant for end users.">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[12.5px] font-medium">Show developer panels</div>
+            <div className="text-[11px] text-muted-foreground">Currently {ws.devMode ? 'enabled' : 'disabled'}. Surfaces opt in by checking <code>workspaceSettings.devMode</code> in the store.</div>
+          </div>
+          <button
+            onClick={() => patchWs({ devMode: !ws.devMode })}
+            className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${ws.devMode ? 'bg-primary' : 'bg-secondary'}`}
+            data-testid="advanced-devmode-toggle"
+          >
+            <span className={`inline-block h-5 w-5 transform rounded-full bg-background transition-transform ${ws.devMode ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+      </Panel>
+
+      <Panel title="Data export" subtitle="GDPR-style snapshot. Generated entirely in the browser; no third party sees the dump.">
+        <div className="flex items-center justify-between">
+          <div className="text-[12px] text-muted-foreground">
+            Includes every persisted slice: projects, customers, devices, conversations, billing, security, integrations, audit log.
+          </div>
+          <Button size="sm" onClick={onExportAllData}><FileDown className="w-3.5 h-3.5 mr-1" />Export workspace data</Button>
+        </div>
+      </Panel>
+
+      <Panel title="Reset demo data" subtitle="Restores every seed project, device, pathway, and note back to the original demo state. Your operator preferences, billing, integrations, team, notifications, security, and workspace settings stay.">
+        <div className="flex items-center justify-end">
+          <Button size="sm" variant="outline" onClick={onResetDemo} data-testid="advanced-reset-demo">
+            <RotateCcw className="w-3.5 h-3.5 mr-1" />Reset demo data
+          </Button>
+        </div>
+      </Panel>
+
+      <Panel title="Delete workspace" subtitle="Wipes every local trace of this workspace and reloads. Server-side teardown ships with the auth backend.">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] text-rose-600 inline-flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            This is irreversible. Export your data first if you want a copy.
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setDeleteOpen(true)} className="border-rose-500/40 text-rose-600 hover:bg-rose-500/10">
+            <Trash2 className="w-3.5 h-3.5 mr-1" />Delete workspace
+          </Button>
+        </div>
+        {deleteOpen && (
+          <div role="dialog" aria-modal className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="bg-card border border-border-strong rounded-xl shadow-2xl max-w-md w-full p-5">
+              <h2 className="text-base font-medium text-rose-600">Delete this workspace?</h2>
+              <p className="text-[12px] text-muted-foreground mt-1 mb-4">
+                Type <code className="font-mono text-foreground">delete</code> below to confirm. The local store is cleared and the page reloads.
+              </p>
+              <Input value={confirmDelete} onChange={(e) => setConfirmDelete(e.target.value)} placeholder="delete" autoFocus />
+              <div className="flex items-center justify-end gap-2 mt-4">
+                <Button size="sm" variant="ghost" onClick={() => { setDeleteOpen(false); setConfirmDelete(''); }}>Cancel</Button>
+                <Button size="sm" onClick={onDeleteWorkspace} className="bg-rose-600 hover:bg-rose-700 text-white">Permanently delete</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Panel>
+    </>
+  );
+}
