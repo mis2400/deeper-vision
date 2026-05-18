@@ -2806,7 +2806,6 @@ export function EngineeringCanvas() {
             onOpenReview={() => nav(`/project/${projectId}/review`)}
             onOpenDeployment={() => nav(`/project/${projectId}/deployment`)}
             onOpenReports={() => nav(`/project/${projectId}/reports`)}
-            projectId={projectId}
             compact={viewMode === 'field'}
             intelOpen={intelOpen}
             setIntelOpen={setIntelOpen}
@@ -3698,7 +3697,7 @@ export function EngineeringCanvas() {
                 }}
                 data-track="canvas-add-fab"
                 title="Add device · open library"
-                className="absolute z-30 bottom-20 right-5 h-12 w-12 rounded-full flex items-center justify-center text-white bg-primary hover:bg-primary/90 transition-colors shadow-[0_2px_4px_-1px_rgba(0,0,0,0.18),0_12px_28px_-12px_rgba(0,0,0,0.45)] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                className="absolute z-30 bottom-20 right-5 h-12 w-12 rounded-full hidden md:flex items-center justify-center text-white bg-primary hover:bg-primary/90 transition-colors shadow-[0_2px_4px_-1px_rgba(0,0,0,0.18),0_12px_28px_-12px_rgba(0,0,0,0.45)] focus:outline-none focus:ring-2 focus:ring-primary/40"
               >
                 <Plus className="w-5 h-5" strokeWidth={2.2} />
               </button>
@@ -3798,7 +3797,7 @@ export function EngineeringCanvas() {
               const ft = Math.round(zoom * 100 * ftPerPx * 10) / 10;
               return (
                 <div
-                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none flex items-center gap-1.5"
+                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none hidden md:flex items-center gap-1.5"
                   data-testid="scale-bar"
                   style={{
                     background: 'var(--panel-background)',
@@ -4949,9 +4948,6 @@ function TopBar(props: {
   onOpenDeployment: () => void;
   /** Opens the reports / proposal package route. */
   onOpenReports: () => void;
-  /** Active project id, threaded through so the ProjectStateMenu can
-   *  export/import the right project. */
-  projectId: string;
   /** Compact = render only the essentials. Used in Field view so the bar
    *  is a thin operations strip rather than a full chrome row. */
   compact?: boolean;
@@ -14256,7 +14252,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  *  The selected type drives the line stroke + appears in the pathway record. */
 function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t: CableTypeId) => void }) {
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-[68px] z-20 select-none">
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-[68px] z-20 select-none hidden md:block">
       <div className="bg-card/95 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)] px-1.5 py-1.5 flex items-center gap-1 max-w-[680px] overflow-x-auto">
         <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1.5 shrink-0">Cable</span>
         {CABLE_TYPES.map((c) => {
@@ -14875,7 +14871,7 @@ function DrawingToolRail({
         onClick={() => onPick(it)}
         title={it.coming ? `${it.label} — Coming soon` : `${it.label}${it.key ? ` (${it.key})` : ''} — ${it.hint}`}
         data-track={`tool-${it.label.toLowerCase().replace(/\W+/g,'-')}`}
-        className={`group relative flex flex-col items-center justify-center gap-0.5 w-12 h-12 rounded-xl transition-colors ${
+        className={`group relative flex flex-col items-center justify-center gap-0.5 w-10 h-10 md:w-12 md:h-12 rounded-xl transition-colors ${
           isDimmed
             ? 'text-white/30 cursor-not-allowed'
             : isActiveTool || isActivePanel
@@ -14885,7 +14881,7 @@ function DrawingToolRail({
         disabled={isDimmed}
       >
         <Icon className="w-4 h-4" strokeWidth={1.7} />
-        <span className="text-[8.5px] tracking-tight">{it.label}</span>
+        <span className="hidden md:inline text-[8.5px] tracking-tight">{it.label}</span>
         {(isActiveTool || isActivePanel) && <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r bg-[var(--primary)]" />}
         {badge}
       </button>
@@ -14893,7 +14889,7 @@ function DrawingToolRail({
   };
 
   return (
-    <div className="absolute z-40 top-3 left-3 flex items-start" ref={railRef} data-canvas-chrome="rail">
+    <div className="absolute z-40 top-2 left-2 md:top-3 md:left-3 flex items-start" ref={railRef} data-canvas-chrome="rail">
       {/* Slim black rail — working tools only. Coming-soon tools live
           inside the "More" panel so they don't clutter the default view. */}
       <div
@@ -15291,7 +15287,7 @@ function BottomDeviceBar({
   }, [floorDevices, floorPathways]);
 
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-30" ref={trayRef} data-canvas-chrome="tray">
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-30 hidden md:block" ref={trayRef} data-canvas-chrome="tray">
       {/* Tray (renders above the bar when a category is open) */}
       {open && trayCat && (
         <div
@@ -15841,7 +15837,7 @@ function ZoomDock({
   onActual: () => void;
 }) {
   return (
-    <div className="absolute bottom-5 left-5 z-20 inline-flex items-center bg-card/85 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] overflow-hidden text-xs">
+    <div className="absolute bottom-5 left-5 z-20 hidden md:inline-flex items-center bg-card/85 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] overflow-hidden text-xs">
       <button onClick={() => setZoom(Math.max(0.25, zoom / 1.2))} data-track="zoom-out" title="Zoom out (⌘-)"
         className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
         <ZoomOut className="w-3.5 h-3.5" />
@@ -15894,7 +15890,7 @@ function MiniMapFloorStrip({ projectId, activeFloorId, onPickFloor }: {
   };
   return (
     <div
-      className="absolute right-[200px] bottom-3 z-20 flex flex-col gap-1 p-1.5 rounded-lg bg-card/90 backdrop-blur-md border border-border shadow-md"
+      className="absolute right-[200px] bottom-3 z-20 hidden md:flex flex-col gap-1 p-1.5 rounded-lg bg-card/90 backdrop-blur-md border border-border shadow-md"
       data-testid="minimap-floor-strip"
     >
       {projectFloors.map((f) => {
@@ -15962,12 +15958,12 @@ function MiniMap({ devices, walls, background }: {
     return { x: minX - pad, y: minY - pad, w: (maxX - minX) + pad * 2, h: (maxY - minY) + pad * 2 };
   }, [devices, walls, background]);
   if (!visible) return (
-    <button onClick={() => setVisible(true)} title="Show minimap" data-track="canvas-minimap-show" className="absolute bottom-5 right-5 z-20 w-9 h-9 rounded-xl bg-card/85 backdrop-blur-xl border border-border/80 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] flex items-center justify-center text-muted-foreground hover:text-foreground">
+    <button onClick={() => setVisible(true)} title="Show minimap" data-track="canvas-minimap-show" className="absolute bottom-5 right-5 z-20 w-9 h-9 rounded-xl bg-card/85 backdrop-blur-xl border border-border/80 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] hidden md:flex items-center justify-center text-muted-foreground hover:text-foreground">
       <MapIcon className="w-4 h-4" />
     </button>
   );
   return (
-    <div className="absolute bottom-5 right-5 z-20 w-[200px] bg-card/90 backdrop-blur-xl border border-border/80 rounded-xl shadow-[var(--shadow-floating)] overflow-hidden">
+    <div className="absolute bottom-5 right-5 z-20 w-[200px] bg-card/90 backdrop-blur-xl border border-border/80 rounded-xl shadow-[var(--shadow-floating)] overflow-hidden hidden md:block">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><CircleDot className="w-3 h-3" />Overview</span>
         <button onClick={() => setVisible(false)} title="Hide minimap" className="hover:text-foreground"><EyeOff className="w-3 h-3" /></button>

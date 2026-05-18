@@ -84,6 +84,17 @@ export function AppShell({
           <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">⌘K</kbd>
         </button>
 
+        {/* Mobile search trigger — icon-only equivalent of the Jump to… */}
+        <button
+          onClick={() => setPaletteOpen(true)}
+          className="flex md:hidden items-center justify-center w-9 h-9 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+          aria-label="Open search"
+          title="Search"
+          data-track="appshell-search-mobile"
+        >
+          <Search className="w-4 h-4" />
+        </button>
+
         {actions}
 
         <ModeRolePill />

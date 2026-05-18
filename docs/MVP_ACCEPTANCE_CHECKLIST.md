@@ -418,9 +418,31 @@ Sub passes shipped on `main`:
 - `pathways` floor filter is opt-in via the `floorId` prop on `PathwaysOverlay`. Other (non canvas) callers continue to read all pathways — verified by grep.
 - Coverage stats panel mounts only when the heatmap layer is on, so the per-render coverage rasterisation cost is opt-in.
 
+## 12 · Canvas V2 Pass 1.5 — Mobile chrome hotfix
+
+Inserted between Pass 1 and Pass 2 in commit order. Pass 2 was already on main when the mobile audit surfaced these. No store schema changes. All five sub passes ship under the `md` breakpoint (768 px) and leave desktop chrome untouched.
+
+- [x] **1.5.1 Top toolbar overflow strategy.** Four desktop chrome buttons (Add plan, BOM, Present, Deploy) plus the view picker, fullscreen toggle, ProjectStateMenu, and "more" overflow are now `hidden md:inline-flex` and gain `whitespace-nowrap`. Mobile collapses all of them into a single `MobileActionsMenu` (`MoreHorizontal` trigger) that lists Project actions, View mode, and Fullscreen toggle in a 240 px sheet at `right-0 top-10 z-[60]`. TopBar bumped from `z-30` to `z-[45]` so the menu paints above the drawing rail. Same commit carried the TDZ hotfix for `detectRoomsFromWalls` (now declared after `allWalls` with a ref pattern so the Cmd K command always calls the latest closure).
+- [x] **1.5.2 Button label sizing.** Verified via 1.5.1's `whitespace-nowrap` + `hidden md:inline-flex` strategy. No mobile-visible chrome button can wrap. AppShell header already uses `hidden md:flex` on Jump-to search + ModeRolePill; remaining buttons (App menu, Help, Settings) are icon-only.
+- [x] **1.5.3 Canvas mobile fit.** Hid five overlapping chrome surfaces on mobile so the canvas fills the viewport: BottomDeviceBar (placement is a desktop task, bar is ~864 px wide), ZoomControls (~336 px, pinch zoom works), MiniMap + toggle button, MiniMapFloorStrip (FloorSwitcher in TopBar handles floors), the bottom-right Add device FAB, and the CableTypePicker. DrawingToolRail compacts on mobile (`w-10 h-10` tiles, no text labels under icons, `top-2 left-2` padding instead of `top-3 left-3`). Cleaned up a pre-existing duplicate `projectId` prop on TopBar at the same time.
+- [x] **1.5.4 Mobile canvas action access.** Added an icon-only Search trigger to AppShell header (`flex md:hidden`, 36 × 36 px) that opens the same CommandPalette as the desktop Jump-to. Undo / Redo + FloorSwitcher were already icon-only and remain visible at every viewport.
+- [x] **1.5.5 Bottom floating UI cleanup.** Hid the calibration scale chip ("0 — 1.9 ft — DEFAULT SCALE — Set scale") on mobile. The chip is engineer-only and was confusing in isolation now that surrounding chrome is gone. Desktop unchanged.
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass change. No TS errors.
+- **Mobile inspection**: confirmed `hidden md:*` Tailwind classes via DOM inspection at 375 px. Tools rail, undo/redo, search trigger, mobile actions menu, floor switcher all visible and reachable.
+- **Desktop regression check**: TopBar at ≥768 px renders identically to Pass 2 (all chrome buttons + view picker + fullscreen + state menu visible). BottomDeviceBar / ZoomControls / MiniMap unchanged on desktop.
+
+### Known follow ups deferred
+
+- Mobile device placement workflow (`Add device` flow on touch). Today mobile users can pan, zoom, select, measure, undo, redo, and switch floors — they cannot place new devices. Future pass may add a "tap to drop" picker or accept that placement stays desktop only.
+- ZoomControls could expose a compact two-button (zoom in / zoom out) version on mobile if user feedback shows pinch is insufficient.
+- "Default scale" + "Set scale" desktop chip wording could read more clearly as a status + action pair (currently two uppercase tags side by side).
+
 ## Last verified
 
-- **Date:** 2026-05-18 (Canvas V2 Pass 2 — Multi floor + Coverage + Rooms + Annotations)
+- **Date:** 2026-05-18 (Canvas V2 Pass 1.5 — Mobile chrome hotfix on top of Pass 2)
 - **Build:** `npm run build` — passing (vite v6.3.5, ~1941 modules, no TS errors)
 - **Persist version:** `deeperVisionStore` v22 (adds `annotations`, `rooms`, `currentFloorIdByProject`, plus Pass 1's `measurements` / `canvasHistory` / `siteCaptures`; all migrations forward-only with defensive coercion)
 - **UI-verified flow** (real `MouseEvent('click')` + real `Event('input')` against the rendered DOM, then re-read from the same DOM):
