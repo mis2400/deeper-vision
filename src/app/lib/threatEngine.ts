@@ -112,7 +112,10 @@ export interface ScenarioResult {
 
 // ─────────────────────────── Library ────────────────────────────────
 
-/** Phase 2B.1 ships 5 scenarios. 2B.6 expands to 10+. */
+/** Phase 2B.6 ships 12 scenarios across the realistic threat space
+ *  for the verticals DeeperVision targets. Each carries an actor
+ *  profile, time-of-day, and a fractional path that resolves to
+ *  whatever floor extents the active project happens to have. */
 export const SCENARIOS: ScenarioDef[] = [
   {
     id: 'perimeter-after-hours',
@@ -194,6 +197,131 @@ export const SCENARIOS: ScenarioDef[] = [
       { x: 0.80, y: 0.65, label: 'Southeast corner' },
     ],
     dwellSec: 4,
+  },
+  {
+    id: 'daytime-perimeter',
+    name: 'Daytime perimeter intrusion',
+    vertical: 'industrial',
+    actor: 'Opportunistic intruder, blends with workers',
+    time: 'business',
+    description: 'Actor crosses the perimeter fence mid-shift, walks the yard, slips into a side entry while the loading bay is active.',
+    entry: { x: 0.04, y: 0.10, label: 'Perimeter fence' },
+    goal:  { x: 0.72, y: 0.65, label: 'Production floor' },
+    waypoints: [
+      { x: 0.18, y: 0.22, label: 'Yard, north side' },
+      { x: 0.32, y: 0.38, label: 'Side entry' },
+      { x: 0.50, y: 0.52, label: 'Equipment alley' },
+    ],
+    dwellSec: 5,
+  },
+  {
+    id: 'internal-theft-employee',
+    name: 'Internal theft, after hours employee',
+    vertical: 'corporate',
+    actor: 'Badged employee acting alone after the office empties',
+    time: 'after-hours',
+    description: 'Employee stays late, waits for the floor to clear, removes equipment from the IT closet through the service corridor.',
+    entry: { x: 0.32, y: 0.70, label: 'Employee desk' },
+    goal:  { x: 0.06, y: 0.92, label: 'Service exit' },
+    waypoints: [
+      { x: 0.40, y: 0.55, label: 'Pantry' },
+      { x: 0.20, y: 0.50, label: 'IT closet' },
+      { x: 0.14, y: 0.78, label: 'Service corridor' },
+    ],
+    dwellSec: 6,
+  },
+  {
+    id: 'internal-theft-contractor',
+    name: 'Contractor diversion',
+    vertical: 'corporate',
+    actor: 'Vendor or contractor with day-pass access',
+    time: 'business',
+    description: 'Contractor on a legitimate work order detours from the assigned area to an unauthorized space.',
+    entry: { x: 0.08, y: 0.50, label: 'Vendor check-in' },
+    goal:  { x: 0.82, y: 0.20, label: 'Executive area' },
+    waypoints: [
+      { x: 0.26, y: 0.46, label: 'Work zone' },
+      { x: 0.45, y: 0.34, label: 'Cross corridor' },
+      { x: 0.68, y: 0.25, label: 'Executive corridor' },
+    ],
+    dwellSec: 7,
+  },
+  {
+    id: 'vehicle-ram',
+    name: 'Vehicle threat at perimeter',
+    vertical: 'multi',
+    actor: 'Vehicle attempting to breach a vehicle barrier',
+    time: 'business',
+    description: 'Vehicle approaches the main vehicle entry at unsafe speed. Path stops at the barrier; outcome depends on bollards and camera coverage of the approach.',
+    entry: { x: 0.02, y: 0.05, label: 'Road approach' },
+    goal:  { x: 0.30, y: 0.30, label: 'Vehicle barrier' },
+    waypoints: [
+      { x: 0.10, y: 0.12, label: 'Driveway' },
+      { x: 0.20, y: 0.20, label: 'Inner approach' },
+    ],
+    dwellSec: 3,
+  },
+  {
+    id: 'parking-tailgate',
+    name: 'Parking lot tailgate',
+    vertical: 'corporate',
+    actor: 'Unbadged actor following a badged driver',
+    time: 'transition',
+    description: 'Morning arrival: actor parks, follows a badged employee from the parking lot through the secured stair to the floor.',
+    entry: { x: 0.06, y: 0.95, label: 'Parking lot' },
+    goal:  { x: 0.60, y: 0.30, label: 'Open work area' },
+    waypoints: [
+      { x: 0.18, y: 0.84, label: 'Secured stair door' },
+      { x: 0.32, y: 0.68, label: 'Stair landing' },
+      { x: 0.46, y: 0.50, label: 'Floor entry' },
+    ],
+    dwellSec: 5,
+  },
+  {
+    id: 'it-closet-entry',
+    name: 'IT closet entry',
+    vertical: 'corporate',
+    actor: 'Unauthorized actor with closet keys or pick',
+    time: 'overnight',
+    description: 'Overnight: actor heads directly for the IT / MDF closet from an interior corridor.',
+    entry: { x: 0.20, y: 0.90, label: 'Interior corridor' },
+    goal:  { x: 0.20, y: 0.40, label: 'IT closet' },
+    waypoints: [
+      { x: 0.20, y: 0.65, label: 'Closet corridor' },
+    ],
+    dwellSec: 6,
+  },
+  {
+    id: 'asset-removal-overnight',
+    name: 'Asset removal, overnight',
+    vertical: 'industrial',
+    actor: 'Single or two-person team with handcart',
+    time: 'overnight',
+    description: 'Overnight removal of larger assets via the loading dock. Path lingers at the asset, exits the way it came.',
+    entry: { x: 0.06, y: 0.62, label: 'Loading dock' },
+    goal:  { x: 0.06, y: 0.62, label: 'Loading dock (exit)' },
+    waypoints: [
+      { x: 0.30, y: 0.55, label: 'Warehouse aisle' },
+      { x: 0.55, y: 0.42, label: 'Asset bay' },
+      { x: 0.30, y: 0.55, label: 'Warehouse aisle (return)' },
+    ],
+    dwellSec: 9,
+  },
+  {
+    id: 'late-night-breach',
+    name: 'Late-night facility breach',
+    vertical: 'multi',
+    actor: 'Two-person team, planned approach',
+    time: 'overnight',
+    description: 'Coordinated two-person breach via a low-traffic side door. One actor watches the corridor while the other reaches a sensitive space.',
+    entry: { x: 0.04, y: 0.35, label: 'Side service door' },
+    goal:  { x: 0.78, y: 0.60, label: 'Records room' },
+    waypoints: [
+      { x: 0.18, y: 0.40, label: 'Maintenance hall' },
+      { x: 0.36, y: 0.50, label: 'Cross corridor' },
+      { x: 0.58, y: 0.58, label: 'Records corridor' },
+    ],
+    dwellSec: 8,
   },
 ];
 
