@@ -717,12 +717,35 @@ export function EngineeringCanvas() {
   const storeUpdateDevice = useProjectStore((s) => s.updateDevice);
   const storeRemoveDevice = useProjectStore((s) => s.removeDevice);
 
-  // Which floor are we editing? For now: first floor of this project. (When
-  // multi-floor switching lands, this becomes state-driven from the floor
-  // selector in TopBar.)
-  const currentFloorId = useProjectStore((s) =>
-    storeSelectors.firstFloorOfProject(s, projectId ?? 'p1')?.id ?? '',
-  );
+  // Which floor are we editing? Canvas V2 Pass 2A.2 — read from the
+  // currentFloorIdByProject sticky state. Falls back to the project's
+  // default floor (level 0 if present, else lowest level) when no
+  // sticky exists yet — covers fresh projects and migrated v19 stores
+  // that didn't have the sticky map initialised.
+  const stickyFloorId = useProjectStore((s) => s.currentFloorIdByProject[projectId ?? 'p1']);
+  const fallbackFloorId = useProjectStore((s) => {
+    const pid = projectId ?? 'p1';
+    const list = Object.values(s.floors).filter((f) => f.projectId === pid);
+    const ground = list.find((f) => f.level === 0);
+    if (ground) return ground.id;
+    list.sort((a, b) => (a.level - b.level) || ((a.createdAt ?? 0) - (b.createdAt ?? 0)));
+    return list[0]?.id ?? '';
+  });
+  const currentFloorId = stickyFloorId || fallbackFloorId;
+  const setCurrentFloorIdForProject = useProjectStore((s) => s.setCurrentFloorIdForProject);
+  // Pass 2A.3 — ref so the floor-change effect (declared after selId
+  // useState further down) can see the prior currentFloorId.
+  const prevFloorIdRef = useRef<string>('');
+  // All floors on this project, sorted by level descending (top of
+  // the building first) — matches the natural building elevation
+  // mental model so the dropdown reads top to bottom: roof → ground → basement.
+  const floorsMapForProject = useProjectStore((s) => s.floors);
+  const projectFloors = useMemo(() => {
+    const pid = projectId ?? 'p1';
+    return Object.values(floorsMapForProject)
+      .filter((f) => f.projectId === pid)
+      .sort((a, b) => (b.level - a.level) || ((b.createdAt ?? 0) - (a.createdAt ?? 0)));
+  }, [floorsMapForProject, projectId]);
   // Imported floorplan background — when set, it renders beneath devices
   // on the active floor. Driven by the Import Floorplan dialog and by
   // VisionScan's "Import to canvas" handoff.
@@ -1704,6 +1727,18 @@ export function EngineeringCanvas() {
   // line on canvas. Null when nothing pathway-related is selected.
   const [selPathwayId, setSelPathwayId] = useState<string | null>(null);
 
+  // Pass 2A.3 — clear selection when the active floor changes. Stale
+  // selIds pointing at off-floor devices would confuse the multi
+  // select toolbar (counts mismatch) and the lock enforcement path.
+  useEffect(() => {
+    if (prevFloorIdRef.current && prevFloorIdRef.current !== currentFloorId) {
+      setSelId(null);
+      setSelIds(new Set());
+      setSelPathwayId(null);
+    }
+    prevFloorIdRef.current = currentFloorId;
+  }, [currentFloorId]);
+
   // Click-to-arm placement helper. Creates a new device of the given
   // product at canvas-space (x, y), selects it, and clears any open
   // pathway drawer. Mirrors the "normal floor drop" shape from the
@@ -1875,6 +1910,28 @@ export function EngineeringCanvas() {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         setCmdKOpen((v) => !v);
+      }
+      // Pass 2A.2 — Cmd / Ctrl + Up / Down moves the active floor up
+      // or down by one in the elevation order (higher level = up).
+      // Reads from the live store so the handler stays bound once.
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        const pid = projectId ?? 'p1';
+        const st = useProjectStore.getState();
+        const list = Object.values(st.floors)
+          .filter((f) => f.projectId === pid)
+          .sort((a, b) => (b.level - a.level) || ((b.createdAt ?? 0) - (a.createdAt ?? 0)));
+        if (list.length < 2) return;
+        const curId = st.currentFloorIdByProject[pid] ?? list[list.length - 1]?.id;
+        const idx = list.findIndex((f) => f.id === curId);
+        if (idx < 0) return;
+        // ArrowUp means "go to the floor above" (higher level) which
+        // is earlier in our descending-sorted list (smaller index).
+        const next = e.key === 'ArrowUp' ? list[Math.max(0, idx - 1)] : list[Math.min(list.length - 1, idx + 1)];
+        if (next && next.id !== curId) {
+          st.setCurrentFloorIdForProject(pid, next.id);
+          toast.message(`Floor: ${next.name}`, { duration: 1500 });
+        }
       }
       // Pass 1.6 — arrow nudge. 1 canvas unit per press, 10 with Shift.
       // Works on either the multi selection or the primary sel. Single
@@ -2450,6 +2507,7 @@ export function EngineeringCanvas() {
         {viewMode !== 'canvas' && (
           <TopBar
             floor={floor} setFloor={setFloor}
+            projectId={projectId}
             floorName={currentFloorName ?? 'Floor'}
             snap={snap} setSnap={setSnap}
             units={units} setUnits={setUnits}
@@ -2591,6 +2649,7 @@ export function EngineeringCanvas() {
                 return true;
               }}
               currentFloorPxToFt={currentFloorPxToFt}
+              currentFloorId={currentFloorId}
               snap={snap}
               dragging={!!drag}
               onSurfaceClick={(x, y) => {
@@ -3722,6 +3781,100 @@ function CmdKSection({ title, children }: { title: string; children: React.React
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   FLOOR SWITCHER — Canvas V2 Pass 2A.2
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function FloorSwitcher({ projectId }: { projectId: string }) {
+  const floorsMap = useProjectStore((s) => s.floors);
+  const stickyId  = useProjectStore((s) => s.currentFloorIdByProject[projectId]);
+  const setSticky = useProjectStore((s) => s.setCurrentFloorIdForProject);
+  const projectFloors = useMemo(() => {
+    return Object.values(floorsMap)
+      .filter((f) => f.projectId === projectId)
+      .sort((a, b) => (b.level - a.level) || ((b.createdAt ?? 0) - (a.createdAt ?? 0)));
+  }, [floorsMap, projectId]);
+  const activeId = stickyId || projectFloors.find((f) => f.level === 0)?.id || projectFloors[projectFloors.length - 1]?.id || '';
+  const active = projectFloors.find((f) => f.id === activeId) ?? null;
+
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  // Level badge string. Operators in commercial/multifamily think
+  // in B2 / B1 / G / L2 / L3 — short, unambiguous, building-elevation.
+  const levelBadge = (level: number) => {
+    if (level < 0) return `B${Math.abs(level)}`;
+    if (level === 0) return 'G';
+    return `L${level + 1}`;
+  };
+
+  // Single floor case: render a static badge with a "Single floor"
+  // tooltip, but visually identical to the dropdown so the chrome
+  // doesn't shift when an operator adds a second floor later.
+  const isMulti = projectFloors.length > 1;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        onClick={() => isMulti && setOpen((v) => !v)}
+        title={isMulti ? `${projectFloors.length} floors · ⌘↑ / ⌘↓ to switch` : 'Single floor on this project'}
+        data-track="topbar-floor-switcher"
+        className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border bg-background text-foreground ${isMulti ? 'hover:bg-secondary/40' : 'cursor-default'}`}
+      >
+        <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+        <span>{active?.name || 'Floor'}</span>
+        {active && (
+          <span className="text-[10px] tabular-nums text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5">
+            {levelBadge(active.level)}
+          </span>
+        )}
+        {isMulti && <ChevronDown className="w-3 h-3 text-muted-foreground" />}
+      </button>
+      {open && isMulti && (
+        <div
+          role="listbox"
+          className="absolute left-0 mt-1 min-w-[220px] bg-card border border-border rounded-lg shadow-xl z-[60] overflow-hidden"
+        >
+          {projectFloors.map((f) => {
+            const isActive = f.id === activeId;
+            return (
+              <button
+                key={f.id}
+                role="option"
+                aria-selected={isActive}
+                onClick={() => { setSticky(projectId, f.id); setOpen(false); }}
+                className={`w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'hover:bg-secondary/40 text-foreground'}`}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  {isActive ? <Check className="w-3.5 h-3.5 flex-none" /> : <span className="w-3.5 h-3.5 flex-none" />}
+                  <span className="truncate">{f.name}</span>
+                </span>
+                <span className="text-[10px] tabular-nums text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5">
+                  {levelBadge(f.level)}
+                </span>
+              </button>
+            );
+          })}
+          <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground tracking-wider uppercase">⌘↑ / ⌘↓ to switch</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    UNDO / REDO BUTTONS — Canvas V2 Pass 1.1
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -3772,9 +3925,9 @@ function UndoRedoButtons() {
 
 function TopBar(props: {
   floor: number; setFloor: (n: number) => void;
-  /** Display name of the active floor, read from the store so the badge
-   *  is honest. Multi-floor switching is Pass 2 work; until then this
-   *  badge is a label, not a picker. */
+  /** Active project id for the floor switcher lookup. */
+  projectId: string;
+  /** Display name fallback when the floor list query is empty. */
   floorName: string;
   snap: boolean; setSnap: (b: boolean) => void;
   units: 'ft' | 'm'; setUnits: (u: 'ft' | 'm') => void;
@@ -3824,23 +3977,17 @@ function TopBar(props: {
   }, [moreOpen]);
   return (
     <div
-      className={`shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-3 pr-2 gap-2 text-sm relative z-30 ${compact ? 'h-11' : 'h-12'}`}
+      className={`shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-3 pr-2 gap-2 text-sm relative z-[45] ${compact ? 'h-11' : 'h-12'}`}
     >
       {/* Left — floor + scan/build. Tighter than the previous bar; the project
           title is in the breadcrumb above, so we don't duplicate it here. */}
       <div className="flex items-center gap-2 min-w-0">
-        {/* Active floor badge. Static for now — multi floor switching
-            lands in Canvas V2 Pass 2 when the floor model gains a real
-            selector. Operators see the actual floor name from the
-            store, not a hardcoded sample list. */}
-        <span
-          title="Single floor for now. Multi floor coming."
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border bg-background text-foreground select-none"
-          data-track="topbar-floor-label"
-        >
-          <Layers className="w-3.5 h-3.5 text-muted-foreground" />
-          {props.floorName || 'Floor'}
-        </span>
+        {/* Canvas V2 Pass 2A.2 — real floor picker. Lists every floor
+            on the active project, sorted highest level at top so the
+            list reads like a building elevation. Click any name to
+            switch; Cmd Up / Down keyboard nav lives in the canvas
+            keydown handler. */}
+        <FloorSwitcher projectId={props.projectId} />
         <UndoRedoButtons />
         <button
           onClick={props.onOpenScanBuild}
@@ -6400,6 +6547,9 @@ interface SurfaceProps {
    *  Lives in the parent EngineeringCanvas; passed through here because
    *  CanvasSurface has no store access of its own. */
   currentFloorPxToFt: number;
+  /** Canvas V2 Pass 2A.3 — id of the floor currently being rendered.
+   *  Pathways + downstream overlays filter on this. */
+  currentFloorId: string;
   snap: boolean;
   dragging: boolean;
   onSurfaceClick: (x: number, y: number) => void;
@@ -6497,7 +6647,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -6835,6 +6985,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             endpoints (e.g. PW-1 starts at CAM-101's exact coords), which
             stole every real click. Devices render next. */}
         <PathwaysOverlay
+          floorId={currentFloorId}
           onPickBundle={(bid) => {
             (ref as React.RefObject<SVGSVGElement>).current?.dispatchEvent(
               new CustomEvent('dv-bundle-open', { detail: { bundleId: bid }, bubbles: true }),
@@ -12907,9 +13058,12 @@ function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t
    destination so the user sees "10x Cat6A → IDF-01" at a glance.
    ═══════════════════════════════════════════════════════════════════════ */
 
-function PathwaysOverlay({ onPickBundle, onPickPathway }: {
+function PathwaysOverlay({ onPickBundle, onPickPathway, floorId }: {
   onPickBundle?: (bundleId: string) => void;
   onPickPathway?: (pathwayId: string) => void;
+  /** Canvas V2 Pass 2A.3 — only render pathways that live on the
+   *  active floor. When omitted, defaults to rendering all (legacy). */
+  floorId?: string;
 }) {
   const pathways = useProjectStore((s) => s.pathways);
   // Group bundle paths so we collapse a 10-camera bundle into ONE label
@@ -12922,11 +13076,12 @@ function PathwaysOverlay({ onPickBundle, onPickPathway }: {
     const standalone: any[] = [];
     for (const p of arr) {
       if (!p || !Array.isArray(p.points) || p.points.length < 2) continue;
+      if (floorId && p.floorId !== floorId) continue;
       if (p.bundleId) (bundles[p.bundleId] ??= []).push(p);
       else standalone.push(p);
     }
     return { bundles, standalone };
-  }, [pathways]);
+  }, [pathways, floorId]);
   return (
     <g>
       {/* Standalone routes — cables AND standalone conduit / J-hook /
