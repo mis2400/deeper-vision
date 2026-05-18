@@ -799,6 +799,24 @@ export interface ProjectPricebook {
 // `version` is the envelope schema version, NOT the store persist
 // version. Bump when the envelope shape changes.
 
+/** Summary returned by `importProjectState` so callers can surface
+ *  a single end-of-import toast rather than spamming one per
+ *  rejected record. Counts attachments accepted, attachments dropped
+ *  for validation failure or projectId mismatch, and attachments
+ *  whose id collided with a preserved (different-project) record so
+ *  the import had to rename them. */
+export interface ImportSummary {
+  acceptedAttachments: number;
+  rejectedAttachments: number;
+  /** Per-reason counts, suitable for human-readable concatenation
+   *  ("3 · bad-dataUrl · 1 · oversize-fileSize"). */
+  rejectionReasons: Record<string, number>;
+  /** Number of incoming attachments whose id was already in use by a
+   *  different project; import renamed them with an `-imp-...`
+   *  suffix to preserve the existing record. */
+  renamedAttachments: number;
+}
+
 export interface ProjectStateEnvelope {
   /** Always "deeper-vision-project-state" so we can refuse to import
    *  arbitrary JSON. */

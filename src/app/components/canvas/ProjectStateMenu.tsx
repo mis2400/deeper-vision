@@ -135,11 +135,27 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
   const applyImport = useCallback(() => {
     if (!pendingImport) return;
     try {
-      importProjectState(pendingImport);
-      toast.success('Project state imported', {
-        description: `Replaced ${pendingImport.projectId} · ${pendingImport.summary.deviceCount} devices · ${pendingImport.summary.pathwayCount} pathways`,
-        duration: 4000,
-      });
+      const summary = importProjectState(pendingImport);
+      const baseDesc = `Replaced ${pendingImport.projectId} · ${pendingImport.summary.deviceCount} devices · ${pendingImport.summary.pathwayCount} pathways`;
+      const attLines: string[] = [];
+      if (summary.acceptedAttachments > 0) {
+        attLines.push(`${summary.acceptedAttachments} attachment${summary.acceptedAttachments === 1 ? '' : 's'} kept`);
+      }
+      if (summary.renamedAttachments > 0) {
+        attLines.push(`${summary.renamedAttachments} renamed (id collision)`);
+      }
+      const description = attLines.length > 0
+        ? `${baseDesc} · ${attLines.join(' · ')}`
+        : baseDesc;
+      toast.success('Project state imported', { description, duration: 4500 });
+      if (summary.rejectedAttachments > 0) {
+        const reasonSummary = Object.entries(summary.rejectionReasons)
+          .map(([reason, count]) => `${count} · ${reason}`).join(' · ');
+        toast.error(`${summary.rejectedAttachments} attachment${summary.rejectedAttachments === 1 ? '' : 's'} dropped`, {
+          description: reasonSummary + ' · entries failed shape, MIME, size, or projectId checks.',
+          duration: 7000,
+        });
+      }
       setPendingImport(null);
       onAfterStateReplaced?.();
     } catch (err: any) {
@@ -183,11 +199,21 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
   const applyRestoreSnapshot = useCallback(() => {
     if (!pendingRestore) return;
     try {
-      restoreLocalSnapshot(pendingRestore.id);
-      toast.success('Snapshot restored', {
-        description: `${pendingRestore.name} · ${pendingRestore.envelope.summary.deviceCount} devices`,
-        duration: 3500,
-      });
+      const { summary } = restoreLocalSnapshot(pendingRestore.id);
+      const baseDesc = `${pendingRestore.name} · ${pendingRestore.envelope.summary.deviceCount} devices`;
+      const attLines: string[] = [];
+      if (summary.acceptedAttachments > 0) attLines.push(`${summary.acceptedAttachments} attachment${summary.acceptedAttachments === 1 ? '' : 's'} kept`);
+      if (summary.renamedAttachments > 0)  attLines.push(`${summary.renamedAttachments} renamed (id collision)`);
+      const description = attLines.length > 0 ? `${baseDesc} · ${attLines.join(' · ')}` : baseDesc;
+      toast.success('Snapshot restored', { description, duration: 3800 });
+      if (summary.rejectedAttachments > 0) {
+        const reasonSummary = Object.entries(summary.rejectionReasons)
+          .map(([reason, count]) => `${count} · ${reason}`).join(' · ');
+        toast.error(`${summary.rejectedAttachments} attachment${summary.rejectedAttachments === 1 ? '' : 's'} dropped from snapshot`, {
+          description: reasonSummary + ' · entries failed shape, MIME, size, or projectId checks.',
+          duration: 7000,
+        });
+      }
       setPendingRestore(null);
       setSnapshotBump((b) => b + 1);
       onAfterStateReplaced?.();

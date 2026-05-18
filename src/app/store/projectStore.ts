@@ -278,8 +278,10 @@ interface ProjectState {
   // ── Project state export / import (shared-demo sync) ──
   /** Replace this project's slice of the store with the contents of an
    *  exported envelope. Other projects' state is preserved. Throws if
-   *  the envelope kind/version doesn't match. */
-  importProjectState: (envelope: import('./types').ProjectStateEnvelope) => void;
+   *  the envelope kind/version doesn't match. Returns an `ImportSummary`
+   *  so callers can render a single end-of-import toast covering
+   *  attachment validation rejections + id-collision renames. */
+  importProjectState: (envelope: import('./types').ProjectStateEnvelope) => import('./types').ImportSummary;
 
   // ── Field deployment / work order actions ──
   /** Patch the persisted progress for a derived work order. The progress
@@ -849,7 +851,13 @@ export const useProjectStore = create<ProjectState>()(
       // Replaces only the imported project's records, preserving other
       // projects in the same store. The corresponding export helper
       // lives below as `exportProjectState` (pure function).
-      importProjectState: (env) => set((s) => {
+      //
+      // T3 layer: attachment validation runs OUTSIDE the set updater
+      // so the action can return an ImportSummary covering accepted /
+      // rejected (with per-reason counts) / renamed-on-collision
+      // counts. Callers (ProjectStateMenu, projectSync) surface this
+      // in a single toast.
+      importProjectState: (env) => {
         if (!env || env.kind !== 'deeper-vision-project-state') {
           throw new Error('Not a Deeper Vision project state envelope.');
         }
@@ -857,6 +865,73 @@ export const useProjectStore = create<ProjectState>()(
           throw new Error(`Envelope version ${env.version} is not supported.`);
         }
         const pid = env.projectId;
+
+        // ── Attachment pre-validation (outside set so we can return
+        //    a summary). Validate shape + size, enforce projectId
+        //    match, prepare id-collision renames against the
+        //    preserved (other-project) attachments. The set updater
+        //    below splices the cleaned list straight in.
+        const incomingAttachments = env.data.attachments ?? [];
+        // ID-collision policy: when an incoming attachment id is
+        // already in use by a DIFFERENT project's preserved record,
+        // RENAME the incoming with an `-imp-{shortRandom}` suffix
+        // rather than overwrite or skip. Rationale: the snapshot is
+        // the authoritative source for THIS project's slice, but it
+        // must never erase a sibling project's data, and silently
+        // dropping a legitimate-shape attachment would lose the
+        // import. Documented in the ImportSummary type.
+        //
+        // TOCTOU note: we read `getState().attachments` here, then
+        // the set() updater below reads `s.attachments`. JS is
+        // single-threaded and importProjectState is fully sync, so
+        // the two reads always see the same snapshot. If this action
+        // ever becomes async (server validation, etc.), move the
+        // preserved-ids computation inside the set updater so both
+        // reads come from the same `s` parameter.
+        const preservedAttachmentIds = new Set<string>(
+          Object.entries(useProjectStore.getState().attachments)
+            .filter(([, a]) => a.projectId !== pid)
+            .map(([id]) => id),
+        );
+        const cleanedAttachments: import('./types').Attachment[] = [];
+        let acceptedAttachments = 0;
+        let rejectedAttachments = 0;
+        let renamedAttachments = 0;
+        const rejectionReasons: Record<string, number> = {};
+        const bumpReason = (r: string) => { rejectionReasons[r] = (rejectionReasons[r] ?? 0) + 1; };
+        // Track ids seen within this envelope so duplicate ids in the
+        // same envelope are also renamed rather than silently
+        // last-write-wins.
+        const seenInEnvelope = new Set<string>();
+        for (const candidate of incomingAttachments) {
+          const result = validateAttachment(candidate);
+          if (!result.ok) {
+            rejectedAttachments++;
+            bumpReason(result.reason);
+            continue;
+          }
+          if (result.value.projectId !== pid) {
+            rejectedAttachments++;
+            bumpReason('projectId-mismatch');
+            continue;
+          }
+          let finalId = result.value.id;
+          // Rename UNTIL UNIQUE, not just once. Single-shot rename
+          // with a 6 base36 suffix had a ppb-level second-order
+          // collision risk that would silently clobber preserved
+          // records. Looping until the id is free closes the gap.
+          if (preservedAttachmentIds.has(finalId) || seenInEnvelope.has(finalId)) {
+            do {
+              finalId = `${result.value.id}-imp-${Math.random().toString(36).slice(2, 8)}`;
+            } while (preservedAttachmentIds.has(finalId) || seenInEnvelope.has(finalId));
+            renamedAttachments++;
+          }
+          seenInEnvelope.add(finalId);
+          cleanedAttachments.push({ ...result.value, id: finalId });
+          acceptedAttachments++;
+        }
+
+        set((s) => {
         // Compute the set of object-ids that belong to this project so
         // we can drop surveyItems + workOrderProgress entries that
         // reference them (they're rewritten from the envelope below).
@@ -934,51 +1009,26 @@ export const useProjectStore = create<ProjectState>()(
           patch.projectPricebooks = restPb;
         }
         // Attachments: replace ONLY this project's attachments;
-        // other projects' attachments are preserved. Absence of an
-        // `attachments` array in the envelope means "no attachments
-        // on the source machine for this project".
-        //
-        // T2 layer (shape + size + projectId-match validation): drop
-        // entries that fail the same schema/size checks the upload
-        // path enforces, AND drop any whose projectId doesn't match
-        // the envelope's project so a malicious envelope can't
-        // overwrite another project's attachments via id collision.
-        // T3 will layer id-collision policy + summary toast on top
-        // of this baseline.
-        const incomingAttachments = env.data.attachments ?? [];
+        // other projects' attachments are preserved. Cleaned-and-
+        // renamed list from the T3 pre-validation block above is
+        // spliced in here. ID-collision renames already applied;
+        // projectId mismatches already filtered.
         const keptAttachments: Record<string, import('./types').Attachment> = {};
         for (const [aid, a] of Object.entries(s.attachments)) {
           if (a.projectId !== pid) keptAttachments[aid] = a;
         }
-        let droppedOnImport = 0;
-        for (const candidate of incomingAttachments) {
-          const result = validateAttachment(candidate);
-          if (!result.ok) {
-            droppedOnImport++;
-            // eslint-disable-next-line no-console
-            console.warn(`[importProjectState] dropping invalid attachment: ${result.reason}`, candidate);
-            continue;
-          }
-          // Cross-project overwrite guard: even a shape-valid
-          // attachment must match the envelope's projectId. Without
-          // this, an envelope for project A carrying an attachment
-          // tagged projectId='B' would clobber project B's
-          // legitimate attachment if ids collided.
-          if (result.value.projectId !== pid) {
-            droppedOnImport++;
-            // eslint-disable-next-line no-console
-            console.warn(`[importProjectState] dropping attachment with mismatched projectId: ${result.value.projectId} != ${pid}`);
-            continue;
-          }
-          keptAttachments[result.value.id] = result.value;
-        }
-        if (droppedOnImport > 0) {
-          // eslint-disable-next-line no-console
-          console.warn(`[importProjectState] dropped ${droppedOnImport} invalid attachment(s) from ${incomingAttachments.length} incoming. T3 will surface a UI toast.`);
-        }
+        for (const a of cleanedAttachments) keptAttachments[a.id] = a;
         patch.attachments = keptAttachments;
         return patch;
-      }),
+      });
+
+      return {
+        acceptedAttachments,
+        rejectedAttachments,
+        rejectionReasons,
+        renamedAttachments,
+      };
+      },
 
       // ── Work order progress actions ─────────────────────────────
       // The full WorkOrder shape (kind / title / checklist) is re-derived

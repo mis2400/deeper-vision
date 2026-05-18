@@ -16,7 +16,7 @@
 import {
   useProjectStore, exportProjectState, selectors, deriveWorkOrders,
 } from '../store/projectStore';
-import type { ProjectStateEnvelope } from '../store/types';
+import type { ProjectStateEnvelope, ImportSummary } from '../store/types';
 import { buildLabel } from '../../build-info';
 
 // ─── Persistence ──────────────────────────────────────────────────
@@ -192,13 +192,16 @@ export function listLocalSnapshots(projectId: string): LocalSnapshot[] {
 
 /** Restore a snapshot. Replaces local state for the snapshot's project
  *  (other projects in the browser are preserved, just like
- *  `importProjectState`). Throws if the snapshot doesn't exist. */
-export function restoreLocalSnapshot(snapshotId: string): LocalSnapshot {
+ *  `importProjectState`). Throws if the snapshot doesn't exist.
+ *  Returns the snapshot AND the ImportSummary from the underlying
+ *  import so the caller can surface attachment validation / rename
+ *  counts in its toast. */
+export function restoreLocalSnapshot(snapshotId: string): { snapshot: LocalSnapshot; summary: ImportSummary } {
   const all = readAllSnapshots();
   const snap = all[snapshotId];
   if (!snap) throw new Error(`Snapshot ${snapshotId} not found.`);
-  useProjectStore.getState().importProjectState(snap.envelope);
-  return snap;
+  const summary = useProjectStore.getState().importProjectState(snap.envelope);
+  return { snapshot: snap, summary };
 }
 
 /** Drop a snapshot from local storage. No-op if it doesn't exist. */
@@ -218,7 +221,9 @@ export function exportProjectEnvelope(projectId: string): ProjectStateEnvelope {
   return exportProjectState(state, projectId, { buildLabel: buildLabel() });
 }
 
-/** Apply an envelope to the live store. Throws on shape mismatch. */
-export function importProjectEnvelope(envelope: ProjectStateEnvelope): void {
-  useProjectStore.getState().importProjectState(envelope);
+/** Apply an envelope to the live store. Throws on shape mismatch.
+ *  Returns the ImportSummary so the caller can surface attachment
+ *  validation / rename counts in its UI. */
+export function importProjectEnvelope(envelope: ProjectStateEnvelope): ImportSummary {
+  return useProjectStore.getState().importProjectState(envelope);
 }
