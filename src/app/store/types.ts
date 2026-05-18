@@ -1463,3 +1463,31 @@ export interface IntegrationRecord {
   /** Operator's friendly note attached to the connection. */
   note?: string;
 }
+
+// ─────────────────────────── Team (Phase 3D) ──────────────────────
+// Workspace member directory. Distinct from CRM Contacts (which
+// represent the integrator's customers); these are operator
+// teammates with workspace access.
+
+export type WorkspaceRoleId =
+  | 'owner' | 'admin' | 'engineer' | 'sales' | 'field' | 'customer'
+  | string; // custom roles (Enterprise tier) come through as freeform strings
+
+export type WorkspaceInviteStatus = 'pending' | 'accepted' | 'revoked';
+
+export interface WorkspaceMember {
+  id: string;
+  fullName: string;
+  email: string;
+  role: WorkspaceRoleId;
+  /** When the operator invited / added them. */
+  addedAt: number;
+  /** Last active stamp — null for never. */
+  lastActiveAt?: number;
+  /** Invite status. Members invited via the modal start as 'pending'
+   *  until the backend confirms — today the operator can mark
+   *  accepted manually. Real auth lands separately. */
+  inviteStatus: WorkspaceInviteStatus;
+  /** Optional list of project ids the member is on. Empty = all. */
+  projectIds?: string[];
+}

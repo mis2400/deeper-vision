@@ -20,6 +20,7 @@ import {
   UserPrefs, DEFAULT_USER_PREFS,
   BillingState, DEFAULT_BILLING, Invoice, PaymentMethod, PlanTier, BillingCycle,
   IntegrationId, IntegrationStatus, IntegrationRecord,
+  WorkspaceMember, WorkspaceRoleId, WorkspaceInviteStatus,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -120,6 +121,8 @@ export interface ProjectState {
    *  IntegrationId. Only integrations the operator has touched are
    *  in the map; anything missing is 'available'. */
   integrations: Record<IntegrationId, IntegrationRecord>;
+  /** Workspace team directory — Phase 3D. Keyed by member id. */
+  workspaceMembers: Record<string, WorkspaceMember>;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -374,6 +377,13 @@ export interface ProjectState {
   setIntegrationStatus: (id: IntegrationId, status: IntegrationStatus) => void;
   /** Record a sync timestamp on an integration. */
   recordIntegrationSync: (id: IntegrationId) => void;
+  /** Add a workspace member. Caller supplies the record (id, email,
+   *  role, etc.). Used by the invite flow + bulk CSV invite. */
+  addWorkspaceMember: (m: WorkspaceMember) => void;
+  /** Patch a workspace member's fields (role, invite status, etc.). */
+  patchWorkspaceMember: (id: string, patch: Partial<WorkspaceMember>) => void;
+  /** Remove a workspace member outright. */
+  removeWorkspaceMember: (id: string) => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -412,6 +422,7 @@ export const useProjectStore = create<ProjectState>()(
       userPrefs:         { ...DEFAULT_USER_PREFS },
       billing:           { ...DEFAULT_BILLING },
       integrations:      {} as Record<IntegrationId, IntegrationRecord>,
+      workspaceMembers:  {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1462,6 +1473,19 @@ export const useProjectStore = create<ProjectState>()(
           if (!prev) return s;
           return { integrations: { ...s.integrations, [id]: { ...prev, lastSyncAt: Date.now() } } };
         }),
+      addWorkspaceMember: (m) =>
+        set((s) => ({ workspaceMembers: { ...s.workspaceMembers, [m.id]: m } })),
+      patchWorkspaceMember: (id, patch) =>
+        set((s) => {
+          const prev = s.workspaceMembers[id];
+          if (!prev) return s;
+          return { workspaceMembers: { ...s.workspaceMembers, [id]: { ...prev, ...patch } } };
+        }),
+      removeWorkspaceMember: (id) =>
+        set((s) => {
+          const { [id]: _drop, ...rest } = s.workspaceMembers;
+          return { workspaceMembers: rest };
+        }),
       setAssistantContext: (ctx) =>
         set((s) => {
           if (ctx == null) return { assistantContext: null };
@@ -1484,11 +1508,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 12,
+      version: 13,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1644,6 +1668,11 @@ export const useProjectStore = create<ProjectState>()(
           persisted.integrations ??= {};
           if (typeof persisted.integrations !== 'object') persisted.integrations = {};
         }
+        if (version < 13) {
+          // v12 → v13: introduce workspace member directory.
+          persisted.workspaceMembers ??= {};
+          if (typeof persisted.workspaceMembers !== 'object') persisted.workspaceMembers = {};
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -1700,6 +1729,7 @@ export const useProjectStore = create<ProjectState>()(
         userPrefs:         s.userPrefs,
         billing:           s.billing,
         integrations:      s.integrations,
+        workspaceMembers:  s.workspaceMembers,
       }),
     },
   ),

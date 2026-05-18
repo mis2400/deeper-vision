@@ -4,12 +4,12 @@
 // landing real Billing / Integrations / Team / Notifications /
 // Security / Advanced surfaces.
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { User, CreditCard, Plug, Users, Bell, Lock, Check, FileDown, Trash2, RefreshCw, Search } from 'lucide-react';
+import { User, CreditCard, Plug, Users, Bell, Lock, Check, FileDown, Trash2, RefreshCw, Search, UserPlus, Upload as UploadIcon, MoreHorizontal } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
-import type { PlanTier, BillingCycle, Invoice, PaymentMethod, IntegrationId } from '../store/types';
+import type { PlanTier, BillingCycle, Invoice, PaymentMethod, IntegrationId, WorkspaceMember, WorkspaceRoleId } from '../store/types';
 import { toast } from 'sonner';
 
 type Section = 'account' | 'billing' | 'integrations' | 'team' | 'notifications' | 'security';
@@ -847,26 +847,257 @@ function formatAgo(ts: number): string {
   return `${d}d ago`;
 }
 
+// ─────────────────────────── Team (Phase 3D) ──────────────────────
+
+const WORKSPACE_ROLES: Array<{ id: WorkspaceRoleId; label: string; hint: string }> = [
+  { id: 'owner',     label: 'Owner',          hint: 'Full workspace control. Cannot be removed.' },
+  { id: 'admin',     label: 'Admin',          hint: 'Manage members, billing, and integrations.' },
+  { id: 'engineer',  label: 'Engineer',       hint: 'Canvas, devices, pathways. Full project edit.' },
+  { id: 'sales',     label: 'Sales',          hint: 'Pipeline, proposals, customer-facing surfaces.' },
+  { id: 'field',     label: 'Field tech',     hint: 'Install + commissioning + work orders.' },
+  { id: 'customer',  label: 'Customer',       hint: 'Read-only portal access for the project owner.' },
+];
+const ROLE_LABEL: Record<string, string> = Object.fromEntries(WORKSPACE_ROLES.map((r) => [r.id, r.label]));
+
 function Team() {
-  const team = [
-    { n: 'Casey Park',  e: 'casey@deepervision.com',  r: 'Owner' },
-    { n: 'Mei Lin',     e: 'mei@deepervision.com',    r: 'Engineer' },
-    { n: 'Diego Reyes', e: 'diego@deepervision.com',  r: 'Technician' },
-    { n: 'Jordan Kim',  e: 'jordan@deepervision.com', r: 'Network' },
-  ];
+  const members = useProjectStore((s) => s.workspaceMembers);
+  const addMember = useProjectStore((s) => s.addWorkspaceMember);
+  const patchMember = useProjectStore((s) => s.patchWorkspaceMember);
+  const removeMember = useProjectStore((s) => s.removeWorkspaceMember);
+  const userEmail = useProjectStore((s) => s.userPrefs.email);
+
+  const memberList = useMemo(
+    () => Object.values(members).sort((a, b) => a.fullName.localeCompare(b.fullName)),
+    [members],
+  );
+
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteName, setInviteName] = useState('');
+  const [inviteRole, setInviteRole] = useState<WorkspaceRoleId>('engineer');
+
+  const onInvite = () => {
+    const email = inviteEmail.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Enter a valid email.');
+      return;
+    }
+    if (Object.values(members).some((m) => m.email.toLowerCase() === email.toLowerCase())) {
+      toast.error('That email is already a member.');
+      return;
+    }
+    const id = `m-${Date.now().toString(36)}`;
+    addMember({
+      id,
+      fullName: inviteName.trim() || email.split('@')[0],
+      email,
+      role: inviteRole,
+      addedAt: Date.now(),
+      inviteStatus: 'pending',
+    });
+    setInviteEmail(''); setInviteName(''); setInviteRole('engineer');
+    setInviteOpen(false);
+    toast.success(`Invite ready for ${email}. Sends when the auth backend ships.`);
+  };
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const onCsvPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    // Parse CSV: expect columns `email`, `name?`, `role?`. Tolerant
+    // of header / no header. Skip blank lines.
+    const rows = text.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+    let added = 0;
+    let skipped = 0;
+    let invalid = 0;
+    const existing = new Set(Object.values(members).map((m) => m.email.toLowerCase()));
+    for (const raw of rows) {
+      const cells = raw.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+      const email = cells[0];
+      if (!email || email.toLowerCase() === 'email') continue; // header
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { invalid++; continue; }
+      if (existing.has(email.toLowerCase())) { skipped++; continue; }
+      const name = cells[1] || email.split('@')[0];
+      const role = (cells[2] && WORKSPACE_ROLES.some((r) => r.id === cells[2])) ? cells[2] : 'engineer';
+      const id = `m-${Date.now().toString(36)}-${added}`;
+      addMember({
+        id, fullName: name, email, role: role as WorkspaceRoleId,
+        addedAt: Date.now(), inviteStatus: 'pending',
+      });
+      existing.add(email.toLowerCase());
+      added++;
+    }
+    if (fileRef.current) fileRef.current.value = '';
+    toast.success(`Bulk invite parsed: ${added} added${skipped > 0 ? `, ${skipped} skipped (duplicate)` : ''}${invalid > 0 ? `, ${invalid} invalid` : ''}.`);
+  };
+
+  // Seed a single "you" record on first load so the directory isn't
+  // empty. Operator can rename / promote / remove like any other
+  // member. Only happens when the directory is empty AND we have a
+  // viable email to anchor on.
+  useEffect(() => {
+    if (memberList.length === 0 && userEmail) {
+      addMember({
+        id: 'm-self',
+        fullName: useProjectStore.getState().userPrefs.fullName ?? 'You',
+        email: userEmail,
+        role: 'owner',
+        addedAt: Date.now(),
+        lastActiveAt: Date.now(),
+        inviteStatus: 'accepted',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <Panel title="Members">
-      {team.map((m) => (
-        <div key={m.e} className="flex items-center justify-between py-1.5 border-b border-border last:border-b-0">
-          <div>
-            <div className="text-sm">{m.n}</div>
-            <div className="text-xs text-muted-foreground">{m.e}</div>
-          </div>
-          <span className="text-xs text-muted-foreground">{m.r}</span>
+    <>
+      <Panel
+        title="Members"
+        subtitle={`${memberList.length} member${memberList.length === 1 ? '' : 's'}. Invite delivery + auth handshake land with the auth backend.`}
+      >
+        <div className="flex items-center justify-end gap-2 mb-3">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={onCsvPick}
+            className="hidden"
+            data-testid="team-csv-input"
+          />
+          <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+            <UploadIcon className="w-3.5 h-3.5 mr-1" />Bulk invite (CSV)
+          </Button>
+          <Button size="sm" onClick={() => setInviteOpen(true)}>
+            <UserPlus className="w-3.5 h-3.5 mr-1" />Invite member
+          </Button>
         </div>
-      ))}
-      <Button size="sm" className="mt-2">Invite teammate</Button>
-    </Panel>
+
+        {memberList.length === 0 ? (
+          <div className="text-[12px] text-muted-foreground text-center py-6 border border-dashed border-border rounded-md">
+            No members yet. Invite your first teammate above.
+          </div>
+        ) : (
+          <div className="overflow-hidden border border-border rounded-md">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 text-[10px] uppercase tracking-[0.10em] text-muted-foreground">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium">Member</th>
+                  <th className="text-left px-3 py-2 font-medium">Role</th>
+                  <th className="text-left px-3 py-2 font-medium">Status</th>
+                  <th className="text-left px-3 py-2 font-medium">Last active</th>
+                  <th className="text-right px-3 py-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {memberList.map((m) => (
+                  <tr key={m.id} className="border-t border-border" data-testid={`team-member-${m.id}`}>
+                    <td className="px-3 py-2">
+                      <div className="text-[12.5px] font-medium">{m.fullName}</div>
+                      <div className="text-[10.5px] text-muted-foreground">{m.email}</div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={m.role}
+                        onChange={(e) => { patchMember(m.id, { role: e.target.value as WorkspaceRoleId }); toast.success(`${m.fullName} → ${ROLE_LABEL[e.target.value] ?? e.target.value}.`, { duration: 2000 }); }}
+                        disabled={m.role === 'owner'}
+                        className="text-[12px] bg-input-background border border-input-border rounded px-2 py-1 focus:outline-none focus:border-primary disabled:opacity-60"
+                      >
+                        {WORKSPACE_ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`text-[10.5px] uppercase tracking-[0.10em] ${m.inviteStatus === 'accepted' ? 'text-emerald-600' : m.inviteStatus === 'pending' ? 'text-amber-600' : 'text-rose-600'}`}>
+                        {m.inviteStatus}
+                      </span>
+                      {m.inviteStatus === 'pending' && (
+                        <button
+                          onClick={() => { patchMember(m.id, { inviteStatus: 'accepted', lastActiveAt: Date.now() }); toast.success(`${m.fullName} marked accepted.`); }}
+                          className="ml-2 text-[10.5px] text-primary hover:underline"
+                        >Mark accepted</button>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-[11.5px] text-muted-foreground">
+                      {m.lastActiveAt ? formatAgo(m.lastActiveAt) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {m.role !== 'owner' && (
+                        <button
+                          onClick={() => {
+                            if (!confirm(`Remove ${m.fullName} from the workspace?`)) return;
+                            removeMember(m.id);
+                            toast.message(`${m.fullName} removed.`);
+                          }}
+                          className="text-muted-foreground hover:text-destructive p-1 rounded"
+                          title="Remove member"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Invite modal */}
+        {inviteOpen && (
+          <div role="dialog" aria-modal className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="bg-card border border-border-strong rounded-xl shadow-2xl max-w-md w-full p-5">
+              <h2 className="text-base font-medium">Invite a member</h2>
+              <p className="text-[12px] text-muted-foreground mt-1 mb-4">
+                Email goes pending until the auth backend ships. Role can change later.
+              </p>
+              <div className="space-y-3">
+                <Field label="Email"><Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="teammate@company.com" autoFocus /></Field>
+                <Field label="Display name"><Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Optional. Defaults to the email handle." /></Field>
+                <Field label="Role">
+                  <Select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as WorkspaceRoleId)}>
+                    {WORKSPACE_ROLES.filter((r) => r.id !== 'owner').map((r) => (
+                      <option key={r.id} value={r.id}>{r.label}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              <div className="flex items-center justify-end gap-2 mt-4">
+                <Button size="sm" variant="ghost" onClick={() => setInviteOpen(false)}>Cancel</Button>
+                <Button size="sm" onClick={onInvite}>Send invite</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Panel>
+
+      <Panel title="Role definitions">
+        <ul className="space-y-2">
+          {WORKSPACE_ROLES.map((r) => (
+            <li key={r.id} className="text-[12px]">
+              <span className="font-medium text-foreground">{r.label}</span>
+              <span className="text-muted-foreground"> · {r.hint}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="text-[10.5px] text-muted-foreground/70 mt-3">
+          Custom roles ship on the Enterprise tier. Today the role field accepts any of the built-in ids above.
+        </div>
+      </Panel>
+
+      <Panel title="Bulk invite via CSV" subtitle="CSV columns, in order: email, name (optional), role (optional). Header row tolerated. Duplicates are skipped.">
+        <div className="text-[12px] text-muted-foreground space-y-2">
+          <div>Drop a CSV through the "Bulk invite (CSV)" button above. The parser:</div>
+          <ul className="ml-4 space-y-0.5 list-disc">
+            <li>tolerates a header row whose first cell is "email";</li>
+            <li>validates each email against a basic format check;</li>
+            <li>defaults the role to <span className="font-medium">engineer</span> when missing or unrecognised;</li>
+            <li>skips duplicates (case-insensitive on the email column);</li>
+            <li>reports counts via the result toast.</li>
+          </ul>
+        </div>
+      </Panel>
+    </>
   );
 }
 
