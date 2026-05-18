@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { ArrowRight, ArrowLeft, Check, Users, Building2, Shield, Scale, FileCheck } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Check, Users, Building2, Shield, Scale, FileCheck, Hammer } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import type { Address, Customer, Industry, Project, Site, Building, Floor, Contact } from '../store/types';
 
@@ -25,7 +25,7 @@ const INDUSTRY_BY_BUILDING_TYPE: Record<string, Industry> = {
   'Industrial': 'manufacturing',
 };
 
-type Step = 'client' | 'site' | 'threat' | 'compliance' | 'review';
+type Step = 'client' | 'site' | 'scope' | 'threat' | 'compliance' | 'review';
 
 const COMPLIANCE = [
   { id: 'hipaa', label: 'HIPAA' }, { id: 'pci', label: 'PCI-DSS' }, { id: 'cjis', label: 'CJIS' },
@@ -38,22 +38,51 @@ const THREAT_LEVELS = [
   { id: 'low', label: 'Low' }, { id: 'moderate', label: 'Moderate' }, { id: 'high', label: 'High' }, { id: 'critical', label: 'Critical' },
 ];
 
+// V1 4C — Scope step library.
+const SCOPE_KINDS: Array<{ id: 'new-build' | 'retrofit' | 'expansion' | 'managed-service-takeover'; label: string; hint: string }> = [
+  { id: 'new-build',                 label: 'New build',           hint: 'Greenfield install from intake to handover.' },
+  { id: 'retrofit',                  label: 'Retrofit',            hint: 'Replace or upgrade existing infrastructure.' },
+  { id: 'expansion',                 label: 'Expansion',           hint: 'Extend coverage into a new floor / building.' },
+  { id: 'managed-service-takeover',  label: 'Managed takeover',    hint: 'Inherit + maintain a system someone else installed.' },
+];
+const EXISTING_SYSTEMS: Array<{ id: 'camera-vms' | 'access-control' | 'intrusion' | 'fire-alarm' | 'network' | 'bas' | 'none'; label: string }> = [
+  { id: 'camera-vms',     label: 'Camera VMS' },
+  { id: 'access-control', label: 'Access control' },
+  { id: 'intrusion',      label: 'Intrusion' },
+  { id: 'fire-alarm',     label: 'Fire alarm' },
+  { id: 'network',        label: 'Network infrastructure' },
+  { id: 'bas',            label: 'Building automation' },
+  { id: 'none',           label: 'None / greenfield' },
+];
+const BUDGETS: Array<{ id: 'under-50k' | '50k-150k' | '150k-500k' | '500k-2m' | 'over-2m'; label: string; midpoint: number }> = [
+  { id: 'under-50k',  label: 'Under $50k',     midpoint: 25_000 },
+  { id: '50k-150k',   label: '$50k – $150k',   midpoint: 100_000 },
+  { id: '150k-500k',  label: '$150k – $500k',  midpoint: 325_000 },
+  { id: '500k-2m',    label: '$500k – $2M',    midpoint: 1_250_000 },
+  { id: 'over-2m',    label: 'Over $2M',       midpoint: 3_000_000 },
+];
+
 export function SiteIntake() {
   const navigate = useNavigate();
   const { projectId } = useParams();
   const [step, setStep] = useState<Step>('client');
   const [client, setClient] = useState({ company: '', contact: '', email: '', phone: '' });
   const [site, setSite] = useState({ address: '', city: '', state: '', zip: '', sqft: '', floors: '1', type: '' });
+  // V1 4C — Scope step state. Kind starts empty so we can tell the
+  // difference between "user picked retrofit" and "user skipped the step";
+  // downstream defaults must not lie about user input.
+  const [scope, setScope] = useState<{ kind: typeof SCOPE_KINDS[number]['id'] | ''; existing: Set<typeof EXISTING_SYSTEMS[number]['id']>; budget: typeof BUDGETS[number]['id'] | '' }>({ kind: '', existing: new Set(), budget: '' });
   const [threat, setThreat] = useState({ level: 'moderate', notes: '' });
   const [comp, setComp] = useState<Set<string>>(new Set());
   const [ahj, setAhj] = useState({ jurisdiction: '', permit: true, kickoff: '', target: '' });
 
   const steps: Array<{ id: Step; label: string; icon: any }> = [
-    { id: 'client', label: 'Client', icon: Users },
-    { id: 'site', label: 'Site', icon: Building2 },
-    { id: 'threat', label: 'Threat', icon: Shield },
+    { id: 'client',     label: 'Client',     icon: Users },
+    { id: 'site',       label: 'Site',       icon: Building2 },
+    { id: 'scope',      label: 'Scope',      icon: Hammer },
+    { id: 'threat',     label: 'Threat',     icon: Shield },
     { id: 'compliance', label: 'Compliance', icon: Scale },
-    { id: 'review', label: 'Review', icon: FileCheck },
+    { id: 'review',     label: 'Review',     icon: FileCheck },
   ];
   const idx = steps.findIndex((s) => s.id === step);
 
@@ -125,6 +154,11 @@ export function SiteIntake() {
         ? `Site walk · kickoff ${ahj.kickoff}`
         : 'Schedule the site walk';
       const dueDate = ahj.target ? new Date(ahj.target).getTime() : undefined;
+      // 4C: persist the scope step. budget midpoint seeds contractValue so the
+      // pipeline / dashboard show realistic numbers from intake forward. Only
+      // write fields the user actually picked — don't fabricate a scopeKind.
+      const budgetDef = BUDGETS.find((b) => b.id === scope.budget);
+      const existingSystemsArr = scope.existing.size ? Array.from(scope.existing) : undefined;
       const newProject: Project = {
         id: newProjectId,
         name: projectName,
@@ -140,6 +174,10 @@ export function SiteIntake() {
         healthStatus: 'on_track',
         priority: threat.level === 'critical' || threat.level === 'high' ? 'high' : 'normal',
         progress: 0,
+        scopeKind: scope.kind || undefined,
+        existingSystems: existingSystemsArr,
+        budgetRange: scope.budget || undefined,
+        contractValue: budgetDef?.midpoint,
       };
       addProject(newProject);
 
@@ -229,6 +267,75 @@ export function SiteIntake() {
               </div>
             </div>
           )}
+          {step === 'scope' && (
+            <div className="space-y-5">
+              <div>
+                <label className="text-xs text-muted-foreground">Project type</label>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {SCOPE_KINDS.map((k) => {
+                    const on = scope.kind === k.id;
+                    return (
+                      <button key={k.id} onClick={() => setScope({ ...scope, kind: k.id })} className={`p-3 rounded-md border text-left transition-colors ${on ? 'border-primary bg-primary/10' : 'border-border hover:border-border-strong'}`}>
+                        <div className="text-sm">{k.label}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{k.hint}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Existing systems on site</label>
+                <div className="mt-2 grid grid-cols-4 gap-2">
+                  {EXISTING_SYSTEMS.map((sys) => {
+                    const on = scope.existing.has(sys.id);
+                    return (
+                      <button
+                        key={sys.id}
+                        onClick={() => {
+                          // "None" is mutually exclusive with the other systems.
+                          // Toggling none on clears the set first; toggling any
+                          // other system on clears none.
+                          const next = new Set(scope.existing);
+                          if (sys.id === 'none') {
+                            if (on) {
+                              next.delete('none');
+                            } else {
+                              next.clear();
+                              next.add('none');
+                            }
+                          } else {
+                            next.delete('none');
+                            if (on) {
+                              next.delete(sys.id);
+                            } else {
+                              next.add(sys.id);
+                            }
+                          }
+                          setScope({ ...scope, existing: next });
+                        }}
+                        className={`p-2.5 rounded-md border text-xs transition-colors ${on ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:border-border-strong'}`}
+                      >
+                        {sys.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Budget range</label>
+                <div className="mt-2 grid grid-cols-5 gap-2">
+                  {BUDGETS.map((b) => {
+                    const on = scope.budget === b.id;
+                    return (
+                      <button key={b.id} onClick={() => setScope({ ...scope, budget: b.id })} className={`p-2.5 rounded-md border text-xs transition-colors ${on ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:border-border-strong'}`}>
+                        {b.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
           {step === 'threat' && (
             <div className="space-y-3">
               <label className="text-xs text-muted-foreground">Threat level</label>
@@ -270,6 +377,9 @@ export function SiteIntake() {
             <div className="space-y-3 text-sm">
               <Row label="Client" v={`${client.company || '—'} · ${client.contact || '—'}`} />
               <Row label="Site" v={`${site.address || '—'}, ${site.city || ''} ${site.state || ''} · ${site.sqft || '—'} sq ft`} />
+              <Row label="Project type" v={SCOPE_KINDS.find((k) => k.id === scope.kind)?.label || 'Not set'} />
+              <Row label="Existing systems" v={scope.existing.size ? Array.from(scope.existing).map((id) => EXISTING_SYSTEMS.find((s) => s.id === id)?.label || id).join(', ') : 'None recorded'} />
+              <Row label="Budget" v={BUDGETS.find((b) => b.id === scope.budget)?.label || 'Not set'} />
               <Row label="Threat" v={threat.level} />
               <Row label="Frameworks" v={comp.size ? [...comp].join(', ').toUpperCase() : 'None'} />
               <Row label="AHJ" v={`${ahj.jurisdiction || '—'} · permit ${ahj.permit ? 'required' : 'waived'}`} />

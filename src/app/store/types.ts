@@ -320,6 +320,16 @@ export interface Project {
   opportunityId?: string;
   /** Optional projected contract value carried over from the opportunity. */
   contractValue?: number;
+
+  // ── Intake scope (Phase 4C) ──
+  /** What kind of engagement this is. Drives canvas defaults + the
+   *  project card label. */
+  scopeKind?: 'new-build' | 'retrofit' | 'expansion' | 'managed-service-takeover';
+  /** Existing security systems the customer already has in place at
+   *  intake. Drives canvas pre-population + estimator notes. */
+  existingSystems?: Array<'camera-vms' | 'access-control' | 'intrusion' | 'fire-alarm' | 'network' | 'bas' | 'none'>;
+  /** Budget bracket selected at intake. Operator-readable label. */
+  budgetRange?: 'under-50k' | '50k-150k' | '150k-500k' | '500k-2m' | 'over-2m';
 }
 
 // ─────────────────────────── Activity feed ────────────────────────
