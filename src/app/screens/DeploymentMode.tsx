@@ -174,11 +174,24 @@ export function DeploymentMode() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1.5">
-            {filtered.length === 0 && (
+            {filtered.length === 0 && workOrders.length === 0 && (
+              <div className="text-center p-6 space-y-3">
+                <div className="w-10 h-10 rounded-lg bg-secondary/60 inline-flex items-center justify-center">
+                  <ClipboardList className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div className="text-[12px] text-foreground font-medium">No work orders yet</div>
+                <div className="text-[11px] text-muted-foreground leading-snug max-w-[260px] mx-auto">Devices, doors, pathways, and racks placed on the canvas appear here as install tasks.</div>
+                <button
+                  onClick={() => nav(`/project/${projectId}/canvas`)}
+                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
+                >
+                  Open Engineering Canvas
+                </button>
+              </div>
+            )}
+            {filtered.length === 0 && workOrders.length > 0 && (
               <div className="text-center text-[11.5px] text-muted-foreground p-6">
-                {workOrders.length === 0
-                  ? 'No canvas objects yet. Drop a camera, door, pathway, or IDF on /canvas to generate work orders.'
-                  : 'No work orders match this filter.'}
+                No work orders match this filter.
               </div>
             )}
             {filtered.map((wo) => (

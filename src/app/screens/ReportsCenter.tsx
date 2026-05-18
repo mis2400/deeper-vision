@@ -166,6 +166,22 @@ export function ReportsCenter() {
       <div className="reports-body mx-auto" style={{ maxWidth: 980, padding: '32px 28px 64px' }}>
         <CoverHeader project={project} customer={customer} mode={mode} />
 
+        {devices.length === 0 && pathways.length === 0 && idfs.length === 0 ? (
+          <section className="report-section rounded-xl border border-dashed border-border bg-card/50 py-14 px-6 text-center mb-6">
+            <div className="w-12 h-12 rounded-xl bg-secondary/60 inline-flex items-center justify-center mb-4">
+              <ClipboardCheck className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <h2 className="text-lg font-medium">Nothing to report yet</h2>
+            <p className="text-sm text-muted-foreground mt-1 mb-4">Add devices on the canvas to populate the executive summary, schedules, and BOM.</p>
+            <Link
+              to={`/project/${projectId}/canvas`}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12px] border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary"
+            >
+              <PencilRuler className="w-3.5 h-3.5" />Open Engineering Canvas
+            </Link>
+          </section>
+        ) : (
+        <>
         <ExecutiveSummary
           counts={{
             cameras: cameras.length,
@@ -209,6 +225,8 @@ export function ReportsCenter() {
         <AssumptionsExclusions />
 
         <AttachmentsSection projectId={projectId} mode={mode} />
+        </>
+        )}
 
         <ReportFooter project={project} mode={mode} />
       </div>

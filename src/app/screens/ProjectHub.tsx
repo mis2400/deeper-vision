@@ -168,7 +168,18 @@ export function ProjectHub() {
           </div>
         </div>
 
-        {view === 'grid' ? (
+        {projects.length === 0 ? (
+          <div className="border border-dashed border-border rounded-lg bg-card/50 py-16 px-6 text-center max-w-xl mx-auto">
+            <div className="w-12 h-12 rounded-xl bg-secondary/60 inline-flex items-center justify-center mb-4">
+              <Plus className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <h2 className="text-lg font-medium">No projects yet</h2>
+            <p className="text-sm text-muted-foreground mt-1 mb-4">Click New project to start a quote, intake, or site walk.</p>
+            <Button size="sm" onClick={() => navigate('/intake/new')}>
+              <Plus className="w-3.5 h-3.5 mr-1" />New project
+            </Button>
+          </div>
+        ) : view === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {filtered.map((p) => {
               const phaseCfg = PHASES[p.phase];
@@ -277,7 +288,7 @@ export function ProjectHub() {
           </div>
         )}
 
-        {filtered.length === 0 && (
+        {projects.length > 0 && filtered.length === 0 && (
           <div className="text-center py-20 text-sm text-muted-foreground">
             No projects match. <button onClick={() => { setQ(''); setFilter('all'); }} className="text-primary hover:underline">Clear filters</button>
           </div>

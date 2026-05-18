@@ -2215,6 +2215,37 @@ export function EngineeringCanvas() {
               cableDraw={cableDraw}
             />
 
+            {/* Empty canvas state: surfaces a prominent dropzone when
+                the current floor has no plan AND no devices/walls yet.
+                Hides as soon as the user starts placing things. */}
+            {!floorBackground && devices.length === 0 && allWalls.length === 0 && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                <div className="rounded-2xl border border-dashed border-border bg-card/85 backdrop-blur-sm px-8 py-7 max-w-md text-center pointer-events-auto shadow-[var(--shadow-low)]">
+                  <div className="w-12 h-12 rounded-xl bg-secondary/60 inline-flex items-center justify-center mb-4">
+                    <Upload className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <h2 className="text-[16px] font-medium mb-1">Drop or upload a floor plan to begin</h2>
+                  <p className="text-[12px] text-muted-foreground leading-snug mb-4">
+                    Upload a PDF, image, or sketch. We'll calibrate the scale and you can start placing devices in minutes.
+                  </p>
+                  <div className="flex items-center gap-2 justify-center">
+                    <button
+                      onClick={() => setScanBuildOpen(true)}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12px] border border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      <Upload className="w-3.5 h-3.5" />Upload plan
+                    </button>
+                    <button
+                      onClick={() => useProjectStore.getState().resetDemoData()}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12px] border border-border hover:bg-secondary/40 text-foreground"
+                    >
+                      Use sample plan
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* The canvas is intentionally calm by default. The previous
                 CoverageModeSwitch (top-left) and ImmersionControls (top-
                 right) floats were removed — coverage style and focus mode
