@@ -476,11 +476,46 @@ Sourced from `docs/MVP_SPINE_AUDIT.md` Batch A. Five of the eighteen spine steps
 - Approval backfill is idempotent: re running the v22 → v23 step on a state that already has approvals just preserves them.
 - Integrity sweep runs on every load. Cost is O(assets + warranties + tickets); negligible at MVP scale.
 
+## 14 · Spine Completion SC.2 — Approval Gate + WO Canonicalization
+
+Sourced from `docs/MVP_SPINE_AUDIT.md` Batch B. Wires SC.1's Approval record to its first real consumer (Work Order derivation), retires the legacy `Project.customerApprovedAt` / `customerApprovedBy` fields backfilled in SC.1.1, kills the parallel mock `/workorders/:projectId` screen, and surfaces approval state honestly on the customer portal + project center + reports. Closes audit CRITICAL gap #4 and HIGH gaps #5 + #7.
+
+- [x] **SC.2.1 Customer Portal approval form.** Five field form (name, email, type, version, comments) replaces the prior single name modal. Required field inline validation. Submit calls `addApproval` with all six required Approval fields plus a unique id `appr-{pid}-{ts}-{rand}`. Form clears + closes on success. Approve button hidden only when latest approval is `final`; design / scope / change order keep the button visible so the customer can progress through gates. `nextProposalVersion` helper rolls a vN tag forward.
+- [x] **SC.2.2 Approvals audit trail on Project Center.** New section under Key metrics renders every approval newest first with type badge, approver, version, timestamp, and one line comment preview. Click expands inline for full details + record id. Empty state links the operator to the Customer Portal where approvals get created. Reads via raw `approvalsMap` + useMemo (matches existing identity check avoidance pattern).
+- [x] **SC.2.3 Retire `Project.customerApprovedAt` / `customerApprovedBy`.** Both fields removed from the Project interface. v26 -> v27 migration walks every persisted Project and deletes both fields. CustomerPortal mirror write retired; lifecycle phase advance now lives in a small standalone `updateProject` call on scope / final approvals. Hero approval banner reads from `latestApproval` (gated on `approvalType === 'final'`).
+- [x] **SC.2.4 Work Order screen canonicalization.** `/workorders/:projectId` (131 line hardcoded mock with a no op "Generate from BOM" button) becomes a 22 line redirect shim to `/project/:id/deployment` so any pre existing bookmark survives. Four nav references in `lifecycle/phases.ts` repointed from `/workorders/:id` to `/project/:id/deployment`.
+- [x] **SC.2.5 Work Order approval gate.** New `selectors.workOrderGate(state, projectId)` returns `{ ok, reason, latestApproval, phase }` with `reason ∈ 'ok' | 'no_approval' | 'design_only' | 'phase_too_early'`. `deriveWorkOrders` short circuits to `[]` when not OK. Phase set: `'deployment' | 'commissioning' | 'completed' | 'managed_service' | 'support'`. Approval requirement: latest record is `scope` or `final` (design + change order alone don't unlock). DeploymentMode + DeploymentModeMobile render reason specific empty states with appropriate CTAs (Customer Portal or Project Center). ReportsCenter Executive Summary tile + Field Deployment Summary section both show "Awaiting gate" copy instead of misleading 0/0 complete.
+- [x] **SC.2.6 Customer Portal approval status display.** `ApprovalStatusPill` at the top of the approval card maps the latest record to one of five customer safe labels (Awaiting approval / Design approved / Scope approved / Change approved / Final approval). `ApprovalHistoryToggle` renders below when >1 approval exists; expanded list highlights the latest per type and labels earlier same type entries as "Superseded".
+- [x] **SC.2.7 SC.2 integrity test script.** `scripts/sc2-spine-integrity.mjs` prints a five step DevTools paste procedure: reset baseline -> assert gate closed -> open via scope approval + phase advance -> close via approval removal -> portal smoke walkthrough. Each step has an acceptance checklist line.
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass commit. No TS errors.
+- **Persist version**: `deeperVisionStore` v27. SC.2.3 v26 -> v27 migration deletes the deprecated `customerApprovedAt` / `customerApprovedBy` fields from every persisted Project.
+- **Review loop**: code reviewer caught:
+  - SC.2.1 — 3 IMPORTANT (Approve button hidden after first approval, same ms id collision, lying "roll forward" comment) + 2 MINOR. All addressed.
+  - SC.2.5 — 3 IMPORTANT (ReportsCenter showing misleading zeros, DeploymentMode filters visible during gated empty state, gate sort risk on malformed `approvedAt`) + 2 MINOR. All addressed.
+  - SC.2.2 / SC.2.3 / SC.2.4 / SC.2.6 — clean.
+- **Gate semantics**: confirmed strict reading of the brief. Latest approval must be `scope` or `final` (design + change order alone don't unlock). Phase must be `deployment` or later. Both AND'd. Customer approving scope advances the project to `'approved'` phase; operator must manually advance to `'deployment'` before WOs derive.
+
+### Known follow ups deferred
+
+- The legacy mock `/workorders/:projectId` route entry stays in `App.tsx` as a no op redirect. Removing the route entirely would 404 cached bookmarks; safer to keep the redirect.
+- `latestApprovalForProject` selector + the gate's inline lookup share logic but don't share an implementation (the gate sorts by numeric `createdAt`, the selector sorts by `approvedAt` ISO string). Acceptable today; if a sort fix lands in one, mirror to the other.
+- Mobile `synthState` passed to `deriveWorkOrders` is `as any` which hides any new slice the derive function might start reading. SC.3+ refactor candidate.
+- The "view history" toggle on the portal lists approvals chronologically with a Superseded label per same type duplicate. A future polish pass could group by type with the active one expanded.
+
+### Risk notes for post deploy smoke test
+
+- v26 -> v27 deletes fields from in memory + persisted Project records. The SC.1.1 backfill already pushed those values into Approval records, so no data loss; just a schema simplification.
+- Existing seed data: confirm Riverbend HQ (p1) has at least one Approval record after the v23 + v27 migrations run (the seed may need a fresh `resetDemoData()` to land cleanly).
+- `deriveWorkOrders` now gated. Any consumer that displayed "X work orders" on a project without approval now reads zero. Confirmed updates on: DeploymentMode, DeploymentModeMobile, ReportsCenter Executive Summary + Field Deployment Summary. Not audited: assistantEngine.ts, projectSync.ts, Dashboard.tsx rollups — those receive `[]` which is correct, but should be confirmed they don't surface misleading "0" copy.
+
 ## Last verified
 
-- **Date:** 2026-05-18 (MVP Spine Completion SC.1 — Data Models foundation on top of Canvas V2 Pass 1.5)
+- **Date:** 2026-05-18 (MVP Spine Completion SC.2 — Approval Gate + WO Canonicalization on top of SC.1)
 - **Build:** `npm run build` — passing (vite v6.3.5, ~1941 modules, no TS errors)
-- **Persist version:** `deeperVisionStore` v26 (adds SC.1's `approvals`, `assets`, `warranties`, `serviceTickets`, plus Canvas V2 Pass 2's `annotations`, `rooms`, `currentFloorIdByProject`, plus Pass 1's `measurements` / `canvasHistory` / `siteCaptures`; all migrations forward-only with defensive coercion + cross model integrity sweep on every load)
+- **Persist version:** `deeperVisionStore` v27 (adds SC.2.3 v26 -> v27 migration that drops the deprecated `Project.customerApprovedAt` / `customerApprovedBy` fields; SC.1 v22 -> v26 ships `approvals` + `assets` + `warranties` + `serviceTickets`; all migrations forward-only with defensive coercion + cross model integrity sweep on every load)
 - **UI-verified flow** (real `MouseEvent('click')` + real `Event('input')` against the rendered DOM, then re-read from the same DOM):
   1. Fresh localStorage → `/project/p1/canvas` loads cleanly.
   2. Real native click on `[data-testid="device-CAM-101"]` → SelectionPill renders; Edit button visible.
