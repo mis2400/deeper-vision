@@ -16,7 +16,7 @@ import {
   ProjectMode, UserRole, EngineeringLayer, CanvasLayerState, DEFAULT_CANVAS_LAYERS,
   CanvasDisplayPrefs, DEFAULT_DISPLAY_PREFS, ProjectTechModel,
   SurveyItem, SurveyObjectType,
-  AiConversation, AiMsg, AiAppliedRecord,
+  AiConversation, AiMsg, AiAppliedRecord, AssistantContext,
 } from './types';
 import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
@@ -102,6 +102,11 @@ export interface ProjectState {
    *  granular actions below so streaming response patches don't
    *  thrash the whole conversation. */
   aiConversations: Record<string, AiConversation>;
+  /** Transient assistant context — surface + selection broadcast by
+   *  whatever screen the operator just touched. Phase 2A.2. NOT
+   *  persisted; cleared on reload. The Assistant reads this to scope
+   *  questions implicitly. */
+  assistantContext: AssistantContext | null;
   // ── Threat Drill Simulator ──
   scenarios:     Record<string, Scenario>;
   // ── Bus Security Designer ──
@@ -339,6 +344,9 @@ export interface ProjectState {
   /** Log an apply-suggestion outcome onto a message so the
    *  conversation thread shows what was done. */
   recordAiApplied: (conversationId: string, msgId: string, applied: AiAppliedRecord) => void;
+  /** Set (or clear) the transient assistant context. Called by every
+   *  shipped surface as the operator's focus changes. */
+  setAssistantContext: (ctx: Partial<AssistantContext> | null) => void;
 
   // ── Reset / utility ──
   resetDemoData: () => void;
@@ -373,6 +381,7 @@ export const useProjectStore = create<ProjectState>()(
       projectPricebooks: {},
       attachments:       {},
       aiConversations:   {},
+      assistantContext:  null,
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1390,8 +1399,29 @@ export const useProjectStore = create<ProjectState>()(
             },
           };
         }),
+      setAssistantContext: (ctx) =>
+        set((s) => {
+          if (ctx == null) return { assistantContext: null };
+          // Shallow merge with the existing context so a surface can
+          // patch only the fields it knows (selection, floorId) without
+          // wiping the surface name a parent already set.
+          const prev = s.assistantContext;
+          const next: AssistantContext = {
+            surface: ctx.surface ?? prev?.surface ?? 'projects',
+            projectId: ctx.projectId ?? prev?.projectId,
+            siteId: ctx.siteId ?? prev?.siteId,
+            siteName: ctx.siteName ?? prev?.siteName,
+            floorId: ctx.floorId ?? prev?.floorId,
+            floorName: ctx.floorName ?? prev?.floorName,
+            selectionKind: ctx.selectionKind ?? prev?.selectionKind,
+            selectionId: ctx.selectionId ?? prev?.selectionId,
+            selectionLabel: ctx.selectionLabel ?? prev?.selectionLabel,
+            updatedAt: Date.now(),
+          };
+          return { assistantContext: next };
+        }),
 
-      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {} })),
+      resetDemoData: () => set(() => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null })),
     }),
     {
       name: 'deeperVisionStore',

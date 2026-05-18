@@ -81,6 +81,24 @@ export function DeploymentMode() {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // V1 2A.2 — broadcast deployment context to the AI Assistant. When
+  // a work order is selected, the Assistant inherits it as scope.
+  // Work order doubles as the "event" selection kind today.
+  const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
+  const deploymentSite = useProjectStore((s) => Object.values(s.sites).find((x) => x.projectId === projectId));
+  useEffect(() => {
+    const selectedWo = selectedId ? workOrders.find((w) => w.id === selectedId) : undefined;
+    setAssistantContext({
+      surface: 'deployment',
+      projectId,
+      siteId: deploymentSite?.id,
+      siteName: deploymentSite?.name,
+      selectionKind: selectedWo ? 'workorder' : undefined,
+      selectionId: selectedWo?.id,
+      selectionLabel: selectedWo ? selectedWo.title : undefined,
+    });
+  }, [setAssistantContext, projectId, deploymentSite?.id, deploymentSite?.name, selectedId, workOrders]);
+
   // Default selection — first WO that isn't complete.
   useEffect(() => {
     if (selectedId && workOrders.some((w) => w.id === selectedId)) return;

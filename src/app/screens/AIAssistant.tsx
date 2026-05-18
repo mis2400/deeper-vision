@@ -16,7 +16,8 @@ import { AppShell } from '../components/AppShell';
 import { useProjectStore } from '../store/projectStore';
 import { streamAnswer, suggestPrompts } from '../lib/assistantEngine';
 import {
-  Sparkles, Send, User, Plus, Trash2, MessageSquare, Lightbulb,
+  Sparkles, Send, User, Plus, Trash2, MessageSquare, Lightbulb, X as XIcon,
+  Crosshair,
 } from 'lucide-react';
 
 export function AIAssistant() {
@@ -30,6 +31,16 @@ export function AIAssistant() {
   const appendMsg      = useProjectStore((s) => s.appendAiMsg);
   const patchMsgText   = useProjectStore((s) => s.patchAiMsgText);
   const patchMsg       = useProjectStore((s) => s.patchAiMsg);
+  // V1 2A.2 — read the transient context the operator's previous
+  // surface broadcast. The assistant intentionally does NOT overwrite
+  // it on mount: if the operator was on /canvas with CAM-101
+  // selected, the assistant inherits that scope so the first question
+  // narrows automatically. Operator can clear from the chip below.
+  const assistantContext = useProjectStore((s) => s.assistantContext);
+  const clearAssistantContext = useProjectStore((s) => s.setAssistantContext);
+  // Only count context as "active" when it carries a real handle —
+  // site, floor, or selection. Otherwise hide the chip.
+  const ctxActive = assistantContext && (assistantContext.siteId || assistantContext.floorId || assistantContext.selectionId);
 
   // Conversations for THIS project, most recent first.
   const projectConvs = useMemo(
@@ -80,7 +91,7 @@ export function AIAssistant() {
     setStreaming(true);
     try {
       const state = useProjectStore.getState();
-      for await (const chunk of streamAnswer(t, state, projectId)) {
+      for await (const chunk of streamAnswer(t, state, projectId, assistantContext)) {
         if (cancelledRef.current) break;
         if (chunk.text) patchMsgText(cid, assistantId, chunk.text);
         if (chunk.done) patchMsg(cid, assistantId, { streaming: false, ...(chunk.meta ?? {}) });
@@ -205,6 +216,36 @@ export function AIAssistant() {
 
           {/* Input */}
           <div className="px-5 py-3 border-t border-border bg-background/70">
+            {/* V1 2A.2 — context chip. Shown when another surface
+                broadcast a real selection / floor. Operator can clear
+                it; the engine drops the scope on next send. */}
+            {ctxActive && assistantContext && (
+              <div className="mb-2 inline-flex items-center gap-1.5 h-6 pl-1.5 pr-1 rounded-full border border-primary/30 bg-primary/10 text-primary text-[10.5px]" data-testid="ai-context-chip">
+                <Crosshair className="w-3 h-3" />
+                <span className="tracking-tight">
+                  Scope
+                  {assistantContext.surface && assistantContext.surface !== 'assistant' && (
+                    <span className="text-primary/70"> · {assistantContext.surface}</span>
+                  )}
+                  {assistantContext.siteName && !assistantContext.floorName && (
+                    <span className="text-primary/70"> · {assistantContext.siteName}</span>
+                  )}
+                  {assistantContext.floorName && (
+                    <span className="text-primary/70"> · {assistantContext.floorName}</span>
+                  )}
+                  {assistantContext.selectionLabel && (
+                    <span className="text-primary/70"> · {assistantContext.selectionLabel}</span>
+                  )}
+                </span>
+                <button
+                  onClick={() => clearAssistantContext(null)}
+                  className="ml-0.5 h-4 w-4 inline-flex items-center justify-center rounded-full hover:bg-primary/20"
+                  title="Drop scope. Ask about the whole project."
+                >
+                  <XIcon className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-2 bg-input-background border border-input-border rounded-lg px-3 py-2 focus-within:border-primary transition-colors">
               <textarea
                 value={draft}
@@ -212,7 +253,7 @@ export function AIAssistant() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
                 }}
-                placeholder={streaming ? 'Answering…' : 'Ask about coverage, BOM, PoE, work orders…'}
+                placeholder={streaming ? 'Answering…' : ctxActive ? 'Ask scoped to this context, or say "across the whole project"…' : 'Ask about coverage, BOM, PoE, work orders…'}
                 rows={1}
                 disabled={streaming}
                 className="flex-1 bg-transparent text-[13px] focus:outline-none resize-none max-h-32 placeholder:text-muted-foreground/60"
@@ -228,7 +269,7 @@ export function AIAssistant() {
                 <Send className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="mt-1.5 text-[10px] text-muted-foreground">Press Enter to send. Shift + Enter for a new line.</div>
+            <div className="mt-1.5 text-[10px] text-muted-foreground">Enter to send. Shift+Enter for a new line.</div>
           </div>
         </div>
       </div>

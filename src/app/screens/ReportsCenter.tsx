@@ -78,6 +78,21 @@ export function ReportsCenter() {
   const [mode, setMode] = useState<Mode>('internal');
   const isCustomer = mode === 'customer';
 
+  // V1 2A.2 — broadcast reports context to the AI Assistant. No
+  // floor scope here (reports is whole-project by definition); we
+  // still set site so the chip reads "reports · Acme HQ" when the
+  // operator hops over.
+  const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
+  const reportsSite = useProjectStore((s) => Object.values(s.sites).find((x) => x.projectId === projectId));
+  useEffect(() => {
+    setAssistantContext({
+      surface: 'reports',
+      projectId,
+      siteId: reportsSite?.id,
+      siteName: reportsSite?.name,
+    });
+  }, [setAssistantContext, projectId, reportsSite?.id, reportsSite?.name]);
+
   if (!project) {
     return (
       <div className="min-h-screen flex items-center justify-center text-center p-8" style={{ background: 'var(--background)', color: 'var(--foreground)' }}>

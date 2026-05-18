@@ -24,7 +24,7 @@
 
 import type { ProjectState } from '../store/projectStore';
 import { selectors, deriveCanvasBomRows, deriveWorkOrders } from '../store/projectStore';
-import type { AiCitation, AiMsg } from '../store/types';
+import type { AiCitation, AiMsg, AssistantContext } from '../store/types';
 
 /** Result of pattern-matching the question against a capability. */
 export interface AnswerMeta {
@@ -43,6 +43,38 @@ export interface AnswerChunk {
   meta?: AnswerMeta;
 }
 
+/** Scope after the engine resolves implicit context + plain-language
+ *  override. */
+export interface ResolvedScope {
+  siteId?: string;
+  siteName?: string;
+  floorId?: string;
+  floorName?: string;
+  /** True when the operator's question explicitly broadened scope
+   *  (e.g. "across all floors", "whole project"). */
+  broadened?: boolean;
+}
+
+/** Plain-language override detection. Returns the scope after
+ *  applying any operator-stated override on top of context. */
+function resolveScope(question: string, ctx: AssistantContext | null): ResolvedScope {
+  const q = question.toLowerCase();
+  // Operator broadened: drop every implicit scope.
+  if (/\b(all|every|whole|entire)\s+(floors?|sites?|buildings?|project)\b/.test(q)
+      || /\bacross\s+(all|every|the\s+whole|the\s+entire)\b/.test(q)) {
+    return { broadened: true };
+  }
+  // Operator narrowed: scope to whatever the surface broadcast.
+  // (Per-entity narrow-by-name parsing is a follow-up — would need
+  // to resolve entity tokens against project state.)
+  return {
+    siteId: ctx?.siteId,
+    siteName: ctx?.siteName,
+    floorId: ctx?.floorId,
+    floorName: ctx?.floorName,
+  };
+}
+
 /** Stream an answer for `question` against `state`/`projectId`.
  *  Yields text chunks for the host to append via patchAiMsgText.
  *  Final yield (done=true) carries any structured meta. */
@@ -50,6 +82,7 @@ export async function* streamAnswer(
   question: string,
   state: ProjectState,
   projectId: string,
+  context?: AssistantContext | null,
 ): AsyncGenerator<AnswerChunk> {
   const q = question.toLowerCase();
   const project = state.projects[projectId];
@@ -57,6 +90,8 @@ export async function* streamAnswer(
     yield { text: 'I cannot find that project in the store.', done: true };
     return;
   }
+
+  const scope = resolveScope(question, context ?? null);
 
   // Route to the matching handler. Order matters: more specific
   // patterns come first so "PoE budget on IDF-C" beats "IDF".
@@ -72,7 +107,7 @@ export async function* streamAnswer(
   // Compute the answer once, then stream its text in 6–24 char chunks
   // so the UI feels lively without the engine pretending the
   // computation took longer than it did.
-  const computed = handler(state, projectId);
+  const computed = handler(state, projectId, scope);
   yield* chunkedStream(computed.text, computed.meta);
 }
 
@@ -100,6 +135,18 @@ async function* chunkedStream(text: string, meta?: AnswerMeta): AsyncGenerator<A
 
 const has = (q: string, ...needles: string[]) => needles.some((n) => q.includes(n));
 
+/** Resolve every floor id under a site (via the building parent
+ *  chain). Returns a Set for O(1) inclusion checks downstream. */
+function floorIdsForSite(state: ProjectState, siteId: string): Set<string> {
+  const buildings = Object.values(state.buildings).filter((b) => b.siteId === siteId);
+  const buildingIds = new Set(buildings.map((b) => b.id));
+  return new Set(
+    Object.values(state.floors)
+      .filter((f) => buildingIds.has(f.buildingId))
+      .map((f) => f.id),
+  );
+}
+
 function matchPower(q: string)    { return has(q, 'poe', 'power budget', 'wattage', 'idf'); }
 function matchCoverage(q: string) { return has(q, 'coverage', 'uncovered', 'gap', 'blind', 'fov', 'cone'); }
 function matchBOM(q: string)      { return has(q, 'bom', 'bill of materials', 'estimate', 'cost', 'price', 'total', 'budget') && !has(q, 'poe', 'power'); }
@@ -111,10 +158,23 @@ function matchHelp(q: string)     { return has(q, 'help', 'what can you', 'capab
 
 interface ComputedAnswer { text: string; meta?: AnswerMeta }
 
-function answerCounts(state: ProjectState, projectId: string): ComputedAnswer {
-  const devices  = selectors.devicesForProject(state, projectId);
-  const floors   = selectors.floorsForProject(state, projectId);
-  const pathways = Object.values(state.pathways).filter((p) => p.projectId === projectId);
+function answerCounts(state: ProjectState, projectId: string, scope: ResolvedScope): ComputedAnswer {
+  // Resolve the set of floors implied by site scope (if any). When
+  // only a site is set, narrow to floors in that site's buildings.
+  const siteFloorIds = scope.siteId ? floorIdsForSite(state, scope.siteId) : null;
+  const allDevices = selectors.devicesForProject(state, projectId);
+  const floors     = selectors.floorsForProject(state, projectId);
+  const devices    = scope.floorId
+    ? allDevices.filter((d) => d.floorId === scope.floorId)
+    : siteFloorIds
+      ? allDevices.filter((d) => siteFloorIds.has(d.floorId))
+      : allDevices;
+  const allPathways = Object.values(state.pathways).filter((p) => p.projectId === projectId);
+  const pathways = scope.floorId
+    ? allPathways.filter((p) => p.floorId === scope.floorId)
+    : siteFloorIds
+      ? allPathways.filter((p) => siteFloorIds.has(p.floorId))
+      : allPathways;
   const idfs     = Object.values(state.idfs).filter((i) => i.projectId === projectId);
 
   const cams  = devices.filter((d) => (d.type as string).startsWith('cam.')).length;
@@ -135,7 +195,16 @@ function answerCounts(state: ProjectState, projectId: string): ComputedAnswer {
   const sen   = devices.filter((d) => (d.type as string).startsWith('sen.') || (d.type as string).startsWith('int.')).length;
 
   const lines: string[] = [];
-  lines.push(`${devices.length} devices across ${floors.length} floor${floors.length === 1 ? '' : 's'}.`);
+  // Phase 2A.2 — scope-aware lead line so the operator sees what
+  // window the answer covers before the numbers.
+  if (scope.floorId && scope.floorName) {
+    lines.push(`${devices.length} devices on ${scope.floorName}.`);
+  } else if (scope.siteId && scope.siteName) {
+    const inSite = siteFloorIds ? siteFloorIds.size : floors.length;
+    lines.push(`${devices.length} devices across ${inSite} floor${inSite === 1 ? '' : 's'} at ${scope.siteName}.`);
+  } else {
+    lines.push(`${devices.length} devices across ${floors.length} floor${floors.length === 1 ? '' : 's'}.`);
+  }
   if (cams)  lines.push(`Cameras: ${cams}.`);
   if (acc)   lines.push(`Access control devices: ${acc}.`);
   if (doors) lines.push(`Door / gate openings: ${doors}.`);
@@ -156,21 +225,42 @@ function answerCounts(state: ProjectState, projectId: string): ComputedAnswer {
   };
 }
 
-function answerCoverage(state: ProjectState, projectId: string): ComputedAnswer {
+function answerCoverage(state: ProjectState, projectId: string, scope: ResolvedScope): ComputedAnswer {
   const devices  = selectors.devicesForProject(state, projectId);
-  const cameras  = devices.filter((d) => d.type.startsWith('cam.'));
-  const floors   = selectors.floorsForProject(state, projectId);
+  const allCameras  = devices.filter((d) => (d.type as string).startsWith('cam.'));
+  const allFloors   = selectors.floorsForProject(state, projectId);
+  const siteFloorIds = scope.siteId ? floorIdsForSite(state, scope.siteId) : null;
+  // Phase 2A.2 — narrow by floor first, then site, then full project.
+  const cameras = scope.floorId
+    ? allCameras.filter((c) => c.floorId === scope.floorId)
+    : siteFloorIds
+      ? allCameras.filter((c) => siteFloorIds.has(c.floorId))
+      : allCameras;
+  const floors  = scope.floorId
+    ? allFloors.filter((f) => f.id === scope.floorId)
+    : siteFloorIds
+      ? allFloors.filter((f) => siteFloorIds.has(f.id))
+      : allFloors;
 
   if (cameras.length === 0) {
+    const where = scope.floorName ?? scope.siteName;
     return {
-      text: 'No cameras placed yet. Drop cameras on the canvas first; once placed I can compute coverage and call out the gaps.',
+      text: where
+        ? `No cameras placed on ${where} yet. Drop cameras on the canvas first; once placed I can compute coverage and call out the gaps.`
+        : 'No cameras placed yet. Drop cameras on the canvas first; once placed I can compute coverage and call out the gaps.',
       meta: { confidence: 'high', confidenceWhy: 'Empty camera set. No coverage to analyze.' },
     };
   }
 
   // Honest coverage call: average camera range vs floor extents.
   const lines: string[] = [];
-  lines.push(`${cameras.length} camera${cameras.length === 1 ? '' : 's'} placed across ${floors.length} floor${floors.length === 1 ? '' : 's'}.`);
+  if (scope.floorId && scope.floorName) {
+    lines.push(`${cameras.length} camera${cameras.length === 1 ? '' : 's'} placed on ${scope.floorName}.`);
+  } else if (scope.siteId && scope.siteName) {
+    lines.push(`${cameras.length} camera${cameras.length === 1 ? '' : 's'} placed across ${floors.length} floor${floors.length === 1 ? '' : 's'} at ${scope.siteName}.`);
+  } else {
+    lines.push(`${cameras.length} camera${cameras.length === 1 ? '' : 's'} placed across ${floors.length} floor${floors.length === 1 ? '' : 's'}.`);
+  }
   for (const f of floors) {
     const onFloor = cameras.filter((c) => c.floorId === f.id);
     if (onFloor.length === 0) {
@@ -197,7 +287,7 @@ function answerCoverage(state: ProjectState, projectId: string): ComputedAnswer 
   };
 }
 
-function answerBOM(state: ProjectState, projectId: string): ComputedAnswer {
+function answerBOM(state: ProjectState, projectId: string, _scope: ResolvedScope): ComputedAnswer {
   try {
     const bom = deriveCanvasBomRows(state, projectId);
     if (!bom || bom.rows.length === 0) {
@@ -236,7 +326,7 @@ function answerBOM(state: ProjectState, projectId: string): ComputedAnswer {
   }
 }
 
-function answerPower(state: ProjectState, projectId: string): ComputedAnswer {
+function answerPower(state: ProjectState, projectId: string, _scope: ResolvedScope): ComputedAnswer {
   const idfs    = Object.values(state.idfs).filter((i) => i.projectId === projectId);
   const cameras = selectors.devicesForProject(state, projectId).filter((d) => d.type.startsWith('cam.'));
 
@@ -272,7 +362,7 @@ function answerPower(state: ProjectState, projectId: string): ComputedAnswer {
   };
 }
 
-function answerSchedule(state: ProjectState, projectId: string): ComputedAnswer {
+function answerSchedule(state: ProjectState, projectId: string, _scope: ResolvedScope): ComputedAnswer {
   const wos = deriveWorkOrders(state, projectId);
   if (wos.length === 0) {
     return {
@@ -301,14 +391,14 @@ function answerSchedule(state: ProjectState, projectId: string): ComputedAnswer 
   };
 }
 
-function answerHelp(_state: ProjectState, _projectId: string): ComputedAnswer {
+function answerHelp(_state: ProjectState, _projectId: string, _scope: ResolvedScope): ComputedAnswer {
   return {
     text: 'I answer questions grounded in your project data. I can summarize device counts, coverage, BOM and pricing, PoE budgets, and work order status. Ask me in plain language. Try "what is the BOM total", "how many cameras", "what work orders are blocked". I will cite the records I drew from, and I will say so when something is inference rather than fact.',
     meta: { confidence: 'high' },
   };
 }
 
-function answerUnknown(state: ProjectState, projectId: string): ComputedAnswer {
+function answerUnknown(state: ProjectState, projectId: string, _scope: ResolvedScope): ComputedAnswer {
   const devices = selectors.devicesForProject(state, projectId).length;
   const floors  = selectors.floorsForProject(state, projectId).length;
   return {

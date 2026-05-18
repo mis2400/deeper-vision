@@ -6,7 +6,7 @@
 // empty is clearly labeled as a placeholder rather than faked into
 // looking active.
 
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
@@ -31,6 +31,16 @@ export function Dashboard() {
   const customersMap     = useProjectStore((s) => s.customers);
   const activityMap      = useProjectStore((s) => s.activity);
   const currentRole      = useProjectStore((s) => s.currentRole);
+
+  // V1 2A.2 — broadcast dashboard context to the AI Assistant.
+  // Dashboard is cross-project by definition, so we clear first to
+  // shed any stale project/floor scope from a prior surface, then
+  // stamp the surface name.
+  const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
+  useEffect(() => {
+    setAssistantContext(null);
+    setAssistantContext({ surface: 'dashboard' });
+  }, [setAssistantContext]);
 
   // Demo user identity — until real auth lands, "Mei L." is the
   // assigned user for tasks/touches. Keeps the dashboard meaningfully

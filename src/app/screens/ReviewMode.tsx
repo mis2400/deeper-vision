@@ -123,6 +123,20 @@ export function ReviewMode() {
   const devices  = useMemo(() => floor ? sel.devicesForFloor(state, floor.id) : [], [state, floor]);
   const pathways = useMemo(() => floor ? sel.pathwaysForFloor(state, floor.id) : [], [state, floor]);
 
+  // V1 2A.2 — broadcast review context to the AI Assistant.
+  const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
+  const reviewSite = useProjectStore((s) => Object.values(s.sites).find((x) => x.projectId === projectId));
+  useEffect(() => {
+    setAssistantContext({
+      surface: 'review',
+      projectId,
+      siteId: reviewSite?.id,
+      siteName: reviewSite?.name,
+      floorId: floor?.id,
+      floorName: floor?.name,
+    });
+  }, [setAssistantContext, projectId, reviewSite?.id, reviewSite?.name, floor?.id, floor?.name]);
+
   // ── Layer toggles. Defaults read like a customer-friendly view: all
   // hardware on, coverage off (less visual noise), notes off, BOM off.
   const [showCameras,  setShowCameras]  = useState(true);

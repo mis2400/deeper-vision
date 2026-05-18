@@ -951,6 +951,30 @@ export function EngineeringCanvas() {
     });
   }, [addPathway, projectId]);
   const [selId, setSelId] = useState<string | null>(null);
+  // V1 2A.2 — broadcast canvas context to the AI Assistant. Fires
+  // when project / site / floor / selection changes; the Assistant
+  // picks this up implicitly so a question asked from a selected
+  // camera narrows automatically.
+  const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
+  const currentFloorName = useProjectStore((s) => currentFloorId ? s.floors[currentFloorId]?.name : undefined);
+  // Derive site for this project (canvas always shows one site today).
+  const projectSite = useProjectStore((s) => Object.values(s.sites).find((x) => x.projectId === projectId));
+  useEffect(() => {
+    const selDevice = selId
+      ? (Object.values(useProjectStore.getState().devices) as any[]).find((d) => d.id === selId) as Device | undefined
+      : undefined;
+    setAssistantContext({
+      surface: 'canvas',
+      projectId,
+      siteId: projectSite?.id,
+      siteName: projectSite?.name,
+      floorId: currentFloorId || undefined,
+      floorName: currentFloorName,
+      selectionKind: selDevice ? 'device' : undefined,
+      selectionId: selDevice?.id,
+      selectionLabel: selDevice ? `${selDevice.label || selDevice.id}` : undefined,
+    });
+  }, [setAssistantContext, projectId, projectSite?.id, projectSite?.name, currentFloorId, currentFloorName, selId]);
   const [zoom, setZoom] = useState(1);
   /** Pan offset applied to the entire canvas content group, in pixels.
    *  The Fit / Center / Actual-scale buttons compute zoom + pan together

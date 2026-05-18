@@ -1241,6 +1241,36 @@ export interface Bus {
 // the unit of persistence; each conversation belongs to a project so
 // the assistant always has implicit scope.
 
+/** Transient context an in-flight surface broadcasts to the
+ *  Assistant. Phase 2A.2 — the assistant uses this as implicit
+ *  scope so a question asked from a selected camera answers about
+ *  that camera, not the whole project. NOT persisted; cleared on
+ *  reload. */
+export interface AssistantContext {
+  /** Which shipped surface set the context. */
+  surface: 'canvas' | 'reports' | 'deployment' | 'review' | 'projects' | 'dashboard' | 'project-center' | 'assistant';
+  projectId?: string;
+  /** When the operator is focused on a specific site within the
+   *  project. Engine scopes counts / coverage to this site when no
+   *  floor is set. */
+  siteId?: string;
+  siteName?: string;
+  /** When the operator is focused on a specific floor (canvas, plan
+   *  preview). The engine scopes counts / coverage to this floor. */
+  floorId?: string;
+  floorName?: string;
+  /** When the operator has a specific entity selected. The engine
+   *  scopes single-entity questions to this. `'workorder'` doubles
+   *  as the field-deployment event type until a dedicated alert /
+   *  monitoring event entity ships. */
+  selectionKind?: 'device' | 'pathway' | 'idf' | 'workorder' | 'comment';
+  selectionId?: string;
+  selectionLabel?: string;
+  /** Wall-clock when set, used by the assistant input chip to show
+   *  a recent-ness signal. */
+  updatedAt: number;
+}
+
 export type AiMsgRole = 'user' | 'assistant';
 
 /** Source citation — points back at a concrete record the answer was
