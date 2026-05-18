@@ -2179,6 +2179,147 @@ the live URL + the source + build commit hashes.
 
 ---
 
+## Reports / Proposal Package Pass (2026-05-18, after Pricebook Calibration)
+
+**Goal.** Generate a polished, printable proposal package from live
+canvas data. New route `/project/:projectId/reports`. Two visibility
+modes — Internal (full BOM + pricing assumptions) and Customer-safe
+(hides cost detail).
+
+### What shipped this pass
+
+- New `<ReportsCenter>` screen at
+  `src/app/screens/ReportsCenter.tsx` (~900 LOC).
+- New route `/project/:projectId/reports` in `App.tsx`.
+- New TopBar entry button **Reports** (sky-blue, `FileText` icon) in
+  the Engineering Canvas TopBar, right of *Deploy*.
+- New Review Mode top-bar entry **Reports** (sky-blue, between *Copy
+  review link* and *Open in Engineering*).
+- 13 report sections, all derived live from the Zustand store:
+  - Cover header (project, customer, ref id, generated date, mode
+    badge)
+  - Executive summary (6 metric tiles + 2 financial tiles in
+    internal view)
+  - Site & floors schedule
+  - Plan preview (one per floor) — schematic SVG generated from
+    canvas data: walls + devices via `SurveyorSymbolBody` + pathway
+    polylines. Labelled "schematic generated from canvas data".
+  - Camera schedule (ID / type / model / floor / coverage / mount / IR)
+  - Door hardware schedule (one card per opening with class +
+    description + Proposed / Existing pill)
+  - Cabling & pathway schedule (run / cable / conductors / length /
+    kind / conduit / bundle)
+  - BOM & estimate summary (internal-only): proposed material, cable,
+    labor, existing documented; sell total card with pricebook-override
+    state; category breakdown
+  - Field deployment summary: install-progress bar + per-kind table
+    (Cameras / Doors / Pathways / IDF) with complete/blocked/open/hours
+    remaining
+  - Pricing assumptions (internal-only, when pricebook overrides
+    exist): labor rate override, markup override, door-hardware
+    override table, cable per-ft override table
+  - Open warnings & issues: heuristic checks (missing prices,
+    uncalibrated floors, maglock-without-REX, strike-without-controller,
+    strike-without-PSU, no cameras). Customer view shows only HIGH
+    severity items.
+  - Assumptions & exclusions (Included / Excluded standard scope
+    lists)
+  - Attachments placeholder (labelled preview-only)
+  - Footer: project ref + build label + signature lines (internal
+    only)
+- CSV export buttons per schedule (cameras, doors, pathways, BOM).
+  Real downloads, RFC-4180 quoting.
+- **Print / Save PDF** button → invokes `window.print()`. Page is
+  itself the document; print stylesheet (inline `@media print`) hides
+  the top control bar, button chrome, and CSV buttons, fits content
+  to letter @ 18mm × 14mm margins, page-break-inside avoid on each
+  section.
+
+### Honest vs not-yet-connected
+
+- **Live, real**:
+  - Every section pulls from the same Zustand store the canvas
+    writes to. Add a camera on /canvas → next /reports load shows
+    it in the camera schedule.
+  - Plan preview SVGs render the calibrated background + walls +
+    pathway polylines + device glyphs (shared `SurveyorSymbolBody`).
+  - BOM summary reflects pricebook overrides (sell total + per-row
+    badges + missing-price warnings) via the existing
+    `deriveCanvasBomRows` helper.
+  - Deployment summary reflects persisted `workOrderProgress` via
+    `deriveWorkOrders`.
+  - All four CSV exports produce real downloads.
+  - Print to PDF works via `window.print()`; the user picks "Save as
+    PDF" in the browser print dialog.
+- **Preview / labelled**:
+  - Plan preview is a clean schematic, not a screenshot. Top of each
+    plan preview reads "Schematic generated from canvas data".
+  - Pricing assumptions footer: "Not connected to ERP / accounting /
+    vendor pricebook sync yet."
+  - Attachments slot is a placeholder; copy reads "File upload +
+    storage lands with the cloud sync pass."
+  - Customer view shows a "Cost detail is hidden in customer view"
+    notice in the executive summary.
+
+### What the user can verify in the browser
+
+1. Open `/project/p1/canvas` → TopBar gains a sky-blue **Reports**
+   button (between *Deploy* and *Project state*).
+2. Click → navigates to `/project/p1/reports`. Header shows project
+   name, generated date, project ref, **Internal view** badge.
+3. Executive summary shows tiles for cameras / doors / pathways /
+   access devices / IDF racks / floors (counts derived live).
+   Internal view adds Sell total (with pricebook-override note) +
+   Field deployment progress tiles.
+4. Site & floors table lists every floor with calibration chip.
+5. Per-floor "Plan preview" SVG renders the schematic.
+6. Camera schedule table (5 rows in seed) + CSV export.
+7. Door hardware schedule: cards for DR-100 / DOOR-101 with
+   Proposed / Existing pills per hardware row + CSV export.
+8. Cabling & pathway schedule + CSV export.
+9. BOM & estimate summary: 4 metric tiles + sell total card +
+   per-category breakdown. Reflects pricebook overrides (if set in
+   the Pricebook editor from the prior pass).
+10. Field deployment summary: install progress bar + per-kind
+    breakdown table.
+11. Pricing assumptions section appears only in internal view when
+    overrides exist.
+12. Warnings table: heuristic checks + severity chips. Customer
+    view shows only HIGH severity.
+13. Assumptions & exclusions section + Attachments placeholder.
+14. Footer signature lines visible in internal view, hidden in
+    customer view.
+15. Flip to **Customer view** → BOM section + pricing assumptions
+    + signature lines hide; warnings narrow to HIGH only;
+    "Cost detail is hidden" notice appears in exec summary.
+16. **Print / Save PDF** opens browser print dialog with the
+    document scaled for letter, no chrome.
+17. From `/review` → top bar shows new sky-blue **Reports** button
+    that routes to `/reports` directly.
+
+### Regression checks
+
+- TopBar **Add plan**, **BOM**, **Present**, **Deploy**,
+  **Reports**, **Project state** all visible — verified.
+- BOM drawer + CSV + Pricebook editor still work — verified prior
+  pass; Reports just consumes the same `deriveCanvasBomRows` data.
+- Deployment screen renders 9 WO rows after navigating back —
+  verified.
+- No new React or runtime errors in the console (only standing
+  Vite HMR websocket cosmetic noise).
+
+### Build result
+
+`npm run build` → exit 0, 2.33 s. New bundle hash captured in the
+deploy commit below.
+
+### Deployment
+
+This pass DOES deploy to Vercel production. See the final report for
+the live URL + the source + build commit hashes.
+
+---
+
 ## Known cosmetic / non-blocking issues (deferred — do not block on these)
 
 - **P2 — Door placement id off-by-one.** A fresh `/project/p1/canvas` already

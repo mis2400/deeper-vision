@@ -21,7 +21,7 @@ import type { Device, Pathway, Floor, DoorHardware, CanvasBomRow } from '../stor
 import {
   PencilRuler, Eye, EyeOff, MapPin, MessageSquare, CheckCircle2, AlertTriangle,
   Camera, KeyRound, Cable, Activity, ArrowLeft, Link as LinkIcon, Layers, ChevronDown, ChevronUp,
-  X, Send, Maximize2, Minimize2, BarChart3, ExternalLink, DollarSign,
+  X, Send, Maximize2, Minimize2, BarChart3, ExternalLink, DollarSign, FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { buildLabel } from '../../build-info';
@@ -313,6 +313,7 @@ export function ReviewMode() {
         status={status}
         setStatus={setStatus}
         onOpenEngineering={() => nav(`/project/${projectId}/canvas`)}
+        onOpenReports={() => nav(`/project/${projectId}/reports`)}
         onCopyLink={onCopyLink}
       />
 
@@ -424,12 +425,13 @@ export function ReviewMode() {
 // ─────────────────────────── Top bar ──────────────────────────────
 
 function ReviewTopBar({
-  projectName, status, setStatus, onOpenEngineering, onCopyLink,
+  projectName, status, setStatus, onOpenEngineering, onOpenReports, onCopyLink,
 }: {
   projectName: string;
   status: ReviewStatus;
   setStatus: (s: ReviewStatus) => void;
   onOpenEngineering: () => void;
+  onOpenReports: () => void;
   onCopyLink: () => void;
 }) {
   const STATUS_META: Record<ReviewStatus, { label: string; tone: string; bg: string; border: string }> = {
@@ -482,6 +484,14 @@ function ReviewTopBar({
         data-track="review-copy-link"
       >
         <LinkIcon className="w-3.5 h-3.5" />Copy review link
+      </button>
+      <button
+        onClick={onOpenReports}
+        title="Open the Reports / Proposal package — generated from the same canvas data"
+        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 text-sky-500 transition-colors"
+        data-track="review-open-reports"
+      >
+        <FileText className="w-3.5 h-3.5" />Reports
       </button>
       <button
         onClick={onOpenEngineering}

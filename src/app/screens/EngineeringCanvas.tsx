@@ -21,7 +21,7 @@ import {
   ShieldCheck, Antenna, Volume2, Megaphone, Mic, Speaker, HardDrive, Database, Cloud, Monitor,
   Tv2, AppWindow, MonitorSmartphone, BatteryCharging, Zap, ShieldAlert, Sun, Thermometer, CloudFog,
   Droplets, Users2, Wind, Crosshair as CrosshairIcon, Calendar, ListChecks, Wrench, FileBarChart,
-  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown, Presentation, HardHat,
+  Folder, Image as ImageIcon, BarChart3, DollarSign, Map as MapIcon, Activity, Clock, Copy, ExternalLink, FileDown, Presentation, HardHat, FileText as FileTextIcon,
   PaintBucket, Minimize2, PencilRuler, ScanLine, FolderUp, History as HistoryIcon, Network as NetworkIcon,
   PanelLeftClose, PanelLeftOpen, Compass, Maximize, Square, Columns3, Compass as CompassIcon, Satellite as SatelliteIcon, Camera as CameraIcon,
   ClipboardList,
@@ -1988,6 +1988,7 @@ export function EngineeringCanvas() {
             }}
             onOpenReview={() => nav(`/project/${projectId}/review`)}
             onOpenDeployment={() => nav(`/project/${projectId}/deployment`)}
+            onOpenReports={() => nav(`/project/${projectId}/reports`)}
             projectId={projectId}
             compact={viewMode === 'field'}
             intelOpen={intelOpen}
@@ -2986,6 +2987,8 @@ function TopBar(props: {
   onOpenReview: () => void;
   /** Opens the field deployment / work orders route. */
   onOpenDeployment: () => void;
+  /** Opens the reports / proposal package route. */
+  onOpenReports: () => void;
   /** Active project id, threaded through so the ProjectStateMenu can
    *  export/import the right project. */
   projectId: string;
@@ -3052,6 +3055,14 @@ function TopBar(props: {
           data-track="topbar-deploy"
         >
           <HardHat className="w-3.5 h-3.5" />Deploy
+        </button>
+        <button
+          onClick={props.onOpenReports}
+          title="Open the Reports / Proposal package — generated live from the canvas"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 text-sky-500 transition-colors"
+          data-track="topbar-reports"
+        >
+          <FileTextIcon className="w-3.5 h-3.5" />Reports
         </button>
         <ProjectStateMenu projectId={props.projectId} />
       </div>
