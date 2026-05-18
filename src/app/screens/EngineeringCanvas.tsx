@@ -3436,7 +3436,17 @@ export function EngineeringCanvas() {
 
             {/* Minimap (bottom-right) — V1 1A.4 now shows real plan
                 extents (background + walls + devices) instead of the
-                seed 800x600 rectangle, and uses theme tokens. */}
+                seed 800x600 rectangle, and uses theme tokens.
+                Pass 2A.8 — when the project has multiple floors, a
+                small floor strip renders to the LEFT of the minimap
+                for one click floor switching. */}
+            {projectFloors.length > 1 && (
+              <MiniMapFloorStrip
+                projectId={projectId}
+                activeFloorId={currentFloorId}
+                onPickFloor={(fid) => setCurrentFloorIdForProject(projectId, fid)}
+              />
+            )}
             <MiniMap devices={devices} walls={allWalls} background={floorBackground ?? null} />
 
             {/* Static North indicator — drafting-style: a needle inside a
@@ -15105,6 +15115,53 @@ function ZoomDock({
   );
 }
 
+/**
+ * Canvas V2 Pass 2A.8 — vertical floor strip next to the minimap.
+ * One small tile per floor, ordered top to bottom by level
+ * descending so the strip reads like a building elevation. Click
+ * any floor to make it active.
+ */
+function MiniMapFloorStrip({ projectId, activeFloorId, onPickFloor }: {
+  projectId: string;
+  activeFloorId: string;
+  onPickFloor: (floorId: string) => void;
+}) {
+  const floorsMap = useProjectStore((s) => s.floors);
+  const projectFloors = useMemo(() => Object.values(floorsMap)
+    .filter((f) => f.projectId === projectId)
+    .sort((a, b) => (b.level - a.level) || ((b.createdAt ?? 0) - (a.createdAt ?? 0))),
+    [floorsMap, projectId],
+  );
+  const levelBadge = (level: number) => {
+    if (level < 0) return `B${Math.abs(level)}`;
+    if (level === 0) return 'G';
+    return `L${level + 1}`;
+  };
+  return (
+    <div
+      className="absolute right-[200px] bottom-3 z-20 flex flex-col gap-1 p-1.5 rounded-lg bg-card/90 backdrop-blur-md border border-border shadow-md"
+      data-testid="minimap-floor-strip"
+    >
+      {projectFloors.map((f) => {
+        const isActive = f.id === activeFloorId;
+        return (
+          <button
+            key={f.id}
+            onClick={() => onPickFloor(f.id)}
+            title={f.name}
+            className={`inline-flex items-center justify-center w-9 h-7 rounded text-[10px] tabular-nums transition-colors ${
+              isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
+            }`}
+            data-track="minimap-floor-pick"
+          >
+            {levelBadge(f.level)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function MiniMap({ devices, walls, background }: {
   devices: Device[];
   walls?: Wall[];
@@ -15674,6 +15731,17 @@ function ProjectBomDrawer({
 
   type FilterKey = 'all' | CanvasBomCategory | 'existing';
   const [filter, setFilter] = useState<FilterKey>('all');
+  // Canvas V2 Pass 2A.8 — floor scope filter. 'all' keeps the BOM
+  // project wide (default behaviour as called for in the brief);
+  // any specific floor id narrows to rows whose source device lives
+  // on that floor. Pathway / cable rows also honour the filter via
+  // their stored floorId.
+  const [floorFilter, setFloorFilter] = useState<string>('all');
+  const projectFloors = useMemo(() => Object.values(state.floors)
+    .filter((f) => f.projectId === projectId)
+    .sort((a, b) => (b.level - a.level) || ((b.createdAt ?? 0) - (a.createdAt ?? 0))),
+    [state.floors, projectId],
+  );
 
   const FILTERS: { id: FilterKey; label: string }[] = [
     { id: 'all',      label: 'All' },
@@ -15684,11 +15752,31 @@ function ProjectBomDrawer({
     { id: 'existing', label: 'Existing' },
   ];
 
+  // Per row floor lookup so each BOM line can annotate which floor
+  // its source lives on. Pathways carry their own floorId; devices
+  // need a lookup against the store.
+  const floorIdForRow = useCallback((r: CanvasBomRow): string | null => {
+    const sid = (r as any).sourceId as string | undefined;
+    if (!sid) return null;
+    const dev = (state.devices as any)[sid];
+    if (dev?.floorId) return dev.floorId;
+    const path = (state.pathways as any)[sid];
+    if (path?.floorId) return path.floorId;
+    return null;
+  }, [state]);
+  const floorNameForRow = useCallback((r: CanvasBomRow): string => {
+    const fid = floorIdForRow(r);
+    if (!fid) return '—';
+    return (state.floors as any)[fid]?.name ?? '—';
+  }, [floorIdForRow, state]);
+
   const filtered = useMemo(() => {
-    if (filter === 'all')      return rows;
-    if (filter === 'existing') return rows.filter((r) => r.isExisting);
-    return rows.filter((r) => r.category === filter);
-  }, [rows, filter]);
+    let out = rows;
+    if (filter === 'existing') out = out.filter((r) => r.isExisting);
+    else if (filter !== 'all') out = out.filter((r) => r.category === filter);
+    if (floorFilter !== 'all') out = out.filter((r) => floorIdForRow(r) === floorFilter);
+    return out;
+  }, [rows, filter, floorFilter, floorIdForRow]);
 
   const grouped = useMemo(() => {
     const groups = new Map<CanvasBomCategory, CanvasBomRow[]>();
@@ -15869,7 +15957,7 @@ function ProjectBomDrawer({
       )}
 
       {/* Filter pills */}
-      <div className="px-5 pt-3 pb-3 border-b border-white/[0.05] shrink-0">
+      <div className="px-5 pt-3 pb-3 border-b border-white/[0.05] shrink-0 space-y-2">
         <div className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => {
             const active = filter === f.id;
@@ -15893,6 +15981,26 @@ function ProjectBomDrawer({
             );
           })}
         </div>
+        {/* Canvas V2 Pass 2A.8 — floor scope. Only shows when the
+            project actually has more than one floor; single floor
+            projects hide this row entirely so the chrome stays calm. */}
+        {projectFloors.length > 1 && (
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-muted-foreground">Floor</span>
+            <select
+              value={floorFilter}
+              onChange={(e) => setFloorFilter(e.target.value)}
+              className="bg-secondary/30 text-foreground border border-border rounded-full h-7 px-2.5 text-[11px] focus:outline-none focus:border-primary/40"
+              data-track="bom-floor-filter"
+            >
+              <option value="all">All floors ({rows.length})</option>
+              {projectFloors.map((f) => {
+                const c = rows.filter((r) => floorIdForRow(r) === f.id).length;
+                return <option key={f.id} value={f.id}>{f.name} ({c})</option>;
+              })}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Rows */}
@@ -15929,6 +16037,7 @@ function ProjectBomDrawer({
                     key={r.id}
                     row={r}
                     fmt={fmt}
+                    floorName={projectFloors.length > 1 ? floorNameForRow(r) : undefined}
                     onSelect={() => {
                       if (r.sourceKind === 'pathway' && r.sourceId)            onSelectPathway(r.sourceId);
                       else if ((r.sourceKind === 'device' || r.sourceKind === 'door') && r.sourceId) onSelectDevice(r.sourceId);
@@ -15945,7 +16054,7 @@ function ProjectBomDrawer({
   );
 }
 
-function BomRow({ row, fmt, onSelect }: { row: CanvasBomRow; fmt: (n: number) => string; onSelect: () => void }) {
+function BomRow({ row, fmt, onSelect, floorName }: { row: CanvasBomRow; fmt: (n: number) => string; onSelect: () => void; floorName?: string }) {
   const lineTotal = row.unitPrice * row.qty;
   const canSelect = !!row.sourceId && (row.sourceKind === 'device' || row.sourceKind === 'door' || row.sourceKind === 'pathway');
   return (
@@ -15974,6 +16083,14 @@ function BomRow({ row, fmt, onSelect }: { row: CanvasBomRow; fmt: (n: number) =>
             )}
             {row.overridden && !row.missingPrice && (
               <span className="text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/40" title="Project pricebook override applied">Overridden</span>
+            )}
+            {floorName && floorName !== '—' && (
+              <span
+                className="text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded bg-secondary/40 text-muted-foreground border border-border"
+                title="Floor this line lives on"
+              >
+                {floorName}
+              </span>
             )}
           </div>
           <div className="text-[12px] font-medium text-foreground truncate">{row.description}</div>
