@@ -106,10 +106,80 @@ export function ReportsCenter() {
     return t;
   }, [wos]);
 
-  const onPrint = () => {
+  // V1 1D — internal-view safeguards. Print in internal mode flashes
+  // a confirmation modal first so the engineer cannot ship a markup-
+  // visible PDF to a customer by reflex. Customer view goes straight
+  // to print.
+  const [printConfirmOpen, setPrintConfirmOpen] = useState(false);
+  const isInternal = mode === 'internal';
+  const doPrint = () => {
     toast.message('Opening browser print dialog', { description: 'Pick "Save as PDF" for a file or send to a printer.', duration: 3000 });
     setTimeout(() => window.print(), 200);
   };
+  const onPrint = () => {
+    if (isInternal) { setPrintConfirmOpen(true); return; }
+    doPrint();
+  };
+
+  // V1 1D — customer view email link. Generates a tokenized URL
+  // pointing at the (existing) Customer Portal route and drops it on
+  // the clipboard with a confirmation toast. The token is a random
+  // url-safe string; durable token storage lands when the portal auth
+  // backend ships.
+  const onEmailToCustomer = async () => {
+    const token = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 18)
+      : Math.random().toString(36).slice(2, 20);
+    const url = `${window.location.origin}/portal/${projectId}?token=${token}`;
+    const subject = encodeURIComponent(`${project.name} — proposal preview`);
+    const body    = encodeURIComponent(`Hi,\n\nA preview of the proposal for ${project.name} is ready:\n${url}\n\nLet me know if you have questions.\n`);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Customer portal link copied', { description: 'Mail draft opened in a new tab.', duration: 4000 });
+    } catch {
+      toast.message('Mail draft opened', { description: url, duration: 5000 });
+    }
+    window.open(`mailto:${customer?.contacts?.[0]?.email ?? ''}?subject=${subject}&body=${body}`, '_blank');
+  };
+
+  // V1 1D — sticky table of contents. Section ids drive both scroll
+  // navigation and IntersectionObserver-based active highlighting.
+  const SECTIONS: { id: string; label: string; visibleInCustomer: boolean }[] = [
+    { id: 'sec-cover',       label: 'Cover',              visibleInCustomer: true },
+    { id: 'sec-summary',     label: 'Executive summary',  visibleInCustomer: true },
+    { id: 'sec-floors',      label: 'Sites & floors',     visibleInCustomer: true },
+    { id: 'sec-plans',       label: 'Plan preview',       visibleInCustomer: true },
+    { id: 'sec-cameras',     label: 'Camera schedule',    visibleInCustomer: true },
+    { id: 'sec-doors',       label: 'Door hardware',      visibleInCustomer: true },
+    { id: 'sec-pathways',    label: 'Pathways',           visibleInCustomer: true },
+    { id: 'sec-bom',         label: 'BOM & pricing',      visibleInCustomer: false },
+    { id: 'sec-deployment',  label: 'Deployment',         visibleInCustomer: true },
+    { id: 'sec-assumptions', label: 'Pricing assumptions',visibleInCustomer: false },
+    { id: 'sec-warnings',    label: 'Warnings',           visibleInCustomer: true },
+    { id: 'sec-exclusions',  label: 'Assumptions & exclusions', visibleInCustomer: true },
+    { id: 'sec-attachments', label: 'Attachments',        visibleInCustomer: true },
+  ];
+  const visibleSections = SECTIONS.filter((s) => isInternal || s.visibleInCustomer);
+  const [activeSection, setActiveSection] = useState<string>(visibleSections[0]?.id ?? '');
+  useEffect(() => {
+    const obs = new IntersectionObserver(
+      (entries) => {
+        // Pick the topmost entry that's intersecting, tie-break by id.
+        const inView = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => (a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top));
+        if (inView[0]) setActiveSection(inView[0].target.id);
+      },
+      // 0% top, 60% bottom — section is "active" once its top crosses
+      // 40% from the viewport top, which feels right for scroll spy.
+      { rootMargin: '0px 0px -60% 0px', threshold: 0.01 },
+    );
+    for (const s of visibleSections) {
+      const el = document.getElementById(s.id);
+      if (el) obs.observe(el);
+    }
+    return () => obs.disconnect();
+  }, [visibleSections]);
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)', color: 'var(--foreground)' }} data-screen="reports-center">
@@ -153,6 +223,17 @@ export function ReportsCenter() {
         >
           <PencilRuler className="w-3.5 h-3.5" />Review mode
         </Link>
+        {/* V1 1D — Email to customer (customer view only). Generates a
+            tokenized portal link and opens a mail draft. */}
+        {!isInternal && (
+          <button
+            onClick={onEmailToCustomer}
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 text-sky-500 transition-colors"
+            data-track="reports-email-customer"
+          >
+            <Eye className="w-3.5 h-3.5" />Email to customer
+          </button>
+        )}
         <button
           onClick={onPrint}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[11.5px] border border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -162,9 +243,77 @@ export function ReportsCenter() {
         </button>
       </div>
 
-      {/* Report body — printable */}
-      <div className="reports-body mx-auto" style={{ maxWidth: 980, padding: '32px 28px 64px' }}>
+      {/* V1 1D — internal watermark behind the report body. Only when
+          mode === 'internal'. Print-only via the .reports-watermark CSS
+          rule in PrintStyles so the on-screen view stays clean. */}
+      {isInternal && <div aria-hidden className="reports-watermark" />}
+
+      {/* V1 1D — print confirm modal. Internal view requires a
+          conscious tap-through so the engineer doesn't reflex-print a
+          markup-visible PDF for a customer. */}
+      {printConfirmOpen && (
+        <div role="dialog" aria-modal className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-card border border-border-strong rounded-xl shadow-2xl max-w-md w-full p-5">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-9 h-9 rounded-lg bg-amber-400/15 text-amber-500 inline-flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-medium">Export internal view?</h2>
+                <p className="text-[12.5px] text-muted-foreground mt-1">
+                  This view shows your markup, BOM totals, labor hours, and pricing assumptions. Do not send this PDF to a customer. Switch to Customer view to export the safe version.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setPrintConfirmOpen(false)}
+                className="h-8 px-3 rounded-md text-[12px] border border-border hover:bg-secondary/40"
+              >Cancel</button>
+              <button
+                onClick={() => { setPrintConfirmOpen(false); setMode('customer'); }}
+                className="h-8 px-3 rounded-md text-[12px] border border-emerald-500/40 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15"
+              >Switch to customer view</button>
+              <button
+                onClick={() => { setPrintConfirmOpen(false); doPrint(); }}
+                className="h-8 px-3 rounded-md text-[12px] border border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90"
+              >Export anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report shell — TOC sticky on the left, body printable on the
+          right. V1 1D layout. The TOC is hidden in print. */}
+      <div className="reports-shell mx-auto flex gap-6" style={{ maxWidth: 1280, padding: '24px 20px 64px' }}>
+        <aside className="reports-toc shrink-0 w-[200px] hidden lg:block">
+          <div className="sticky top-[68px] text-[11.5px]">
+            <div className="px-2 pb-1.5 text-[10px] uppercase tracking-[0.10em] text-muted-foreground/80">In this report</div>
+            <nav className="flex flex-col">
+              {visibleSections.map((s) => (
+                <a
+                  key={s.id}
+                  href={`#${s.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className={`px-2 py-1.5 rounded transition-colors border-l-2 ${
+                    activeSection === s.id
+                      ? 'text-foreground border-primary bg-secondary/40'
+                      : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-secondary/30'
+                  }`}
+                >{s.label}</a>
+              ))}
+            </nav>
+          </div>
+        </aside>
+
+        {/* Report body — printable */}
+        <div className="reports-body flex-1 min-w-0" style={{ maxWidth: 980 }}>
+        <div id="sec-cover" className="scroll-mt-20">
         <CoverHeader project={project} customer={customer} mode={mode} />
+        </div>
 
         {devices.length === 0 && pathways.length === 0 && idfs.length === 0 ? (
           <section className="report-section rounded-xl border border-dashed border-border bg-card/50 py-14 px-6 text-center mb-6">
@@ -182,6 +331,7 @@ export function ReportsCenter() {
           </section>
         ) : (
         <>
+        <div id="sec-summary" className="scroll-mt-20">
         <ExecutiveSummary
           counts={{
             cameras: cameras.length,
@@ -197,38 +347,62 @@ export function ReportsCenter() {
           hasOverrides={hasOverrides}
           overrideCount={overrideCount}
         />
+        </div>
 
+        <div id="sec-floors" className="scroll-mt-20">
         <FloorSummary floors={floors} devices={devices} pathways={pathways} />
+        </div>
 
+        <div id="sec-plans" className="scroll-mt-20">
         {floors.map((f) => (
           <PlanPreview key={f.id} floor={f} devices={devices.filter((d) => d.floorId === f.id)} pathways={pathways.filter((p) => p.floorId === f.id)} />
         ))}
+        </div>
 
+        <div id="sec-cameras" className="scroll-mt-20">
         <CameraSchedule cameras={cameras} floors={floors} projectName={project.name} />
+        </div>
 
+        <div id="sec-doors" className="scroll-mt-20">
         <DoorSchedule doorOpenings={doorOpenings} legacyDoors={legacyDoors} floors={floors} projectName={project.name} />
+        </div>
 
+        <div id="sec-pathways" className="scroll-mt-20">
         <PathwaySchedule pathways={pathways} floors={floors} projectName={project.name} />
+        </div>
 
         {!isCustomer && (
+          <div id="sec-bom" className="scroll-mt-20">
           <BomSummary bom={bom} hasOverrides={hasOverrides} overrideCount={overrideCount} pricebook={pricebook} projectName={project.name} />
+          </div>
         )}
 
+        <div id="sec-deployment" className="scroll-mt-20">
         <DeploymentSummary wos={wos} tallies={woTallies} />
+        </div>
 
         {!isCustomer && hasOverrides && (
+          <div id="sec-assumptions" className="scroll-mt-20">
           <PricingAssumptions pricebook={pricebook} />
+          </div>
         )}
 
+        <div id="sec-warnings" className="scroll-mt-20">
         <Warnings warnings={warnings} mode={mode} />
+        </div>
 
+        <div id="sec-exclusions" className="scroll-mt-20">
         <AssumptionsExclusions />
+        </div>
 
+        <div id="sec-attachments" className="scroll-mt-20">
         <AttachmentsSection projectId={projectId} mode={mode} />
+        </div>
         </>
         )}
 
         <ReportFooter project={project} mode={mode} />
+        </div>
       </div>
     </div>
   );
@@ -1279,20 +1453,63 @@ function slug(s: string): string {
 
 function PrintStyles() {
   // Inline so the screen carries its own print contract; no global
-  // stylesheet edits required.
+  // stylesheet edits required. V1 1D adds the diagonal INTERNAL
+  // watermark — visible on screen as a subtle wash, dialled up on
+  // paper so it survives a quick scan / forward.
   return (
     <style>{`
+      .reports-watermark {
+        position: fixed; inset: 0; z-index: 5; pointer-events: none;
+        background: repeating-linear-gradient(
+          -28deg,
+          rgba(229, 162, 58, 0) 0,
+          rgba(229, 162, 58, 0) 240px,
+          rgba(229, 162, 58, 0.06) 240px,
+          rgba(229, 162, 58, 0.06) 245px
+        );
+      }
+      .reports-watermark::before {
+        content: "INTERNAL — markup visible. Do not share with customer.";
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        transform: rotate(-28deg);
+        font-size: 64px; font-weight: 600;
+        color: rgba(229, 162, 58, 0.06);
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+
       @media print {
         @page { size: letter; margin: 18mm 14mm; }
         body, html { background: #ffffff !important; color: #0F172A !important; }
         .reports-chrome { display: none !important; }
-        .reports-body { max-width: 100% !important; padding: 0 !important; }
+        .reports-toc   { display: none !important; }
+        .reports-shell { display: block !important; max-width: 100% !important; padding: 0 !important; }
+        .reports-body  { max-width: 100% !important; padding: 0 !important; }
         .report-section { page-break-inside: avoid; margin-bottom: 14pt !important; }
         .report-cover { page-break-after: avoid; }
         .report-section svg { max-width: 100%; height: auto; }
         a { color: inherit; text-decoration: none; }
         button { display: none !important; }
         .report-footer { page-break-inside: avoid; }
+
+        /* Watermark dial-up for paper — much higher contrast so it
+           survives a quick scan or fax. Fixed-position re-runs on
+           every printed page automatically. */
+        .reports-watermark {
+          opacity: 1 !important;
+          background: repeating-linear-gradient(
+            -28deg,
+            rgba(229, 162, 58, 0) 0,
+            rgba(229, 162, 58, 0) 280px,
+            rgba(229, 162, 58, 0.18) 280px,
+            rgba(229, 162, 58, 0.18) 285px
+          ) !important;
+        }
+        .reports-watermark::before {
+          color: rgba(229, 162, 58, 0.22) !important;
+          font-size: 92px !important;
+        }
       }
     `}</style>
   );
