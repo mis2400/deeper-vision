@@ -685,6 +685,21 @@ export interface SiteCapture {
   updatedAt: number;
 }
 
+// ─────────────────────────── Canvas measurements (Pass 1.8) ─────
+// Persistent tape-measure overlays. Each measurement is two canvas-px
+// points on a specific floor. The display label is derived at render
+// time from the floor's calibrated scale, so calibrating mid project
+// updates every stored measurement live without a migration.
+export interface Measurement {
+  id: string;
+  floorId: string;
+  a: { x: number; y: number };
+  b: { x: number; y: number };
+  /** Optional caption the operator types after the second click. */
+  label?: string;
+  createdAt: number;
+}
+
 // ─────────────────────────── Canvas history (Pass 1.1) ───────────
 // Undo / redo storage. Snapshot-based: each entry captures the contents
 // of the slices that are about to mutate. Undo restores the snapshot

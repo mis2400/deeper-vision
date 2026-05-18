@@ -161,6 +161,10 @@ export interface ProjectState {
    *  past / future stacks. Capped at CANVAS_HISTORY_MAX in memory,
    *  CANVAS_HISTORY_PERSIST_MAX on disk. */
   canvasHistory: import('./types').CanvasHistoryState;
+  /** Persistent tape-measure overlays — Canvas V2 Pass 1.8. Keyed by
+   *  measurement id; each carries its floorId so the canvas only
+   *  shows measurements for the active floor. */
+  measurements: Record<string, import('./types').Measurement>;
 
   // ── UX preferences ──
   /** Per-project mode override. When unset, mode is derived from
@@ -297,6 +301,13 @@ export interface ProjectState {
   canvasRedo: () => import('./types').CanvasHistoryEntry | null;
   /** Wipe both stacks (used by reset demo + on project switch). */
   clearCanvasHistory: () => void;
+
+  // ── Canvas measurements (Pass 1.8) ──
+  addMeasurement:    (m: import('./types').Measurement) => void;
+  removeMeasurement: (id: string) => void;
+  /** Drop every measurement on a given floor. Used by the "clear all"
+   *  toolbar action. */
+  clearMeasurementsForFloor: (floorId: string) => void;
 
   // ── Threat Drill ──
   addScenario:    (s: Scenario) => void;
@@ -483,6 +494,7 @@ export const useProjectStore = create<ProjectState>()(
       workspaceSettings: { ...DEFAULT_WORKSPACE_SETTINGS },
       siteCaptures:      {},
       canvasHistory:     { ...DEFAULT_CANVAS_HISTORY },
+      measurements:      {},
 
       // ── UX preference actions ──
       setProjectMode: (projectId, mode) =>
@@ -1034,6 +1046,20 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       clearCanvasHistory: () => set(() => ({ canvasHistory: { past: [], future: [] } })),
+
+      // ── Canvas measurements (Pass 1.8) ───────────────────────────
+      addMeasurement: (m) =>
+        set((s) => ({ measurements: { ...s.measurements, [m.id]: m } })),
+      removeMeasurement: (id) =>
+        set((s) => { const { [id]: _, ...rest } = s.measurements; return { measurements: rest }; }),
+      clearMeasurementsForFloor: (floorId) =>
+        set((s) => {
+          const next: Record<string, import('./types').Measurement> = {};
+          for (const [id, m] of Object.entries(s.measurements)) {
+            if (m.floorId !== floorId) next[id] = m;
+          }
+          return { measurements: next };
+        }),
 
       // ── Threat Drill ─────────────────────────────────────────────
       addScenario: (sc) => set((s) => ({ scenarios: { ...s.scenarios, [sc.id]: sc } })),
@@ -1707,11 +1733,11 @@ export const useProjectStore = create<ProjectState>()(
           return { assistantContext: next };
         }),
 
-      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security, workspaceSettings: s.workspaceSettings, siteCaptures: {}, canvasHistory: { past: [], future: [] } })),
+      resetDemoData: () => set((s) => ({ ...buildSeed(), workOrderProgress: {}, projectPricebooks: {}, attachments: {}, aiConversations: {}, assistantContext: null, userPrefs: s.userPrefs, billing: s.billing, integrations: s.integrations, workspaceMembers: s.workspaceMembers, notificationPrefs: s.notificationPrefs, security: s.security, workspaceSettings: s.workspaceSettings, siteCaptures: {}, canvasHistory: { past: [], future: [] }, measurements: {} })),
     }),
     {
       name: 'deeperVisionStore',
-      version: 18,
+      version: 19,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -1935,6 +1961,15 @@ export const useProjectStore = create<ProjectState>()(
             };
           }
         }
+        if (version < 19) {
+          // v18 → v19: introduce canvas measurements slice (Canvas V2
+          // Pass 1.8). Empty default; defensive coercion for a tampered
+          // blob with wrong shape.
+          const raw = persisted.measurements;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            persisted.measurements = {};
+          }
+        }
         return persisted;
       },
       // Custom merge: for the brand-new CRM slices, fall back to the seed
@@ -2003,6 +2038,7 @@ export const useProjectStore = create<ProjectState>()(
           past: s.canvasHistory.past.slice(-CANVAS_HISTORY_PERSIST_MAX),
           future: [],
         },
+        measurements:    s.measurements,
       }),
     },
   ),

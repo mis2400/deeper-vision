@@ -765,6 +765,16 @@ export function EngineeringCanvas() {
   // useState declaration further down.
   const lockedIdsRef = useRef<Set<string>>(new Set());
 
+  // Canvas V2 Pass 1.8 — persisted tape-measure subscription + visibility toggle.
+  const measurementsMap = useProjectStore((s) => s.measurements);
+  const removeMeasurement = useProjectStore((s) => s.removeMeasurement);
+  const clearMeasurementsForFloor = useProjectStore((s) => s.clearMeasurementsForFloor);
+  const persistedMeasurements = useMemo(
+    () => Object.values(measurementsMap).filter((m) => m.floorId === currentFloorId),
+    [measurementsMap, currentFloorId],
+  );
+  const [measurementsVisible, setMeasurementsVisible] = useState(true);
+
   // setDevices facade: accepts either a new array OR an updater fn. Diffs
   // against the current store snapshot and dispatches add/update/remove for
   // each changed device. Keeps all in-component callers (move/rotate/dup/
@@ -2540,6 +2550,9 @@ export function EngineeringCanvas() {
               onDragEnd={onDragEnd}
               hoveredLens={hoveredLens}
               hoverHost={hoverHost}
+              persistedMeasurements={persistedMeasurements}
+              measurementsVisible={measurementsVisible}
+              onRemoveMeasurement={removeMeasurement}
               floorBackground={floorBackground}
               onUpdateBackground={(patch) => {
                 if (!currentFloorId || !floorBackground) return;
@@ -2580,10 +2593,22 @@ export function EngineeringCanvas() {
                 if (tool === 'measure') {
                   if (!measure.start) {
                     setMeasure({ start: { x, y }, end: null, cursor: { x, y } });
-                  } else if (!measure.end) {
-                    setMeasure({ start: measure.start, end: { x, y }, cursor: { x, y } });
                   } else {
-                    setMeasure({ start: { x, y }, end: null, cursor: { x, y } });
+                    // Pass 1.8 — second click persists the segment so it
+                    // survives tool switches + reloads. Local state
+                    // resets immediately so the next click starts a
+                    // fresh measurement.
+                    if (currentFloorId) {
+                      const mid = `m-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+                      useProjectStore.getState().addMeasurement({
+                        id: mid,
+                        floorId: currentFloorId,
+                        a: { x: measure.start.x, y: measure.start.y },
+                        b: { x, y },
+                        createdAt: Date.now(),
+                      });
+                    }
+                    setMeasure({ start: null, end: null, cursor: null });
                   }
                   return;
                 }
@@ -2881,6 +2906,30 @@ export function EngineeringCanvas() {
                     >
                       Cancel (Esc)
                     </button>
+                    {/* Pass 1.8 — measurements show/hide + clear all.
+                        Only render when the measure tool is active AND
+                        there are persisted measurements to act on. */}
+                    {isMeasure && persistedMeasurements.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => setMeasurementsVisible((v) => !v)}
+                          className="text-[10.5px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
+                          title={measurementsVisible ? 'Hide all persisted measurements' : 'Show persisted measurements'}
+                        >
+                          {measurementsVisible ? 'Hide all' : 'Show all'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (currentFloorId) clearMeasurementsForFloor(currentFloorId);
+                            toast.message(`Cleared ${persistedMeasurements.length} measurement${persistedMeasurements.length === 1 ? '' : 's'}`, { duration: 1800 });
+                          }}
+                          className="text-[10.5px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
+                          title="Remove every measurement on this floor"
+                        >
+                          Clear all
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -6151,6 +6200,11 @@ interface SurfaceProps {
   walls: Wall[];
   wallStart: { x: number; y: number } | null;
   wallCursor: { x: number; y: number } | null;
+  /** Persisted tape-measure overlays for the active floor. Pass 1.8.
+   *  Hidden when `measurementsVisible` is false. */
+  persistedMeasurements?: import('../store/types').Measurement[];
+  measurementsVisible?: boolean;
+  onRemoveMeasurement?: (id: string) => void;
   onPick: (id: string) => void;
   onBlank: () => void;
   /** Click-to-arm placement consumer. Receives the canvas-space coords
@@ -6260,7 +6314,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -7163,6 +7217,41 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             </g>
           );
         })()}
+
+        {/* Canvas V2 Pass 1.8 — persisted tape-measure overlays.
+            Always rendered (across tool switches), gated only by the
+            show / hide toggle. Click the label to remove a single
+            measurement; the in-progress measure render below covers
+            the active draw. */}
+        {measurementsVisible !== false && persistedMeasurements?.map((m) => {
+          const dx = m.b.x - m.a.x;
+          const dy = m.b.y - m.a.y;
+          const distPx = Math.hypot(dx, dy);
+          const ft = distPx * currentFloorPxToFt;
+          const mx = (m.a.x + m.b.x) / 2;
+          const my = (m.a.y + m.b.y) / 2;
+          return (
+            <g key={m.id}>
+              <line
+                x1={m.a.x} y1={m.a.y} x2={m.b.x} y2={m.b.y}
+                stroke="#FACC15" strokeWidth="1.1" opacity="0.85"
+                pointerEvents="none"
+              />
+              <circle cx={m.a.x} cy={m.a.y} r={2.5} fill="#FACC15" pointerEvents="none" />
+              <circle cx={m.b.x} cy={m.b.y} r={2.5} fill="#FACC15" pointerEvents="none" />
+              <g
+                transform={`translate(${mx}, ${my})`}
+                style={{ cursor: onRemoveMeasurement ? 'pointer' : 'default' }}
+                onClick={(e) => { e.stopPropagation(); onRemoveMeasurement?.(m.id); }}
+              >
+                <rect x={-32} y={-9} width={64} height={18} rx={4} fill="var(--panel-background)" fillOpacity="0.92" stroke="#FACC15" strokeWidth="0.6" />
+                <text textAnchor="middle" y={4} fontSize="11" fontFamily="ui-monospace, monospace" fill="#FACC15" fontWeight="700">
+                  {ft.toFixed(1)} ft
+                </text>
+              </g>
+            </g>
+          );
+        })}
 
         {tool === 'measure' && measure.start && (() => {
           const end = measure.end ?? measure.cursor ?? measure.start;
