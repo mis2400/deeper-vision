@@ -12,7 +12,7 @@ import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { Play, Pause, RotateCcw, Shield, Clock, TrendingUp, Footprints, AlertTriangle, Sparkles, SkipBack, SkipForward, FileDown } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
-import { SCENARIOS, runScenario } from '../lib/threatEngine';
+import { SCENARIOS, runScenario, type ScenarioResult } from '../lib/threatEngine';
 
 export function ThreatSimulator() {
   const navigate = useNavigate();
@@ -102,6 +102,21 @@ export function ThreatSimulator() {
     const next = Math.min(n - 1, cur + 1);
     setProgress(next / (n - 1));
   }, [progress, result]);
+
+  // V1 2B.8 — captured baseline result for before/after comparison.
+  // The operator clicks "Capture baseline" before they harden; the
+  // simulator freezes the current ScenarioResult and renders it
+  // beside the live one with a delta panel.
+  const [baseline, setBaseline] = useState<{ scenarioId: string; result: ScenarioResult; capturedAt: number } | null>(null);
+  // Drop the baseline when scenario changes (comparing different
+  // scenarios is meaningless; force a re-capture).
+  useEffect(() => { setBaseline(null); }, [scenarioId]);
+
+  const onCaptureBaseline = useCallback(() => {
+    if (!result) return;
+    setBaseline({ scenarioId, result, capturedAt: Date.now() });
+  }, [result, scenarioId]);
+  const onClearBaseline = useCallback(() => setBaseline(null), []);
 
   // Live count-up of exposure as the path plays.
   const liveScore = useMemo(() => {
@@ -284,12 +299,27 @@ export function ThreatSimulator() {
           <Button className="w-full" size="sm" variant="outline" onClick={() => navigate(`/project/${projectId}/canvas`)}>
             <Shield className="w-3.5 h-3.5 mr-1" />Harden on canvas
           </Button>
+          {/* V1 2B.8 — capture / compare baseline. */}
+          {result && !baseline && (
+            <Button
+              className="w-full"
+              size="sm"
+              variant="outline"
+              onClick={onCaptureBaseline}
+              data-testid="threat-capture-baseline"
+            >
+              <Clock className="w-3.5 h-3.5 mr-1" />Capture baseline
+            </Button>
+          )}
+          {result && baseline && baseline.scenarioId === scenarioId && (
+            <BeforeAfter baseline={baseline.result} live={result} onClear={onClearBaseline} />
+          )}
           {result && (
             <Button
               className="w-full"
               size="sm"
               variant="outline"
-              onClick={() => exportThreatReport(result, scenarioDef!, state, projectId)}
+              onClick={() => exportThreatReport(result, scenarioDef!, state, projectId, baseline?.result)}
               data-testid="threat-export-pdf"
             >
               <FileDown className="w-3.5 h-3.5 mr-1" />Print threat report
@@ -311,6 +341,7 @@ async function exportThreatReport(
   scenario: ReturnType<typeof SCENARIOS[number]> | undefined,
   state: ReturnType<typeof useProjectStore.getState>,
   projectId: string,
+  baseline?: ScenarioResult,
 ) {
   if (!result || !scenario) return;
   const { jsPDF } = await import('jspdf');
@@ -410,6 +441,43 @@ async function exportThreatReport(
     }
   }
 
+  // ── Before / after baseline (optional) ──
+  if (baseline) {
+    if (y > H - 130) { doc.addPage(); y = 60; }
+    y += 12;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Before / after', 40, y);
+    y += 14;
+    const delta = result.score - baseline.score;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(75, 85, 99);
+    doc.text(`Baseline ${baseline.score}% (${baseline.severity}) → Live ${result.score}% (${result.severity})`, 40, y);
+    y += 14;
+    const deltaColor: [number, number, number] = delta < 0 ? [16, 185, 129] : delta > 0 ? [239, 68, 68] : [107, 114, 128];
+    doc.setTextColor(...deltaColor);
+    doc.text(`${delta > 0 ? '+' : ''}${delta} points ${delta < 0 ? '(better)' : delta > 0 ? '(worse)' : '(no change)'}`, 40, y);
+    y += 18;
+    // List closed gaps.
+    const liveHopGaps = new Set(result.breakdown.filter((b) => b.hopIndex !== undefined).map((b) => b.hopIndex));
+    const closed = baseline.breakdown.filter((b) => b.hopIndex !== undefined && !liveHopGaps.has(b.hopIndex));
+    if (closed.length > 0) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Closed by hardening', 40, y); y += 12;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(75, 85, 99);
+      for (const c of closed) {
+        if (y > H - 60) { doc.addPage(); y = 60; }
+        doc.text(`- ${c.label} (${c.contribution} pts cleared)`, 46, y);
+        y += 12;
+      }
+    }
+  }
+
   // ── Footer ──
   doc.setFontSize(8);
   doc.setTextColor(148, 163, 184);
@@ -482,6 +550,63 @@ function drawPathSnapshot(doc: any, result: ReturnType<typeof runScenario>, x: n
     doc.setTextColor(31, 41, 55);
     doc.text(`${i + 1}. ${hop.label}`, toX(hop.x) + 8, toY(hop.y) + 3);
   }
+}
+
+// V1 2B.8 — Before / after panel. Shows the captured baseline
+// alongside the live result, computes the score delta, and lists
+// every gap that was in the baseline but is no longer in the live
+// breakdown (those are the gaps the hardening closed).
+function BeforeAfter({ baseline, live, onClear }: { baseline: ScenarioResult; live: ScenarioResult; onClear: () => void }) {
+  const delta = live.score - baseline.score;
+  const baselineGaps = new Set(baseline.breakdown.filter((b) => b.hopIndex !== undefined).map((b) => b.hopIndex));
+  const liveGaps     = new Set(live.breakdown.filter((b) => b.hopIndex !== undefined).map((b) => b.hopIndex));
+  const closed: typeof baseline.breakdown = baseline.breakdown.filter((b) => b.hopIndex !== undefined && !liveGaps.has(b.hopIndex));
+  const newlyOpened: typeof live.breakdown = live.breakdown.filter((b) => b.hopIndex !== undefined && !baselineGaps.has(b.hopIndex));
+  const deltaTone = delta < 0 ? 'text-emerald-600' : delta > 0 ? 'text-rose-600' : 'text-muted-foreground';
+  return (
+    <div className="bg-card border border-border rounded-lg p-3" data-testid="threat-before-after">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Before / After</div>
+        <button onClick={onClear} className="text-[10px] text-muted-foreground hover:text-foreground" title="Drop the baseline">Clear</button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <Panel label="Baseline" score={baseline.score} severity={baseline.severity} />
+        <Panel label="Live" score={live.score} severity={live.severity} />
+      </div>
+      <div className={`text-[12.5px] font-medium tabular-nums ${deltaTone}`}>
+        {delta === 0 ? 'No change.' : `${delta > 0 ? '+' : ''}${delta} pts ${delta < 0 ? '(better)' : '(worse)'}`}
+      </div>
+      {closed.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] uppercase tracking-[0.10em] text-emerald-600/80 mb-1">Closed by hardening</div>
+          <ul className="space-y-0.5">
+            {closed.map((c) => (
+              <li key={c.id} className="text-[11px] text-emerald-700">- {c.label} ({c.contribution} pts cleared)</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {newlyOpened.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] uppercase tracking-[0.10em] text-rose-600/80 mb-1">Newly opened</div>
+          <ul className="space-y-0.5">
+            {newlyOpened.map((g) => (
+              <li key={g.id} className="text-[11px] text-rose-700">- {g.label} (+{g.contribution} pts)</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Panel({ label, score, severity }: { label: string; score: number; severity: ScenarioResult['severity'] }) {
+  return (
+    <div className="rounded-md border border-border bg-secondary/20 px-2 py-1.5">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className={`text-[18px] font-medium tabular-nums ${severityClass(severity)}`}>{score}<span className="text-[11px] text-muted-foreground ml-0.5">%</span></div>
+    </div>
+  );
 }
 
 function ScenarioCanvas({ result, progress, state, projectId }: {
