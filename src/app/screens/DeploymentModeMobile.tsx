@@ -50,10 +50,24 @@ export function DeploymentModeMobile() {
   const { projectId = 'p1' } = useParams();
   const nav = useNavigate();
 
-  const state = useProjectStore((s) => s);
-  const workOrders = useMemo(() => deriveWorkOrders(state, projectId), [state, projectId]);
-
-  const project = useProjectStore((s) => s.projects[projectId]);
+  // Subscribe to ONLY the slices `deriveWorkOrders` needs. The desktop
+  // DeploymentMode subscribes to the whole store today; the mobile
+  // screen pays a higher render tax (form inputs everywhere), so we're
+  // surgical here.
+  const projects     = useProjectStore((s) => s.projects);
+  const devices      = useProjectStore((s) => s.devices);
+  const pathways     = useProjectStore((s) => s.pathways);
+  const idfs         = useProjectStore((s) => s.idfs);
+  const floors       = useProjectStore((s) => s.floors);
+  const progressMap  = useProjectStore((s) => s.workOrderProgress);
+  const workOrders = useMemo(
+    () => deriveWorkOrders(
+      { projects, devices, pathways, idfs, floors, workOrderProgress: progressMap } as any,
+      projectId,
+    ),
+    [projects, devices, pathways, idfs, floors, progressMap, projectId],
+  );
+  const project = projects[projectId];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = selectedId ? workOrders.find((w) => w.id === selectedId) ?? null : null;
 
@@ -410,8 +424,13 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
         )}
       </SectionCard>
 
-      {/* Footer CTA — sticky outside the section list */}
-      <div className="fixed left-0 right-0 bottom-0 border-t border-border bg-background/95 backdrop-blur-md p-3">
+      {/* Footer CTA — sticky outside the section list. iOS safe-area
+          inset added so the home-indicator bar doesn't cover the
+          button on iPhone. */}
+      <div
+        className="fixed left-0 right-0 bottom-0 border-t border-border bg-background/95 backdrop-blur-md p-3"
+        style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         <button
           onClick={onMarkComplete}
           className={`w-full h-12 rounded-md text-[14px] font-medium transition-colors ${

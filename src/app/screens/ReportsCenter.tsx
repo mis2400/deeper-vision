@@ -33,6 +33,26 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// V1 1D — module-scope so the literal isn't recreated every render.
+// Reports body subscribes to the whole store; a fresh array per render
+// would tear down the IntersectionObserver on every keystroke.
+const REPORTS_SECTIONS: { id: string; label: string; visibleInCustomer: boolean }[] = [
+  { id: 'sec-cover',       label: 'Cover',              visibleInCustomer: true  },
+  { id: 'sec-summary',     label: 'Executive summary',  visibleInCustomer: true  },
+  { id: 'sec-floors',      label: 'Sites & floors',     visibleInCustomer: true  },
+  { id: 'sec-plans',       label: 'Plan preview',       visibleInCustomer: true  },
+  { id: 'sec-cameras',     label: 'Camera schedule',    visibleInCustomer: true  },
+  { id: 'sec-doors',       label: 'Door hardware',      visibleInCustomer: true  },
+  { id: 'sec-pathways',    label: 'Pathways',           visibleInCustomer: true  },
+  { id: 'sec-bom',         label: 'BOM & pricing',      visibleInCustomer: false },
+  { id: 'sec-deployment',  label: 'Deployment',         visibleInCustomer: true  },
+  { id: 'sec-assumptions', label: 'Pricing assumptions',visibleInCustomer: false },
+  { id: 'sec-warnings',    label: 'Warnings',           visibleInCustomer: true  },
+  { id: 'sec-exclusions',  label: 'Assumptions & exclusions', visibleInCustomer: true },
+  { id: 'sec-attachments', label: 'Attachments',        visibleInCustomer: true  },
+];
+
+
 const SURVEYOR_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
 const PX_PER_FT = 3.83;
 
@@ -139,27 +159,16 @@ export function ReportsCenter() {
     } catch {
       toast.message('Mail draft opened', { description: url, duration: 5000 });
     }
-    window.open(`mailto:${customer?.contacts?.[0]?.email ?? ''}?subject=${subject}&body=${body}`, '_blank');
+    const to = encodeURIComponent(customer?.contacts?.[0]?.email ?? '');
+    window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
   };
 
   // V1 1D — sticky table of contents. Section ids drive both scroll
   // navigation and IntersectionObserver-based active highlighting.
-  const SECTIONS: { id: string; label: string; visibleInCustomer: boolean }[] = [
-    { id: 'sec-cover',       label: 'Cover',              visibleInCustomer: true },
-    { id: 'sec-summary',     label: 'Executive summary',  visibleInCustomer: true },
-    { id: 'sec-floors',      label: 'Sites & floors',     visibleInCustomer: true },
-    { id: 'sec-plans',       label: 'Plan preview',       visibleInCustomer: true },
-    { id: 'sec-cameras',     label: 'Camera schedule',    visibleInCustomer: true },
-    { id: 'sec-doors',       label: 'Door hardware',      visibleInCustomer: true },
-    { id: 'sec-pathways',    label: 'Pathways',           visibleInCustomer: true },
-    { id: 'sec-bom',         label: 'BOM & pricing',      visibleInCustomer: false },
-    { id: 'sec-deployment',  label: 'Deployment',         visibleInCustomer: true },
-    { id: 'sec-assumptions', label: 'Pricing assumptions',visibleInCustomer: false },
-    { id: 'sec-warnings',    label: 'Warnings',           visibleInCustomer: true },
-    { id: 'sec-exclusions',  label: 'Assumptions & exclusions', visibleInCustomer: true },
-    { id: 'sec-attachments', label: 'Attachments',        visibleInCustomer: true },
-  ];
-  const visibleSections = SECTIONS.filter((s) => isInternal || s.visibleInCustomer);
+  // visibleSections + the observer effect key on `isInternal` only so
+  // they don't churn on every parent re-render (the parent subscribes
+  // to the whole store).
+  const visibleSections = useMemo(() => REPORTS_SECTIONS.filter((s) => isInternal || s.visibleInCustomer), [isInternal]);
   const [activeSection, setActiveSection] = useState<string>(visibleSections[0]?.id ?? '');
   useEffect(() => {
     const obs = new IntersectionObserver(

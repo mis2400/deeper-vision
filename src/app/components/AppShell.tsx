@@ -140,12 +140,12 @@ const APP_MENU_GROUPS: { id: string; label: string | null; items: { to: string; 
     id: 'work', label: null, items: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard',        hint: 'Daily home' },
       { to: '/projects',  icon: FolderKanban,    label: 'Projects',         hint: 'Every active site' },
-      { to: '/crm',       icon: BarChart3,       label: 'Pipeline',         hint: 'Pre-project sales' },
+      { to: '/crm',       icon: BarChart3,       label: 'Pipeline',         hint: 'Pre project sales' },
     ],
   },
   {
     id: 'build', label: 'Build', items: [
-      { to: '/ai/p1',     icon: Sparkles,        label: 'AI Assistant',     hint: 'Project-grounded' },
+      { to: '/ai/p1',     icon: Sparkles,        label: 'AI Assistant',     hint: 'Project grounded' },
       { to: '/catalog',   icon: Package,         label: 'Product catalog',  hint: 'Manufacturer feeds' },
       { to: '/devices',   icon: Package,         label: 'Device library',   hint: 'Your priced pricebook' },
     ],
