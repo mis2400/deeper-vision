@@ -49,12 +49,12 @@ export function CommissionSummaryPanel({ device }: { device: Device }) {
     <div className="rounded-lg border border-border p-3 bg-secondary/15">
       <div className="flex items-center justify-between">
         <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Commissioning</div>
-        <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10.5px] border"
+        <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10px] border"
           style={{ color: meta.tone, borderColor: `${meta.tone}55`, background: `${meta.tone}14` }}>
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: meta.tone }} />{meta.label}
         </span>
       </div>
-      <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 mt-2 text-[11.5px]">
+      <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 mt-2 text-[11px]">
         <span className="text-muted-foreground">Date</span><span className="text-foreground">{c.commissionedAt || '—'}</span>
         <span className="text-muted-foreground">By</span><span className="text-foreground">{c.commissionedBy || '—'}</span>
         {c.serialNumber && (<><span className="text-muted-foreground">Serial</span><span className="text-foreground">{c.serialNumber}</span></>)}
@@ -62,7 +62,7 @@ export function CommissionSummaryPanel({ device }: { device: Device }) {
       {c.testResults.length > 0 && (
         <ul className="mt-3 space-y-1">
           {c.testResults.map((t) => (
-            <li key={t.id} className="flex items-center gap-2 text-[11.5px]">
+            <li key={t.id} className="flex items-center gap-2 text-[11px]">
               {t.passed
                 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                 : <Circle className="w-3.5 h-3.5 text-muted-foreground" />}
@@ -72,7 +72,7 @@ export function CommissionSummaryPanel({ device }: { device: Device }) {
         </ul>
       )}
       {c.notes && (
-        <div className="mt-3 text-[11.5px] text-foreground whitespace-pre-wrap">{c.notes}</div>
+        <div className="mt-3 text-[11px] text-foreground whitespace-pre-wrap">{c.notes}</div>
       )}
     </div>
   );
@@ -144,7 +144,7 @@ export function CommissionSheet({ device, onCancel, onDone }: {
                 Record the install tests + sign off. Pass status creates a real Asset record.
               </div>
             </div>
-            <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10.5px] border shrink-0"
+            <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10px] border shrink-0"
               style={{ color: meta.tone, borderColor: `${meta.tone}55`, background: `${meta.tone}14` }}>
               {meta.label}
             </span>

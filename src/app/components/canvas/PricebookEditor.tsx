@@ -96,7 +96,7 @@ export function PricebookEditor({ projectId, onClose }: Props) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[15px] font-semibold tracking-tight">Pricebook editor</div>
-            <div className="text-[11.5px] text-muted-foreground mt-0.5">
+            <div className="text-[11px] text-muted-foreground mt-0.5">
               Overrides apply to this project's BOM only.
               {overrideCount > 0 && <span className="ml-1.5 text-foreground">{overrideCount} override{overrideCount === 1 ? '' : 's'} active.</span>}
             </div>
@@ -209,7 +209,7 @@ export function PricebookEditor({ projectId, onClose }: Props) {
         </div>
 
         {/* Footer disclaimer */}
-        <div className="px-5 py-3 border-t border-border bg-secondary/15 text-[10.5px] text-muted-foreground leading-snug shrink-0">
+        <div className="px-5 py-3 border-t border-border bg-secondary/15 text-[10px] text-muted-foreground leading-snug shrink-0">
           Pricebook overrides are stored in this browser for this project. They feed the BOM
           drawer, CSV export, and field-deployment labor estimates immediately. Not connected to
           ERP / accounting / pricebook vendor sync yet.
@@ -227,7 +227,7 @@ function Section({ title, icon: Icon, hint, children }: {
       <div className="flex items-center gap-2 mb-2">
         <Icon className="w-3.5 h-3.5 text-muted-foreground" />
         <div className="text-[11px] uppercase tracking-[0.14em] text-foreground">{title}</div>
-        {hint && <div className="text-[10.5px] text-muted-foreground ml-2 truncate">{hint}</div>}
+        {hint && <div className="text-[10px] text-muted-foreground ml-2 truncate">{hint}</div>}
       </div>
       <div className="rounded-lg border border-border bg-secondary/10 p-3 space-y-1.5">
         {children}
@@ -261,7 +261,7 @@ function PriceRow({
         {Icon && <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
         <span className="text-[12px] text-foreground truncate">{label}</span>
       </div>
-      <span className="text-[11.5px] text-muted-foreground tabular-nums text-right">{fmt(defaultValue)}</span>
+      <span className="text-[11px] text-muted-foreground tabular-nums text-right">{fmt(defaultValue)}</span>
       <input
         type="number"
         value={has ? override : ''}
@@ -319,7 +319,7 @@ function DoorHwRow({
           <span className="text-[12px] text-foreground truncate">{desc}</span>
           <span className="text-[9.5px] text-muted-foreground tracking-tight">{hw}</span>
         </div>
-        <span className="text-[11.5px] text-muted-foreground tabular-nums text-right">${defaultPrice.toFixed(0)}</span>
+        <span className="text-[11px] text-muted-foreground tabular-nums text-right">${defaultPrice.toFixed(0)}</span>
         <input
           type="number"
           value={hasPrice ? overridePrice : ''}
@@ -351,7 +351,7 @@ function DoorHwRow({
       <div className="grid grid-cols-[1fr_120px_120px_120px_28px] gap-x-3 items-center -mt-0.5">
         <div className="flex items-center gap-1.5 pl-5">
           <Briefcase className="w-3 h-3 text-muted-foreground" />
-          <span className="text-[10.5px] text-muted-foreground">Install labor</span>
+          <span className="text-[10px] text-muted-foreground">Install labor</span>
         </div>
         <span className="text-[11px] text-muted-foreground tabular-nums text-right">{defaultLabor.toFixed(2)} hr</span>
         <input

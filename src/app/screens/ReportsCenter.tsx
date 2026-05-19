@@ -217,7 +217,7 @@ export function ReportsCenter() {
       <div className="reports-chrome shrink-0 border-b border-border bg-background/90 backdrop-blur-md flex items-center gap-3 px-4 py-2.5 sticky top-0 z-20">
         <button
           onClick={() => nav(`/project/${projectId}/canvas`)}
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-border hover:bg-secondary/40 text-foreground"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] border border-border hover:bg-secondary/40 text-foreground"
           data-track="reports-back-canvas"
         >
           <ArrowLeft className="w-3.5 h-3.5" />Engineering Canvas
@@ -247,7 +247,7 @@ export function ReportsCenter() {
 
         <Link
           to={`/project/${projectId}/review`}
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-500 transition-colors"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-500 transition-colors"
         >
           <PencilRuler className="w-3.5 h-3.5" />Review mode
         </Link>
@@ -256,7 +256,7 @@ export function ReportsCenter() {
         {!isInternal && (
           <button
             onClick={onEmailToCustomer}
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 text-sky-500 transition-colors"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 text-sky-500 transition-colors"
             data-track="reports-email-customer"
           >
             <Eye className="w-3.5 h-3.5" />Email to customer
@@ -264,7 +264,7 @@ export function ReportsCenter() {
         )}
         <button
           onClick={onPrint}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[11.5px] border border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[11px] border border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           data-track="reports-print"
         >
           <Printer className="w-3.5 h-3.5" />Print / Save PDF
@@ -288,7 +288,7 @@ export function ReportsCenter() {
               </div>
               <div>
                 <h2 className="text-base font-medium">Export internal view?</h2>
-                <p className="text-[12.5px] text-muted-foreground mt-1">
+                <p className="text-[12px] text-muted-foreground mt-1">
                   This view shows your markup, BOM totals, labor hours, and pricing assumptions. Do not send this PDF to a customer. Switch to Customer view to export the safe version.
                 </p>
               </div>
@@ -315,7 +315,7 @@ export function ReportsCenter() {
           right. V1 1D layout. The TOC is hidden in print. */}
       <div className="reports-shell mx-auto flex gap-6" style={{ maxWidth: 1280, padding: '24px 20px 64px' }}>
         <aside className="reports-toc shrink-0 w-[200px] hidden lg:block">
-          <div className="sticky top-[68px] text-[11.5px]">
+          <div className="sticky top-[68px] text-[11px]">
             <div className="px-2 pb-1.5 text-[10px] uppercase tracking-[0.10em] text-muted-foreground/80">In this report</div>
             <nav className="flex flex-col">
               {visibleSections.map((s) => (
@@ -476,7 +476,7 @@ function ModeBadge({ mode }: { mode: Mode }) {
     : { label: 'Internal view', tone: '#F59E0B', icon: Lock };
   const Icon = meta.icon;
   return (
-    <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10.5px] border"
+    <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10px] border"
       style={{ color: meta.tone, borderColor: `${meta.tone}55`, background: `${meta.tone}14` }}>
       <Icon className="w-3 h-3" />{meta.label}
     </span>
@@ -539,7 +539,7 @@ function ExecutiveSummary({ counts, bom, wos, woGate, mode, hasOverrides, overri
       )}
 
       {isCustomer && (
-        <div className="rounded-lg p-3 mt-3 border border-dashed border-border bg-secondary/10 text-[11.5px] text-muted-foreground">
+        <div className="rounded-lg p-3 mt-3 border border-dashed border-border bg-secondary/10 text-[11px] text-muted-foreground">
           Cost detail is hidden in customer view. Flip the view toggle to Internal to surface BOM totals + pricing assumptions.
         </div>
       )}
@@ -559,7 +559,7 @@ function Tile({ label, value, icon: Icon, tone, subline }: {
         </span>
       </div>
       <div className="text-[20px] font-medium tabular-nums leading-none">{value}</div>
-      {subline && <div className="text-[10.5px] text-muted-foreground mt-1 leading-snug">{subline}</div>}
+      {subline && <div className="text-[10px] text-muted-foreground mt-1 leading-snug">{subline}</div>}
     </div>
   );
 }
@@ -783,8 +783,8 @@ function DoorCard({ record }: { record: { id: string; type: string; floorName: s
       <div className="px-3 py-2 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <span className="w-6 h-6 rounded inline-flex items-center justify-center" style={{ background: '#A371F71F', color: '#A371F7' }}><KeyRound className="w-3 h-3" /></span>
-          <div className="text-[12.5px] font-medium text-foreground">{record.id}</div>
-          <div className="text-[10.5px] text-muted-foreground">{record.type} · {record.floorName}</div>
+          <div className="text-[12px] font-medium text-foreground">{record.id}</div>
+          <div className="text-[10px] text-muted-foreground">{record.type} · {record.floorName}</div>
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
           {record.electrification && <Chip tone="#94A3B8" text={record.electrification} />}
@@ -906,7 +906,7 @@ function BomSummary({ bom, hasOverrides, overrideCount, pricebook, projectName }
           <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Sell total · {(bom.totals.markup * 100).toFixed(0)}% markup</div>
           <div className="text-[22px] font-medium tabular-nums leading-tight">{fmt(bom.totals.sellTotal)}</div>
         </div>
-        <div className="text-[10.5px] text-right" style={{ color: hasOverrides ? '#22D3EE' : undefined }}>
+        <div className="text-[10px] text-right" style={{ color: hasOverrides ? '#22D3EE' : undefined }}>
           {hasOverrides
             ? <><span className="font-medium">Project pricebook overrides active</span><br /><span className="text-muted-foreground">{overrideCount} override{overrideCount === 1 ? '' : 's'} · not connected to ERP yet.</span></>
             : <span className="text-muted-foreground">Preview pricing. No pricebook overrides on file.</span>
@@ -945,7 +945,7 @@ function DeploymentSummary({ wos, tallies, woGate }: { wos: ReturnType<typeof de
     return (
       <Section title="Field deployment summary" icon={ClipboardCheck}
         subtitle="Live work-order progress. Pulled from the deployment view; status / checklist persists across reloads.">
-        <div className="rounded-lg border border-dashed border-border bg-secondary/10 p-4 text-[12.5px] text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border bg-secondary/10 p-4 text-[12px] text-muted-foreground">
           {woGate.reason === 'no_approval' && 'Work orders generate after the customer approves scope from the Customer Portal. No approvals on record yet.'}
           {woGate.reason === 'design_only' && 'Latest customer approval was design only. Work orders generate after a scope or final approval lands.'}
           {woGate.reason === 'phase_too_early' && <>Project lifecycle is currently <span className="text-foreground">{woGate.phase ?? 'unset'}</span>. Advance to Deployment from the Project Command Center to start work orders.</>}
@@ -1042,7 +1042,7 @@ function PricingAssumptions({ pricebook }: { pricebook: any }) {
           />
         </div>
       )}
-      <div className="text-[10.5px] text-muted-foreground mt-3 leading-snug">
+      <div className="text-[10px] text-muted-foreground mt-3 leading-snug">
         Pricebook is stored per-project in browser storage. Not connected to ERP / accounting / vendor pricebook sync yet.
       </div>
     </Section>
@@ -1110,7 +1110,7 @@ function AssumptionsExclusions() {
   return (
     <Section title="Assumptions &amp; exclusions" icon={FileText}
       subtitle="Standard scope language. Edit before final issuance.">
-      <div className="grid grid-cols-2 gap-3 text-[11.5px] text-foreground/90 leading-relaxed">
+      <div className="grid grid-cols-2 gap-3 text-[11px] text-foreground/90 leading-relaxed">
         <div className="rounded-lg border border-border bg-secondary/10 p-3">
           <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Included</div>
           <ul className="space-y-1 list-disc pl-4">
@@ -1183,7 +1183,7 @@ function AttachmentsSection({ projectId, mode }: { projectId: string; mode: Mode
         : 'Files attached to canvas objects and work orders.'}
     >
       {attachments.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-secondary/5 p-4 text-center text-[11.5px] text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border bg-secondary/5 p-4 text-center text-[11px] text-muted-foreground">
           <Paperclip className="w-4 h-4 mx-auto mb-1.5 text-muted-foreground/50" />
           No attachments yet. Open a device, door, pathway, or work order inspector to attach files.
         </div>
@@ -1349,20 +1349,20 @@ function ReportAttachmentRow({ att, mode, state }: { att: Attachment; mode: Mode
       <div className="flex-1 min-w-0">
         {isCustomer ? (
           <>
-            <div className="text-[11.5px] font-medium text-foreground truncate" title={customerLabel}>{customerLabel}</div>
+            <div className="text-[11px] font-medium text-foreground truncate" title={customerLabel}>{customerLabel}</div>
             <div className="text-[10px] text-muted-foreground tabular-nums">
               <span className="uppercase tracking-[0.1em]">{att.category}</span>
             </div>
           </>
         ) : (
           <>
-            <div className="text-[11.5px] font-medium text-foreground truncate" title={att.fileName}>{att.fileName}</div>
+            <div className="text-[11px] font-medium text-foreground truncate" title={att.fileName}>{att.fileName}</div>
             <div className="text-[10px] text-muted-foreground tabular-nums">
               <span className="uppercase tracking-[0.1em] mr-1">{att.category}</span>
               · linked to {att.linkedObjectType} {att.linkedObjectId}
             </div>
             {att.notes && (
-              <div className="text-[10.5px] text-foreground/75 mt-0.5 italic line-clamp-2">{att.notes}</div>
+              <div className="text-[10px] text-foreground/75 mt-0.5 italic line-clamp-2">{att.notes}</div>
             )}
           </>
         )}
@@ -1375,7 +1375,7 @@ function ReportAttachmentRow({ att, mode, state }: { att: Attachment; mode: Mode
 
 function ReportFooter({ project, mode }: { project: any; mode: Mode }) {
   return (
-    <footer className="report-footer mt-8 pt-4 border-t border-border text-[10.5px] text-muted-foreground">
+    <footer className="report-footer mt-8 pt-4 border-t border-border text-[10px] text-muted-foreground">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div>Generated from the Deeper Vision canvas · Project {project.id}</div>
@@ -1412,7 +1412,7 @@ function Section({ title, icon: Icon, subtitle, action, children }: {
           <Icon className="w-4 h-4 text-muted-foreground" />
           <div>
             <h2 className="text-[14px] font-semibold tracking-tight text-foreground leading-tight" dangerouslySetInnerHTML={{ __html: title }} />
-            {subtitle && <div className="text-[10.5px] text-muted-foreground leading-snug mt-0.5">{subtitle}</div>}
+            {subtitle && <div className="text-[10px] text-muted-foreground leading-snug mt-0.5">{subtitle}</div>}
           </div>
         </div>
         {action}
@@ -1454,7 +1454,7 @@ function Chip({ tone, text }: { tone: string; text: string }) {
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="rounded-lg border border-dashed border-border bg-secondary/5 p-4 text-center text-[11.5px] text-muted-foreground">{text}</div>;
+  return <div className="rounded-lg border border-dashed border-border bg-secondary/5 p-4 text-center text-[11px] text-muted-foreground">{text}</div>;
 }
 
 function CsvButton({ filename, headers, rows }: { filename: string; headers: string[]; rows: (string | number)[][] }) {

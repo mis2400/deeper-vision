@@ -327,7 +327,7 @@ export function AIAssistant() {
                 broadcast a real selection / floor. Operator can clear
                 it; the engine drops the scope on next send. */}
             {ctxActive && assistantContext && (
-              <div className="mb-2 inline-flex items-center gap-1.5 h-6 pl-1.5 pr-1 rounded-full border border-primary/30 bg-primary/10 text-primary text-[10.5px]" data-testid="ai-context-chip">
+              <div className="mb-2 inline-flex items-center gap-1.5 h-6 pl-1.5 pr-1 rounded-full border border-primary/30 bg-primary/10 text-primary text-[10px]" data-testid="ai-context-chip">
                 <Crosshair className="w-3 h-3" />
                 <span className="tracking-tight">
                   Scope
@@ -404,7 +404,7 @@ export function AIAssistant() {
             {/* Voice error / status line — only when there's something
                 concrete to say. No generic "Recognition error". */}
             {voice.errorMessage && (voice.state === 'denied' || voice.state === 'error') && (
-              <div className="mt-1 text-[10.5px] text-amber-600 inline-flex items-center gap-1" data-testid="ai-voice-error">
+              <div className="mt-1 text-[10px] text-amber-600 inline-flex items-center gap-1" data-testid="ai-voice-error">
                 <Info className="w-3 h-3" />{voice.errorMessage}
               </div>
             )}
@@ -493,7 +493,7 @@ function MessageBubble({ msg, projectId, onOpenCitation, onVerifyFollowup, onApp
             {isLow && (
               <button
                 onClick={onVerifyFollowup}
-                className="text-[10.5px] text-primary hover:underline"
+                className="text-[10px] text-primary hover:underline"
                 title="Send a follow-up that asks me to verify this against the canvas."
               >
                 Would you like me to verify?
@@ -512,14 +512,14 @@ function MessageBubble({ msg, projectId, onOpenCitation, onVerifyFollowup, onApp
               if (isApplied && appliedRec) {
                 return (
                   <div key={a.id} className="inline-flex items-center justify-between gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5">
-                    <span className="inline-flex items-center gap-1.5 text-[11.5px] text-emerald-700">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-700">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>{appliedRec.result}</span>
                     </span>
                     {appliedRec.undoPayload && (
                       <button
                         onClick={() => onUndoApplied(appliedRec)}
-                        className="inline-flex items-center gap-1 text-[10.5px] text-emerald-700/80 hover:text-emerald-800"
+                        className="inline-flex items-center gap-1 text-[10px] text-emerald-700/80 hover:text-emerald-800"
                         title="Reverse this action"
                       >
                         <Undo2 className="w-3 h-3" />Undo
@@ -536,7 +536,7 @@ function MessageBubble({ msg, projectId, onOpenCitation, onVerifyFollowup, onApp
                   className="inline-flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/10 hover:bg-primary/15 px-2.5 py-1.5 transition-colors group"
                   data-testid={`ai-action-${a.kind}`}
                 >
-                  <span className="inline-flex items-center gap-1.5 text-[11.5px] text-primary">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-primary">
                     <Zap className="w-3.5 h-3.5" />
                     <span>{a.label}</span>
                   </span>
@@ -570,7 +570,7 @@ function ConfidenceChip({ level, why }: { level: 'high' | 'medium' | 'low'; why?
   }[level];
   return (
     <span
-      className={`inline-flex items-center gap-1 h-5 px-1.5 rounded-full border text-[10.5px] tracking-tight ${meta.cls}`}
+      className={`inline-flex items-center gap-1 h-5 px-1.5 rounded-full border text-[10px] tracking-tight ${meta.cls}`}
       title={why ?? `${meta.label} confidence`}
       data-testid="ai-confidence"
     >
@@ -594,7 +594,7 @@ function CitationsRow({ citations, onOpen }: { citations: AiCitation[]; onOpen: 
           key={`${c.kind}-${c.refId}-${i}`}
           onClick={() => onOpen(c)}
           title={`Open ${c.kind} ${c.label}`}
-          className="inline-flex items-center gap-1 h-5 px-1.5 rounded-full border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary text-[10.5px] transition-colors"
+          className="inline-flex items-center gap-1 h-5 px-1.5 rounded-full border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary text-[10px] transition-colors"
         >
           <span className="opacity-70">{c.kind}</span>
           <span className="font-medium">{c.label}</span>
@@ -603,7 +603,7 @@ function CitationsRow({ citations, onOpen }: { citations: AiCitation[]; onOpen: 
       {overflow > 0 && (
         <button
           onClick={() => setExpanded(true)}
-          className="inline-flex items-center h-5 px-1.5 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground text-[10.5px] transition-colors"
+          className="inline-flex items-center h-5 px-1.5 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground text-[10px] transition-colors"
           title={`Show all ${citations.length} sources`}
         >
           +{overflow} more
@@ -612,7 +612,7 @@ function CitationsRow({ citations, onOpen }: { citations: AiCitation[]; onOpen: 
       {expanded && citations.length > CITATION_VISIBLE_MAX && (
         <button
           onClick={() => setExpanded(false)}
-          className="inline-flex items-center h-5 px-1.5 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground text-[10.5px] transition-colors"
+          className="inline-flex items-center h-5 px-1.5 rounded-full border border-border bg-secondary/50 hover:bg-secondary text-muted-foreground text-[10px] transition-colors"
           title="Collapse the source list"
         >
           Show less

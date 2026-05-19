@@ -284,10 +284,10 @@ export function Dashboard() {
                 <span className="text-[12px] uppercase tracking-[0.10em]">AI Assistant</span>
               </div>
               <div className="text-[14px] font-medium mt-1.5">Ask grounded questions</div>
-              <div className="text-[11.5px] text-muted-foreground mt-0.5">
+              <div className="text-[11px] text-muted-foreground mt-0.5">
                 Coverage gaps, BOM totals, PoE budgets, blocked work orders. Cites the records it draws from.
               </div>
-              <div className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-primary">
+              <div className="mt-2 inline-flex items-center gap-1 text-[11px] text-primary">
                 Open Assistant <ArrowRight className="w-3 h-3" />
               </div>
             </button>
@@ -311,8 +311,8 @@ export function Dashboard() {
                     </div>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[12.5px] text-foreground truncate">{it.label}</div>
-                    {it.subtitle && <div className="text-[10.5px] text-muted-foreground truncate">{it.subtitle}</div>}
+                    <div className="text-[12px] text-foreground truncate">{it.label}</div>
+                    {it.subtitle && <div className="text-[10px] text-muted-foreground truncate">{it.subtitle}</div>}
                   </div>
                 </button>
               ))}
@@ -332,10 +332,10 @@ export function Dashboard() {
                   >
                     <div className="flex items-center gap-2">
                       <span className={`w-1.5 h-1.5 rounded-full ${blocked ? 'bg-rose-500' : 'bg-primary/70'} shrink-0`} />
-                      <span className="text-[12.5px] text-foreground truncate flex-1">{wo.title}</span>
+                      <span className="text-[12px] text-foreground truncate flex-1">{wo.title}</span>
                       <span className={`text-[10px] uppercase tracking-[0.10em] ${blocked ? 'text-rose-600' : 'text-muted-foreground'}`}>{wo.progress.status}</span>
                     </div>
-                    <div className="text-[10.5px] text-muted-foreground truncate mt-0.5">{projectName}{wo.location ? ` · ${wo.location}` : ''}</div>
+                    <div className="text-[10px] text-muted-foreground truncate mt-0.5">{projectName}{wo.location ? ` · ${wo.location}` : ''}</div>
                   </button>
                 );
               })}
@@ -525,7 +525,7 @@ function StatCard({ label, value, hint, tone, onClick }: { label: string; value:
       disabled={!interactive}
       className={`bg-card border border-border rounded-lg p-3 text-left ${interactive ? 'hover:border-border-strong transition-colors cursor-pointer' : 'cursor-default'}`}
     >
-      <div className="text-[11.5px] text-muted-foreground">{label}</div>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className={`text-xl font-medium mt-1 tabular-nums ${toneCls}`}>{value}</div>
       {hint && <div className="text-[11px] text-muted-foreground mt-0.5">{hint}</div>}
     </button>
@@ -536,7 +536,7 @@ function Card({ title, cta, children }: { title: string; cta?: { label: string; 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
       <div className="px-4 py-2.5 border-b border-border/70 flex items-center justify-between">
-        <div className="text-[12.5px] font-medium text-foreground tracking-tight">{title}</div>
+        <div className="text-[12px] font-medium text-foreground tracking-tight">{title}</div>
         {cta && (
           <button onClick={cta.onClick} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
             {cta.label}<ChevronRight className="w-3 h-3" />
@@ -570,7 +570,7 @@ function TaskRow({ task, customerName, onOpen }: { task: Task; customerName?: st
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-3 text-[11.5px] text-muted-foreground/70">{children}</div>;
+  return <div className="px-4 py-3 text-[11px] text-muted-foreground/70">{children}</div>;
 }
 
 // ─── helpers ──────────────────────────────────────────────────────

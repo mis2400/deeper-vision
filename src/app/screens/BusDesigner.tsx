@@ -258,7 +258,7 @@ export function BusDesigner() {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-3 h-9 text-[12.5px] capitalize transition-colors border-b-2 ${tab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+              className={`px-3 h-9 text-[12px] capitalize transition-colors border-b-2 ${tab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
             >
               {t === 'bom' ? 'BOM' : t}
             </button>
@@ -342,7 +342,7 @@ export function BusDesigner() {
                 {/* Camera roster */}
                 <div className="bg-card border border-border rounded-lg overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
-                    <div className="text-[12.5px] font-medium text-foreground">Camera roster · {cameras.length}</div>
+                    <div className="text-[12px] font-medium text-foreground">Camera roster · {cameras.length}</div>
                     <div className="ml-auto relative">
                       <Button size="sm" onClick={() => setAddCamMenuOpen((o) => !o)}>
                         <Plus className="w-3.5 h-3.5 mr-1" />Add camera
@@ -369,7 +369,7 @@ export function BusDesigner() {
                       No cameras yet. Click <strong className="text-foreground">Add camera</strong> to place per-location coverage.
                     </div>
                   ) : (
-                    <table className="w-full text-[11.5px]">
+                    <table className="w-full text-[11px]">
                       <thead className="text-[10px] uppercase tracking-wider text-muted-foreground bg-secondary/30">
                         <tr>
                           <th className="text-left px-4 py-1.5">Location</th>
@@ -409,7 +409,7 @@ export function BusDesigner() {
 
                 {/* DVR section */}
                 <div className="bg-card border border-border rounded-lg overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-border text-[12.5px] font-medium text-foreground">Recorder / DVR</div>
+                  <div className="px-4 py-2.5 border-b border-border text-[12px] font-medium text-foreground">Recorder / DVR</div>
                   <div className="p-4">
                     {dvr ? (
                       <div className="text-[12px] grid grid-cols-2 gap-3">
@@ -498,7 +498,7 @@ export function BusDesigner() {
               <div className="p-6 max-w-[640px]">
                 <div className="bg-card border border-border rounded-lg overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-border flex items-center">
-                    <div className="text-[12.5px] font-medium text-foreground">Event inputs & driver controls</div>
+                    <div className="text-[12px] font-medium text-foreground">Event inputs & driver controls</div>
                     <div className="ml-auto flex items-center gap-1">
                       {(['panic-button', 'event-marker', 'stop-arm-trigger', 'ignition', 'driver-monitor', 'touch-display'] as const).map((k) => (
                         <button
@@ -507,7 +507,7 @@ export function BusDesigner() {
                             if (events.some((e) => e.kind === k)) { toast.message(`${k} already added`); return; }
                             addBusEvent({ id: `bev-${Date.now().toString(36).slice(-5)}`, busId, kind: k, label: k.replace(/-/g, ' '), inputIndex: events.length + 1 });
                           }}
-                          className="text-[10.5px] px-2 h-7 rounded border border-border hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
+                          className="text-[10px] px-2 h-7 rounded border border-border hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
                         >
                           + {k.replace(/-/g, ' ')}
                         </button>
@@ -547,7 +547,7 @@ export function BusDesigner() {
             {tab === 'commissioning' && (
               <div className="p-6 max-w-[720px]">
                 <div className="bg-card border border-border rounded-lg overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-border text-[12.5px] font-medium text-foreground">Commissioning checklist · {checks.filter(c => c.status === 'pass').length}/{checks.length} passed</div>
+                  <div className="px-4 py-2.5 border-b border-border text-[12px] font-medium text-foreground">Commissioning checklist · {checks.filter(c => c.status === 'pass').length}/{checks.length} passed</div>
                   {checks.length === 0
                     ? <div className="px-4 py-6 text-[12px] text-muted-foreground">Checklist hasn't been seeded yet. Open the fleet dashboard and re-add this bus.</div>
                     : checks.map((c) => (
@@ -561,7 +561,7 @@ export function BusDesigner() {
                           {c.status === 'fail' && <X className="w-3.5 h-3.5" />}
                         </button>
                         <div className="flex-1 text-foreground">{c.step}</div>
-                        <div className="text-[10.5px] capitalize text-muted-foreground">{c.status}</div>
+                        <div className="text-[10px] capitalize text-muted-foreground">{c.status}</div>
                       </div>
                     ))}
                 </div>
@@ -608,7 +608,7 @@ export function BusDesigner() {
                   const grand = hwTotal + laborTotal;
                   return (
                     <div className="bg-card border border-border rounded-lg overflow-hidden">
-                      <div className="px-4 py-2.5 border-b border-border text-[12.5px] font-medium text-foreground">Bus BOM</div>
+                      <div className="px-4 py-2.5 border-b border-border text-[12px] font-medium text-foreground">Bus BOM</div>
                       <table className="w-full text-[12px]">
                         <thead className="text-[10px] uppercase tracking-wider text-muted-foreground bg-secondary/30">
                           <tr>
@@ -652,7 +652,7 @@ export function BusDesigner() {
 
           {/* Right: AI assistant */}
           <div className="border-l border-border bg-card overflow-auto">
-            <div className="px-4 py-3 border-b border-border text-[12.5px] font-medium text-foreground flex items-center gap-2">
+            <div className="px-4 py-3 border-b border-border text-[12px] font-medium text-foreground flex items-center gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-primary" /> Design validation
             </div>
             {validation.length === 0 ? (
@@ -736,13 +736,13 @@ function EditNum({ value, onChange, suffix }: { value: number; onChange: (v: num
 
 function Badge({ ok }: { ok: boolean }) {
   return ok
-    ? <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-success/15 text-success">YES</span>
-    : <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">NO</span>;
+    ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">YES</span>
+    : <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">NO</span>;
 }
 
 function ToggleSm({ checked, onChange }: { checked: boolean; onChange: (b: boolean) => void }) {
   return (
-    <button onClick={() => onChange(!checked)} className={`px-2.5 h-7 rounded border text-[11.5px] ${checked ? 'border-primary/50 bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'}`}>
+    <button onClick={() => onChange(!checked)} className={`px-2.5 h-7 rounded border text-[11px] ${checked ? 'border-primary/50 bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'}`}>
       {checked ? 'Yes' : 'No'}
     </button>
   );

@@ -127,7 +127,7 @@ export function LoginScreen() {
           )}
 
           {error && (
-            <div className="mb-3 inline-flex items-start gap-1.5 text-[11.5px] text-rose-600" role="alert">
+            <div className="mb-3 inline-flex items-start gap-1.5 text-[11px] text-rose-600" role="alert">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               {error}
             </div>
@@ -138,11 +138,11 @@ export function LoginScreen() {
               <FieldEmail value={email} onChange={setEmail} />
               <FieldPassword value={password} onChange={setPassword} />
               <div className="flex items-center justify-between">
-                <button type="button" onClick={() => { setError(null); setMode('forgot'); }} className="text-[11.5px] text-primary hover:underline" data-testid="login-forgot">Forgot password?</button>
+                <button type="button" onClick={() => { setError(null); setMode('forgot'); }} className="text-[11px] text-primary hover:underline" data-testid="login-forgot">Forgot password?</button>
               </div>
               <Button type="submit" className="w-full">Sign in <ArrowRight className="w-4 h-4 ml-1" /></Button>
               <SsoRow onSso={onSso} />
-              <p className="text-[11.5px] text-muted-foreground text-center">
+              <p className="text-[11px] text-muted-foreground text-center">
                 No account? <button type="button" onClick={() => { setError(null); setMode('create-account'); }} className="text-primary hover:underline">Create one</button>
               </p>
             </form>
@@ -155,7 +155,7 @@ export function LoginScreen() {
               <FieldPassword value={password} onChange={setPassword} hint="At least 8 characters." />
               <Button type="submit" className="w-full">Create account <ArrowRight className="w-4 h-4 ml-1" /></Button>
               <SsoRow onSso={onSso} />
-              <p className="text-[11.5px] text-muted-foreground text-center">
+              <p className="text-[11px] text-muted-foreground text-center">
                 Already on DeeperVision? <button type="button" onClick={() => { setError(null); setMode('sign-in'); }} className="text-primary hover:underline">Sign in</button>
               </p>
             </form>
@@ -165,15 +165,15 @@ export function LoginScreen() {
             <form onSubmit={onForgot} className="space-y-3">
               <div className="mb-1">
                 <div className="text-sm font-medium">Reset your password</div>
-                <div className="text-[11.5px] text-muted-foreground mt-0.5">Enter your account email. We send a reset link with one-time use.</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">Enter your account email. We send a reset link with one-time use.</div>
               </div>
               <FieldEmail value={email} onChange={setEmail} />
               <Button type="submit" className="w-full"><KeyRound className="w-3.5 h-3.5 mr-1" />Send reset link</Button>
-              <button type="button" onClick={() => { setError(null); setMode('sign-in'); }} className="block w-full text-[11.5px] text-muted-foreground hover:text-foreground text-center">Back to sign in</button>
+              <button type="button" onClick={() => { setError(null); setMode('sign-in'); }} className="block w-full text-[11px] text-muted-foreground hover:text-foreground text-center">Back to sign in</button>
             </form>
           )}
 
-          <div className="mt-10 text-[10.5px] text-muted-foreground/80 text-center leading-relaxed">
+          <div className="mt-10 text-[10px] text-muted-foreground/80 text-center leading-relaxed">
             By continuing you agree to our terms and the privacy notice. Local persistence only until the auth backend ships.
           </div>
         </div>
@@ -247,7 +247,7 @@ function FieldPassword({ value, onChange, hint }: { value: string; onChange: (v:
           {show ? 'Hide' : 'Show'}
         </button>
       </div>
-      {hint && <div className="text-[10.5px] text-muted-foreground mt-1">{hint}</div>}
+      {hint && <div className="text-[10px] text-muted-foreground mt-1">{hint}</div>}
     </div>
   );
 }

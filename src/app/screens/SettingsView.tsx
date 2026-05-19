@@ -426,7 +426,7 @@ function Billing() {
                   {price == null ? 'Custom' : `$${price}`}
                   {price != null && <span className="text-[11px] text-muted-foreground"> / seat / mo</span>}
                 </div>
-                <ul className="text-[11.5px] text-muted-foreground space-y-1 mt-3 mb-3">
+                <ul className="text-[11px] text-muted-foreground space-y-1 mt-3 mb-3">
                   {p.features.map((f) => (
                     <li key={f} className="flex items-start gap-1.5">
                       <Check className="w-3 h-3 mt-0.5 text-emerald-500 shrink-0" />
@@ -461,8 +461,8 @@ function Billing() {
             {billing.invoices.map((inv) => (
               <li key={inv.id} className="flex items-center justify-between py-1.5 px-2 rounded border border-border bg-background">
                 <div className="min-w-0">
-                  <div className="text-[12.5px] font-medium tabular-nums">{inv.number}</div>
-                  <div className="text-[10.5px] text-muted-foreground">
+                  <div className="text-[12px] font-medium tabular-nums">{inv.number}</div>
+                  <div className="text-[10px] text-muted-foreground">
                     {new Date(inv.periodStart).toLocaleDateString()} → {new Date(inv.periodEnd).toLocaleDateString()}
                   </div>
                 </div>
@@ -565,7 +565,7 @@ function PaymentMethodPanel({ current, onSave }: { current?: PaymentMethod; onSa
             <Button size="sm" disabled={!canSave} onClick={onSubmit}>Save card</Button>
           </div>
           {!canSave && number.length > 0 && (
-            <div className="text-[10.5px] text-amber-600">
+            <div className="text-[10px] text-amber-600">
               {!numberValid ? 'Card number fails the Luhn check.' : !expValid ? 'Expiry must be MM/YY.' : 'CVC must be 3 or 4 digits.'}
             </div>
           )}
@@ -757,7 +757,7 @@ function Integrations() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search connectors"
-              className="w-full bg-input-background border border-input-border rounded-md pl-8 pr-3 py-1.5 text-[12.5px] focus:outline-none focus:border-primary"
+              className="w-full bg-input-background border border-input-border rounded-md pl-8 pr-3 py-1.5 text-[12px] focus:outline-none focus:border-primary"
               data-testid="integrations-search"
             />
           </div>
@@ -807,14 +807,14 @@ function Integrations() {
                           </span>
                         )}
                       </div>
-                      <div className="text-[10.5px] text-muted-foreground">{def.vendor} · {CATEGORY_LABEL[def.category]}</div>
+                      <div className="text-[10px] text-muted-foreground">{def.vendor} · {CATEGORY_LABEL[def.category]}</div>
                     </div>
                   </div>
-                  <div className="text-[11.5px] text-muted-foreground mt-2 leading-snug">{def.short}</div>
+                  <div className="text-[11px] text-muted-foreground mt-2 leading-snug">{def.short}</div>
                   <div className="flex items-center justify-between mt-3 gap-2">
                     {connected ? (
                       <>
-                        <div className="text-[10.5px] text-muted-foreground">
+                        <div className="text-[10px] text-muted-foreground">
                           {rec?.lastSyncAt ? `Synced ${formatAgo(rec.lastSyncAt)}` : `Connected ${formatAgo(rec?.connectedAt ?? Date.now())}`}
                         </div>
                         <div className="flex items-center gap-1">
@@ -994,8 +994,8 @@ function Team() {
                 {memberList.map((m) => (
                   <tr key={m.id} className="border-t border-border" data-testid={`team-member-${m.id}`}>
                     <td className="px-3 py-2">
-                      <div className="text-[12.5px] font-medium">{m.fullName}</div>
-                      <div className="text-[10.5px] text-muted-foreground">{m.email}</div>
+                      <div className="text-[12px] font-medium">{m.fullName}</div>
+                      <div className="text-[10px] text-muted-foreground">{m.email}</div>
                     </td>
                     <td className="px-3 py-2">
                       <select
@@ -1008,17 +1008,17 @@ function Team() {
                       </select>
                     </td>
                     <td className="px-3 py-2">
-                      <span className={`text-[10.5px] uppercase tracking-[0.10em] ${m.inviteStatus === 'accepted' ? 'text-emerald-600' : m.inviteStatus === 'pending' ? 'text-amber-600' : 'text-rose-600'}`}>
+                      <span className={`text-[10px] uppercase tracking-[0.10em] ${m.inviteStatus === 'accepted' ? 'text-emerald-600' : m.inviteStatus === 'pending' ? 'text-amber-600' : 'text-rose-600'}`}>
                         {m.inviteStatus}
                       </span>
                       {m.inviteStatus === 'pending' && (
                         <button
                           onClick={() => { patchMember(m.id, { inviteStatus: 'accepted', lastActiveAt: Date.now() }); toast.success(`${m.fullName} marked accepted.`); }}
-                          className="ml-2 text-[10.5px] text-primary hover:underline"
+                          className="ml-2 text-[10px] text-primary hover:underline"
                         >Mark accepted</button>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-[11.5px] text-muted-foreground">
+                    <td className="px-3 py-2 text-[11px] text-muted-foreground">
                       {m.lastActiveAt ? formatAgo(m.lastActiveAt) : '—'}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -1080,7 +1080,7 @@ function Team() {
             </li>
           ))}
         </ul>
-        <div className="text-[10.5px] text-muted-foreground/70 mt-3">
+        <div className="text-[10px] text-muted-foreground/70 mt-3">
           Custom roles ship on the Enterprise tier. Today the role field accepts any of the built-in ids above.
         </div>
       </Panel>
@@ -1189,7 +1189,7 @@ function Notifications() {
                       <tr key={evt.key} className="border-t border-border" data-testid={`notif-event-${evt.key}`}>
                         <td className="px-3 py-2">
                           <div className="font-medium">{evt.label}</div>
-                          <div className="text-[10.5px] text-muted-foreground">{evt.hint}</div>
+                          <div className="text-[10px] text-muted-foreground">{evt.hint}</div>
                         </td>
                         <td className="px-3 py-2">
                           <select
@@ -1391,8 +1391,8 @@ function Badge({ label, status }: { label: string; status: 'Compliant' | 'In pro
     : 'border-border text-muted-foreground bg-secondary/40';
   return (
     <div className={`rounded-md border px-2.5 py-1.5 ${tone}`}>
-      <div className="text-[10.5px] uppercase tracking-[0.10em]">{status}</div>
-      <div className="text-[12.5px] font-medium">{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.10em]">{status}</div>
+      <div className="text-[12px] font-medium">{label}</div>
     </div>
   );
 }
@@ -1587,14 +1587,14 @@ function ApiKeysPanel({ apiKeys, patchSecurity, logAudit, operatorName }: { apiK
                 <tr key={k.id} className="border-t border-border" data-testid={`api-key-${k.id}`}>
                   <td className="px-3 py-2">
                     <div className="font-medium">{k.name}</div>
-                    <div className="text-[10.5px] text-muted-foreground"><code>{k.prefix}…</code> · {k.createdBy ?? '—'}</div>
+                    <div className="text-[10px] text-muted-foreground"><code>{k.prefix}…</code> · {k.createdBy ?? '—'}</div>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{k.scopes.map((s) => SCOPE_LABEL[s]).join(', ')}</td>
                   <td className="px-3 py-2 text-muted-foreground">{formatAgo(k.createdAt)}</td>
                   <td className="px-3 py-2 text-muted-foreground">{k.lastUsedAt ? formatAgo(k.lastUsedAt) : 'never'}</td>
                   <td className="px-3 py-2 text-right">
                     {k.revokedAt ? (
-                      <span className="text-[10.5px] uppercase tracking-[0.10em] text-rose-600">Revoked</span>
+                      <span className="text-[10px] uppercase tracking-[0.10em] text-rose-600">Revoked</span>
                     ) : (
                       <button onClick={() => onRevoke(k)} className="text-muted-foreground hover:text-rose-500 p-1" title="Revoke">
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1683,12 +1683,12 @@ function WebhooksPanel({ webhooks, patchSecurity, logAudit }: { webhooks: Record
             <li key={h.id} className="border border-border rounded-md p-2.5" data-testid={`webhook-${h.id}`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12.5px] font-medium truncate">{h.url}</div>
-                  <div className="text-[10.5px] text-muted-foreground">
+                  <div className="text-[12px] font-medium truncate">{h.url}</div>
+                  <div className="text-[10px] text-muted-foreground">
                     {h.events.length} event{h.events.length === 1 ? '' : 's'} · secret …{h.secretLast4} · {h.active ? 'active' : 'paused'}
                   </div>
                   {h.lastDeliveredAt && (
-                    <div className="text-[10.5px] text-muted-foreground">
+                    <div className="text-[10px] text-muted-foreground">
                       Last ping {formatAgo(h.lastDeliveredAt)} · {h.lastStatus} {h.lastStatus && h.lastStatus < 300 ? 'OK' : 'failed'}
                     </div>
                   )}
@@ -1919,9 +1919,9 @@ function SessionsPanel({ sessions, patchSecurity, logAudit }: { sessions: Securi
             {sessions.map((s) => (
               <li key={s.id} className="border border-border rounded-md p-2.5 flex items-start justify-between gap-2">
                 <div>
-                  <div className="text-[12.5px] font-medium">{s.device} · {s.browser}</div>
-                  <div className="text-[10.5px] text-muted-foreground">{s.location} · {s.ip}</div>
-                  <div className="text-[10.5px] text-muted-foreground">Last active {formatAgo(s.lastActiveAt)}</div>
+                  <div className="text-[12px] font-medium">{s.device} · {s.browser}</div>
+                  <div className="text-[10px] text-muted-foreground">{s.location} · {s.ip}</div>
+                  <div className="text-[10px] text-muted-foreground">Last active {formatAgo(s.lastActiveAt)}</div>
                 </div>
                 <div className="text-right">
                   {s.current ? (
@@ -2103,7 +2103,7 @@ function Advanced() {
       <Panel title="Developer mode" subtitle="Surfaces internal debug indicators on shipped screens. Useful for staff QA; not meant for end users.">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-[12.5px] font-medium">Show developer panels</div>
+            <div className="text-[12px] font-medium">Show developer panels</div>
             <div className="text-[11px] text-muted-foreground">Currently {ws.devMode ? 'enabled' : 'disabled'}. Surfaces opt in by checking <code>workspaceSettings.devMode</code> in the store.</div>
           </div>
           <button

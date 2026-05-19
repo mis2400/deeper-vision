@@ -424,7 +424,7 @@ export function ReviewMode() {
 
           {/* Floor / scale chip */}
           {floor && (
-            <div className="absolute left-3 bottom-3 text-[10.5px] px-2 py-1 rounded-md border border-border bg-background/90 backdrop-blur-sm text-muted-foreground flex items-center gap-2">
+            <div className="absolute left-3 bottom-3 text-[10px] px-2 py-1 rounded-md border border-border bg-background/90 backdrop-blur-sm text-muted-foreground flex items-center gap-2">
               <span>{floor.name}</span>
               <span className="text-foreground/40">·</span>
               <span>1 px = {floor.scalePxToFt.toFixed(3)} ft {floor.calibratedAt ? '· verified' : '· default'}</span>
@@ -434,7 +434,7 @@ export function ReviewMode() {
           )}
 
           {/* Hint chip */}
-          <div className="absolute right-3 bottom-3 text-[10.5px] px-2 py-1 rounded-md border border-border bg-background/90 backdrop-blur-sm text-muted-foreground flex items-center gap-2">
+          <div className="absolute right-3 bottom-3 text-[10px] px-2 py-1 rounded-md border border-border bg-background/90 backdrop-blur-sm text-muted-foreground flex items-center gap-2">
             <span>Scroll = zoom · Shift-drag = pan · Click = inspect</span>
           </div>
 
@@ -519,7 +519,7 @@ function ReviewTopBar({
           {meta.label}
         </span>
         {/* Quick status changer — keeps the contract honest (Preview tag below). */}
-        <div className="flex items-center h-7 rounded-md border border-border bg-secondary/30 text-[10.5px] overflow-hidden">
+        <div className="flex items-center h-7 rounded-md border border-border bg-secondary/30 text-[10px] overflow-hidden">
           {(['draft', 'ready', 'approved'] as ReviewStatus[]).map((s) => (
             <button
               key={s}
@@ -538,7 +538,7 @@ function ReviewTopBar({
       <button
         onClick={onCopyLink}
         title="Copy a tokenized share link so a reviewer can open this view"
-        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-border hover:bg-secondary/40 text-foreground transition-colors"
+        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] border border-border hover:bg-secondary/40 text-foreground transition-colors"
         data-track="review-copy-link"
       >
         <LinkIcon className="w-3.5 h-3.5" />Copy review link
@@ -548,7 +548,7 @@ function ReviewTopBar({
       <button
         onClick={onPrintReview}
         title="Print the review — canvas snapshot plus comment thread"
-        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-border hover:bg-secondary/40 text-foreground transition-colors"
+        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] border border-border hover:bg-secondary/40 text-foreground transition-colors"
         data-track="review-print"
       >
         <Printer className="w-3.5 h-3.5" />Print review
@@ -556,7 +556,7 @@ function ReviewTopBar({
       <button
         onClick={onOpenReports}
         title="Open the Reports / Proposal package — generated from the same canvas data"
-        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 text-sky-500 transition-colors"
+        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/15 text-sky-500 transition-colors"
         data-track="review-open-reports"
       >
         <FileText className="w-3.5 h-3.5" />Reports
@@ -564,7 +564,7 @@ function ReviewTopBar({
       <button
         onClick={onOpenEngineering}
         title="Open the Engineering Canvas — back to the design surface"
-        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary transition-colors"
+        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary transition-colors"
         data-track="review-open-engineering"
       >
         <ArrowLeft className="w-3.5 h-3.5" />Open in Engineering
@@ -908,7 +908,7 @@ function ReviewBomSummary({
       <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between">
         <button
           onClick={() => setShowCost(!showCost)}
-          className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[10.5px] border border-border hover:bg-secondary/40"
+          className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[10px] border border-border hover:bg-secondary/40"
           data-track="review-bom-show-cost"
         >
           <DollarSign className="w-3 h-3" />{showCost ? 'Hide cost' : 'Show cost'}
@@ -916,7 +916,7 @@ function ReviewBomSummary({
         {showCost ? (
           <span className="text-[12px] font-medium tabular-nums">${Math.round(bom.totals.sellTotal).toLocaleString()}</span>
         ) : (
-          <span className="text-[10.5px] text-muted-foreground italic">Cost hidden</span>
+          <span className="text-[10px] text-muted-foreground italic">Cost hidden</span>
         )}
       </div>
       {showCost && (
@@ -1001,7 +1001,7 @@ function ReviewSidePanel({
 
         <div className="flex-1 overflow-y-auto px-4 space-y-3 pb-3">
           {visibleComments.length === 0
-            ? <div className="text-[11.5px] text-muted-foreground">{comments.length === 0 ? 'No comments yet.' : 'No open comments.'}</div>
+            ? <div className="text-[11px] text-muted-foreground">{comments.length === 0 ? 'No comments yet.' : 'No open comments.'}</div>
             : visibleComments.map((c) => (
                 <div key={c.id} className={`rounded-md p-2.5 border bg-secondary/20 transition-opacity ${c.resolved ? 'border-emerald-500/30 opacity-70' : 'border-border'}`}>
                   <div className="flex items-center justify-between mb-0.5 gap-2">
@@ -1122,7 +1122,7 @@ function DeviceDetail({ d, floor }: { d: Device; floor: Floor | undefined }) {
         <div className="text-[16px] font-medium text-foreground tracking-tight">{d.id}</div>
         <div className="text-[12px] text-foreground/80 mt-0.5">{deviceLabel(d.type)}</div>
         {d.label && (
-          <div className="text-[11.5px] text-muted-foreground mt-0.5">{d.label}</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">{d.label}</div>
         )}
       </div>
       {product && (
@@ -1140,7 +1140,7 @@ function DeviceDetail({ d, floor }: { d: Device; floor: Floor | undefined }) {
         <div>
           <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Proposed hardware</div>
           {doorAssembly.length === 0
-            ? <div className="text-[11.5px] text-muted-foreground">No hardware specified yet for this opening.</div>
+            ? <div className="text-[11px] text-muted-foreground">No hardware specified yet for this opening.</div>
             : <ul className="space-y-1">
                 {doorAssembly.map((h) => (
                   <li key={h.hw} className="flex items-center justify-between text-[12px]">
@@ -1160,7 +1160,7 @@ function DeviceDetail({ d, floor }: { d: Device; floor: Floor | undefined }) {
       {d.notes && (
         <div className="rounded-md border border-border bg-secondary/20 p-2.5">
           <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-0.5">Notes</div>
-          <div className="text-[11.5px] text-foreground/90 leading-snug">{d.notes}</div>
+          <div className="text-[11px] text-foreground/90 leading-snug">{d.notes}</div>
         </div>
       )}
       <div className="text-[10px] text-muted-foreground border-t border-border pt-2">
@@ -1197,7 +1197,7 @@ function PathwayDetail({ p, floor }: { p: Pathway; floor: Floor | undefined }) {
 function KvRow({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground shrink-0">{k}</span>
+      <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground shrink-0">{k}</span>
       <span className="text-[12px] text-foreground text-right truncate">{v}</span>
     </div>
   );

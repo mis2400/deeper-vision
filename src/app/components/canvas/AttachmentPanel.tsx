@@ -306,7 +306,7 @@ export function AttachmentPanel({
         data-testid="attachment-dropzone"
       >
         <Upload className={`mx-auto mb-1 ${compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-muted-foreground`} />
-        <div className={`${compact ? 'text-[10.5px]' : 'text-[11.5px]'} text-foreground/80`}>
+        <div className={`${compact ? 'text-[10px]' : 'text-[11px]'} text-foreground/80`}>
           {busy ? 'Saving…' : 'Drop files or click to attach'}
         </div>
         <div className="text-[9.5px] text-muted-foreground mt-0.5">
@@ -335,7 +335,7 @@ export function AttachmentPanel({
           data-testid="attachment-notes-input"
         />
         {showInternalToggle && (
-          <label className="inline-flex items-center gap-1 text-[10.5px] text-muted-foreground cursor-pointer select-none">
+          <label className="inline-flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer select-none">
             <input
               type="checkbox"
               checked={draftInternal}
@@ -350,7 +350,7 @@ export function AttachmentPanel({
 
       {/* Attachment list */}
       {items.length === 0 ? (
-        <div className="text-[10.5px] text-muted-foreground italic text-center py-1.5">
+        <div className="text-[10px] text-muted-foreground italic text-center py-1.5">
           No attachments yet.
         </div>
       ) : (
@@ -369,7 +369,7 @@ export function AttachmentPanel({
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-[11.5px] font-medium text-foreground truncate" title={att.fileName}>{att.fileName}</span>
+                    <span className="text-[11px] font-medium text-foreground truncate" title={att.fileName}>{att.fileName}</span>
                     {att.internalOnly && (
                       <span className="text-[9px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded border border-amber-400/40 bg-amber-400/10 text-amber-400 inline-flex items-center gap-0.5" title="Hidden from customer view in Reports">
                         <EyeOff className="w-2.5 h-2.5" />Internal
@@ -384,7 +384,7 @@ export function AttachmentPanel({
                     <span>{relativeTime(att.createdAt)}</span>
                   </div>
                   {att.notes && (
-                    <div className="text-[10.5px] text-foreground/75 mt-1 italic line-clamp-2">{att.notes}</div>
+                    <div className="text-[10px] text-foreground/75 mt-1 italic line-clamp-2">{att.notes}</div>
                   )}
                 </div>
                 <button

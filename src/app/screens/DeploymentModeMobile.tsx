@@ -168,7 +168,7 @@ function WorkOrderListMobile({ workOrders, onOpen }: { workOrders: WorkOrder[]; 
               {woGate.reason === 'design_only' && 'Awaiting scope approval'}
               {woGate.reason === 'phase_too_early' && 'Project not in deployment yet'}
             </h2>
-            <p className="text-[12.5px] text-muted-foreground mt-1">
+            <p className="text-[12px] text-muted-foreground mt-1">
               {woGate.reason === 'no_approval' && 'Work orders generate after the customer approves scope from the Customer Portal.'}
               {woGate.reason === 'design_only' && 'Design approval signs off the drawing. Work orders generate after a scope or final approval lands.'}
               {woGate.reason === 'phase_too_early' && <>Project lifecycle is currently <span className="text-foreground">{woGate.phase ?? 'unset'}</span>. Advance to Deployment from the Project Command Center.</>}
@@ -177,7 +177,7 @@ function WorkOrderListMobile({ workOrders, onOpen }: { workOrders: WorkOrder[]; 
         ) : (
           <>
             <h2 className="text-base font-medium">No work orders yet</h2>
-            <p className="text-[12.5px] text-muted-foreground mt-1">Work orders appear here once devices are scheduled for install.</p>
+            <p className="text-[12px] text-muted-foreground mt-1">Work orders appear here once devices are scheduled for install.</p>
           </>
         )}
       </div>
@@ -218,7 +218,7 @@ function Section({ title, count, tone, children }: { title: string; count: numbe
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="text-[11.5px] text-muted-foreground text-center py-3">{children}</div>;
+  return <div className="text-[11px] text-muted-foreground text-center py-3">{children}</div>;
 }
 
 function WorkOrderRowMobile({ wo, onOpen }: { wo: WorkOrder; onOpen: (id: string) => void }) {
@@ -233,7 +233,7 @@ function WorkOrderRowMobile({ wo, onOpen }: { wo: WorkOrder; onOpen: (id: string
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-medium leading-tight truncate">{wo.title}</div>
-          {wo.subtitle && <div className="text-[11.5px] text-muted-foreground truncate mt-0.5">{wo.subtitle}</div>}
+          {wo.subtitle && <div className="text-[11px] text-muted-foreground truncate mt-0.5">{wo.subtitle}</div>}
           {wo.location && (
             <div className="text-[11px] text-muted-foreground mt-1 inline-flex items-center gap-1">
               <MapPin className="w-3 h-3" />{wo.location}
@@ -243,7 +243,7 @@ function WorkOrderRowMobile({ wo, onOpen }: { wo: WorkOrder; onOpen: (id: string
             <span className={`text-[10px] uppercase tracking-[0.10em] px-1.5 py-0.5 rounded ${tonePill}`}>
               {STATUS_LABEL[wo.progress.status]}
             </span>
-            <span className="text-[10.5px] text-muted-foreground tabular-nums">{doneCount} / {totalCount} checks</span>
+            <span className="text-[10px] text-muted-foreground tabular-nums">{doneCount} / {totalCount} checks</span>
             {wo.progress.blocker && (
               <span className="text-[10px] text-rose-500 truncate inline-flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />{wo.progress.blocker}
@@ -387,7 +387,7 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
                     <span className={`shrink-0 w-5 h-5 mt-0.5 rounded-full border inline-flex items-center justify-center ${done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-border'}`}>
                       {done && <Check className="w-3 h-3" />}
                     </span>
-                    <span className="text-[12.5px] leading-snug">{it.label}</span>
+                    <span className="text-[12px] leading-snug">{it.label}</span>
                   </button>
                 </li>
               );
@@ -399,7 +399,7 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
       {/* Identity */}
       <SectionCard icon={<Hash className="w-3.5 h-3.5" />} title="Identity">
         <label className="block">
-          <span className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">MAC address</span>
+          <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">MAC address</span>
           <input
             type="text"
             inputMode="text"
@@ -411,7 +411,7 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
           />
         </label>
         <label className="block mt-3">
-          <span className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">Serial number</span>
+          <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">Serial number</span>
           <input
             type="text"
             inputMode="text"
@@ -422,7 +422,7 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
           />
         </label>
         <label className="block mt-3">
-          <span className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">Field notes</span>
+          <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">Field notes</span>
           <textarea
             value={wo.progress.fieldNotes ?? ''}
             onChange={(e) => patch(wo.id, { fieldNotes: e.target.value })}
@@ -461,14 +461,14 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
                 </div>
                 <button
                   onClick={() => removePhoto(wo.id, p.id)}
-                  className="text-[10.5px] text-muted-foreground hover:text-rose-500"
+                  className="text-[10px] text-muted-foreground hover:text-rose-500"
                 >Remove</button>
               </li>
             ))}
           </ul>
         )}
         {!online && (
-          <div className="mt-2 text-[10.5px] text-amber-600 inline-flex items-center gap-1">
+          <div className="mt-2 text-[10px] text-amber-600 inline-flex items-center gap-1">
             <WifiOff className="w-3 h-3" />Photo metadata saved locally. Push when back online.
           </div>
         )}
@@ -492,7 +492,7 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
           {canComplete ? 'Mark complete' : 'Finish required fields to mark complete'}
         </button>
         {!canComplete && (
-          <div className="mt-1.5 text-[10.5px] text-muted-foreground inline-flex flex-wrap gap-x-2 gap-y-0.5">
+          <div className="mt-1.5 text-[10px] text-muted-foreground inline-flex flex-wrap gap-x-2 gap-y-0.5">
             <BadgeOk ok={allChecksDone}>Checklist</BadgeOk>
             <BadgeOk ok={hasMac}>MAC</BadgeOk>
             <BadgeOk ok={hasSerial}>Serial</BadgeOk>
@@ -516,7 +516,7 @@ function WorkOrderDetailMobile({ wo, online, onClose }: { wo: WorkOrder; online:
 function SectionCard({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <section className="bg-card border border-border rounded-lg p-3">
-      <h3 className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground inline-flex items-center gap-1.5 mb-2">
+      <h3 className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground inline-flex items-center gap-1.5 mb-2">
         {icon}{title}
       </h3>
       {children}

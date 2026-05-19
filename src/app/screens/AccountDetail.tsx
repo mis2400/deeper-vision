@@ -224,7 +224,7 @@ export function AccountDetail() {
                   </span>
                 )}
                 {customer.industry && (
-                  <span className="text-[11.5px] text-muted-foreground">{industryLabel(customer.industry)}</span>
+                  <span className="text-[11px] text-muted-foreground">{industryLabel(customer.industry)}</span>
                 )}
               </div>
 
@@ -251,7 +251,7 @@ export function AccountDetail() {
             </div>
 
             <div>
-              <div className="text-[11.5px] font-medium text-slate-200 mb-2 tracking-tight">Primary contact</div>
+              <div className="text-[11px] font-medium text-slate-200 mb-2 tracking-tight">Primary contact</div>
               {primaryContact ? (
                 <div className="bg-secondary/30 border border-border/60 rounded-md p-3">
                   <div className="text-sm font-medium">{primaryContact.firstName} {primaryContact.lastName}</div>
@@ -545,7 +545,7 @@ function TasksTab({ tasks, onComplete }: { tasks: Task[]; onComplete: (id: strin
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="bg-card border border-border rounded-lg p-3">
-      <div className="text-[11.5px] text-muted-foreground">{label}</div>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className="text-xl font-medium mt-1 tabular-nums">{value}</div>
       {hint && <div className="text-[10px] text-muted-foreground mt-0.5">{hint}</div>}
     </div>
@@ -555,7 +555,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 function InfoRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[11.5px] text-muted-foreground inline-flex items-center gap-1">{icon}{label}</div>
+      <div className="text-[11px] text-muted-foreground inline-flex items-center gap-1">{icon}{label}</div>
       <div className="text-sm mt-0.5">{children}</div>
     </div>
   );

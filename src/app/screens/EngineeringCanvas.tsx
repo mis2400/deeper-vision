@@ -3120,9 +3120,9 @@ export function EngineeringCanvas() {
                   <Sparkles className="w-3 h-3" />
                 </span>
                 <div className="flex-1 min-w-0 text-[12px] text-foreground leading-snug">
-                  <div className="font-medium text-[11.5px]">Threat Simulator suggested fix</div>
+                  <div className="font-medium text-[11px]">Threat Simulator suggested fix</div>
                   <div className="text-muted-foreground">{hardenHint.label}</div>
-                  <div className="text-[10.5px] text-muted-foreground/70 mt-0.5 tabular-nums">
+                  <div className="text-[10px] text-muted-foreground/70 mt-0.5 tabular-nums">
                     Anchor: ({Math.round(hardenHint.at.x)}, {Math.round(hardenHint.at.y)})
                   </div>
                 </div>
@@ -3288,15 +3288,15 @@ export function EngineeringCanvas() {
                   }}
                 >
                   <div className="flex flex-col">
-                    <span className="text-[11.5px] font-medium text-foreground leading-tight">{title}</span>
-                    <span className="text-[10.5px] text-muted-foreground leading-tight">{subtitle}</span>
+                    <span className="text-[11px] font-medium text-foreground leading-tight">{title}</span>
+                    <span className="text-[10px] text-muted-foreground leading-tight">{subtitle}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={onFinish}
                       disabled={!canFinish}
                       data-testid="tool-status-done"
-                      className="text-[10.5px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="text-[10px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                       title={isWall ? 'Finish wall chain (Enter)' : isMeasure ? 'Clear measurement' : 'Finish run (Enter)'}
                     >
                       Done
@@ -3304,7 +3304,7 @@ export function EngineeringCanvas() {
                     <button
                       onClick={onCancel}
                       data-testid="tool-status-cancel"
-                      className="text-[10.5px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
+                      className="text-[10px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
                       title="Cancel and return to Select (Esc)"
                     >
                       Cancel (Esc)
@@ -3316,7 +3316,7 @@ export function EngineeringCanvas() {
                       <>
                         <button
                           onClick={() => setMeasurementsVisible((v) => !v)}
-                          className="text-[10.5px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
+                          className="text-[10px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
                           title={measurementsVisible ? 'Hide all persisted measurements' : 'Show persisted measurements'}
                         >
                           {measurementsVisible ? 'Hide all' : 'Show all'}
@@ -3326,7 +3326,7 @@ export function EngineeringCanvas() {
                             if (currentFloorId) clearMeasurementsForFloor(currentFloorId);
                             toast.message(`Cleared ${persistedMeasurements.length} measurement${persistedMeasurements.length === 1 ? '' : 's'}`, { duration: 1800 });
                           }}
-                          className="text-[10.5px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
+                          className="text-[10px] uppercase tracking-[0.10em] rounded px-2 py-0.5 border border-border text-muted-foreground hover:text-foreground"
                           title="Remove every measurement on this floor"
                         >
                           Clear all
@@ -3358,12 +3358,12 @@ export function EngineeringCanvas() {
                 <div className="px-3 pt-3 pb-2 border-b border-border/60 flex items-center gap-2">
                   <Ruler className="w-3.5 h-3.5 text-primary" />
                   <span className="text-[12px] font-medium tracking-tight text-foreground">Set scale</span>
-                  <span className="ml-auto text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">
+                  <span className="ml-auto text-[10px] uppercase tracking-[0.10em] text-muted-foreground">
                     {Math.round(Math.hypot(calibrate.b.x - calibrate.a.x, calibrate.b.y - calibrate.a.y))} px
                   </span>
                 </div>
                 <div className="px-3 py-3 space-y-2">
-                  <div className="text-[11.5px] text-muted-foreground leading-snug">
+                  <div className="text-[11px] text-muted-foreground leading-snug">
                     How long is the line you just drew, in real-world feet?
                     Example: a single door is usually 3 ft.
                   </div>
@@ -3387,7 +3387,7 @@ export function EngineeringCanvas() {
                       }}
                       placeholder="e.g. 3"
                       data-testid="calibrate-feet-input"
-                      className="flex-1 h-8 px-2 rounded border border-border bg-background text-[12.5px] tabular-nums text-foreground focus:outline-none focus:border-primary/60"
+                      className="flex-1 h-8 px-2 rounded border border-border bg-background text-[12px] tabular-nums text-foreground focus:outline-none focus:border-primary/60"
                     />
                     <span className="text-[11px] text-muted-foreground">ft</span>
                   </div>
@@ -3395,7 +3395,7 @@ export function EngineeringCanvas() {
                     <button
                       onClick={() => { resetCalibrate(); setTool('select'); }}
                       data-testid="calibrate-cancel"
-                      className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1"
+                      className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1"
                     >
                       Cancel (Esc)
                     </button>
@@ -3406,7 +3406,7 @@ export function EngineeringCanvas() {
                       }}
                       disabled={!(parseFloat(calibrateFt) > 0)}
                       data-testid="calibrate-apply"
-                      className="text-[10.5px] uppercase tracking-[0.10em] text-primary-foreground bg-primary rounded px-2 py-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="text-[10px] uppercase tracking-[0.10em] text-primary-foreground bg-primary rounded px-2 py-1 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Apply scale
                     </button>
@@ -3429,12 +3429,12 @@ export function EngineeringCanvas() {
                   boxShadow: '0 6px 20px -6px rgba(0,0,0,0.4)',
                 }}
               >
-                <span className="text-[11.5px] text-foreground">
+                <span className="text-[11px] text-foreground">
                   Click canvas to place <span className="font-medium">{armedProduct.mfr} {armedProduct.model}</span>.
                 </span>
                 <button
                   onClick={() => { setArmedProduct(null); toast.message('Placement cancelled', { duration: 2000 }); }}
-                  className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-0.5"
+                  className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-0.5"
                   data-testid="armed-placement-cancel"
                 >
                   Cancel (Esc)
@@ -3656,7 +3656,7 @@ export function EngineeringCanvas() {
                 className="absolute z-30 left-1/2 -translate-x-1/2 top-3 inline-flex items-stretch h-9 rounded-xl border bg-card/95 backdrop-blur-xl shadow-[var(--shadow-medium)] overflow-hidden"
                 style={{ borderColor: 'var(--border)' }}
               >
-                <div className="px-3 inline-flex items-center text-[11.5px] tabular-nums text-foreground border-r border-border/60">
+                <div className="px-3 inline-flex items-center text-[11px] tabular-nums text-foreground border-r border-border/60">
                   <span className="font-medium">{selIds.size}</span><span className="text-muted-foreground ml-1">selected</span>
                 </div>
                 {/* Canvas V2 Pass 1.5 — alignment + distribute. One click
@@ -5138,7 +5138,7 @@ function TopBar(props: {
               <FileTextIcon className="w-3.5 h-3.5 text-sky-500" />
               <div className="flex-1 min-w-0">
                 <div className="text-[12px]">Reports</div>
-                <div className="text-[10.5px] text-muted-foreground">Proposal package generated from the canvas</div>
+                <div className="text-[10px] text-muted-foreground">Proposal package generated from the canvas</div>
               </div>
             </button>
 
@@ -5152,7 +5152,7 @@ function TopBar(props: {
               <Magnet className="w-3.5 h-3.5 text-muted-foreground" />
               <div className="flex-1 min-w-0">
                 <div className="text-[12px]">Snap to grid</div>
-                <div className="text-[10.5px] text-muted-foreground">{props.snap ? 'Vertices round to the 20 px grid.' : 'Free placement at sub grid precision.'}</div>
+                <div className="text-[10px] text-muted-foreground">{props.snap ? 'Vertices round to the 20 px grid.' : 'Free placement at sub grid precision.'}</div>
               </div>
               <span className={`text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded ${props.snap ? 'bg-primary/15 text-primary' : 'bg-secondary/40 text-muted-foreground'}`}>
                 {props.snap ? 'On' : 'Off'}
@@ -5168,7 +5168,7 @@ function TopBar(props: {
               <Activity className="w-3.5 h-3.5 text-sky-400" />
               <div className="flex-1 min-w-0">
                 <div className="text-[12px]">AI Intelligence</div>
-                <div className="text-[10.5px] text-muted-foreground">{props.intelOpen ? 'Chips + assistant visible' : 'Off — canvas stays calm'}</div>
+                <div className="text-[10px] text-muted-foreground">{props.intelOpen ? 'Chips + assistant visible' : 'Off — canvas stays calm'}</div>
               </div>
               <span className={`text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded ${props.intelOpen ? 'bg-primary/15 text-primary' : 'bg-secondary/40 text-muted-foreground'}`}>
                 {props.intelOpen ? 'On' : 'Off'}
@@ -5425,11 +5425,11 @@ function MapsPanel({ onOpenScanBuild }: { onOpenScanBuild?: () => void }) {
                   <Layers className="w-4 h-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12.5px] font-medium truncate">{b.name}</div>
-                  <div className="text-[10.5px] text-muted-foreground truncate">{b.address}</div>
+                  <div className="text-[12px] font-medium truncate">{b.name}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">{b.address}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-[10.5px] text-muted-foreground">{b.floors.length} floors</div>
+                  <div className="text-[10px] text-muted-foreground">{b.floors.length} floors</div>
                   <div className="text-[10px] text-muted-foreground/70">{buildingDevices} devices</div>
                 </div>
                 <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground ml-1 transition-transform ${open ? '' : '-rotate-90'}`} />
@@ -5468,7 +5468,7 @@ function MapsPanel({ onOpenScanBuild }: { onOpenScanBuild?: () => void }) {
                   <div className="pl-9 pr-3 pt-1">
                     <button
                       onClick={() => setAddFloorTo(b.id)}
-                      className="text-[10.5px] text-primary hover:underline inline-flex items-center gap-1"
+                      className="text-[10px] text-primary hover:underline inline-flex items-center gap-1"
                     >
                       <Plus className="w-3 h-3" /> Add floor map to {b.name.split(' — ')[0]}
                     </button>
@@ -5636,7 +5636,7 @@ function ReportBuilderDialog({
                       <Icon className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className={`text-[12.5px] font-medium ${active ? 'text-foreground' : 'text-foreground'}`}>{t.label}</div>
+                      <div className={`text-[12px] font-medium ${active ? 'text-foreground' : 'text-foreground'}`}>{t.label}</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">{t.sub}</div>
                     </div>
                     {active && <Check className="w-4 h-4 text-primary shrink-0" />}
@@ -5698,7 +5698,7 @@ function ReportBuilderDialog({
                       />
                       <div className="flex-1 min-w-0">
                         <div className="text-[12px] font-medium">{opt.label}</div>
-                        <div className="text-[10.5px] text-muted-foreground">{opt.hint}</div>
+                        <div className="text-[10px] text-muted-foreground">{opt.hint}</div>
                       </div>
                     </label>
                   );
@@ -5709,7 +5709,7 @@ function ReportBuilderDialog({
             <div className="rounded-lg border border-border bg-background p-3">
               <div className="flex items-center justify-between">
                 <div className="text-[11px] uppercase tracking-[0.10em] text-muted-foreground">Preview summary</div>
-                <div className="text-[10.5px] text-muted-foreground">
+                <div className="text-[10px] text-muted-foreground">
                   ~{pageEstimate} page{pageEstimate === 1 ? '' : 's'}
                 </div>
               </div>
@@ -5848,11 +5848,11 @@ function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClos
               {runs.map((p, i) => {
                 const src = devices[p.sourceId ?? ''] as any;
                 return (
-                  <div key={p.id} className="rounded-md border border-border bg-background px-3 py-2 flex items-center gap-3 text-[11.5px]">
+                  <div key={p.id} className="rounded-md border border-border bg-background px-3 py-2 flex items-center gap-3 text-[11px]">
                     <span className="text-muted-foreground tabular-nums w-6">{String(i + 1).padStart(2, '0')}</span>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-foreground truncate">{src?.id ?? p.sourceId ?? p.id} → {targetId}</div>
-                      <div className="text-[10.5px] text-muted-foreground">
+                      <div className="text-[10px] text-muted-foreground">
                         {pathwayLengthFt(p, floors[p.floorId ?? ''])} ft · {String(p.cableType ?? cableType).toUpperCase()}
                         {p.patchPort && <> · PP-01 Port {String(p.patchPort).padStart(2, '0')}</>}
                         {p.switchPort && <> · SW-01 Port {String(p.switchPort).padStart(2, '0')}</>}
@@ -5917,13 +5917,13 @@ function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClos
             <div className="rounded-md border border-border bg-background p-3">
               <div className="flex items-baseline justify-between">
                 <div className="text-[11px] uppercase tracking-[0.10em] text-muted-foreground">Conduit fill</div>
-                <div className="text-[10.5px] text-muted-foreground">{(fill.rule * 100).toFixed(0)}% rule</div>
+                <div className="text-[10px] text-muted-foreground">{(fill.rule * 100).toFixed(0)}% rule</div>
               </div>
               <div className="mt-1.5">
                 {conduitSize ? (
                   <>
                     <div className="text-[20px] font-medium tabular-nums" style={{ color: fill.passes ? '#4FB87E' : '#E5A23A' }}>{fill.fillPct.toFixed(1)}%</div>
-                    <div className="text-[10.5px] text-muted-foreground mt-0.5">
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
                       {runs.length}× OD {CABLE_OD_IN[cableType.toLowerCase()] ?? 0.31}″ · area {fill.totalAreaIn2.toFixed(3)} in² / conduit {fill.conduitAreaIn2?.toFixed(3)} in²
                     </div>
                     {!fill.passes && (
@@ -5933,7 +5933,7 @@ function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClos
                     )}
                   </>
                 ) : (
-                  <div className="text-[11.5px] text-muted-foreground">Pick a conduit size above to compute fill.</div>
+                  <div className="text-[11px] text-muted-foreground">Pick a conduit size above to compute fill.</div>
                 )}
               </div>
             </div>
@@ -5942,7 +5942,7 @@ function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClos
               <div className="flex items-baseline justify-between">
                 <div className="text-[11px] uppercase tracking-[0.10em] text-primary">Deeper Vision Assist</div>
               </div>
-              <div className="text-[11.5px] text-foreground mt-1.5">
+              <div className="text-[11px] text-foreground mt-1.5">
                 {fill.recommended
                   ? <>{runs.length} × {cableType.toUpperCase()} fits cleanly in <span className="font-medium">EMT {fill.recommended}</span> under the {(fill.rule * 100).toFixed(0)}% NEC rule. Apply to write this conduit on every run in the bundle.</>
                   : <>No standard EMT in stock satisfies the {(fill.rule * 100).toFixed(0)}% rule. Split this bundle into two pathways or step up to PVC / cable tray.</>}
@@ -5951,7 +5951,7 @@ function BundleInspectorDialog({ bundleId, onClose }: { bundleId: string; onClos
                 <button
                   onClick={applyRecommendation}
                   data-track="bundle-apply-recommendation"
-                  className="mt-2 text-[11.5px] font-medium px-3 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                  className="mt-2 text-[11px] font-medium px-3 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90"
                 >
                   Apply EMT {fill.recommended}
                 </button>
@@ -6053,7 +6053,7 @@ function RunToIdfDialog({
           <div>
             <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Target IDF / Rack</div>
             {idfs.length === 0 ? (
-              <div className="text-[11.5px] text-amber-300/90 bg-amber-300/8 border border-amber-300/25 rounded px-2.5 py-2">
+              <div className="text-[11px] text-amber-300/90 bg-amber-300/8 border border-amber-300/25 rounded px-2.5 py-2">
                 No IDF on this floor. Place one from the bottom Network tray first.
               </div>
             ) : (
@@ -6068,7 +6068,7 @@ function RunToIdfDialog({
                       className={`text-left px-3 py-2 rounded-md border text-[12px] transition-colors ${active ? 'border-primary/40 bg-primary/8 text-foreground' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
                     >
                       <div className="font-medium">{i.id}</div>
-                      <div className="text-[10.5px] text-muted-foreground">{i.type.split('.').pop()}</div>
+                      <div className="text-[10px] text-muted-foreground">{i.type.split('.').pop()}</div>
                     </button>
                   );
                 })}
@@ -6116,7 +6116,7 @@ function RunToIdfDialog({
                     className={`text-left px-3 py-2 rounded-md border text-[12px] transition-colors ${active ? 'border-primary/40 bg-primary/8 text-foreground' : 'border-border hover:border-border-strong hover:bg-secondary/30 text-foreground'}`}
                   >
                     <div className="font-medium">{r.label}</div>
-                    <div className="text-[10.5px] text-muted-foreground">{r.hint}</div>
+                    <div className="text-[10px] text-muted-foreground">{r.hint}</div>
                   </button>
                 );
               })}
@@ -6124,7 +6124,7 @@ function RunToIdfDialog({
           </div>
 
           {/* Summary */}
-          <div className="rounded-md border border-border bg-background p-3 text-[11.5px] text-muted-foreground">
+          <div className="rounded-md border border-border bg-background p-3 text-[11px] text-muted-foreground">
             <div className="font-medium text-foreground">{selected.length}× {cableType.toUpperCase()} → {target?.id ?? '—'}</div>
             <div className="mt-1">Estimated total cable: <span className="tabular-nums text-foreground">{totalLengthFt} ft</span> · includes 10 % slack + 3 ft service loop per termination.</div>
           </div>
@@ -6218,7 +6218,7 @@ function ScanBuildFloorplanDialog({
                 </div>
                 <p className="text-[12px] text-muted-foreground leading-relaxed">{o.sub}</p>
                 {o.honest && (
-                  <div className="mt-1 text-[10.5px] text-amber-300/85 bg-amber-300/10 border border-amber-300/25 rounded px-2 py-1 flex items-start gap-1.5">
+                  <div className="mt-1 text-[10px] text-amber-300/85 bg-amber-300/10 border border-amber-300/25 rounded px-2 py-1 flex items-start gap-1.5">
                     <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
                     <span className="leading-snug">{o.honest}</span>
                   </div>
@@ -6472,7 +6472,7 @@ function ImportFloorplanDialog({ onClose, onImported, onStartCalibrate }: { onCl
               <div className="flex items-center gap-3">
                 <Upload className="w-4 h-4 text-primary" />
                 <div>
-                  <div className="text-[12.5px] font-medium">{busy ? 'Processing…' : 'Pick a file'}</div>
+                  <div className="text-[12px] font-medium">{busy ? 'Processing…' : 'Pick a file'}</div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">PNG, JPG, or PDF (first page) · up to ~2k px on the longest edge</div>
                 </div>
               </div>
@@ -6499,7 +6499,7 @@ function ImportFloorplanDialog({ onClose, onImported, onStartCalibrate }: { onCl
               </div>
               <div className="space-y-2">
                 <label className="block">
-                  <div className="text-[10.5px] text-muted-foreground uppercase tracking-[0.10em] mb-1">Plan name</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-[0.10em] mb-1">Plan name</div>
                   <input
                     type="text"
                     value={planName}
@@ -6507,11 +6507,11 @@ function ImportFloorplanDialog({ onClose, onImported, onStartCalibrate }: { onCl
                     onBlur={commitPlanName}
                     placeholder="Ground floor — east wing"
                     data-testid="import-name-input"
-                    className="w-full h-8 px-2 rounded border border-border bg-background text-[12.5px] text-foreground focus:outline-none focus:border-primary/60"
+                    className="w-full h-8 px-2 rounded border border-border bg-background text-[12px] text-foreground focus:outline-none focus:border-primary/60"
                   />
                 </label>
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <span className="text-[10.5px] uppercase tracking-[0.10em]">Floor</span>
+                  <span className="text-[10px] uppercase tracking-[0.10em]">Floor</span>
                   <span className="text-foreground">{buildingName ? `${buildingName} · ` : ''}{floorName}</span>
                   <span className="ml-auto text-[10px] italic">Multi-floor switching is one project view away — this pass writes to the active floor.</span>
                 </div>
@@ -6520,12 +6520,12 @@ function ImportFloorplanDialog({ onClose, onImported, onStartCalibrate }: { onCl
           )}
 
           {note && (
-            <div className="px-3 py-2 rounded border border-amber-500/30 bg-amber-500/5 text-[11.5px] text-amber-200/90">
+            <div className="px-3 py-2 rounded border border-amber-500/30 bg-amber-500/5 text-[11px] text-amber-200/90">
               {note}
             </div>
           )}
           {error && (
-            <div className="px-3 py-2 rounded border border-red-500/40 bg-red-500/5 text-[11.5px] text-red-300">
+            <div className="px-3 py-2 rounded border border-red-500/40 bg-red-500/5 text-[11px] text-red-300">
               {error}
             </div>
           )}
@@ -6577,10 +6577,10 @@ function SectionPanel({ section, devices, projectId, pxToFt, onOpenScanBuild, on
         <Icon className="w-4 h-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[12.5px] truncate">{label}</div>
-        {sub && <div className="text-[10.5px] text-muted-foreground truncate">{sub}</div>}
+        <div className="text-[12px] truncate">{label}</div>
+        {sub && <div className="text-[10px] text-muted-foreground truncate">{sub}</div>}
       </div>
-      {accent && <span className="text-[10.5px] font-medium text-muted-foreground">{accent}</span>}
+      {accent && <span className="text-[10px] font-medium text-muted-foreground">{accent}</span>}
     </button>
   );
 
@@ -6622,8 +6622,8 @@ function SectionPanel({ section, devices, projectId, pxToFt, onOpenScanBuild, on
             <label key={p} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-background border border-border cursor-pointer hover:border-primary/50">
               <input type="radio" name="rec" defaultChecked={i === 1} className="accent-primary" />
               <div className="flex-1">
-                <div className="text-[12.5px]">{p}</div>
-                <div className="text-[10.5px] text-muted-foreground">{['1080p H.265 · 8 fps','1080p H.265 · 15 fps · 30 day buffer','Office hours only · 4K','Pulled on incident triggers'][i]}</div>
+                <div className="text-[12px]">{p}</div>
+                <div className="text-[10px] text-muted-foreground">{['1080p H.265 · 8 fps','1080p H.265 · 15 fps · 30 day buffer','Office hours only · 4K','Pulled on incident triggers'][i]}</div>
               </div>
             </label>
           ))}
@@ -6897,7 +6897,7 @@ function InsertDock(props: {
             ) : (
               <>
                 <div className="text-[15px] font-medium tracking-tight leading-tight">Device library</div>
-                <div className="text-[11.5px] text-muted-foreground mt-1">
+                <div className="text-[11px] text-muted-foreground mt-1">
                   {PRODUCTS.filter((p) => productMatchesTechModel(p, props.techModel)).length} in {props.techModel === 'on_prem' ? 'on-prem' : props.techModel} stack
                   <span className="mx-1.5 opacity-40">·</span>
                   {PRODUCTS.length} total · {CATEGORIES.length} categories
@@ -6945,7 +6945,7 @@ function InsertDock(props: {
             <div className="flex flex-wrap gap-1">
               <button
                 onClick={() => props.setOpenGroup(null)}
-                className={`text-[10.5px] px-2 py-1 rounded transition-colors ${
+                className={`text-[10px] px-2 py-1 rounded transition-colors ${
                   props.openGroup === null
                     ? 'bg-primary/15 text-primary border border-primary/30'
                     : 'border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/40'
@@ -6958,7 +6958,7 @@ function InsertDock(props: {
                   key={g.id}
                   onClick={() => props.setOpenGroup(g.id)}
                   title={g.hint}
-                  className={`text-[10.5px] px-2 py-1 rounded transition-colors ${
+                  className={`text-[10px] px-2 py-1 rounded transition-colors ${
                     props.openGroup === g.id
                       ? 'border'
                       : 'border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/40'
@@ -6985,7 +6985,7 @@ function InsertDock(props: {
             <div className="px-4 py-2.5 border-b border-border/70">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">Tech stack</span>
-                <span className="text-[10.5px] tabular-nums text-muted-foreground">
+                <span className="text-[10px] tabular-nums text-muted-foreground">
                   <span className="text-foreground">{inStack}</span> in · <span className="text-amber-400">{hidden}</span> hidden
                 </span>
               </div>
@@ -7002,7 +7002,7 @@ function InsertDock(props: {
                       onClick={() => props.setTechModel && props.setTechModel(m.id)}
                       title={m.hint}
                       data-track={`dock-stack-${m.id}`}
-                      className={`flex-1 text-[10.5px] py-1 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                      className={`flex-1 text-[10px] py-1 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
                     >
                       {m.label}
                     </button>
@@ -7047,7 +7047,7 @@ function InsertDock(props: {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[13.5px] font-medium tracking-tight leading-tight text-foreground">{c.label}</div>
-                    <div className="text-[11.5px] text-muted-foreground mt-0.5">
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
                       {c.types.length} types · <span className={inStack === 0 ? 'text-amber-400/80' : ''}>{inStack} in stack</span>
                       {inStack !== productCount && <span className="opacity-50"> · {productCount} total</span>}
                     </div>
@@ -7078,7 +7078,7 @@ function InsertDock(props: {
                   <div className="px-4 pt-2.5 pb-1.5 flex items-center gap-2.5">
                     <span className="w-[2px] h-3.5 rounded-full" style={{ background: activeCat.tone }} />
                     <span className="text-[12px] font-medium text-foreground tracking-tight">{t.label}</span>
-                    <span className="text-[10.5px] text-muted-foreground/70 ml-auto">{items.length}</span>
+                    <span className="text-[10px] text-muted-foreground/70 ml-auto">{items.length}</span>
                   </div>
                   {items.map((p) => {
                     const badge = badgeFor(p);
@@ -7100,7 +7100,7 @@ function InsertDock(props: {
                           <DeviceGlyph type={p.type} size={22} tone={activeCat.tone} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[12.5px] truncate leading-tight flex items-center gap-2">
+                          <div className="text-[12px] truncate leading-tight flex items-center gap-2">
                             <span className="font-medium text-foreground">{p.mfr}</span>
                             <span className="text-muted-foreground">{p.model}</span>
                             {badge && (
@@ -7430,7 +7430,7 @@ function DisplaySection({ display, onChange }: { display: CanvasDisplayPrefs; on
                 <button
                   key={m.id}
                   onClick={() => onChange({ baseMap: m.id })}
-                  className={`text-[10.5px] py-1 px-1 rounded transition-colors ${display.baseMap === m.id ? 'bg-primary/15 text-primary border border-primary/40' : 'border border-border/40 text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                  className={`text-[10px] py-1 px-1 rounded transition-colors ${display.baseMap === m.id ? 'bg-primary/15 text-primary border border-primary/40' : 'border border-border/40 text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
                   title={`Use ${m.label} as base map`}
                 >
                   {m.label}
@@ -7493,7 +7493,7 @@ function SegmentRow<T extends string>({ label, value, options, onChange }: {
           <button
             key={o.id}
             onClick={() => onChange(o.id)}
-            className={`flex-1 text-[10.5px] py-0.5 rounded transition-colors ${value === o.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`flex-1 text-[10px] py-0.5 rounded transition-colors ${value === o.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
           >
             {o.label}
           </button>
@@ -10726,9 +10726,9 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
           <CommitInput
             value={d.id}
             onCommit={(v) => onUpdate({ id: v })}
-            className="bg-transparent w-[64px] focus:outline-none text-[11.5px] font-medium tracking-tight text-foreground"
+            className="bg-transparent w-[64px] focus:outline-none text-[11px] font-medium tracking-tight text-foreground"
           />
-          <span className="text-[10.5px] text-muted-foreground tracking-tight whitespace-nowrap">
+          <span className="text-[10px] text-muted-foreground tracking-tight whitespace-nowrap">
             {kindLabel.toLowerCase()}
           </span>
         </div>
@@ -10799,7 +10799,7 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
           add-from-popover wires through Insert dock drag. */}
       {isStackableHost(d.type) && (d.stack?.length ?? 0) > 0 && (
         <div
-          className="mt-1.5 text-[10.5px] rounded-md overflow-hidden"
+          className="mt-1.5 text-[10px] rounded-md overflow-hidden"
           style={{
             background: 'var(--panel-background)',
             border: '1px solid rgba(255,255,255,0.08)',
@@ -11183,8 +11183,8 @@ function labelForKind(k: DeviceKind): string {
 function Row({ label, value, tone }: { label: string; value: any; tone?: string }) {
   return (
     <div className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-b-0">
-      <span className="text-[11.5px] text-muted-foreground">{label}</span>
-      <span className="text-[12.5px] tabular-nums font-medium" style={{ color: tone || '#E7EDF6' }}>{value}</span>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-[12px] tabular-nums font-medium" style={{ color: tone || '#E7EDF6' }}>{value}</span>
     </div>
   );
 }
@@ -11263,7 +11263,7 @@ function ProductOverviewSection({ d }: { d: Device }) {
       {isCam && (
         <DrawerSection title="Model selection">
           {compatibleModels.length === 0 ? (
-            <div className="text-[11.5px] text-muted-foreground">
+            <div className="text-[11px] text-muted-foreground">
               No catalog matches for this sub-type yet. Drop a different camera category from the bottom bar to seed a model.
             </div>
           ) : (
@@ -11286,15 +11286,15 @@ function ProductOverviewSection({ d }: { d: Device }) {
                   if the catalog row carries the value. */}
               {cat && (
                 <div className="mt-2 flex flex-wrap gap-1" data-testid="camera-spec-chips">
-                  {cat.resolution && <span className="text-[10.5px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.resolution}</span>}
-                  {cat.cameraType && <span className="text-[10.5px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.cameraType}</span>}
-                  {cat.focalRange && <span className="text-[10.5px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.focalRange}</span>}
-                  {d.ir && <span className="text-[10.5px] px-2 py-0.5 rounded border border-amber-400/30 bg-amber-400/10 text-amber-200">IR on</span>}
-                  {cat.ndaa && <span className="text-[10.5px] px-2 py-0.5 rounded border border-emerald-400/30 bg-emerald-400/10 text-emerald-300">NDAA</span>}
-                  {cat.ipRating && <span className="text-[10.5px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-muted-foreground">{cat.ipRating}</span>}
+                  {cat.resolution && <span className="text-[10px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.resolution}</span>}
+                  {cat.cameraType && <span className="text-[10px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.cameraType}</span>}
+                  {cat.focalRange && <span className="text-[10px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-foreground">{cat.focalRange}</span>}
+                  {d.ir && <span className="text-[10px] px-2 py-0.5 rounded border border-amber-400/30 bg-amber-400/10 text-amber-200">IR on</span>}
+                  {cat.ndaa && <span className="text-[10px] px-2 py-0.5 rounded border border-emerald-400/30 bg-emerald-400/10 text-emerald-300">NDAA</span>}
+                  {cat.ipRating && <span className="text-[10px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-muted-foreground">{cat.ipRating}</span>}
                 </div>
               )}
-              <div className="mt-2 text-[10.5px] text-muted-foreground">
+              <div className="mt-2 text-[10px] text-muted-foreground">
                 Catalog is a curated sample — vendor APIs are not connected. Switching model updates the BOM line and the spec chips above.
               </div>
             </>
@@ -11341,7 +11341,7 @@ function ProductOverviewSection({ d }: { d: Device }) {
         <DrawerSection title="Compatible VMS">
           <div className="flex flex-wrap gap-1">
             {cat.compatibleVMS.map((v) => (
-              <span key={v} className="text-[10.5px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-foreground">{v}</span>
+              <span key={v} className="text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-foreground">{v}</span>
             ))}
           </div>
         </DrawerSection>
@@ -11465,7 +11465,7 @@ function DoorAssemblySection({
           the surveyor confirm at a glance "what is this opening?" before
           digging into the assembly checklist. */}
       <DrawerSection title="Opening summary">
-        <div className="rounded-md border border-border bg-secondary/15 p-2.5 text-[11.5px] space-y-1" data-testid="opening-summary">
+        <div className="rounded-md border border-border bg-secondary/15 p-2.5 text-[11px] space-y-1" data-testid="opening-summary">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Type</span>
             <span className="text-foreground">{openingType}</span>
@@ -11501,7 +11501,7 @@ function DoorAssemblySection({
                 title={it.hint}
                 data-testid={`door-assembly-${it.id}`}
                 data-track={`door-assembly-${it.id}`}
-                className={`rounded-md border text-[11.5px] transition-colors ${
+                className={`rounded-md border text-[11px] transition-colors ${
                   on
                     ? 'border-primary/60 bg-primary/10 text-foreground'
                     : 'border-border text-muted-foreground hover:border-border-strong hover:text-foreground'
@@ -11549,7 +11549,7 @@ function DoorAssemblySection({
 
       {warnings.length > 0 && (
         <DrawerSection title={`Engineering rule check · ${warnings.length}`}>
-          <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+          <div className="text-[10px] uppercase tracking-[0.10em] text-amber-300 mb-1">
             Heuristic rules · not certified code compliance
           </div>
           <div className="space-y-1.5" data-testid="door-warnings">
@@ -11562,7 +11562,7 @@ function DoorAssemblySection({
                 <div
                   key={w.id}
                   data-testid={`door-warning-${w.id}`}
-                  className="rounded-md border p-2 text-[11.5px] leading-snug"
+                  className="rounded-md border p-2 text-[11px] leading-snug"
                   style={{
                     borderColor: `${tone}55`,
                     background: `${tone}10`,
@@ -11589,7 +11589,7 @@ function DoorAssemblySection({
                 key={opt}
                 onClick={() => onUpdate({ doorElectrification: opt })}
                 data-testid={`door-elec-${opt}`}
-                className={`text-left px-2.5 py-2 rounded-md border text-[11.5px] transition-colors ${
+                className={`text-left px-2.5 py-2 rounded-md border text-[11px] transition-colors ${
                   on ? 'border-primary/60 bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -11606,7 +11606,7 @@ function DoorAssemblySection({
                 key={opt}
                 onClick={() => onUpdate({ doorReaderLocation: opt })}
                 data-testid={`door-readerloc-${opt}`}
-                className={`text-left px-2.5 py-2 rounded-md border text-[11.5px] transition-colors ${
+                className={`text-left px-2.5 py-2 rounded-md border text-[11px] transition-colors ${
                   on ? 'border-primary/60 bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -11615,7 +11615,7 @@ function DoorAssemblySection({
             );
           })}
         </div>
-        <div className="mt-2 text-[10.5px] text-muted-foreground leading-snug">
+        <div className="mt-2 text-[10px] text-muted-foreground leading-snug">
           Fail-safe drops on power loss (egress doors); Fail-secure stays locked (perimeter / sensitive). Pair maglocks with a fire-alarm release per local code.
         </div>
       </DrawerSection>
@@ -11675,7 +11675,7 @@ function StackSectionForHost({
     <>
       <DrawerSection title={`Hardware stack · ${attached.length}`}>
         {attached.length === 0 ? (
-          <div className="text-[11.5px] text-muted-foreground italic px-1">
+          <div className="text-[11px] text-muted-foreground italic px-1">
             No hardware attached. Use Add below.
           </div>
         ) : (
@@ -11683,7 +11683,7 @@ function StackSectionForHost({
             {attached.map((a) => (
               <div key={a.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md border border-border/40 bg-secondary/20">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: KIND_TONE[TYPE_KIND[a.type]] }} />
-                <span className="text-[11.5px] text-foreground tracking-tight">{a.id}</span>
+                <span className="text-[11px] text-foreground tracking-tight">{a.id}</span>
                 <span className="text-[10px] text-muted-foreground uppercase tracking-[0.10em]">{a.type.split('.').slice(-1)[0]}</span>
                 <button
                   onClick={() => removeAttached(a.id)}
@@ -11705,7 +11705,7 @@ function StackSectionForHost({
               key={m.type}
               onClick={() => addHardware(m.type, m.label)}
               data-track={`stack-add-${m.type}`}
-              className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 text-[11.5px] transition-colors"
+              className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 text-[11px] transition-colors"
             >
               + {m.label}
             </button>
@@ -11814,7 +11814,7 @@ function SurveyPanel({
       )}
       <DrawerSection title={`Survey notes · ${items.length}`}>
         {items.length === 0 ? (
-          <div className="text-[11.5px] text-muted-foreground italic mb-2">
+          <div className="text-[11px] text-muted-foreground italic mb-2">
             No survey notes yet. Add one below — they save against this object and persist on refresh.
           </div>
         ) : (
@@ -11854,7 +11854,7 @@ function SurveyPanel({
                   </div>
                 )}
                 {it.photo && (
-                  <div className="mt-1.5 text-[10.5px] text-amber-200/85">
+                  <div className="mt-1.5 text-[10px] text-amber-200/85">
                     Photo · {it.photo.fileName} {it.photo.sizeBytes ? `(${Math.round(it.photo.sizeBytes / 1024)} KB)` : ''} — upload pending
                   </div>
                 )}
@@ -11881,15 +11881,15 @@ function SurveyPanel({
           className="dv-input text-[12px] resize-none min-h-[64px] w-full"
         />
         <div className="flex items-center justify-between mt-2">
-          <span className="text-[10.5px] text-muted-foreground">⌘/Ctrl+Enter to save</span>
+          <span className="text-[10px] text-muted-foreground">⌘/Ctrl+Enter to save</span>
           <button
             onClick={submit}
             disabled={!text.trim()}
             data-testid="survey-add-btn"
-            className="text-[11.5px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+            className="text-[11px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
           >Add</button>
         </div>
-        <div className="mt-2 text-[10.5px] text-muted-foreground/85">
+        <div className="mt-2 text-[10px] text-muted-foreground/85">
           Photos can be added — only the filename + size persists today; image upload is pending.
         </div>
       </DrawerSection>
@@ -11963,17 +11963,17 @@ function ImpactPreviewSection({ device }: { device: Device }) {
   return (
     <>
       <DrawerSection title={`Impact preview · ${device.id}`}>
-        <div className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground mb-1">
+        <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1">
           This object only · not a project rollup
         </div>
         {labelLines.length === 0 ? (
-          <div className="text-[11.5px] text-muted-foreground italic">
+          <div className="text-[11px] text-muted-foreground italic">
             {isDoorish
               ? 'No door hardware selected yet. Open the Assembly tab and toggle reader / strike / REX / etc. to populate this opening.'
               : "No catalog product assigned yet. Pick one on the Overview tile to see this object's material + labor."}
           </div>
         ) : (
-          <div className="space-y-1 text-[11.5px]">
+          <div className="space-y-1 text-[11px]">
             {labelLines.map((l, i) => (
               <div key={i} className="flex items-baseline justify-between gap-2 py-1 border-b border-border/40 last:border-b-0">
                 <div className="flex-1 min-w-0 truncate text-foreground">{l.label}</div>
@@ -11981,19 +11981,19 @@ function ImpactPreviewSection({ device }: { device: Device }) {
                 <div className="tabular-nums text-foreground">${Math.round(l.ext).toLocaleString()}</div>
               </div>
             ))}
-            <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground pt-1">
+            <div className="flex items-baseline justify-between text-[10px] text-muted-foreground pt-1">
               <span>Labor</span>
               <span className="tabular-nums">{labelLines.reduce((s, l) => s + (l.hrs || 0), 0).toFixed(1)} hr</span>
             </div>
             {poeW !== null && (
-              <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground">
+              <div className="flex items-baseline justify-between text-[10px] text-muted-foreground">
                 <span>PoE draw</span>
                 <span className="tabular-nums">~{poeW} W</span>
               </div>
             )}
           </div>
         )}
-        <div className="mt-2 text-[10.5px] text-muted-foreground/85">
+        <div className="mt-2 text-[10px] text-muted-foreground/85">
           Reflects default labor + materials plus any project pricebook overrides. Confirm against your pricebook before sending an estimate.
         </div>
       </DrawerSection>
@@ -12013,14 +12013,14 @@ function ImpactPreviewSection({ device }: { device: Device }) {
         const proposedLabor = proposedLines.reduce((s, l) => s + l.laborHours, 0);
         return (
           <DrawerSection title={`Door assembly impact · ${doorRollup.lines.length}`}>
-            <div className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground mb-1">
+            <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1">
               This door only · {proposedLines.length} proposed · {existingLines.length} existing
             </div>
-            <div className="text-[10.5px] text-muted-foreground/85 mb-2">
+            <div className="text-[10px] text-muted-foreground/85 mb-2">
               Per-component preview from the active door assembly. Proposed rows roll into the Estimator;
               Existing rows are kept as documentation only (zeroed in totals).
             </div>
-            <div className="space-y-1 text-[11.5px]">
+            <div className="space-y-1 text-[11px]">
               {doorRollup.lines.map((l) => {
                 const state = stateMap[l.hw] ?? 'proposed';
                 const isExisting = state === 'existing';
@@ -12048,12 +12048,12 @@ function ImpactPreviewSection({ device }: { device: Device }) {
                 <span>Proposed hardware</span>
                 <span className="tabular-nums">${proposedHardware.toLocaleString()}</span>
               </div>
-              <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground" data-testid="impact-door-proposed-labor">
+              <div className="flex items-baseline justify-between text-[10px] text-muted-foreground" data-testid="impact-door-proposed-labor">
                 <span>Proposed labor</span>
                 <span className="tabular-nums">{proposedLabor.toFixed(2)} hr</span>
               </div>
               {existingLines.length > 0 && (
-                <div className="flex items-baseline justify-between text-[10.5px] text-muted-foreground/80 pt-0.5" data-testid="impact-door-existing-total">
+                <div className="flex items-baseline justify-between text-[10px] text-muted-foreground/80 pt-0.5" data-testid="impact-door-existing-total">
                   <span>Existing hardware (excluded from total)</span>
                   <span className="tabular-nums">${existingHardware.toLocaleString()}</span>
                 </div>
@@ -12096,7 +12096,7 @@ function AccessoriesSection({ cameraType, selected, onToggle }: {
                 <div className="text-[12px] text-foreground truncate">
                   {a.mfr} · {a.model}
                 </div>
-                <div className="text-[10.5px] text-muted-foreground truncate">{a.kind.replace('-', ' ')}</div>
+                <div className="text-[10px] text-muted-foreground truncate">{a.kind.replace('-', ' ')}</div>
               </div>
               <span className="text-[11px] tabular-nums text-muted-foreground">${a.msrp ?? '—'}</span>
             </button>
@@ -12150,7 +12150,7 @@ function ConduitAssistSection({ projectId }: { projectId: string }) {
   if (items.length === 0) {
     return (
       <DrawerSection title="Conduit assist">
-        <div className="text-[11.5px] text-muted-foreground italic px-1">
+        <div className="text-[11px] text-muted-foreground italic px-1">
           No cable bundles yet. Multi-select devices and choose "Run to IDF" to create one — Assist will compute conduit fill and recommend a size here.
         </div>
       </DrawerSection>
@@ -12174,7 +12174,7 @@ function ConduitAssistSection({ projectId }: { projectId: string }) {
                 <div className="text-[12px] font-medium tracking-tight">{count}× {cableType.toUpperCase()} → {target}</div>
                 <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{(rule * 100).toFixed(0)}% rule</div>
               </div>
-              <div className="text-[10.5px] text-muted-foreground mt-0.5">
+              <div className="text-[10px] text-muted-foreground mt-0.5">
                 Cable OD {od}″ · total area <span className="tabular-nums text-foreground">{cableAreaTotal.toFixed(3)} in²</span>
               </div>
               <div className="mt-2 grid grid-cols-3 gap-1.5">
@@ -12184,7 +12184,7 @@ function ConduitAssistSection({ projectId }: { projectId: string }) {
                   return (
                     <div
                       key={e.size}
-                      className="rounded border px-2 py-1 text-[10.5px] flex items-center justify-between"
+                      className="rounded border px-2 py-1 text-[10px] flex items-center justify-between"
                       style={{
                         borderColor: ok ? 'rgba(79,184,126,0.30)' : 'rgba(229,162,58,0.30)',
                         background: ok ? 'rgba(79,184,126,0.06)' : 'rgba(229,162,58,0.06)',
@@ -12235,7 +12235,7 @@ function IdfPortScheduleSection({ idfId }: { idfId: string }) {
     <>
       <DrawerSection title={`Incoming runs · ${incoming.length}`}>
         {incoming.length === 0 ? (
-          <div className="text-[11.5px] text-muted-foreground italic px-1">
+          <div className="text-[11px] text-muted-foreground italic px-1">
             No cable runs target this IDF yet. Use Run to IDF from the canvas to assign devices here.
           </div>
         ) : (
@@ -12243,7 +12243,7 @@ function IdfPortScheduleSection({ idfId }: { idfId: string }) {
             {incoming.map((p) => {
               const src = devices[p.sourceId ?? ''] as any;
               return (
-                <div key={p.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md border border-border/40 bg-secondary/20 text-[11.5px]">
+                <div key={p.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md border border-border/40 bg-secondary/20 text-[11px]">
                   <span className="text-muted-foreground tabular-nums w-12">{String(p.cableType ?? 'cat6a').toUpperCase()}</span>
                   <span className="flex-1 truncate font-medium text-foreground">{src?.id ?? p.sourceId ?? p.id}</span>
                   <span className="text-muted-foreground tabular-nums">{pathwayLengthFt(p, floors[p.floorId ?? ''])} ft</span>
@@ -12277,7 +12277,7 @@ function IdfPortScheduleSection({ idfId }: { idfId: string }) {
             );
           })}
         </div>
-        <div className="text-[10.5px] text-muted-foreground mt-1.5">
+        <div className="text-[10px] text-muted-foreground mt-1.5">
           {incoming.filter((p) => p.patchPort).length} / {PP_PORTS} used · {PP_PORTS - incoming.filter((p) => p.patchPort).length} spare
           {ppOver > 0 && <span className="text-amber-300 ml-2">· {ppOver} over capacity</span>}
         </div>
@@ -12304,7 +12304,7 @@ function IdfPortScheduleSection({ idfId }: { idfId: string }) {
             );
           })}
         </div>
-        <div className="text-[10.5px] text-muted-foreground mt-1.5">
+        <div className="text-[10px] text-muted-foreground mt-1.5">
           {incoming.filter((p) => p.switchPort).length} / {SW_PORTS} used · PoE load {poeLoad.toFixed(1)} W / budget {SW_POE_BUDGET_W} W
           {swOver > 0 && <span className="text-amber-300 ml-2">· {swOver} over capacity</span>}
           {poeLoad > SW_POE_BUDGET_W && <span className="text-amber-300 ml-2">· PoE over budget</span>}
@@ -12329,7 +12329,7 @@ function FindingRow({ severity, text }: { severity: 'high' | 'warn' | 'ok'; text
   return (
     <div className="flex items-start gap-2 rounded-md border p-2" style={{ borderColor: `${tone}40`, background: `${tone}10` }}>
       <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: tone }} />
-      <span className="text-[11.5px] leading-snug" style={{ color: tone }}>{text}</span>
+      <span className="text-[11px] leading-snug" style={{ color: tone }}>{text}</span>
     </div>
   );
 }
@@ -12389,7 +12389,7 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
         )}
       </DrawerSection>
       <DrawerSection title={mode === 'overview' ? 'Heuristic suggestions' : 'Heuristic forensic notes'}>
-        <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+        <div className="text-[10px] uppercase tracking-[0.10em] text-amber-300 mb-1">
           Static checklist · not generated by AI
         </div>
         {(mode === 'overview'
@@ -12409,7 +12409,7 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
           // Static checklist row. Was a disabled button which violated
           // the "no disabled controls with disclaimer text" rule from
           // CLAUDE.md; rendered as a plain list instead.
-          <div key={i} className="w-full text-left text-[11.5px] text-foreground px-2 py-1.5 mb-1 rounded border border-white/10">
+          <div key={i} className="w-full text-left text-[11px] text-foreground px-2 py-1.5 mb-1 rounded border border-white/10">
             <Sparkles className="w-3 h-3 inline mr-1.5" style={{ color: tone }} />{s}
           </div>
         ))}
@@ -12426,8 +12426,8 @@ function Slider({ label, value, min, max, step = 1, unit, onChange, tone }: { la
   return (
     <div className="mb-3.5">
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11.5px] text-muted-foreground">{label}</span>
-        <span className="text-[12.5px] tabular-nums font-medium text-foreground">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
+        <span className="text-[11px] text-muted-foreground">{label}</span>
+        <span className="text-[12px] tabular-nums font-medium text-foreground">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
       </div>
       <input
         type="range" min={min} max={max} step={step} value={value}
@@ -12540,7 +12540,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
               : `${cableType.toUpperCase()} · ${lenFt} ft${src ? ` · ${src.id ?? p.sourceId} →` : ''} ${tgt?.id ?? p.targetId ?? p.destinationId ?? '—'}`}
           </div>
           {p.bundleId && (
-            <button onClick={() => onOpenBundle(p.bundleId)} data-track="pathway-open-bundle" className="mt-1 text-[10.5px] text-primary hover:underline">
+            <button onClick={() => onOpenBundle(p.bundleId)} data-track="pathway-open-bundle" className="mt-1 text-[10px] text-primary hover:underline">
               In bundle {p.bundleId} → open bundle inspector
             </button>
           )}
@@ -12557,7 +12557,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
               key={t.id}
               onClick={() => setSub(t.id)}
               data-track={`pathway-tab-${t.id}`}
-              className={`flex flex-col items-center justify-center gap-1 py-1.5 rounded-md text-[10.5px] tracking-tight transition-colors ${active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+              className={`flex flex-col items-center justify-center gap-1 py-1.5 rounded-md text-[10px] tracking-tight transition-colors ${active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
             >
               <Icon className="w-3.5 h-3.5" />{t.label}
             </button>
@@ -12641,7 +12641,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
             <>
               <DrawerSection title="Terminations">
                 {attached.length === 0 ? (
-                  <div className="text-[11.5px] text-muted-foreground italic">No terminations placed. Drop a jack, coupler, or patch panel from the bottom Cabling tray near this run to attach it.</div>
+                  <div className="text-[11px] text-muted-foreground italic">No terminations placed. Drop a jack, coupler, or patch panel from the bottom Cabling tray near this run to attach it.</div>
                 ) : (
                   <div className="space-y-1">
                     {attached.map((a: any) => (
@@ -12658,7 +12658,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
           ) : (
             <DrawerSection title={`Cables inside · ${cablesInside.length}`}>
               {cablesInside.length === 0 ? (
-                <div className="text-[11.5px] text-muted-foreground italic">No cables routed through this conduit yet. Drop a cable run near it or use Run-to-IDF with "Existing conduit".</div>
+                <div className="text-[11px] text-muted-foreground italic">No cables routed through this conduit yet. Drop a cable run near it or use Run-to-IDF with "Existing conduit".</div>
               ) : (
                 <div className="space-y-1">
                   {cablesInside.map((c: any) => (
@@ -12673,7 +12673,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
                     <button
                       onClick={() => updatePathway(pathwayId, { conduitSize: fill.recommended } as any)}
                       data-track="pathwaydrawer-apply-recommendation"
-                      className="mt-2 text-[11.5px] font-medium px-3 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                      className="mt-2 text-[11px] font-medium px-3 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90"
                     >
                       Apply recommended {fill.recommended}
                     </button>
@@ -12686,7 +12686,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
 
         {sub === 'acc' && (
           <DrawerSection title="Accessories">
-            <div className="text-[11.5px] text-muted-foreground italic mb-2">
+            <div className="text-[11px] text-muted-foreground italic mb-2">
               {isCable ? 'Cable accessories for this run. Tally rolls up into BOM.' : 'Conduit accessories for this run.'}
             </div>
             <div className="grid grid-cols-2 gap-1.5">
@@ -12696,7 +12696,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
               ).map((kind) => {
                 const count = (p.accessories?.[kind as any] ?? 0);
                 return (
-                  <div key={kind} className="rounded-md border border-border bg-background px-2.5 py-2 flex items-center justify-between text-[11.5px]">
+                  <div key={kind} className="rounded-md border border-border bg-background px-2.5 py-2 flex items-center justify-between text-[11px]">
                     <span className="font-medium tracking-tight capitalize">{kind}</span>
                     <div className="flex items-center gap-1">
                       <button
@@ -12752,7 +12752,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
               v ? <Row key={k} label={k} value={String(v)} /> : null
             ))}
             {p.conduitType && p.conduitSize && <Row label="Conduit" value={`${p.conduitType} ${p.conduitSize}`} />}
-            <div className="mt-2 text-[10.5px] text-muted-foreground italic">Counts flow into project BOM via the Pathways selector.</div>
+            <div className="mt-2 text-[10px] text-muted-foreground italic">Counts flow into project BOM via the Pathways selector.</div>
           </DrawerSection>
         )}
 
@@ -12929,7 +12929,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             </div>
             <div className="text-[18px] font-medium text-slate-50 tracking-tight truncate leading-tight">{d.id}</div>
             {product && (
-              <div className="text-[11.5px] text-muted-foreground mt-1 truncate">{product.mfr} · {product.model}</div>
+              <div className="text-[11px] text-muted-foreground mt-1 truncate">{product.mfr} · {product.model}</div>
             )}
           </div>
           <button
@@ -12955,7 +12955,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
               key={t.id}
               onClick={() => setTab(t.id)}
               data-track={`drawer-tab-${t.id}`}
-              className={`flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[10.5px] tracking-tight transition-colors ${
+              className={`flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[10px] tracking-tight transition-colors ${
                 active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30'
               }`}
               style={active ? {
@@ -13000,7 +13000,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                     onClick={() => setCoverageSub(s.id)}
                     title={s.hint}
                     data-track={`drawer-coverage-${s.id}`}
-                    className={`flex-1 text-[11.5px] transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                    className={`flex-1 text-[11px] transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
                   >
                     {s.label}
                   </button>
@@ -13058,7 +13058,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                         }}
                       />
                     </div>
-                    <div className="text-[10.5px] text-muted-foreground mt-1.5">
+                    <div className="text-[10px] text-muted-foreground mt-1.5">
                       Composite of pixel density, IR effectiveness, and subject framing at the simulated target distance.
                     </div>
                   </div>
@@ -13149,22 +13149,22 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                       >
                         <div className="flex items-baseline justify-between gap-2">
                           <div>
-                            <div className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">At {distance.toFixed(0)} ft</div>
+                            <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">At {distance.toFixed(0)} ft</div>
                             <div className="text-[14px] font-medium tracking-tight" style={{ color: verdict.color }}>{verdict.id} quality</div>
                           </div>
                           <div className="text-right">
-                            <div className="text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground">Subject</div>
+                            <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">Subject</div>
                             <div className="text-[12px] tabular-nums text-foreground">{Math.round(pxPerM)} px / m</div>
                           </div>
                         </div>
-                        <div className="text-[11.5px] text-muted-foreground leading-snug mt-1.5">{verdict.plain}</div>
+                        <div className="text-[11px] text-muted-foreground leading-snug mt-1.5">{verdict.plain}</div>
                       </div>
                       {/* Per-grade pass/fail strip */}
                       <div className="space-y-1" data-testid="dori-grade-list">
                         {grades.map((g) => {
                           const ok = pxPerM >= g.thresh;
                           return (
-                            <div key={g.id} className="flex items-center gap-2 text-[11.5px]">
+                            <div key={g.id} className="flex items-center gap-2 text-[11px]">
                               <span
                                 className="w-1.5 h-1.5 rounded-full"
                                 style={{
@@ -13183,7 +13183,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                           );
                         })}
                       </div>
-                      <div className="text-[10.5px] text-muted-foreground mt-2 leading-snug">
+                      <div className="text-[10px] text-muted-foreground mt-2 leading-snug">
                         Thresholds: IEC 62676-4 / EN 50132-7. Subject is the 1.7 m EN-spec figure standing at the full camera range.
                         Sensor assumed 1080p horizontal; updates live as you drag Distance / HFOV.
                       </div>
@@ -13199,11 +13199,11 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                   ].map((row) => (
                     <div key={row.k} className="flex items-center gap-2 py-1">
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: row.c, boxShadow: `0 0 6px ${row.c}` }} />
-                      <span className="flex-1 text-[11.5px] text-muted-foreground">{row.k}</span>
+                      <span className="flex-1 text-[11px] text-muted-foreground">{row.k}</span>
                       <span className="text-[12px] tabular-nums text-foreground">{row.d} ft</span>
                     </div>
                   ))}
-                  <div className="text-[10.5px] text-muted-foreground mt-2 leading-snug">
+                  <div className="text-[10px] text-muted-foreground mt-2 leading-snug">
                     Rule-of-thumb distance breakpoints (Identify ≈ 35 % of range, etc.). The Target preview card above is the
                     authoritative pass/fail signal.
                   </div>
@@ -13225,7 +13225,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                             key={k}
                             onClick={() => setActiveLens(k)}
                             data-testid={`lens-summary-${k}`}
-                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[11.5px] tabular-nums"
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[11px] tabular-nums"
                             style={{
                               background: active ? `${c}1F` : 'transparent',
                               border: active ? `1px solid ${c}55` : '1px solid transparent',
@@ -13247,7 +13247,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                         );
                       })}
                     </div>
-                    <div className="text-[10.5px] text-muted-foreground mt-2 leading-snug">
+                    <div className="text-[10px] text-muted-foreground mt-2 leading-snug">
                       Mode: <span className="text-foreground">{lensMode === 'linked' ? 'Linked' : 'Independent'}</span> ·
                       {lensMode === 'linked'
                         ? ' Range / FOV changes propagate to all four lenses.'
@@ -13316,7 +13316,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                       style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
                     >
                       <div className="text-[12px] font-medium text-foreground tracking-tight">{p.label}</div>
-                      <div className="text-[10.5px] text-muted-foreground/80 mt-0.5">{p.hint}</div>
+                      <div className="text-[10px] text-muted-foreground/80 mt-0.5">{p.hint}</div>
                     </button>
                   ))}
                 </div>
@@ -13403,10 +13403,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             // rules-engine result — they would falsely imply compliance
             // certification. This body is a disabled checklist preview.
             <DrawerSection title="Compliance checklist">
-              <div className="text-[11.5px] text-muted-foreground mb-2">
+              <div className="text-[11px] text-muted-foreground mb-2">
                 Scope of checks for this camera. Run the project audit from Reports to validate.
               </div>
-              <div className="space-y-1 text-[11.5px] opacity-60 pointer-events-none select-none">
+              <div className="space-y-1 text-[11px] opacity-60 pointer-events-none select-none">
                 <div className="flex items-baseline justify-between py-1 border-b border-border/40">
                   <span>NEC 725 cable class</span><span className="text-muted-foreground">pending</span>
                 </div>
@@ -13437,10 +13437,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             // sees what scope WILL eventually be validated, without
             // implying any of it is validated today.
             <DrawerSection title="Compliance checklist">
-              <div className="text-[11.5px] text-muted-foreground mb-2">
+              <div className="text-[11px] text-muted-foreground mb-2">
                 Scope of checks for this object. Run the project audit from Reports to validate.
               </div>
-              <div className="space-y-1 text-[11.5px] opacity-60 pointer-events-none select-none">
+              <div className="space-y-1 text-[11px] opacity-60 pointer-events-none select-none">
                 {(() => {
                   const isDoor =
                     d.type.startsWith('inf.door') || d.type.startsWith('inf.gate')
@@ -13472,10 +13472,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             // Telemetry rows below were hardcoded ("Uptime 99.94%", etc.).
             // We have no live data feed — replaced with a disabled preview.
             <DrawerSection title="Live telemetry · preview">
-              <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+              <div className="text-[10px] uppercase tracking-[0.10em] text-amber-300 mb-1">
                 No live telemetry feed connected
               </div>
-              <div className="text-[11.5px] text-muted-foreground">
+              <div className="text-[11px] text-muted-foreground">
                 Uptime, packet loss, frame drops, signal, and last reboot
                 will appear here when the camera connector ships. They are
                 not measured today.
@@ -13487,10 +13487,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             // for ANY device kind today — replace with an honest preview
             // banner for doors / readers / IDFs as well.
             <DrawerSection title="Live telemetry · preview">
-              <div className="text-[10.5px] uppercase tracking-[0.10em] text-amber-300 mb-1">
+              <div className="text-[10px] uppercase tracking-[0.10em] text-amber-300 mb-1">
                 No live telemetry feed connected
               </div>
-              <div className="text-[11.5px] text-muted-foreground">
+              <div className="text-[11px] text-muted-foreground">
                 When the device's connector ships, uptime / packet loss /
                 last-reboot / online status will appear here. None of those
                 values are measured for this object today.
@@ -13702,7 +13702,7 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
               return (
                 <div key={b.id} className={`flex items-center gap-2 py-1 ${hit ? '' : 'opacity-40'}`}>
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: b.tone, boxShadow: hit ? `0 0 6px ${b.tone}` : 'none' }} />
-                  <span className={`flex-1 text-[11.5px] ${isTop ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{b.label}</span>
+                  <span className={`flex-1 text-[11px] ${isTop ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{b.label}</span>
                   <span className="text-[10px] tabular-nums text-muted-foreground">≥{b.min} px/m</span>
                   {hit && <Check className="w-3 h-3 ml-1" style={{ color: b.tone }} />}
                 </div>
@@ -13754,7 +13754,7 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
                 : 0;
               const lowLightTone = idGrade === 'Excellent' ? '#34D399' : idGrade === 'Adequate' ? '#7CC2FF' : idGrade === 'Marginal' ? '#FACC15' : '#F87171';
               return (
-                <div className="space-y-1.5 text-[10.5px]">
+                <div className="space-y-1.5 text-[10px]">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Identification</span>
                     <span className="tabular-nums" style={{ color: lowLightTone }}>{idGrade}</span>
@@ -13785,7 +13785,7 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
           {/* Operating conditions */}
           <div className="px-3 py-2.5">
             <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Operating conditions</div>
-            <div className="grid grid-cols-2 gap-1 text-[10.5px]">
+            <div className="grid grid-cols-2 gap-1 text-[10px]">
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Sensor</span><span className="tabular-nums text-muted-foreground">1920px</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">HFOV</span><span className="tabular-nums text-muted-foreground">{fovDeg}°</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Width@dist</span><span className="tabular-nums text-muted-foreground">{fovWidthM.toFixed(1)} m</span></div>
@@ -14177,7 +14177,7 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: 
           <div className="px-3.5 py-2.5 border-b border-white/8 flex items-center gap-2">
             <Sparkles className="w-3.5 h-3.5 text-sky-300" />
             <div className="flex-1 min-w-0">
-              <div className="text-[12.5px] font-medium text-foreground tracking-tight">Engineering assistant</div>
+              <div className="text-[12px] font-medium text-foreground tracking-tight">Engineering assistant</div>
               <div className="text-[10px] text-muted-foreground mt-0.5">
                 Live findings from your canvas · {issues.length || 'none'}
               </div>
@@ -14188,7 +14188,7 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: 
           </div>
           <div className="overflow-auto flex-1">
             {issues.length === 0 ? (
-              <div className="px-4 py-8 text-center text-[11.5px] text-emerald-300/80">
+              <div className="px-4 py-8 text-center text-[11px] text-emerald-300/80">
                 <Check className="w-4 h-4 mx-auto mb-2 text-emerald-300" />
                 No issues detected. The design passes basic engineering checks.
               </div>
@@ -14221,7 +14221,7 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: 
                         </div>
                         <div className="text-[11px] text-muted-foreground/90 mt-0.5 leading-snug">{iss.detail}</div>
                         {iss.suggestion && (
-                          <div className="text-[10.5px] text-muted-foreground mt-1.5 leading-snug border-l-2 border-sky-400/30 pl-2 italic">
+                          <div className="text-[10px] text-muted-foreground mt-1.5 leading-snug border-l-2 border-sky-400/30 pl-2 italic">
                             {iss.suggestion}
                           </div>
                         )}
@@ -14814,7 +14814,7 @@ function SelectByMenu({ devices, onPick }: { devices: Device[]; onPick: (ids: st
                     key={t}
                     onClick={() => sel(devices.filter((d) => d.type === t), `of type ${t}`)}
                     data-track={`select-type-${t}`}
-                    className="w-full text-left px-3 py-1.5 text-[11.5px] hover:bg-secondary/40 flex items-center justify-between"
+                    className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-secondary/40 flex items-center justify-between"
                   >
                     <span className="text-foreground">{t}</span>
                     <span className="text-muted-foreground tabular-nums">{n}</span>
@@ -15006,7 +15006,7 @@ function ToolPanelHeader({ panelId, onClose }: { panelId: string; onClose: () =>
   return (
     <div className="flex items-start gap-2 mb-3">
       <div className="flex-1 min-w-0">
-        <div className="text-[12.5px] font-semibold tracking-tight">{panelLabel(panelId)}</div>
+        <div className="text-[12px] font-semibold tracking-tight">{panelLabel(panelId)}</div>
         {sub && <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{sub}</div>}
       </div>
       {shortcut && (
@@ -15042,7 +15042,7 @@ function ToolPanelBody({
     </button>
   );
   const Hint = ({ children }: { children: React.ReactNode }) => (
-    <div className="text-[10.5px] text-muted-foreground leading-snug px-1">{children}</div>
+    <div className="text-[10px] text-muted-foreground leading-snug px-1">{children}</div>
   );
   if (panelId === 'select') {
     return (
@@ -15071,7 +15071,7 @@ function ToolPanelBody({
     return (
       <div className="space-y-1">
         <Hint>Click two points on the plan to measure distance. Esc cancels.</Hint>
-        <div className="rounded-md border border-border bg-secondary/20 p-2.5 mt-2 text-[11.5px]">
+        <div className="rounded-md border border-border bg-secondary/20 p-2.5 mt-2 text-[11px]">
           <div className="flex items-center justify-between"><span className="text-muted-foreground">Scale</span><span className="text-foreground">20 px / 1 ft</span></div>
           <div className="flex items-center justify-between mt-0.5"><span className="text-muted-foreground">Units</span><span className="text-foreground">Toggle ft / m on TopBar</span></div>
         </div>
@@ -15087,7 +15087,7 @@ function ToolPanelBody({
           <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} className="accent-primary" />
         </label>
         <Hint>Click vertices on the plan. Double-click or Enter finishes the wall. Esc cancels.</Hint>
-        <div className="text-[10.5px] text-muted-foreground italic px-1 mt-2">Wall type, fire-rating, and orthogonal-lock controls ship next pass.</div>
+        <div className="text-[10px] text-muted-foreground italic px-1 mt-2">Wall type, fire-rating, and orthogonal-lock controls ship next pass.</div>
       </div>
     );
   }
@@ -15098,7 +15098,7 @@ function ToolPanelBody({
           <span className="text-[12px] font-medium">Magnetic snap</span>
           <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} className="accent-primary" />
         </label>
-        <div className="rounded-md border border-border bg-secondary/20 p-2.5 text-[11.5px] space-y-1">
+        <div className="rounded-md border border-border bg-secondary/20 p-2.5 text-[11px] space-y-1">
           <div className="flex items-center justify-between"><span className="text-muted-foreground">Grid</span><span className="text-foreground">20 px / 1 ft</span></div>
           <div className="flex items-center justify-between"><span className="text-muted-foreground">Tolerance</span><span className="text-foreground">5 px</span></div>
         </div>
@@ -15124,7 +15124,7 @@ function ToolPanelBody({
       </div>
     );
   }
-  return <div className="text-[11.5px] text-muted-foreground italic">No panel for this tool.</div>;
+  return <div className="text-[11px] text-muted-foreground italic">No panel for this tool.</div>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -15391,7 +15391,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-cable-${c.id}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{c.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{c.label}</div>
                             <div className="text-[10px] text-muted-foreground">Data cable · per foot</div>
                           </button>
                         ))}
@@ -15415,7 +15415,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-cableacc-${a.id}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{a.label}</div>
                             <div className="text-[10px] text-muted-foreground">Termination · each</div>
                           </button>
                         ))}
@@ -15436,7 +15436,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-cableacc-${a.id}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{a.label}</div>
                             <div className="text-[10px] text-muted-foreground">Coupler · each</div>
                           </button>
                         ))}
@@ -15457,7 +15457,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-cableacc-${a.id}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{a.label}</div>
                             <div className="text-[10px] text-muted-foreground">Rack / IDF · each</div>
                           </button>
                         ))}
@@ -15473,7 +15473,7 @@ function BottomDeviceBar({
                                 key={`${t}-${sz}`}
                                 onClick={() => onPickConduit(t, sz)}
                                 data-track={`bottombar-conduit-${t}-${sz.replace(/\W/g,'')}`}
-                                className="text-left px-2 py-1.5 rounded border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors text-[10.5px]"
+                                className="text-left px-2 py-1.5 rounded border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors text-[10px]"
                               >
                                 <div className="font-medium">{t} {sz}</div>
                                 <div className="text-[9.5px] text-muted-foreground">Conduit · per ft</div>
@@ -15498,7 +15498,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-pathway-${p.kind}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{p.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{p.label}</div>
                             <div className="text-[10px] text-muted-foreground">Pathway · per ft</div>
                           </button>
                         ))}
@@ -15516,7 +15516,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-cableacc-${a.id}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{a.label}</div>
                             <div className="text-[10px] text-muted-foreground">Conduit accessory · each</div>
                           </button>
                         ))}
@@ -15534,7 +15534,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-cableacc-${a.id}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/20 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{a.label}</div>
                             <div className="text-[10px] text-muted-foreground">Penetration · each</div>
                           </button>
                         ))}
@@ -15597,7 +15597,7 @@ function BottomDeviceBar({
                                   data-track={`bottombar-conduit-${c.type}-${c.size.replace(/\W/g, '') || 'default'}`}
                                   className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
                                 >
-                                  <div className="text-[11.5px] font-medium tracking-tight">{c.label}</div>
+                                  <div className="text-[11px] font-medium tracking-tight">{c.label}</div>
                                   <div className="text-[10px] text-muted-foreground">Per ft</div>
                                 </button>
                               ))}
@@ -15611,7 +15611,7 @@ function BottomDeviceBar({
                                     key={`${t}-${sz}`}
                                     onClick={() => { onPickConduit(t, sz); setOpen(null); }}
                                     data-track={`bottombar-conduit-${t}-${sz.replace(/\W/g, '')}`}
-                                    className="text-left px-2 py-1.5 rounded border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors text-[10.5px]"
+                                    className="text-left px-2 py-1.5 rounded border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors text-[10px]"
                                   >
                                     <div className="font-medium tracking-tight text-foreground">{t} {sz}</div>
                                     <div className="text-[9.5px] text-muted-foreground">Per ft</div>
@@ -15624,7 +15624,7 @@ function BottomDeviceBar({
                             onClick={() => setConduitShowAll((v) => !v)}
                             data-testid="conduit-show-all-toggle"
                             data-track="bottombar-conduit-show-all"
-                            className="mt-2 text-[10.5px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1"
+                            className="mt-2 text-[10px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1"
                           >
                             {conduitShowAll ? 'Show common sizes' : 'Show all sizes (EMT · PVC · FMC · LFMC · raceway × 6)'}
                           </button>
@@ -15646,7 +15646,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-pathway-${p.kind}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{p.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{p.label}</div>
                             <div className="text-[10px] text-muted-foreground">Pathway · per ft</div>
                           </button>
                         ))}
@@ -15664,7 +15664,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-cableacc-${a.id}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{a.label}</div>
                             <div className="text-[10px] text-muted-foreground">Each</div>
                           </button>
                         ))}
@@ -15682,7 +15682,7 @@ function BottomDeviceBar({
                             data-track={`bottombar-cableacc-${a.id}`}
                             className="text-left px-2.5 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-secondary/30 transition-colors"
                           >
-                            <div className="text-[11.5px] font-medium tracking-tight">{a.label}</div>
+                            <div className="text-[11px] font-medium tracking-tight">{a.label}</div>
                             <div className="text-[10px] text-muted-foreground">Each</div>
                           </button>
                         ))}
@@ -15717,11 +15717,11 @@ function BottomDeviceBar({
                           <DeviceGlyph type={p.type} size={20} tone={tone} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[11.5px] font-medium tracking-tight truncate text-foreground">{p.model}</div>
+                          <div className="text-[11px] font-medium tracking-tight truncate text-foreground">{p.model}</div>
                           <div className="text-[10px] text-muted-foreground truncate">{p.mfr}</div>
                         </div>
                       </div>
-                      <div className="text-[10.5px] text-muted-foreground line-clamp-2">{p.sub ?? p.notes ?? '—'}</div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-2">{p.sub ?? p.notes ?? '—'}</div>
                       <div className="flex items-center justify-between text-[10px]">
                         {(p as any).recommended ? (
                           <span className="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-500">Recommended</span>
@@ -16097,10 +16097,10 @@ function ReportExportRow({
         <Icon className="w-4 h-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[12.5px] truncate">{label}</div>
-        <div className="text-[10.5px] text-muted-foreground truncate">{sub}</div>
+        <div className="text-[12px] truncate">{label}</div>
+        <div className="text-[10px] text-muted-foreground truncate">{sub}</div>
       </div>
-      <span className="text-[10.5px] font-medium text-primary">{busy ? 'Exporting…' : 'PDF'}</span>
+      <span className="text-[10px] font-medium text-primary">{busy ? 'Exporting…' : 'PDF'}</span>
     </button>
   );
 }
@@ -16413,7 +16413,7 @@ function FloorplanBackgroundControls({
             onClick={() => onPatch({ rotation: ((bg.rotation - 90) % 360 + 360) % 360 - (bg.rotation - 90 > 180 ? 360 : 0) })}
             title="Rotate 90° left"
             data-testid="floorplan-rotate-left"
-            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10.5px]"
+            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10px]"
           >
             <RotateCcw className="w-3 h-3" /> 90°
           </button>
@@ -16421,7 +16421,7 @@ function FloorplanBackgroundControls({
             onClick={() => onPatch({ rotation: ((bg.rotation + 90) % 360 + 360) % 360 - ((bg.rotation + 90) % 360 > 180 ? 360 : 0) })}
             title="Rotate 90° right"
             data-testid="floorplan-rotate-right"
-            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10.5px]"
+            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10px]"
           >
             <RotateCw className="w-3 h-3" /> 90°
           </button>
@@ -16429,7 +16429,7 @@ function FloorplanBackgroundControls({
             onClick={() => onPatch({ x: 0, y: 0, scale: 1 })}
             title="Re-centre and fit at 100% scale"
             data-testid="floorplan-fit"
-            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10.5px]"
+            className="flex-1 h-7 inline-flex items-center justify-center gap-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground hover:text-foreground text-[10px]"
           >
             <Maximize2 className="w-3 h-3" /> Fit
           </button>
@@ -16456,7 +16456,7 @@ function FloorplanBackgroundControls({
           <button
             onClick={() => onPatch({ x: 0, y: 0, scale: 1, rotation: 0, opacity: 0.85 })}
             data-testid="floorplan-reset"
-            className="flex-1 text-[10.5px] py-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground"
+            className="flex-1 text-[10px] py-1 rounded border border-white/10 hover:border-white/25 hover:bg-white/5 text-muted-foreground"
           >
             Reset transform
           </button>
@@ -16751,7 +16751,7 @@ function ProjectBomDrawer({
             </div>
           </div>
           {totals.missingPriceCount > 0 && (
-            <div className="mt-3 pt-3 border-t border-border/40 flex items-start gap-2 text-[10.5px] text-amber-400">
+            <div className="mt-3 pt-3 border-t border-border/40 flex items-start gap-2 text-[10px] text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
                 {totals.missingPriceCount} line{totals.missingPriceCount === 1 ? '' : 's'} missing price.
@@ -16821,7 +16821,7 @@ function ProjectBomDrawer({
       {/* Rows */}
       <div className="flex-1 overflow-y-auto px-3 pt-3 pb-6 space-y-4">
         {filtered.length === 0 && (
-          <div className="text-center text-[11.5px] text-muted-foreground py-8 px-4">
+          <div className="text-center text-[11px] text-muted-foreground py-8 px-4">
             {rows.length === 0
               ? 'No devices, doors, or pathways on the canvas yet. Drop hardware from the bottom bar or draw a cable run to populate the BOM.'
               : 'No rows match this filter.'}
@@ -16919,7 +16919,7 @@ function BomRow({ row, fmt, onSelect, floorName, roomName }: { row: CanvasBomRow
           </div>
           <div className="text-[12px] font-medium text-foreground truncate">{row.description}</div>
           {row.product && (
-            <div className="text-[10.5px] text-muted-foreground truncate">{row.product}</div>
+            <div className="text-[10px] text-muted-foreground truncate">{row.product}</div>
           )}
           {row.laborHours > 0 && (
             <div className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">{row.laborHours.toFixed(2)} hr labor</div>
@@ -16929,7 +16929,7 @@ function BomRow({ row, fmt, onSelect, floorName, roomName }: { row: CanvasBomRow
           <div className={`text-[12px] tabular-nums ${row.isExisting ? 'text-muted-foreground line-through decoration-1' : 'text-foreground'}`}>
             {row.qty.toLocaleString(undefined, { maximumFractionDigits: row.uom === 'ft' ? 0 : 0 })} {row.uom}
           </div>
-          <div className={`text-[10.5px] tabular-nums ${row.isExisting ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+          <div className={`text-[10px] tabular-nums ${row.isExisting ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
             @ {fmt(row.unitPrice)}
           </div>
           <div className={`text-[12px] font-medium tabular-nums mt-0.5 ${row.isExisting ? 'text-muted-foreground line-through decoration-1' : 'text-foreground'}`}>

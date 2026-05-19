@@ -955,7 +955,7 @@ function BomLineRow({ line, onPatch, onRemove, locked }: {
           onChange={(e) => onPatch(line.id, { internalNote: e.target.value })}
           placeholder="Internal note (operator only)"
           disabled={locked}
-          className="w-full bg-transparent border-b border-transparent hover:border-border focus:border-primary px-1 text-[10.5px] text-muted-foreground italic disabled:hover:border-transparent"
+          className="w-full bg-transparent border-b border-transparent hover:border-border focus:border-primary px-1 text-[10px] text-muted-foreground italic disabled:hover:border-transparent"
           data-testid={`proposal-bom-note-${line.id}`}
         />
       </div>
@@ -1655,7 +1655,7 @@ function CompareVersionsDialog({ versions, currentId, onClose }: {
           <CompareVersionSelect label="From" value={leftId}  onChange={setLeftId}  versions={versions} testid="proposal-compare-left" />
           <CompareVersionSelect label="To"   value={rightId} onChange={setRightId} versions={versions} testid="proposal-compare-right" />
         </div>
-        <div className="px-5 py-4 space-y-4 text-[12.5px]">
+        <div className="px-5 py-4 space-y-4 text-[12px]">
           {!diff && <div className="text-muted-foreground">Pick two versions to compare.</div>}
           {diff && (
             <>

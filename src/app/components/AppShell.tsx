@@ -350,7 +350,7 @@ function ModeRolePill() {
           <div className="grid grid-cols-2 divide-x divide-border">
             {/* ── Role column ── */}
             <div>
-              <div className="px-3 pt-3 pb-1.5 flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground tracking-tight">
+              <div className="px-3 pt-3 pb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground tracking-tight">
                 <UserIcon className="w-3 h-3" /> Role
               </div>
               <div className="px-1 pb-1.5">
@@ -378,7 +378,7 @@ function ModeRolePill() {
 
             {/* ── Mode column ── */}
             <div>
-              <div className="px-3 pt-3 pb-1.5 flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground tracking-tight">
+              <div className="px-3 pt-3 pb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground tracking-tight">
                 <LayersIcon className="w-3 h-3" /> Mode
                 {projectId && projectModes[projectId] && (
                   <button
@@ -500,7 +500,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                   style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
                 >
                   <span className="text-foreground">{i.label}</span>
-                  <span className="text-[10.5px] text-muted-foreground/70 font-mono tracking-tight">{i.path}</span>
+                  <span className="text-[10px] text-muted-foreground/70 font-mono tracking-tight">{i.path}</span>
                 </button>
               ))}
             </div>

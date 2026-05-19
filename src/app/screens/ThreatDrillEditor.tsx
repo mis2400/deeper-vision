@@ -321,7 +321,7 @@ export function ThreatDrillEditor() {
                   <input type="number" min={0} value={zoneOccupancy} onChange={(e) => setZoneOccupancy(Number(e.target.value))} className="dv-input mt-1" />
                 </label>
               )}
-              <div className="text-[10.5px] text-muted-foreground/80 mt-2 leading-snug">
+              <div className="text-[10px] text-muted-foreground/80 mt-2 leading-snug">
                 Click + drag on the canvas to draw the rectangle.
               </div>
             </Section>
@@ -333,7 +333,7 @@ export function ThreatDrillEditor() {
                   <button
                     key={z.id}
                     onClick={() => setSelectedZoneId(z.id)}
-                    className={`w-full text-left text-[11.5px] px-2 py-1.5 rounded mb-0.5 flex items-center gap-2 ${selectedZoneId === z.id ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'}`}
+                    className={`w-full text-left text-[11px] px-2 py-1.5 rounded mb-0.5 flex items-center gap-2 ${selectedZoneId === z.id ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'}`}
                   >
                     <span className="w-2 h-2 rounded" style={{ background: ZONE_KIND_TONE[z.kind] }} />
                     <span className="truncate flex-1">{z.label}</span>
@@ -344,7 +344,7 @@ export function ThreatDrillEditor() {
 
             <Section title="Protocol">
               <div className="flex items-center gap-1.5 mb-2">
-                <label className="text-[10.5px] px-2 h-7 rounded border border-border hover:bg-secondary/50 cursor-pointer flex items-center gap-1 text-muted-foreground">
+                <label className="text-[10px] px-2 h-7 rounded border border-border hover:bg-secondary/50 cursor-pointer flex items-center gap-1 text-muted-foreground">
                   <Upload className="w-3 h-3" /> Import (.txt)
                   <input type="file" accept=".txt,.md,.docx,application/pdf,text/plain" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
                 </label>
@@ -354,7 +354,7 @@ export function ThreatDrillEditor() {
                 const steps = sc.protocol.steps.filter((s) => s.section === section);
                 return (
                   <div key={section} className="mb-2 border border-border/60 rounded">
-                    <div className="px-2 py-1.5 flex items-center bg-secondary/30 text-[10.5px] uppercase tracking-wider text-muted-foreground">
+                    <div className="px-2 py-1.5 flex items-center bg-secondary/30 text-[10px] uppercase tracking-wider text-muted-foreground">
                       <span className="flex-1 truncate">{PROTOCOL_SECTION_LABEL[section]}</span>
                       <button title="Add step" onClick={() => handleAddStep(section)} className="text-muted-foreground hover:text-foreground">
                         <Plus className="w-3.5 h-3.5" />
@@ -503,7 +503,7 @@ export function ThreatDrillEditor() {
           <div className="border-l border-border bg-card overflow-auto">
             <div className="px-4 py-3 border-b border-border flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5 text-primary" />
-              <div className="text-[12.5px] font-medium text-foreground tracking-tight">AI assistant</div>
+              <div className="text-[12px] font-medium text-foreground tracking-tight">AI assistant</div>
               <span className="ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: `${scoreTone}1f`, color: scoreTone }}>{score ?? '—'}/100</span>
             </div>
             <div className="px-3 py-2 text-[11px] text-muted-foreground border-b border-border/60">
@@ -524,7 +524,7 @@ export function ThreatDrillEditor() {
                       <div className="text-[12px] font-medium text-foreground leading-tight">{g.label}</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{g.detail}</div>
                       {g.suggestion && (
-                        <div className="mt-1.5 text-[10.5px] text-foreground/80 border-l-2 border-primary/40 pl-2 italic leading-snug">
+                        <div className="mt-1.5 text-[10px] text-foreground/80 border-l-2 border-primary/40 pl-2 italic leading-snug">
                           {g.suggestion}
                         </div>
                       )}
@@ -581,8 +581,8 @@ function ProtocolStepRow({ step, devices, onChange, onRemove }: {
         <>
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} className="dv-input text-[11px]" />
           <div className="flex items-center gap-1.5 mt-1">
-            <button onClick={() => { onChange({ text }); setEditing(false); }} className="text-[10.5px] px-2 h-6 rounded bg-primary text-primary-foreground">Save</button>
-            <button onClick={() => { setText(step.text); setEditing(false); }} className="text-[10.5px] px-2 h-6 rounded border border-border text-muted-foreground">Cancel</button>
+            <button onClick={() => { onChange({ text }); setEditing(false); }} className="text-[10px] px-2 h-6 rounded bg-primary text-primary-foreground">Save</button>
+            <button onClick={() => { setText(step.text); setEditing(false); }} className="text-[10px] px-2 h-6 rounded border border-border text-muted-foreground">Cancel</button>
           </div>
         </>
       ) : (

@@ -258,7 +258,7 @@ export function DeploymentMode() {
               </div>
             )}
             {filtered.length === 0 && workOrders.length > 0 && (
-              <div className="text-center text-[11.5px] text-muted-foreground p-6">
+              <div className="text-center text-[11px] text-muted-foreground p-6">
                 No work orders match this filter.
               </div>
             )}
@@ -343,7 +343,7 @@ function DeploymentTopBar({ projectName, tallies, onOpenEngineering, onOpenMobil
             <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #10B981, #22D3EE)' }} />
           </div>
         </div>
-        <div className="flex items-center gap-1.5 text-[10.5px]">
+        <div className="flex items-center gap-1.5 text-[10px]">
           <Pill tone="#10B981" label={`${tallies.complete} complete`} />
           <Pill tone="#94A3B8" label={`${tallies.open} open`} />
           {tallies.blocked > 0 && <Pill tone="#EF4444" label={`${tallies.blocked} blocked`} />}
@@ -355,7 +355,7 @@ function DeploymentTopBar({ projectName, tallies, onOpenEngineering, onOpenMobil
       <button
         onClick={onOpenEngineering}
         title="Open the Engineering Canvas — back to the design surface"
-        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11.5px] border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary transition-colors"
+        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] border border-primary/30 bg-primary/10 hover:bg-primary/15 text-primary transition-colors"
         data-track="deploy-open-engineering"
       >
         <ArrowLeft className="w-3.5 h-3.5" />Open in Engineering
@@ -366,7 +366,7 @@ function DeploymentTopBar({ projectName, tallies, onOpenEngineering, onOpenMobil
 
 function Pill({ tone, label }: { tone: string; label: string }) {
   return (
-    <span className="inline-flex items-center gap-1 h-6 px-2 rounded-full border text-[10.5px]"
+    <span className="inline-flex items-center gap-1 h-6 px-2 rounded-full border text-[10px]"
       style={{ color: tone, borderColor: `${tone}55`, background: `${tone}14` }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: tone }} />{label}
     </span>
@@ -400,7 +400,7 @@ function FilterChip({ kind, label, active, onClick }: {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[10.5px] tracking-tight transition-colors border ${
+      className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[10px] tracking-tight transition-colors border ${
         active ? 'border-foreground/30 bg-secondary/60 text-foreground'
                : 'border-border text-muted-foreground hover:bg-secondary/40'
       }`}
@@ -445,9 +445,9 @@ function WorkOrderRow({ wo, selected, onSelect }: { wo: WorkOrder; selected: boo
               {statusMeta.label}
             </span>
           </div>
-          <div className="text-[12.5px] font-medium text-foreground truncate">{wo.title}</div>
+          <div className="text-[12px] font-medium text-foreground truncate">{wo.title}</div>
           {wo.subtitle && (
-            <div className="text-[10.5px] text-muted-foreground truncate">{wo.subtitle}</div>
+            <div className="text-[10px] text-muted-foreground truncate">{wo.subtitle}</div>
           )}
           <div className="flex items-center justify-between gap-2 mt-1.5">
             <div className="flex-1 h-1 rounded-full bg-secondary/60 overflow-hidden">
@@ -511,7 +511,7 @@ function WorkOrderDetail({ wo, floors, state, projectId }: { wo: WorkOrder; floo
           <div className="text-[18px] font-medium text-foreground tracking-tight">{wo.title}</div>
           {wo.subtitle && <div className="text-[12px] text-muted-foreground mt-0.5">{wo.subtitle}</div>}
           {wo.location && (
-            <div className="flex items-center gap-1.5 mt-1 text-[11.5px] text-muted-foreground">
+            <div className="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground">
               <MapPin className="w-3 h-3" />{wo.location}
             </div>
           )}
@@ -526,7 +526,7 @@ function WorkOrderDetail({ wo, floors, state, projectId }: { wo: WorkOrder; floo
       <div className="rounded-lg border border-border p-3 bg-secondary/15">
         <div className="flex items-center justify-between mb-2">
           <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Status</div>
-          <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10.5px] border"
+          <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10px] border"
             style={{ color: statusMeta.tone, background: statusMeta.bg, borderColor: statusMeta.border }}>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusMeta.tone }} />{statusMeta.label}
           </span>
@@ -737,7 +737,7 @@ function SourceSummary({ wo, state }: { wo: WorkOrder; state: any }) {
     return (
       <div className="rounded-lg border border-border p-3 bg-secondary/15">
         <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Source · camera</div>
-        <div className="grid grid-cols-2 gap-y-1 text-[11.5px]">
+        <div className="grid grid-cols-2 gap-y-1 text-[11px]">
           <Kv k="Model"     v={product ? `${product.manufacturer} · ${product.model}` : d.type} />
           <Kv k="Coverage"  v={d.type === 'cam.fisheye' ? `${range} ft omni` : `${fov}° × ${range} ft`} />
           {d.mountFt != null && <Kv k="Mount" v={`${d.mountFt} ft`} />}
@@ -756,13 +756,13 @@ function SourceSummary({ wo, state }: { wo: WorkOrder; state: any }) {
       <div className="rounded-lg border border-border p-3 bg-secondary/15">
         <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Source · opening</div>
         {assembly.length === 0
-          ? <div className="text-[11.5px] text-muted-foreground">No hardware specified yet.</div>
+          ? <div className="text-[11px] text-muted-foreground">No hardware specified yet.</div>
           : <ul className="space-y-1">
               {assembly.map((hw) => {
                 const meta = DOOR_HARDWARE_PRICE[hw as keyof typeof DOOR_HARDWARE_PRICE];
                 const isExisting = stateMap[hw] === 'existing';
                 return (
-                  <li key={String(hw)} className="flex items-center justify-between text-[11.5px]">
+                  <li key={String(hw)} className="flex items-center justify-between text-[11px]">
                     <span className={isExisting ? 'text-muted-foreground line-through decoration-1' : 'text-foreground'}>{meta?.desc ?? hw}</span>
                     <span className={`text-[9.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded border ${isExisting ? 'border-amber-400/40 text-amber-400 bg-amber-400/10' : 'border-emerald-400/40 text-emerald-400 bg-emerald-400/10'}`}>{isExisting ? 'Existing' : 'Proposed'}</span>
                   </li>
@@ -780,7 +780,7 @@ function SourceSummary({ wo, state }: { wo: WorkOrder; state: any }) {
     return (
       <div className="rounded-lg border border-border p-3 bg-secondary/15">
         <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Source · pathway</div>
-        <div className="grid grid-cols-2 gap-y-1 text-[11.5px]">
+        <div className="grid grid-cols-2 gap-y-1 text-[11px]">
           <Kv k="Cable"   v={(p.cableType ?? 'cat6a').toUpperCase()} />
           <Kv k="Length"  v={`${ft} ft`} />
           <Kv k="Count"   v={`${p.cableCount}×`} />
@@ -796,7 +796,7 @@ function SourceSummary({ wo, state }: { wo: WorkOrder; state: any }) {
     return (
       <div className="rounded-lg border border-border p-3 bg-secondary/15">
         <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Source · IDF / rack</div>
-        <div className="space-y-1 text-[11.5px]">
+        <div className="space-y-1 text-[11px]">
           {(idf.switches ?? []).map((sw: any) => (
             <div key={sw.model} className="flex items-center justify-between">
               <span>{sw.model}</span>
@@ -819,8 +819,8 @@ function SourceSummary({ wo, state }: { wo: WorkOrder; state: any }) {
 function Kv({ k, v }: { k: string; v: string }) {
   return (
     <>
-      <span className="text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground">{k}</span>
-      <span className="text-[11.5px] text-foreground text-right">{v}</span>
+      <span className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">{k}</span>
+      <span className="text-[11px] text-foreground text-right">{v}</span>
     </>
   );
 }
@@ -919,7 +919,7 @@ function WorkOrderChecklistPanel({ wo }: { wo: WorkOrder }) {
             <ClipboardList className="w-3.5 h-3.5 text-muted-foreground" />
             <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Field checklist</div>
           </div>
-          <span className="text-[10.5px] tabular-nums text-muted-foreground">{done}/{total} done</span>
+          <span className="text-[10px] tabular-nums text-muted-foreground">{done}/{total} done</span>
         </div>
         <div className="space-y-1.5" data-testid="deploy-checklist">
           {wo.checklist.map((item) => {

@@ -68,7 +68,7 @@ export function ProductCatalog() {
 
         {/* ── Project context (when opened from a project URL) ── */}
         {projectTechModel && (
-          <div className="bg-primary/8 border border-primary/30 rounded-lg px-4 py-2.5 text-[11.5px] text-primary/90 flex items-center gap-2">
+          <div className="bg-primary/8 border border-primary/30 rounded-lg px-4 py-2.5 text-[11px] text-primary/90 flex items-center gap-2">
             <Filter className="w-3.5 h-3.5" />
             Showing products for the active project's <strong className="mx-1">{projectTechModel === 'on_prem' ? 'on-prem' : projectTechModel}</strong> stack.
             <button onClick={() => setTechFilter('all')} className="ml-auto text-[11px] underline opacity-80 hover:opacity-100">
@@ -78,7 +78,7 @@ export function ProductCatalog() {
         )}
 
         {/* ── Sample notice ───────────────────────────────────── */}
-        <div className="bg-amber-500/8 border border-amber-500/30 rounded-lg px-4 py-2.5 text-[11.5px] text-amber-200/90 flex items-center gap-2">
+        <div className="bg-amber-500/8 border border-amber-500/30 rounded-lg px-4 py-2.5 text-[11px] text-amber-200/90 flex items-center gap-2">
           <Filter className="w-3.5 h-3.5 text-amber-300/80" />
           Sample product catalog. Manufacturer database, distributor pricing, and live lead-times are not yet connected — these entries are representative SKUs across the major manufacturers, kept honest about coverage.
         </div>
@@ -91,7 +91,7 @@ export function ProductCatalog() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search manufacturer, model, line, notes"
-              className="w-full bg-input-background border border-input-border rounded-md pl-8 pr-3 h-9 text-[12.5px] focus:outline-none focus:border-primary/60"
+              className="w-full bg-input-background border border-input-border rounded-md pl-8 pr-3 h-9 text-[12px] focus:outline-none focus:border-primary/60"
             />
             {q && (
               <button onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground">
@@ -112,13 +112,13 @@ export function ProductCatalog() {
             <input type="checkbox" checked={ndaaOnly} onChange={(e) => setNdaaOnly(e.target.checked)} className="accent-primary" />
             NDAA only
           </label>
-          <span className="text-[11.5px] text-muted-foreground ml-auto tabular-nums">{filtered.length} of {SAMPLE_PRODUCTS.length}</span>
+          <span className="text-[11px] text-muted-foreground ml-auto tabular-nums">{filtered.length} of {SAMPLE_PRODUCTS.length}</span>
         </div>
 
         {/* ── Product table ────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-secondary/40 text-[11.5px] text-muted-foreground">
+            <thead className="bg-secondary/40 text-[11px] text-muted-foreground">
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium">Product</th>
                 <th className="text-left px-4 py-2.5 font-medium">Category</th>
@@ -131,7 +131,7 @@ export function ProductCatalog() {
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-[12.5px] text-muted-foreground">No products match.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-12 text-center text-[12px] text-muted-foreground">No products match.</td></tr>
               ) : filtered.map((p) => <ProductRow key={p.id} p={p} />)}
             </tbody>
           </table>
@@ -146,33 +146,33 @@ function ProductRow({ p }: { p: Product }) {
     <tr className="border-t border-border/70 hover:bg-secondary/20">
       <td className="px-4 py-3">
         <div className="font-medium text-slate-100">{p.manufacturer}{p.productLine ? <span className="text-muted-foreground"> · {p.productLine}</span> : null}</div>
-        <div className="text-[11.5px] text-muted-foreground font-mono mt-0.5">{p.model}</div>
+        <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{p.model}</div>
       </td>
-      <td className="px-4 py-3 text-[12.5px]">
+      <td className="px-4 py-3 text-[12px]">
         <span className="text-slate-200">{CATEGORY_LABEL[p.category]}</span>
         {p.subcategory && <div className="text-[11px] text-muted-foreground">{p.subcategory}</div>}
       </td>
       <td className="px-4 py-3">
         <div className="inline-flex flex-wrap gap-1">
           {p.techModels.map((m) => (
-            <span key={m} className="text-[10.5px] px-1.5 py-0.5 rounded bg-secondary/60 text-slate-200">
+            <span key={m} className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/60 text-slate-200">
               {m === 'on_prem' ? 'on-prem' : m}
             </span>
           ))}
         </div>
       </td>
-      <td className="px-4 py-3 text-[12.5px] text-slate-200">
+      <td className="px-4 py-3 text-[12px] text-slate-200">
         {p.poeClass ? `Class ${p.poeClass}${p.powerW ? ` · ${p.powerW}W` : ''}` : (p.powerW ? `${p.powerW}W` : <span className="text-muted-foreground">—</span>)}
       </td>
-      <td className="px-4 py-3 text-[12.5px]">
+      <td className="px-4 py-3 text-[12px]">
         <div className="inline-flex gap-1.5">
-          {p.ndaa && <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">NDAA</span>}
-          {p.onvifProfile && <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">ONVIF {p.onvifProfile}</span>}
+          {p.ndaa && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">NDAA</span>}
+          {p.onvifProfile && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">ONVIF {p.onvifProfile}</span>}
           {!p.ndaa && !p.onvifProfile && <span className="text-muted-foreground">—</span>}
         </div>
       </td>
-      <td className="px-4 py-3 text-[12.5px] text-slate-200">{p.resolution ?? <span className="text-muted-foreground">—</span>}</td>
-      <td className="px-4 py-3 text-right text-[11.5px] text-muted-foreground max-w-[280px] truncate">{p.notes ?? '—'}</td>
+      <td className="px-4 py-3 text-[12px] text-slate-200">{p.resolution ?? <span className="text-muted-foreground">—</span>}</td>
+      <td className="px-4 py-3 text-right text-[11px] text-muted-foreground max-w-[280px] truncate">{p.notes ?? '—'}</td>
     </tr>
   );
 }
@@ -184,7 +184,7 @@ function Select<T extends string>({ label, value, options, onChange }: {
   onChange: (v: T) => void;
 }) {
   return (
-    <label className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+    <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
       <span>{label}</span>
       <select
         value={value}

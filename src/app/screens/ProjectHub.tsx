@@ -209,7 +209,7 @@ export function ProjectHub() {
               calm and a11y-clean; the brief lists 4 sort options so we
               ship those four. */}
           <div className="ml-auto flex items-center gap-2">
-            <label className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+            <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <ArrowUpDown className="w-3.5 h-3.5" />
               <span>Sort</span>
               <select
@@ -409,13 +409,13 @@ function KanbanBoard({ projects, onOpen }: { projects: Project[]; onOpen: (id: s
                   >
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-medium leading-tight truncate">{p.name}</div>
-                        <div className="text-[10.5px] text-muted-foreground truncate mt-0.5">{p.client}</div>
+                        <div className="text-[12px] font-medium leading-tight truncate">{p.name}</div>
+                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">{p.client}</div>
                       </div>
                       <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${PHASES[p.phase].tone.dot}`} />
                     </div>
                     {p.nextAction && (
-                      <div className="text-[10.5px] text-muted-foreground line-clamp-1 mt-1">{p.nextAction}</div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-1 mt-1">{p.nextAction}</div>
                     )}
                     <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
                       <span>{p.devices} device{p.devices === 1 ? '' : 's'}</span>

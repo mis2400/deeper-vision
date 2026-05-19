@@ -300,7 +300,7 @@ function OpportunityCard({
 function SummaryCard({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint?: string }) {
   return (
     <div className="bg-card border border-border rounded-lg p-3">
-      <div className="text-[11.5px] text-muted-foreground inline-flex items-center gap-1.5">{icon}{label}</div>
+      <div className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">{icon}{label}</div>
       <div className="text-xl font-medium mt-1 tabular-nums">{value}</div>
       {hint && <div className="text-[10px] text-muted-foreground mt-0.5">{hint}</div>}
     </div>

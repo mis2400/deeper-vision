@@ -88,7 +88,7 @@ export function BusFleet() {
       <div className="max-w-[1280px] mx-auto px-6 py-6 space-y-4">
 
         {/* Banner */}
-        <div className="bg-primary/5 border border-primary/30 rounded-lg px-4 py-3 text-[11.5px] text-foreground/90 flex items-start gap-2.5">
+        <div className="bg-primary/5 border border-primary/30 rounded-lg px-4 py-3 text-[11px] text-foreground/90 flex items-start gap-2.5">
           <BusIcon className="w-4 h-4 text-primary mt-0.5 shrink-0" />
           <div>
             <strong className="text-foreground">Fleet security infrastructure planning.</strong> Design

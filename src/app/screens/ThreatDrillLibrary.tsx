@@ -99,7 +99,7 @@ export function ThreatDrillLibrary() {
       <div className="max-w-[1280px] mx-auto px-6 py-6 space-y-4">
 
         {/* Honesty + framing banner */}
-        <div className="bg-primary/5 border border-primary/30 rounded-lg px-4 py-3 text-[11.5px] text-foreground/90 flex items-start gap-2.5">
+        <div className="bg-primary/5 border border-primary/30 rounded-lg px-4 py-3 text-[11px] text-foreground/90 flex items-start gap-2.5">
           <ShieldAlert className="w-4 h-4 text-primary mt-0.5 shrink-0" />
           <div>
             <strong className="text-foreground">Defensive planning module.</strong> Scenarios validate
@@ -329,17 +329,17 @@ function ScenarioWizard({ projectId, onClose, onCreated }: {
                   className={`text-left text-[12px] px-3 py-3 rounded border transition-colors ${protocolSource === 'ai-draft' ? 'border-primary/60 bg-primary/10' : 'border-border hover:border-border-strong'}`}
                 >
                   <div className="font-medium text-foreground">AI-draft starter</div>
-                  <div className="text-[10.5px] text-muted-foreground mt-0.5">Generates a baseline lockdown / accountability protocol you can edit.</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Generates a baseline lockdown / accountability protocol you can edit.</div>
                 </button>
                 <button
                   onClick={() => setProtocolSource('manual')}
                   className={`text-left text-[12px] px-3 py-3 rounded border transition-colors ${protocolSource === 'manual' ? 'border-primary/60 bg-primary/10' : 'border-border hover:border-border-strong'}`}
                 >
                   <div className="font-medium text-foreground">Empty · build manually</div>
-                  <div className="text-[10.5px] text-muted-foreground mt-0.5">Start from a blank protocol. Add steps in the editor.</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Start from a blank protocol. Add steps in the editor.</div>
                 </button>
               </div>
-              <div className="text-[10.5px] text-muted-foreground/80 pt-2 border-t border-border/60">
+              <div className="text-[10px] text-muted-foreground/80 pt-2 border-t border-border/60">
                 Upload (PDF / DOCX / TXT) is available inside the scenario editor.
               </div>
             </>

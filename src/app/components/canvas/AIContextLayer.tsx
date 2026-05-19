@@ -109,11 +109,11 @@ export function AIContextLayer({ screenToWorld, objects, active }: Props) {
             const Icon = s.icon;
             return (
               <li key={i} className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                   <Icon className={`w-3 h-3 ${s.tone ?? 'text-primary/80'}`} />
                   {s.label}
                 </span>
-                <span className="text-[10.5px] tabular-nums text-foreground">{s.value}</span>
+                <span className="text-[10px] tabular-nums text-foreground">{s.value}</span>
               </li>
             );
           })}

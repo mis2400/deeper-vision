@@ -42,7 +42,7 @@ export function OptimizeToggle({ camera, bias, onChange }: Props) {
         <button
           onClick={() => apply('prosecution')}
           title="ID-grade: long focal, lower mount, IR on"
-          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10.5px] transition-colors ${
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] transition-colors ${
             bias === 'prosecution'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
@@ -54,7 +54,7 @@ export function OptimizeToggle({ camera, bias, onChange }: Props) {
         <button
           onClick={() => apply('overview')}
           title="Situational: wide FOV, high mount, short focal"
-          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10.5px] transition-colors ${
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] transition-colors ${
             bias === 'overview'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'

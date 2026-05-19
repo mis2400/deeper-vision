@@ -160,7 +160,7 @@ export function VisionScan() {
         {/* Honesty banner — vision scan is currently a simulated workflow.
             The walk-and-scan UI captures the design intent of the workflow:
             when AR/LiDAR shipping arrives the same flow drives a real capture. */}
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2.5 text-[11.5px] text-amber-200/90 flex items-start gap-2">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2.5 text-[11px] text-amber-200/90 flex items-start gap-2">
           <Sparkles className="w-3.5 h-3.5 text-amber-300/80 mt-0.5 shrink-0" />
           <div>
             Simulated vision scan. Walk-and-scan capture and AR overlays are demonstrative —
@@ -250,18 +250,18 @@ export function VisionScan() {
 
             <div className="bg-card border border-border rounded-lg p-4 space-y-3">
               <div className="text-[13px] font-medium">Walk-and-scan</div>
-              <div className="text-[11.5px] text-muted-foreground leading-relaxed">
+              <div className="text-[11px] text-muted-foreground leading-relaxed">
                 Hold the phone or tablet so the rear camera faces the floor and walls.
                 Walk a continuous loop around the area — corners are captured automatically.
                 The system generates a floorplan from the path + visual depth.
               </div>
-              <div className="space-y-1.5 text-[11.5px]">
+              <div className="space-y-1.5 text-[11px]">
                 <Tip label="Capture rate"     value="30 fps" />
                 <Tip label="Walls detected"   value={Math.max(0, Math.round(walkPct / 12))} />
                 <Tip label="Floor coverage"   value={`${walkPct}%`} />
                 <Tip label="Estimated area"   value={`${Math.round(walkPct * 18)} sq ft`} />
               </div>
-              <div className="text-[10.5px] text-muted-foreground/80 pt-2 border-t border-border/60">
+              <div className="text-[10px] text-muted-foreground/80 pt-2 border-t border-border/60">
                 When the AR/LiDAR backend ships, "Start walk" hands off to the phone camera and AR scene reconstruction.
               </div>
             </div>
@@ -322,7 +322,7 @@ export function VisionScan() {
                 </Button>
               </div>
             </div>
-            <div className="bg-card border border-border rounded-lg p-4 space-y-3 text-[11.5px]">
+            <div className="bg-card border border-border rounded-lg p-4 space-y-3 text-[11px]">
               <div className="text-[13px] font-medium">What we generated</div>
               <Tip label="Walls"    value="8 segments · 162 ft total" />
               <Tip label="Rooms"    value="4 polygons" />
@@ -330,7 +330,7 @@ export function VisionScan() {
               <Tip label="Windows"  value="6 detected" />
               <Tip label="Ceiling height" value="9.2 ft (avg)" />
               <Tip label="Scale"    value="1 px = 0.12 ft" />
-              <div className="text-[10.5px] text-muted-foreground/80 pt-2 border-t border-border/60">
+              <div className="text-[10px] text-muted-foreground/80 pt-2 border-t border-border/60">
                 Importing snaps the generated plan onto the project canvas. Existing devices are preserved; you can re-anchor them after.
               </div>
             </div>

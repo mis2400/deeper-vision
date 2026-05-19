@@ -283,7 +283,7 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
             <Download className="w-3.5 h-3.5 text-foreground/80 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-[12px] text-foreground font-medium">Export project JSON</div>
-              <div className="text-[10.5px] text-muted-foreground leading-snug">Download {projectId} · devices, doors, pathways, work-order progress, calibration.</div>
+              <div className="text-[10px] text-muted-foreground leading-snug">Download {projectId} · devices, doors, pathways, work-order progress, calibration.</div>
             </div>
           </button>
           <button onClick={onImportClick}
@@ -293,7 +293,7 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
             <UploadIcon className="w-3.5 h-3.5 text-foreground/80 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-[12px] text-foreground font-medium">Import project JSON</div>
-              <div className="text-[10.5px] text-muted-foreground leading-snug">Pick a previously exported file to replace this project's state.</div>
+              <div className="text-[10px] text-muted-foreground leading-snug">Pick a previously exported file to replace this project's state.</div>
             </div>
           </button>
 
@@ -307,7 +307,7 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
             <RotateCcw className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-[12px] text-foreground font-medium">Reset to shared demo</div>
-              <div className="text-[10.5px] text-muted-foreground leading-snug">Restore the seeded polished demo so reviewer feedback is predictable.</div>
+              <div className="text-[10px] text-muted-foreground leading-snug">Restore the seeded polished demo so reviewer feedback is predictable.</div>
             </div>
           </button>
           <button onClick={() => setPendingResetKind('clear')}
@@ -317,12 +317,12 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
             <Trash2 className="w-3.5 h-3.5 text-red-500 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-[12px] text-red-500 font-medium">Clear local project state</div>
-              <div className="text-[10.5px] text-muted-foreground leading-snug">Wipes this workspace and reloads to a fresh seed.</div>
+              <div className="text-[10px] text-muted-foreground leading-snug">Wipes this workspace and reloads to a fresh seed.</div>
             </div>
           </button>
 
           <div className="px-3 py-2.5 border-t border-border/60 bg-secondary/15">
-            <p className="text-[10.5px] text-muted-foreground leading-snug">
+            <p className="text-[10px] text-muted-foreground leading-snug">
               Use Export / Import or Snapshots to move project state between workspaces.
             </p>
           </div>
@@ -371,7 +371,7 @@ function SyncStatusBlock({ status }: { status: ReturnType<typeof getSyncMode> })
   return (
     <div className="px-3 pt-3 pb-2 border-b border-border/60">
       <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Project storage</div>
-      <div className="rounded-md border border-border/60 bg-secondary/15 p-2 space-y-1 text-[10.5px]">
+      <div className="rounded-md border border-border/60 bg-secondary/15 p-2 space-y-1 text-[10px]">
         <KvRow k="Last save" v={lastSave} />
         <KvRow k="Project size" v={fmtBytes(status.projectStateBytes)} />
         <KvRow k="Workspace size" v={fmtBytes(status.localStorageBytes)} sub />
@@ -394,7 +394,7 @@ function KvRow({ k, v, sub }: { k: string; v: string; sub?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
       <span className={`text-[10px] uppercase tracking-[0.1em] ${sub ? 'text-muted-foreground/70' : 'text-muted-foreground'}`}>{k}</span>
-      <span className={`tabular-nums truncate ${sub ? 'text-[10.5px] text-muted-foreground' : 'text-[11px] text-foreground'}`}>{v}</span>
+      <span className={`tabular-nums truncate ${sub ? 'text-[10px] text-muted-foreground' : 'text-[11px] text-foreground'}`}>{v}</span>
     </div>
   );
 }
@@ -436,7 +436,7 @@ function SnapshotsBlock({
           onChange={(e) => setSnapshotName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') onSave(); }}
           placeholder="Snapshot name (optional)"
-          className="flex-1 text-[11.5px] h-7 px-2 rounded-md border border-border bg-background placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+          className="flex-1 text-[11px] h-7 px-2 rounded-md border border-border bg-background placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
           data-testid="snapshot-name-input"
         />
         <button
@@ -448,7 +448,7 @@ function SnapshotsBlock({
         </button>
       </div>
       {snapshots.length === 0 ? (
-        <div className="text-[10.5px] text-muted-foreground text-center py-3 rounded-md border border-dashed border-border bg-secondary/5">
+        <div className="text-[10px] text-muted-foreground text-center py-3 rounded-md border border-dashed border-border bg-secondary/5">
           No snapshots yet. Save one before risky edits to give yourself an undo point.
         </div>
       ) : (
@@ -477,7 +477,7 @@ function SnapshotRow({ snap, onRestore, onDelete }: {
       </div>
       <button
         onClick={onRestore}
-        className="inline-flex items-center gap-1 h-6 px-2 rounded text-[10.5px] border border-border hover:bg-secondary/40 text-foreground"
+        className="inline-flex items-center gap-1 h-6 px-2 rounded text-[10px] border border-border hover:bg-secondary/40 text-foreground"
         title="Restore this snapshot — overwrites local state for the project"
         data-track="snapshot-restore"
       >
@@ -541,7 +541,7 @@ function SnapshotRestoreConfirmModal({ snapshot, onCancel, onApply }: {
             <Kv k="WO state" v={String(snapshot.envelope.summary.workOrderProgressCount)} />
           </div>
           {snapshot.buildLabel && (
-            <div className="pt-2 border-t border-border/40 text-[10.5px] text-muted-foreground">
+            <div className="pt-2 border-t border-border/40 text-[10px] text-muted-foreground">
               Source build · <span className="font-mono text-foreground">{snapshot.buildLabel}</span>
               {!snapshot.buildLabel.includes(COMMIT_HASH) && (
                 <div className="flex items-start gap-1.5 mt-1 text-amber-500">
@@ -551,7 +551,7 @@ function SnapshotRestoreConfirmModal({ snapshot, onCancel, onApply }: {
               )}
             </div>
           )}
-          <div className="text-[10.5px] text-muted-foreground leading-snug pt-2 border-t border-border/40">
+          <div className="text-[10px] text-muted-foreground leading-snug pt-2 border-t border-border/40">
             The snapshot itself is kept after restore. Export the current state first if you want a rollback file.
           </div>
         </div>
@@ -607,7 +607,7 @@ function ImportConfirmModal({ envelope, onCancel, onApply }: {
             <Kv k="WO state"  v={String(envelope.summary.workOrderProgressCount)} />
           </div>
           {envelope.buildLabel && (
-            <div className="pt-2 border-t border-border/40 text-[10.5px] text-muted-foreground">
+            <div className="pt-2 border-t border-border/40 text-[10px] text-muted-foreground">
               Source build: <span className="font-mono text-foreground">{envelope.buildLabel}</span>
               {!matchesBuild && (
                 <div className="flex items-start gap-1.5 mt-1 text-amber-500">
@@ -617,7 +617,7 @@ function ImportConfirmModal({ envelope, onCancel, onApply }: {
               )}
             </div>
           )}
-          <div className="text-[10.5px] text-muted-foreground leading-snug pt-2 border-t border-border/40">
+          <div className="text-[10px] text-muted-foreground leading-snug pt-2 border-t border-border/40">
             Other projects in your browser are untouched. This is irreversible — export the current state first if you want a rollback file.
           </div>
         </div>
@@ -678,7 +678,7 @@ function ResetConfirmModal({ kind, projectId, onCancel, onApply }: {
               : <>This rebuilds the seeded demo state (every project — not just {projectId}). Local edits across projects will be lost. Reviewers will see the same canvas you do on a fresh load.</>
             }
           </div>
-          <div className="text-[10.5px] text-muted-foreground leading-snug pt-2 border-t border-border/40">
+          <div className="text-[10px] text-muted-foreground leading-snug pt-2 border-t border-border/40">
             Local only. The live URL is a separate browser and isn't touched by either action.
           </div>
         </div>

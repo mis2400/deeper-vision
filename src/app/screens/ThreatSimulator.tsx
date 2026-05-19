@@ -154,7 +154,7 @@ export function ThreatSimulator() {
                 data-testid={`threat-scenario-${s.id}`}
               >
                 <div className="text-[13px] font-medium">{s.name}</div>
-                <div className="text-[10.5px] text-muted-foreground mt-0.5 line-clamp-2">{s.description}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{s.description}</div>
                 <div className="text-[10px] text-muted-foreground mt-1">Entry · {s.entry.label}</div>
               </button>
             );
@@ -263,15 +263,15 @@ export function ThreatSimulator() {
               </div>
               <div className="mt-2 space-y-1.5">
                 {result.breakdown.length === 0 ? (
-                  <div className="text-[11.5px] text-muted-foreground">No factors flagged.</div>
+                  <div className="text-[11px] text-muted-foreground">No factors flagged.</div>
                 ) : (
                   result.breakdown.map((b) => (
-                    <div key={b.id} className="text-[11.5px]">
+                    <div key={b.id} className="text-[11px]">
                       <div className="flex items-center justify-between">
                         <span className="text-foreground">{b.label}</span>
                         <span className="text-rose-500 tabular-nums">+{b.contribution}</span>
                       </div>
-                      {b.hint && <div className="text-[10.5px] text-muted-foreground mt-0.5">{b.hint}</div>}
+                      {b.hint && <div className="text-[10px] text-muted-foreground mt-0.5">{b.hint}</div>}
                       {b.harden && (
                         <button
                           onClick={() => {
@@ -283,7 +283,7 @@ export function ThreatSimulator() {
                             });
                             navigate(`/project/${projectId}/canvas?${sp.toString()}`);
                           }}
-                          className="mt-1 inline-flex items-center gap-1 h-6 px-1.5 rounded text-[10.5px] border border-primary/40 bg-primary/10 hover:bg-primary/15 text-primary"
+                          className="mt-1 inline-flex items-center gap-1 h-6 px-1.5 rounded text-[10px] border border-primary/40 bg-primary/10 hover:bg-primary/15 text-primary"
                           data-testid={`threat-harden-${b.harden.kind}`}
                           title={b.harden.label}
                         >
@@ -573,7 +573,7 @@ function BeforeAfter({ baseline, live, onClear }: { baseline: ScenarioResult; li
         <Panel label="Baseline" score={baseline.score} severity={baseline.severity} />
         <Panel label="Live" score={live.score} severity={live.severity} />
       </div>
-      <div className={`text-[12.5px] font-medium tabular-nums ${deltaTone}`}>
+      <div className={`text-[12px] font-medium tabular-nums ${deltaTone}`}>
         {delta === 0 ? 'No change.' : `${delta > 0 ? '+' : ''}${delta} pts ${delta < 0 ? '(better)' : '(worse)'}`}
       </div>
       {closed.length > 0 && (
