@@ -3292,12 +3292,18 @@ export const selectors = {
       .filter((a) => a.projectId === projectId)
       .sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime()),
 
-  /** The newest approval on a project, or null. */
+  /** The newest approval on a project, or null. SC.7.6: single-pass
+   *  max scan instead of allocating + sorting the full filtered array
+   *  just to read the first element. */
   latestApprovalForProject: (s: ProjectState, projectId: string): import('./types').Approval | null => {
-    const list = Object.values(s.approvals).filter((a) => a.projectId === projectId);
-    if (list.length === 0) return null;
-    list.sort((a, b) => new Date(b.approvedAt).getTime() - new Date(a.approvedAt).getTime());
-    return list[0];
+    let latest: import('./types').Approval | null = null;
+    let latestTs = -Infinity;
+    for (const a of Object.values(s.approvals)) {
+      if (a.projectId !== projectId) continue;
+      const ts = new Date(a.approvedAt).getTime();
+      if (ts > latestTs) { latestTs = ts; latest = a; }
+    }
+    return latest;
   },
 
   // ── Asset selectors (SC.1.2) ─────────────────────────────────────
@@ -3424,10 +3430,16 @@ export const selectors = {
     // approvals as "no approvals" rather than crashing. Sort uses
     // numeric `createdAt` so a tampered or empty `approvedAt` string
     // can't make the sort nondeterministic and pick a bogus "latest".
+    // SC.7.6: single-pass max scan instead of allocating + sorting
+    // the full filtered array. Numeric createdAt is the tie-break;
+    // an empty / tampered approvedAt string can't poison the result.
     const approvalsMap = s.approvals ?? {};
-    const list = Object.values(approvalsMap).filter((a) => a && a.projectId === projectId);
-    list.sort((a, b) => b.createdAt - a.createdAt);
-    const latest = list[0] ?? null;
+    let latest: import('./types').Approval | null = null;
+    let latestTs = -Infinity;
+    for (const a of Object.values(approvalsMap)) {
+      if (!a || a.projectId !== projectId) continue;
+      if (a.createdAt > latestTs) { latestTs = a.createdAt; latest = a; }
+    }
 
     if (!latest) {
       return { ok: false, reason: 'no_approval', latestApproval: null, phase };

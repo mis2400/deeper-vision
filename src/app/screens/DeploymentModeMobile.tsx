@@ -19,6 +19,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { useProjectStore, deriveWorkOrders, selectors as sel } from '../store/projectStore';
+import type { ProjectState } from '../store/projectStore';
 import { CommissionSheet, CommissionSummaryPanel } from '../components/CommissionSheet';
 import type { WorkOrder, WorkOrderStatus } from '../store/types';
 import {
@@ -65,8 +66,12 @@ export function DeploymentModeMobile() {
   // needed by deriveWorkOrders for the canvas door fallback path.
   const approvalsMap = useProjectStore((s) => s.approvals);
   const doorsMap     = useProjectStore((s) => s.doors);
+  // SC.7.6: synthesise the minimum ProjectState slice the selectors
+  // touch. Cast through `unknown` so the contract is "I'm intentionally
+  // narrowing — the selectors only read these slices" instead of the
+  // blanket `as any` that hid type drift.
   const synthState = useMemo(
-    () => ({ projects, devices, pathways, idfs, floors, workOrderProgress: progressMap, approvals: approvalsMap, doors: doorsMap }) as any,
+    () => ({ projects, devices, pathways, idfs, floors, workOrderProgress: progressMap, approvals: approvalsMap, doors: doorsMap }) as unknown as ProjectState,
     [projects, devices, pathways, idfs, floors, progressMap, approvalsMap, doorsMap],
   );
   const workOrders = useMemo(() => deriveWorkOrders(synthState, projectId), [synthState, projectId]);

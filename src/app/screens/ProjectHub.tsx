@@ -145,7 +145,10 @@ export function ProjectHub() {
     const t = Math.max(...projects.map((p) => p.updatedAt));
     return new Date(t);
   }, [projects]);
-  const relativeUpdated = (() => {
+  // SC.7.6: memoize on the underlying timestamp so the IIFE doesn't
+  // re-run on every render (Phase 1 reviewer MINOR). Re-evaluates only
+  // when the latest project edit moves.
+  const relativeUpdated = useMemo(() => {
     if (!lastTouched) return null;
     const diff = Date.now() - lastTouched.getTime();
     const min = Math.round(diff / 60000);
@@ -156,7 +159,7 @@ export function ProjectHub() {
     const days = Math.round(hr / 24);
     if (days < 30) return `${days}d ago`;
     return lastTouched.toLocaleDateString();
-  })();
+  }, [lastTouched]);
 
   return (
     <AppShell
