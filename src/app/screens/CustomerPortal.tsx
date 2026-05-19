@@ -23,6 +23,7 @@ import { useProjectStore } from '../store/projectStore';
 import { toCustomerView, type ProposalCustomerArtifact } from '../lib/proposalView';
 import { PHASE_TIMELINE } from '../lifecycle/phases';
 import type { LifecyclePhase, Attachment, ApprovalType, Asset, Device, Warranty, ProposalLine } from '../store/types';
+import { PortalTicketsCard } from '../components/portalTickets';
 
 /** SC.2.1 — roll a vN style proposal version forward by one when
  *  the prior approval used a recognisable vN tag. Non-matching
@@ -414,6 +415,27 @@ export function CustomerPortal() {
                 ))}
               </div>
             </Card>
+          )}
+
+          {/* SC.6.3 + 6.4 — Service requests. Customer can report a
+              new issue (PortalReportIssueDialog) and see / reply on
+              their own tickets. Wires through createTicket +
+              addTicketNote so the bidirectional thread shows up on
+              /tickets and /ticket/:id immediately.
+
+              Ownership guard: only render when the resolved customer
+              actually owns the project. A stale or misrouted /portal/:id
+              link should never assist creating a ticket against the
+              wrong customer record. */}
+          {customer && project.customerId === customer.id && (
+            <PortalTicketsCard
+              customerId={customer.id}
+              projectId={projectId}
+              customer={customer}
+              primaryContact={contact}
+              installedAssets={installedAssets}
+              devicesMap={devicesMap}
+            />
           )}
         </div>
 

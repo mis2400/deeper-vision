@@ -175,7 +175,17 @@ export function TicketDetail() {
               </ol>
             )}
 
+            {/* Honesty boundary: every note in this thread is visible
+                to the customer in their portal — there's no "internal
+                only" flag on TicketNote today. Operators should use
+                their full professional name and keep notes
+                customer-appropriate. A future pass can add a
+                visibility flag + filter; for now the contract is
+                "everything is shared". */}
             <div className="mt-5 pt-4 border-t border-border space-y-2">
+              <p className="text-[11px] text-muted-foreground">
+                Customer sees these notes in their portal. Use your full name and keep it customer ready.
+              </p>
               <input
                 type="text"
                 value={noteAuthor}
