@@ -685,20 +685,40 @@ export interface Proposal {
 //   * Customer safe. Internal device ids exist so the renderer can
 //     key by them, but the portal renderer must NOT display them.
 
+/** SC.7.3 — snapshot-specific background shape. Diverged from
+ *  FloorBackground so the inline dataUrl can be swapped for an
+ *  IndexedDB content hash without bloating the canvas store. Both
+ *  forms are valid:
+ *    * `dataUrl` — legacy inline (SC.6.6 v29 snapshots) or fallback
+ *      for environments without IndexedDB.
+ *    * `dataUrlRef` — SHA-1 prefix produced by blueprintStore.putBlueprint;
+ *      the renderer looks the dataUrl up asynchronously.
+ *  New v30 snapshots always write `dataUrlRef`; SC.6.6 snapshots keep
+ *  their inline `dataUrl` until they're superseded out of the store. */
+export interface ProposalCanvasSnapshotBackground {
+  dataUrl?: string;
+  dataUrlRef?: string;
+  fileName: string;
+  origin: 'pdf' | 'png' | 'jpg' | 'visionscan';
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+  naturalWidth: number;
+  naturalHeight: number;
+  locked?: boolean;
+}
+
 export interface ProposalCanvasSnapshotFloor {
   id: string;
   name: string;
   level: number;
   /** Pixel-to-foot scale at capture time. */
   scalePxToFt: number;
-  /** Optional blueprint background — full FloorBackground shape so
-   *  the renderer doesn't need a translation layer. dataUrl is
-   *  base64 inline; no external storage refs. Inflates persist size
-   *  by the size of the blueprint image (typically 100–500 KB per
-   *  floor). SC.7 watch item: if a typical multi-floor project's
-   *  total persisted blob crosses 2 MB, factor blueprints out to
-   *  IndexedDB. */
-  background?: FloorBackground;
+  /** Optional blueprint background. SC.7.3 split the inline dataUrl
+   *  out to IndexedDB via dataUrlRef so the snapshot stays lean. */
+  background?: ProposalCanvasSnapshotBackground;
 }
 
 export interface ProposalCanvasSnapshotWall {

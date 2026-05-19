@@ -13,12 +13,14 @@
 // Multi-floor projects render a small tab strip; single-floor renders
 // the SVG directly.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layers as LayersIcon } from 'lucide-react';
 import type {
   ProposalCanvasSnapshot,
   ProposalCanvasSnapshotDevice,
+  ProposalCanvasSnapshotBackground,
 } from '../store/types';
+import { getBlueprint } from '../lib/blueprintStore';
 
 const VIEWBOX_PADDING_PX = 60;
 const MIN_VIEWBOX_DIMENSION = 200;
@@ -232,30 +234,11 @@ export function PortalDesignSnapshotCard({ snapshot, versionLabel }: {
             role="img"
             aria-label={`Floor plan: ${activeFloor.name}`}
           >
-            {/* Blueprint background, if captured. Rotation pivots
-                on the image center to match the engineering canvas
-                convention — otherwise the rotated background lands
-                in a different visual position here than the operator
-                saw at send time. */}
-            {activeFloor.background && (() => {
-              const bg = activeFloor.background;
-              const w = bg.naturalWidth * (bg.scale ?? 1);
-              const h = bg.naturalHeight * (bg.scale ?? 1);
-              const cx = bg.x + w / 2;
-              const cy = bg.y + h / 2;
-              return (
-                <image
-                  href={bg.dataUrl}
-                  x={bg.x}
-                  y={bg.y}
-                  width={w}
-                  height={h}
-                  opacity={bg.opacity ?? 1}
-                  transform={bg.rotation ? `rotate(${bg.rotation} ${cx} ${cy})` : undefined}
-                  preserveAspectRatio="none"
-                />
-              );
-            })()}
+            {/* Blueprint background, if captured. SC.7.3 split into a
+                sub-component because the dataUrl may need an async
+                IndexedDB lookup. Rotation pivots on the image center
+                to match the engineering canvas convention. */}
+            {activeFloor.background && <SnapshotBackground bg={activeFloor.background} />}
 
             {/* Rooms — soft polygon fill so devices read clearly on top. */}
             {roomsForFloor.map((r) => r.polygon.length >= 3 && (
@@ -337,6 +320,51 @@ export function PortalDesignSnapshotCard({ snapshot, versionLabel }: {
         </div>
       )}
     </div>
+  );
+}
+
+// SC.7.3 — blueprint background renderer. Handles both legacy inline
+// dataUrl (SC.6.6 v29 snapshots) and the new dataUrlRef (v30+) that
+// resolves via IndexedDB. When the lookup fails or returns null the
+// SVG renders without the background; the floor's walls, devices, and
+// rooms still draw normally so the customer still sees the layout.
+function SnapshotBackground({ bg }: { bg: ProposalCanvasSnapshotBackground }) {
+  const [resolved, setResolved] = useState<string | null>(bg.dataUrl ?? null);
+  useEffect(() => {
+    let cancelled = false;
+    if (bg.dataUrl) {
+      setResolved(bg.dataUrl);
+      return;
+    }
+    if (bg.dataUrlRef) {
+      getBlueprint(bg.dataUrlRef)
+        .then((src) => { if (!cancelled) setResolved(src); })
+        .catch((err) => {
+          if (!cancelled) {
+            console.warn(`[portalDesignSnapshot] blueprint ${bg.dataUrlRef} lookup failed`, err);
+            setResolved(null);
+          }
+        });
+    }
+    return () => { cancelled = true; };
+  }, [bg.dataUrl, bg.dataUrlRef]);
+
+  if (!resolved) return null;
+  const w = bg.naturalWidth * (bg.scale ?? 1);
+  const h = bg.naturalHeight * (bg.scale ?? 1);
+  const cx = bg.x + w / 2;
+  const cy = bg.y + h / 2;
+  return (
+    <image
+      href={resolved}
+      x={bg.x}
+      y={bg.y}
+      width={w}
+      height={h}
+      opacity={bg.opacity ?? 1}
+      transform={bg.rotation ? `rotate(${bg.rotation} ${cx} ${cy})` : undefined}
+      preserveAspectRatio="none"
+    />
   );
 }
 

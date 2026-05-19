@@ -22,8 +22,10 @@ import type {
   ProposalCanvasSnapshotWall,
   ProposalCanvasSnapshotDevice,
   ProposalCanvasSnapshotRoom,
+  ProposalCanvasSnapshotBackground,
 } from '../store/types';
 import type { ProjectState } from '../store/projectStore';
+import { putBlueprint } from './blueprintStore';
 
 // SC.7 watch threshold. If a single snapshot crosses this size,
 // the retrospective should consider moving blueprint dataUrls to a
@@ -32,21 +34,40 @@ import type { ProjectState } from '../store/projectStore';
 // snapshot per proposal version per project chews that fast.
 const SNAPSHOT_SIZE_WARN_BYTES = 2 * 1024 * 1024;
 
-export function captureCanvasSnapshot(
+export async function captureCanvasSnapshot(
   state: ProjectState,
   projectId: string,
   now: number = Date.now(),
-): ProposalCanvasSnapshot {
+): Promise<ProposalCanvasSnapshot> {
   // Floors first — every other entity dereferences via floorId.
-  const floors: ProposalCanvasSnapshotFloor[] = Object.values(state.floors)
-    .filter((f) => f.projectId === projectId)
-    .map((f) => ({
-      id: f.id,
-      name: f.name,
-      level: f.level,
-      scalePxToFt: f.scalePxToFt,
-      background: f.background,
-    }));
+  // SC.7.3: when a floor has a blueprint background, hand the dataUrl
+  // to IndexedDB and store a content hash instead of the inline base64
+  // so the proposal's persisted blob stays small. If IndexedDB is
+  // unavailable (private mode, denied permissions, etc.) we fall back
+  // to inline — the snapshot stays correct, just heavier.
+  const rawFloors = Object.values(state.floors).filter((f) => f.projectId === projectId);
+  const floors: ProposalCanvasSnapshotFloor[] = await Promise.all(
+    rawFloors.map(async (f) => {
+      let background: ProposalCanvasSnapshotBackground | undefined;
+      if (f.background) {
+        const { dataUrl, ...meta } = f.background;
+        try {
+          const dataUrlRef = await putBlueprint(dataUrl);
+          background = { ...meta, dataUrlRef };
+        } catch (err) {
+          console.warn(`[canvasSnapshot] blueprint IndexedDB write failed for floor ${f.id}; falling back to inline dataUrl`, err);
+          background = { ...meta, dataUrl };
+        }
+      }
+      return {
+        id: f.id,
+        name: f.name,
+        level: f.level,
+        scalePxToFt: f.scalePxToFt,
+        background,
+      };
+    }),
+  );
   const floorIdSet = new Set(floors.map((f) => f.id));
 
   // Walls — Floor.walls is the source of truth (the store doesn't

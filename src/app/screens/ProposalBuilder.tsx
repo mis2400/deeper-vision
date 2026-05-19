@@ -1343,23 +1343,24 @@ function SendDialog({ proposal, projectId, onClose }: {
       ? `${window.location.origin}/portal/${projectId}`
       : `/portal/${projectId}`;
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (validationErrors.length > 0) return;
     setBusy(true);
     try {
-      // SC.6.6 — sendProposal handles the stale-draft re-read + the
-      // status flip + the canvasSnapshot capture in one atomic step.
-      // If the proposal was already moved past draft by another tab
-      // it returns false; we surface the same toast as the prior
-      // inline guard.
-      const ok = sendProposal(proposal.id, { sentTo: selectedContactId || undefined });
+      // SC.6.6 + SC.7.3 — sendProposal is async because the canvas
+      // snapshot now writes blueprint backgrounds to IndexedDB before
+      // committing the proposal. Stale-draft re-check + status flip
+      // happen atomically inside the store's set callback.
+      const ok = await sendProposal(proposal.id, { sentTo: selectedContactId || undefined });
       if (!ok) {
         toast.error('Proposal is no longer a draft.');
-        setBusy(false);
         return;
       }
       setPhase('share');
       toast.success(`Proposal v${proposal.version} marked sent.`);
+    } catch (err) {
+      console.error('ProposalBuilder.handleSend failed', err);
+      toast.error('Send failed. Check the console.');
     } finally {
       setBusy(false);
     }

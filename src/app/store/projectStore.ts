@@ -421,7 +421,7 @@ export interface ProjectState {
    *  past draft (no double-capture). Replaces the ad-hoc
    *  updateProposal({status:'sent'}) pattern from SC.4.7 so the
    *  snapshot is guaranteed to be coupled to the send. */
-  sendProposal: (id: string, opts?: { sentTo?: string }) => boolean;
+  sendProposal: (id: string, opts?: { sentTo?: string }) => Promise<boolean>;
   /** Mark the current proposal as superseded and create a new
    *  draft pre populated with the prior version's content. Returns
    *  the new proposal id. */
@@ -1731,22 +1731,25 @@ export const useProjectStore = create<ProjectState>()(
             },
           };
         }),
-      sendProposal: (id, opts) => {
+      sendProposal: async (id, opts) => {
         const prev = get().proposals[id];
         if (!prev || prev.status !== 'draft') return false;
         // Mint `now` first and pass it to both the snapshot capture
         // and the field writes so the snapshot's capturedAt and the
         // proposal's sentAt agree on the exact wall-clock instant.
         const now = Date.now();
-        // Capture OUTSIDE the set callback so the cost of denormalising
-        // the canvas doesn't block other writes. Race-wise this is safe
-        // in single-threaded JS for the sync `get -> set` window; any
-        // async path that mutates between the two would need its own
-        // ordering guarantee (none exists today).
-        const snapshot = captureCanvasSnapshot(get(), prev.projectId, now);
+        // SC.7.3: capture is now async — blueprint backgrounds go to
+        // IndexedDB and the snapshot carries content-hash refs instead
+        // of inline base64. Race window between the await and the set
+        // is guarded by the stale-draft check inside the set callback;
+        // a concurrent sendProposal that beat us to it gets the no-op
+        // exit and returns the original true.
+        const snapshot = await captureCanvasSnapshot(get(), prev.projectId, now);
+        let committed = false;
         set((s) => {
           const still = s.proposals[id];
           if (!still || still.status !== 'draft') return s;
+          committed = true;
           return {
             proposals: {
               ...s.proposals,
@@ -1761,7 +1764,7 @@ export const useProjectStore = create<ProjectState>()(
             },
           };
         });
-        return true;
+        return committed;
       },
       supersedeProposal: (id) => {
         const prev = get().proposals[id];
@@ -2633,7 +2636,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'deeperVisionStore',
-      version: 29,
+      version: 30,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -3095,6 +3098,20 @@ export const useProjectStore = create<ProjectState>()(
           // undefined; pre SC.6.6 proposals therefore render exactly
           // as they did before, just without the new section. Future
           // sends will populate the field via sendProposal.
+        }
+        if (version < 30) {
+          // v29 -> v30 (SC.7.3): blueprint factoring to IndexedDB.
+          // No data transformation runs inside migrate — IndexedDB
+          // writes are async and the persist hydration path is sync;
+          // running async work here would either freeze hydration or
+          // race the renderer.
+          //
+          // Existing v29 snapshots keep their inline `dataUrl` and
+          // render fine — ProposalCanvasSnapshotBackground accepts
+          // either inline `dataUrl` (legacy) or `dataUrlRef` (new).
+          // New snapshots captured after this version bump always
+          // write `dataUrlRef`. The old inline payloads age out
+          // naturally as proposals get superseded.
         }
         // SC.1.5 cross model integrity sweep. Runs after every
         // version step, every load. Conservative cascade per the
