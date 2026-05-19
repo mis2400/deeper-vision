@@ -50,6 +50,11 @@ export function TicketDetail() {
 
   const [noteBody, setNoteBody]   = useState('');
   const [noteAuthor, setNoteAuthor] = useState('You');
+  // SC.7.7 — default is 'customer' on every reset. The toggle exists
+  // for the explicit internal-commentary case. Defaulting to internal
+  // would invert the trust contract: an operator typing fast would
+  // think they're writing to the customer when they aren't.
+  const [noteVisibility, setNoteVisibility] = useState<'customer' | 'internal'>('customer');
   const [submitting, setSubmitting] = useState(false);
   // Controlled assignee, seeded from the ticket and re-seeded when
   // the ticket id changes (navigation between detail pages) or the
@@ -127,9 +132,13 @@ export function TicketDetail() {
     }
     setSubmitting(true);
     try {
-      addTicketNote(ticket.id, { authorName: author, body });
+      addTicketNote(ticket.id, { authorName: author, body, visibility: noteVisibility });
       setNoteBody('');
-      toast.success('Note added');
+      // SC.7.7: reset the toggle back to customer-default after every
+      // post so the next reply doesn't inherit an "internal" stuck
+      // state and silently hide a real customer reply.
+      setNoteVisibility('customer');
+      toast.success(noteVisibility === 'internal' ? 'Internal note added' : 'Note added');
     } catch (err) {
       console.error('addTicketNote failed', err);
       toast.error('Could not add the note.');
@@ -163,29 +172,67 @@ export function TicketDetail() {
               <p className="text-xs text-muted-foreground italic">No activity yet. Add a note below to start the timeline.</p>
             ) : (
               <ol className="space-y-3" data-testid="ticket-timeline">
-                {timeline.map((n) => (
-                  <li key={n.id} className="border-l-2 border-border pl-3">
-                    <div className="text-[11px] text-muted-foreground">
-                      <span className="font-medium text-foreground">{n.authorName}</span>
-                      <span> · {new Date(n.createdAt).toLocaleString()}</span>
-                    </div>
-                    <div className="text-sm whitespace-pre-wrap mt-0.5">{n.body}</div>
-                  </li>
-                ))}
+                {timeline.map((n) => {
+                  // SC.7.7 — every entry shows whose audience it
+                  // belongs to. Internal notes get an amber chip + a
+                  // tinted left border so the operator can scan the
+                  // thread and instantly tell what the customer can
+                  // see. Customer notes carry no chip (the default).
+                  const isInternal = n.visibility === 'internal';
+                  return (
+                    <li
+                      key={n.id}
+                      className={`border-l-2 pl-3 ${isInternal ? 'border-amber-500/50' : 'border-border'}`}
+                      data-visibility={n.visibility ?? 'customer'}
+                    >
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                        <span className="font-medium text-foreground">{n.authorName}</span>
+                        <span>· {new Date(n.createdAt).toLocaleString()}</span>
+                        {isInternal && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-[10px] uppercase tracking-wider text-amber-300">
+                            Internal
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap mt-0.5">{n.body}</div>
+                    </li>
+                  );
+                })}
               </ol>
             )}
 
-            {/* Honesty boundary: every note in this thread is visible
-                to the customer in their portal — there's no "internal
-                only" flag on TicketNote today. Operators should use
-                their full professional name and keep notes
-                customer-appropriate. A future pass can add a
-                visibility flag + filter; for now the contract is
-                "everything is shared". */}
+            {/* SC.7.7 — visibility toggle pairs every note with an
+                explicit audience. Customer is the default so a quick
+                reply stays mutually visible by reflex; flipping to
+                Internal hides the note from the customer portal. The
+                inline hint mirrors the active state so the operator
+                cannot miss what they're about to post. */}
             <div className="mt-5 pt-4 border-t border-border space-y-2">
-              <p className="text-[11px] text-muted-foreground">
-                Customer sees these notes in their portal. Use your full name and keep it customer ready.
-              </p>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="inline-flex items-center gap-1 rounded-md border border-border p-0.5 bg-background">
+                  <button
+                    type="button"
+                    onClick={() => setNoteVisibility('customer')}
+                    className={`px-2.5 py-1 rounded text-[11px] transition-colors ${noteVisibility === 'customer' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    data-testid="ticket-note-visibility-customer"
+                  >
+                    Customer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNoteVisibility('internal')}
+                    className={`px-2.5 py-1 rounded text-[11px] transition-colors ${noteVisibility === 'internal' ? 'bg-amber-500/15 text-amber-300' : 'text-muted-foreground hover:text-foreground'}`}
+                    data-testid="ticket-note-visibility-internal"
+                  >
+                    Internal
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground flex-1 text-right">
+                  {noteVisibility === 'internal'
+                    ? 'Only your team will see this note.'
+                    : 'Customer sees this in their portal. Use your full name.'}
+                </p>
+              </div>
               <input
                 type="text"
                 value={noteAuthor}
@@ -207,13 +254,13 @@ export function TicketDetail() {
                   }
                 }}
                 rows={3}
-                placeholder="Add a note. Cmd+Enter to post."
+                placeholder={noteVisibility === 'internal' ? 'Internal note. Cmd+Enter to post.' : 'Add a note. Cmd+Enter to post.'}
                 className="w-full bg-input-background border border-input-border rounded-md px-3 py-2 text-sm resize-none"
                 data-testid="ticket-note-body"
               />
               <div className="flex justify-end">
                 <Button size="sm" onClick={handleAddNote} disabled={submitting} data-testid="ticket-note-submit">
-                  Post note
+                  {noteVisibility === 'internal' ? 'Post internal note' : 'Post note'}
                 </Button>
               </div>
             </div>

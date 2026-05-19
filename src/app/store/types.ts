@@ -512,6 +512,16 @@ export interface TicketNote {
   body: string;
   /** ISO 8601 timestamp. Human readable in DevTools. */
   createdAt: string;
+  /** SC.7.7 — note audience. `'customer'` = visible on both the
+   *  internal Ticket Detail and the Customer Portal thread (the
+   *  default; matches every note authored before SC.7.7). `'internal'`
+   *  = visible only on the operator surface. The compose form on
+   *  TicketDetail defaults to `'customer'` so a quick reply is mutually
+   *  visible by reflex; the toggle exists for the explicit "this is
+   *  internal commentary" case. v30 -> v31 migration backfills every
+   *  pre-existing note with `'customer'` so the portal renderer's
+   *  defensive `|| !n.visibility` fallback never needs to fire. */
+  visibility?: 'internal' | 'customer';
 }
 
 export interface ServiceTicket {

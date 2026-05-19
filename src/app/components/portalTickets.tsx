@@ -168,8 +168,15 @@ function PortalTicketRow({ ticket, primaryContact }: {
     const t = Date.parse(s);
     return Number.isFinite(t) ? t : 0;
   };
+  // SC.7.7 — customer surface NEVER renders a note with
+  // visibility === 'internal'. Defensive `|| !n.visibility` covers
+  // any pre-migration note that somehow slipped through; after the
+  // v30 -> v31 backfill runs cleanly that branch should never fire.
   const timeline = useMemo(
-    () => (ticket.notes ?? []).slice().sort((a, b) => tsKey(a.createdAt) - tsKey(b.createdAt)),
+    () => (ticket.notes ?? [])
+      .filter((n) => n.visibility === 'customer' || !n.visibility)
+      .slice()
+      .sort((a, b) => tsKey(a.createdAt) - tsKey(b.createdAt)),
     [ticket.notes],
   );
 

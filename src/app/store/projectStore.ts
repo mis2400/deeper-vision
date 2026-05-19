@@ -453,7 +453,12 @@ export interface ProjectState {
   }) => string;
   updateTicket: (id: string, patch: Partial<import('./types').ServiceTicket>) => void;
   /** Append a timeline note. The action stamps `createdAt`. */
-  addTicketNote: (ticketId: string, note: { authorName: string; authorEmail?: string; body: string }) => void;
+  /** SC.7.7 — visibility is optional and defaults to 'customer' so a
+   *  quick reply from the operator (or any pre SC.7.7 caller) keeps the
+   *  mutual visibility contract. The internal Ticket Detail form passes
+   *  'internal' explicitly when the operator toggles the note off the
+   *  customer thread. */
+  addTicketNote: (ticketId: string, note: { authorName: string; authorEmail?: string; body: string; visibility?: 'internal' | 'customer' }) => void;
   removeTicket: (id: string) => void;
 
   // ── Asset CRUD (SC.1.2) ──
@@ -1899,6 +1904,11 @@ export const useProjectStore = create<ProjectState>()(
             authorEmail: note.authorEmail,
             body: note.body,
             createdAt: new Date().toISOString(),
+            // SC.7.7 — visibility defaults to 'customer'. Caller can opt
+            // into internal-only by passing visibility: 'internal'. The
+            // mutual-visibility default keeps a reflex reply readable to
+            // both sides.
+            visibility: note.visibility ?? 'customer',
           };
           return {
             serviceTickets: {
@@ -2636,7 +2646,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'deeperVisionStore',
-      version: 30,
+      version: 31,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -3112,6 +3122,27 @@ export const useProjectStore = create<ProjectState>()(
           // New snapshots captured after this version bump always
           // write `dataUrlRef`. The old inline payloads age out
           // naturally as proposals get superseded.
+        }
+        if (version < 31) {
+          // v30 -> v31 (SC.7.7): TicketNote visibility flag.
+          // Every pre-existing note is backfilled with
+          // visibility='customer' because before SC.7.7 the design
+          // was mutual conversation — both sides saw every note.
+          // The portal renderer carries a defensive `|| !n.visibility`
+          // fallback so an un-migrated note would still render to
+          // the customer (matching prior behavior), but this loop
+          // should land before that path ever fires.
+          const tickets = persisted.serviceTickets;
+          if (tickets && typeof tickets === 'object') {
+            for (const t of Object.values(tickets) as any[]) {
+              if (!t || !Array.isArray(t.notes)) continue;
+              for (const n of t.notes) {
+                if (n && typeof n === 'object' && n.visibility !== 'internal' && n.visibility !== 'customer') {
+                  n.visibility = 'customer';
+                }
+              }
+            }
+          }
         }
         // SC.1.5 cross model integrity sweep. Runs after every
         // version step, every load. Conservative cascade per the
