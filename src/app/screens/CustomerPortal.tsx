@@ -15,7 +15,7 @@ import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   Calendar, FileText, Check, Download, Mail, Phone, MapPin,
-  Building2, Clock, ShieldCheck, ArrowRight, Package,
+  Building2, Clock, ShieldCheck, ArrowRight, Package, X,
 } from 'lucide-react';
 
 import { Button } from '../components/Button';
@@ -114,6 +114,19 @@ export function CustomerPortal() {
     () => sentProposal ? toCustomerView(sentProposal) : null,
     [sentProposal],
   );
+
+  // SC.6.5 — index every proposal of this project by its version
+  // label so the approvals history can link back to the version a
+  // customer actually approved. Approval.proposalVersion is "v1" /
+  // "v2" etc and Proposal.version is the numeric counterpart.
+  const proposalsByVersion = useMemo(() => {
+    const m = new Map<string, import('./../store/types').Proposal>();
+    for (const p of Object.values(proposalsMap)) {
+      if (p.projectId !== projectId) continue;
+      m.set(`v${p.version}`, p);
+    }
+    return m;
+  }, [proposalsMap, projectId]);
 
   const projectSite = useMemo(
     () => Object.values(sitesMap).find((s) => s.projectId === projectId) ?? null,
@@ -499,7 +512,11 @@ export function CustomerPortal() {
               </>
             )}
             {priorApprovals.length > 1 && (
-              <ApprovalHistoryToggle approvals={priorApprovals} />
+              <ApprovalHistoryToggle
+                approvals={priorApprovals}
+                proposalsByVersion={proposalsByVersion}
+                projectId={projectId}
+              />
             )}
           </div>
 
@@ -895,13 +912,24 @@ function ApprovalStatusPill({ latest }: { latest: import('../store/types').Appro
   );
 }
 
-// ─────────────────────── Approval history toggle (SC.2.6) ───────
+// ─────────────────────── Approval history toggle (SC.2.6 + 6.5) ─
 // Inline expansion when more than one approval exists. Labels the
 // latest of each type as the current record and earlier same type
 // entries as Superseded so the customer understands which version
 // of the design / scope / final is currently in force.
-function ApprovalHistoryToggle({ approvals }: { approvals: import('../store/types').Approval[] }) {
+//
+// SC.6.5 — each row now surfaces the approver's comments inline and
+// links the version label to a modal showing that proposal version
+// (customer safe) when it still exists in the store. Older versions
+// that have been pruned or never existed render the version as plain
+// text rather than a dead click.
+function ApprovalHistoryToggle({ approvals, proposalsByVersion, projectId }: {
+  approvals: import('../store/types').Approval[];
+  proposalsByVersion: Map<string, import('../store/types').Proposal>;
+  projectId: string;
+}) {
   const [open, setOpen] = useState(false);
+  const [viewVersion, setViewVersion] = useState<string | null>(null);
   // Map each type to its newest approval id; everything else of
   // that type is superseded. `approvals` arrives sorted newest
   // first so the first hit per type wins.
@@ -909,6 +937,11 @@ function ApprovalHistoryToggle({ approvals }: { approvals: import('../store/type
   for (const a of approvals) {
     if (!latestIdByType.has(a.approvalType)) latestIdByType.set(a.approvalType, a.id);
   }
+  const pickedProposal = viewVersion ? proposalsByVersion.get(viewVersion) ?? null : null;
+  const pickedArtifact = useMemo(
+    () => pickedProposal ? toCustomerView(pickedProposal) : null,
+    [pickedProposal],
+  );
   return (
     <div className="mt-3 pt-3 border-t border-border/60">
       <button
@@ -920,27 +953,78 @@ function ApprovalHistoryToggle({ approvals }: { approvals: import('../store/type
         {open ? 'Hide approval history' : `View approval history (${approvals.length})`}
       </button>
       {open && (
-        <ul className="mt-2 space-y-1.5" data-testid="portal-approval-history-list">
+        <ul className="mt-3 space-y-2" data-testid="portal-approval-history-list">
           {approvals.map((a) => {
             const superseded = latestIdByType.get(a.approvalType) !== a.id;
+            const versionAvailable = proposalsByVersion.has(a.proposalVersion);
             return (
-              <li key={a.id} className="text-[11px] flex items-start gap-2">
-                <span className="text-muted-foreground tabular-nums shrink-0">
-                  {new Date(a.approvedAt).toLocaleDateString()}
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="text-foreground">{approvalTypeLabel(a.approvalType)}</span>
-                  <span className="text-muted-foreground"> · {a.proposalVersion} · {a.approverName}</span>
-                </span>
-                {superseded && (
-                  <span className="shrink-0 text-[9px] uppercase tracking-wider text-muted-foreground/70 border border-border rounded px-1">
-                    Superseded
+              <li
+                key={a.id}
+                className="text-[11px] rounded-md border border-border/60 bg-secondary/20 px-2.5 py-2"
+                data-testid={`portal-approval-row-${a.id}`}
+              >
+                <div className="flex items-start gap-2 flex-wrap">
+                  <span className="text-muted-foreground tabular-nums shrink-0">
+                    {new Date(a.approvedAt).toLocaleDateString()}
                   </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="text-foreground">{approvalTypeLabel(a.approvalType)}</span>
+                    <span className="text-muted-foreground"> · </span>
+                    {versionAvailable ? (
+                      <button
+                        type="button"
+                        onClick={() => setViewVersion(a.proposalVersion)}
+                        className="text-primary hover:underline"
+                        data-testid={`portal-approval-version-${a.id}`}
+                      >
+                        {a.proposalVersion}
+                      </button>
+                    ) : (
+                      <span className="text-muted-foreground">{a.proposalVersion}</span>
+                    )}
+                    <span className="text-muted-foreground"> · {a.approverName}</span>
+                  </span>
+                  {superseded && (
+                    <span className="shrink-0 text-[9px] uppercase tracking-wider text-muted-foreground/70 border border-border rounded px-1">
+                      Superseded
+                    </span>
+                  )}
+                </div>
+                {a.comments && a.comments.trim() && (
+                  <div className="mt-1.5 text-[11px] text-muted-foreground whitespace-pre-wrap leading-relaxed pl-[6.5ch]">
+                    "{a.comments.trim()}"
+                  </div>
                 )}
               </li>
             );
           })}
         </ul>
+      )}
+
+      {viewVersion && pickedArtifact && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={() => setViewVersion(null)}>
+          <div
+            className="bg-card border border-border rounded-lg w-full max-w-[760px] max-h-[92vh] overflow-y-auto shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="portal-approval-version-modal"
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+              <div>
+                <h2 className="text-base font-medium">Proposal {viewVersion}</h2>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Customer view as approved.</p>
+              </div>
+              <button onClick={() => setViewVersion(null)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="px-5 py-4">
+              <ProposalCard artifact={pickedArtifact} />
+            </div>
+          </div>
+        </div>
+      )}
+      {viewVersion && !pickedArtifact && (
+        <p className="mt-2 text-[11px] text-muted-foreground italic">
+          That version is no longer available to view.
+        </p>
       )}
     </div>
   );
