@@ -598,6 +598,51 @@ Closes audit CRITICAL gap #1. Replaces the 143 line hardcoded fixture proposal b
 - PDF generator dynamically imports jspdf so the proposal builder initial bundle stays small.
 - Customer Portal proposal card hidden unless a sent or approved proposal exists. Pre SC.4 projects render the portal as before.
 
+## 17 · Spine Completion SC.6 — Customer Portal lifecycle + Service Tickets
+
+Closes audit step 18 (Service Ticket CRUD UI, not implemented before this batch) and the remaining audit #9 gaps on the Customer Portal (approvals history, ticket creation + listing). After SC.6 every spine step has both an internal operator surface and a customer facing surface.
+
+- [x] **SC.6.1 Internal /tickets manager.** Cross customer / cross project list. Filters: status (with `active` preset that hides resolved + closed + orphans, plus an explicit `orphaned` view per the schema's triage contract), priority, category, customer, project. Search across number / title / description / customer / project. Sort by priority then most recent update. NewTicketDialog with customer + project pickers (project scoped to picked customer), title, description, priority, category, reporter via contact picker with freeform override. AppShell sidebar gains a Tickets entry in the work group.
+- [x] **SC.6.2 Ticket Detail with timeline.** `/ticket/:ticketId` header (number, title, category), description card, timeline oldest first with synthetic System notes auto appended on every status / priority transition. Cmd+Enter submits operator notes from a textarea. Status / priority handlers read live store state inside the handler so a rapid double click cannot log a stale "from X to Y" or duplicate transition. Linked records rail (customer, project, device clickable; asset / warranty expanded inline). assignedTo controlled with useEffect re seed on ticket id / value change. Not found state with back button.
+- [x] **SC.6.3 Customer Portal ticket creation.** New `PortalReportIssueDialog` in `src/app/components/portalTickets.tsx`. Customer friendly issue kind grid (CUSTOMER_TICKET_KINDS — camera / access / config / warranty / question / other → internal category). Optional device picker scoped to commissioned assets only (SC.3.6 filtering). Description, urgency (low / medium / high → ticket priority via CUSTOMER_URGENCY_TO_PRIORITY). Reporter name + email pre filled from the customer's primary contact (overridable). Submit calls the same `createTicket` action operators use so the ticket lands on `/tickets` immediately.
+- [x] **SC.6.4 Customer Portal ticket list + status visibility.** New `PortalTicketsCard` on the Customer Portal. Lists this customer's tickets for this project (filters orphans + cross customer leaks via an ownership guard `customer.id === project.customerId`). Active first, then resolved / closed. Each row expands inline: description, conversation timeline (oldest first with mixed timestamp normalizer), follow up note form. Status + priority pills use TICKET_STATUS_CUSTOMER / TICKET_PRIORITY_LABEL — `in_progress` renders as "Our team is on it", `waiting_customer` renders as "We need your help". `defaultAuthor` uses a controlled once pattern (noteAuthorDraft falls through to derived default until the customer types) so a late hydration race cannot freeze the input on "Customer". Operator side note form gains a hint reminding operators the customer sees every note; schema lacks an internal only flag today (the design is mutual conversation).
+- [x] **SC.6.5 Customer Portal approvals history.** Extends the existing `ApprovalHistoryToggle` (SC.2.6). Each row surfaces the approver's comments inline. The version label is a button that opens a customer safe snapshot of that proposal version (reuses `ProposalCard` + `toCustomerView`). When a version is no longer in the store the label degrades to plain text rather than a dead click. `proposalsByVersion` map subscribed in CustomerPortal so lookups are O(1).
+- [ ] **SC.6.6 Customer Portal design snapshot.** BLOCKED — the proposal data model freezes BOM at send time but does not snapshot canvas state (floors / walls / device placements / room polygons). A live canvas snapshot in the portal would defeat the brief's "what they approved" intent. Three options surfaced to the user; awaiting pick: (A) add `canvasSnapshot` to Proposal (schema v28→v29 with migration), (B) separate DesignSnapshot entity keyed by proposal id, (C) show live canvas with disclaimer (explicitly counter to brief). Recommended A.
+- [x] **SC.6.7 SC.6 integrity test script.** `scripts/sc6-spine-integrity.mjs` prints an eight step paste procedure: reset → portal create → internal queue assertion → triage transitions → visual portal read back → customer reply → resolve + resolvedAt stability → approvals history version snapshot. STEPS 2 / 3 / 4 / 6 / 7 / 8 verified live to `auditOk:true` against the dev server.
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass commit. No TS errors.
+- **Persist version**: still `deeperVisionStore` v28 — SC.6 is pure UI on top of the SC.1.4 model. SC.6.6 will likely bump to v29 once the user picks the snapshot architecture.
+- **Review loop**: code reviewer caught:
+  - SC.6.1 + 6.2 — 1 CRITICAL (status/priority audit-trail race) + 5 IMPORTANT + 2 MINOR. All CRITICAL + IMPORTANT addressed; race fixed by reading live store state inside the transition handler.
+  - SC.6.3 + 6.4 — 3 CRITICAL + 5 IMPORTANT + 2 MINOR. defaultAuthor freeze fixed via controlled once pattern; ownership guard added to PortalTicketsCard render; operator side note form gains customer visibility hint; toast wording corrected (no "immediately" claim); destructive token instead of raw rose tone; localeCompare normalizer for mixed timestamps. Internal note visibility flag deferred (requires schema bump, out of scope for SC.6.3/6.4).
+  - SC.6.5 — single pass clean.
+- **Browser verified** end to end via preview server with real DOM scanning + eval based assertions:
+  - DV-2026-0001 created from /portal/p1 with priority=high, category=device_failure, reporter pre filled from c1 primary contact.
+  - Customer follow up note "Update: tried unplugging..." landed in ticket.notes with authorName + email.
+  - Operator side: ticket appears in /tickets queue with "1 active · 1 total" subtitle; timeline shows the customer's note.
+  - Operator transitions to in_progress → portal row text changes to "Our team is on it" (customer friendly label) instead of leaking "In progress".
+  - Status transitions emit System timeline entries chronologically; resolvedAt stamps once and survives a bounce.
+  - SC.6.5 history toggle: 2 rows with date / type / version button / approver name; v1 click opens modal showing the v1 customer view at 12 cameras even when v2 raw shows 14 (point in time snapshot integrity).
+  - Orphaned ticket triage: explicit `Orphaned` filter exposes the count; subtitle reads "1 active · 2 total · 1 orphaned".
+
+### Known follow ups deferred
+
+- **SC.6.6 design snapshot.** Awaiting architecture decision (A / B / C above).
+- **Internal note visibility flag on TicketNote.** Today every note in the ticket thread is mutually visible. Operator note form carries an inline hint reminding the operator the customer sees their notes. A `visibility: 'internal' | 'customer'` field on TicketNote + a portal filter is a future schema bump.
+- **Realtime push.** Both sides see updates only on next page load / store rehydrate. Toast copy reflects this honestly ("Your team will see it on their next refresh") rather than promising a live transport.
+- **Operator authorship normalization.** Note authors render as written — operators are advised to use a customer ready full name. A schema enforced display name + brand suffix is a future polish pass.
+- **Customer priority adjustment audit.** Customer submits an urgency (low/med/high); operator may re triage to critical or downgrade. The portal shows the operator adjusted priority. Storing the original `customerUrgency` separately is a future schema bump.
+- **Hardcoded "Riverbend HQ" breadcrumb on EngineeringCanvas.** Pre existing tech debt surfaced when verifying SC.5.7 / SC.6.2; orthogonal to SC.6.
+
+### Risk notes for post deploy smoke test
+
+- No schema bump in this batch; existing persisted blobs round trip cleanly.
+- New routes `/tickets` and `/ticket/:ticketId` registered. Old localStorage with no `serviceTickets` slice already migrated in SC.1.4.
+- Customer Portal Service requests card is gated on `customer && project.customerId === customer.id` so a misrouted /portal/:id link cannot write tickets against the wrong customer.
+- /portal/:id ApprovalHistoryToggle modal renders inside the portal page, no navigation away. Modal close clears `viewVersion` so a stale ref cannot keep rendering.
+
 ## Last verified
 
 - **Date:** 2026-05-18 (MVP Spine Completion SC.4 — Proposal Builder real wiring on top of SC.3)
