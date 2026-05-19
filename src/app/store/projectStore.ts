@@ -32,6 +32,7 @@ import { buildSeed } from './seed';
 import { PHASES, nextPhase as nextPhaseFn, previousPhase as previousPhaseFn } from '../lifecycle/phases';
 import { pathwayLengthFt, ftPerPxForFloor } from '../lib/engineering';
 import { validateAttachment } from '../lib/attachmentValidation';
+import { captureCanvasSnapshot } from '../lib/canvasSnapshot';
 
 /** Crypto-strong id when available, falls back to Date+Math.random.
  *  Used by the AI Assistant slice where multiple writes can fire per
@@ -414,6 +415,13 @@ export interface ProjectState {
     id?: string;
   }) => string;
   updateProposal: (id: string, patch: Partial<import('./types').Proposal>) => void;
+  /** SC.6.6 — flip a draft proposal to `sent` atomically with
+   *  capturing the canvasSnapshot for the parent project. Returns
+   *  true on success, false if the proposal is missing or already
+   *  past draft (no double-capture). Replaces the ad-hoc
+   *  updateProposal({status:'sent'}) pattern from SC.4.7 so the
+   *  snapshot is guaranteed to be coupled to the send. */
+  sendProposal: (id: string, opts?: { sentTo?: string }) => boolean;
   /** Mark the current proposal as superseded and create a new
    *  draft pre populated with the prior version's content. Returns
    *  the new proposal id. */
@@ -1708,8 +1716,14 @@ export const useProjectStore = create<ProjectState>()(
           if (!prev) return s;
           // Strip immutable fields from any patch. id, projectId,
           // version, createdAt are set once at create time and
-          // never change via the generic update path.
-          const { id: _id, projectId: _pid, version: _v, createdAt: _ca, ...safe } = patch as any;
+          // never change via the generic update path. canvasSnapshot
+          // is frozen at send time via sendProposal; the generic
+          // updateProposal path must not overwrite it.
+          const {
+            id: _id, projectId: _pid, version: _v, createdAt: _ca,
+            canvasSnapshot: _cs,
+            ...safe
+          } = patch as any;
           return {
             proposals: {
               ...s.proposals,
@@ -1717,6 +1731,38 @@ export const useProjectStore = create<ProjectState>()(
             },
           };
         }),
+      sendProposal: (id, opts) => {
+        const prev = get().proposals[id];
+        if (!prev || prev.status !== 'draft') return false;
+        // Mint `now` first and pass it to both the snapshot capture
+        // and the field writes so the snapshot's capturedAt and the
+        // proposal's sentAt agree on the exact wall-clock instant.
+        const now = Date.now();
+        // Capture OUTSIDE the set callback so the cost of denormalising
+        // the canvas doesn't block other writes. Race-wise this is safe
+        // in single-threaded JS for the sync `get -> set` window; any
+        // async path that mutates between the two would need its own
+        // ordering guarantee (none exists today).
+        const snapshot = captureCanvasSnapshot(get(), prev.projectId, now);
+        set((s) => {
+          const still = s.proposals[id];
+          if (!still || still.status !== 'draft') return s;
+          return {
+            proposals: {
+              ...s.proposals,
+              [id]: {
+                ...still,
+                status: 'sent',
+                sentAt: now,
+                sentTo: opts?.sentTo,
+                canvasSnapshot: snapshot,
+                updatedAt: now,
+              },
+            },
+          };
+        });
+        return true;
+      },
       supersedeProposal: (id) => {
         const prev = get().proposals[id];
         if (!prev) return null;
@@ -2587,7 +2633,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'deeperVisionStore',
-      version: 28,
+      version: 29,
       storage: createJSONStorage(() => localStorage),
       // Migration hook — v1 (pre-CRM) → v2: flatten Customer.contacts into the
       // top-level contacts slice and ensure the new opportunities/touches/tasks
@@ -3037,6 +3083,18 @@ export const useProjectStore = create<ProjectState>()(
           if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
             persisted.proposals = {};
           }
+        }
+        if (version < 29) {
+          // v28 -> v29 (SC.6.6): introduce Proposal.canvasSnapshot.
+          // We intentionally leave the field undefined on every
+          // existing proposal. Backfilling is impossible — the live
+          // canvas state has moved on since these proposals were
+          // sent, and a snapshot from "now" would lie about what
+          // the customer actually saw at send time. Customer Portal
+          // hides the design snapshot section when the field is
+          // undefined; pre SC.6.6 proposals therefore render exactly
+          // as they did before, just without the new section. Future
+          // sends will populate the field via sendProposal.
         }
         // SC.1.5 cross model integrity sweep. Runs after every
         // version step, every load. Conservative cascade per the

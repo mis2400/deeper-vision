@@ -323,6 +323,69 @@ console.log('');
 console.log('STEP 8 — approvals history version snapshot:');
 console.log(APPROVAL_HISTORY_SNIPPET);
 console.log('');
+console.log('STEP 9 — SC.6.6 canvasSnapshot capture + portal render:');
+console.log(`
+// STEP 9 — capture a fresh canvasSnapshot via sendProposal on a
+//          draft proposal for ${PROJECT_ID}, then assert the
+//          snapshot has the right shape, is decoupled from live
+//          canvas state (mutating a device label after send does
+//          NOT change the snapshot's label), and the portal viewer
+//          renders the captured floor.
+(() => {
+  const store = window.__projectStore;
+  const beforeProposalCount = Object.keys(store.getState().proposals).length;
+  const draftId = store.getState().createProposal({
+    projectId: '${PROJECT_ID}',
+    customerView: { header: 'SC.6.6 fixture', executiveSummary: '', scope: '' },
+    internalView:  { notes: '', loadedCost: 0, gpPct: 0 },
+    bomSnapshot: [{ id: 'pl-1', section: 'cameras', description: 'Test', quantity: 1, unit: 'ea', unitPrice: 100, lineTotal: 100 }],
+    status: 'draft',
+  });
+  // Pick a device on this project to mutate AFTER send, to prove the
+  // snapshot is decoupled.
+  const liveDev = Object.values(store.getState().devices).find((d) => d.projectId === '${PROJECT_ID}');
+  const originalLabel = liveDev ? liveDev.label : null;
+  const ok = store.getState().sendProposal(draftId);
+  // Mutate the live device label — the snapshot must NOT follow.
+  if (liveDev) {
+    store.getState().updateDevice(liveDev.id, { label: 'MUTATED AFTER SEND' });
+  }
+  const sent = store.getState().proposals[draftId];
+  const snap = sent && sent.canvasSnapshot;
+  const matchingSnapDev = snap && liveDev
+    ? snap.devices.find((d) => d.id === liveDev.id)
+    : null;
+  console.log('[SC.6.7 canvas-snapshot]', {
+    sendOk: ok,
+    snapshotPresent: !!snap,
+    floorCount: snap && snap.floors.length,
+    deviceCount: snap && snap.devices.length,
+    capturedAt: snap && snap.capturedAt,
+    originalLiveLabel: originalLabel,
+    snapDeviceLabel: matchingSnapDev && matchingSnapDev.label,
+    snapshotFrozen: matchingSnapDev && matchingSnapDev.label === originalLabel,
+    auditOk: ok && !!snap && (snap.floors.length > 0) && (snap.devices.length > 0)
+          && (matchingSnapDev ? matchingSnapDev.label === originalLabel : true),
+  });
+  // Restore the label so other steps work against the same fixture.
+  if (liveDev) store.getState().updateDevice(liveDev.id, { label: originalLabel });
+})();
+`);
+console.log('');
+console.log('STEP 10 — portal viewer visual check:');
+console.log(`
+// STEP 10 — open the portal in another tab and confirm:
+//          - "Approved design (v${'$'}{n})" card renders below the proposal card.
+//          - Floor tabs work (multi floor projects).
+//          - Device dots colored by kind with customer friendly labels
+//            (NOT internal ids; "Camera" / "Card reader" / etc).
+//          - Legend at bottom matches the dots on the active floor.
+//          - SVG has no console errors.
+(() => {
+  console.log('[SC.6.7 portal-viewer] open ' + window.location.origin + '/portal/${PROJECT_ID}');
+})();
+`);
+console.log('');
 console.log('ACCEPTANCE CHECKLIST');
 console.log('  [ ] STEP 2: auditOk = true; ticketNumber matches DV-YYYY-NNNN.');
 console.log('  [ ] STEP 3: ourTicketFound = true; statusInQueue = "open".');
@@ -331,4 +394,6 @@ console.log('  [ ] STEP 5: portal renders "Our team is on it" and "Critical".');
 console.log('  [ ] STEP 6: noteCount = 4; last note author = primary contact name.');
 console.log('  [ ] STEP 7: stampStable = true; first resolvedAt survives a bounce.');
 console.log('  [ ] STEP 8: v1FrozenAtSendTime = true (12 cameras even though v2 shows 14).');
+console.log('  [ ] STEP 9: auditOk = true; snapshotFrozen = true (label decoupled from live store).');
+console.log('  [ ] STEP 10: portal Approved design card renders; floor tabs work; no console errors.');
 console.log('');

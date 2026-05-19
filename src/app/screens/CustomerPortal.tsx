@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import {
   Calendar, FileText, Check, Download, Mail, Phone, MapPin,
   Building2, Clock, ShieldCheck, ArrowRight, Package, X,
+  Layers as LayersIcon,
 } from 'lucide-react';
 
 import { Button } from '../components/Button';
@@ -24,6 +25,7 @@ import { toCustomerView, type ProposalCustomerArtifact } from '../lib/proposalVi
 import { PHASE_TIMELINE } from '../lifecycle/phases';
 import type { LifecyclePhase, Attachment, ApprovalType, Asset, Device, Warranty, ProposalLine } from '../store/types';
 import { PortalTicketsCard } from '../components/portalTickets';
+import { PortalDesignSnapshotCard } from '../components/portalDesignSnapshot';
 
 /** SC.2.1 — roll a vN style proposal version forward by one when
  *  the prior approval used a recognisable vN tag. Non-matching
@@ -392,6 +394,29 @@ export function CustomerPortal() {
           {proposalArtifact && (
             <Card icon={<FileText className="w-4 h-4 text-muted-foreground" />} title={`Proposal v${proposalArtifact.version}`}>
               <ProposalCard artifact={proposalArtifact} />
+            </Card>
+          )}
+
+          {/* SC.6.6 — design snapshot card. Frozen at send time so
+              the customer sees the visual that paired with the BOM
+              they're approving, not whatever the operator drew
+              afterwards. Pre SC.6.6 proposals have no snapshot and
+              the card is hidden — the proposal card alone is enough.
+              Title branches on status so we never claim "Approved"
+              for a proposal that's been sent but not yet acted on. */}
+          {sentProposal?.canvasSnapshot && (
+            <Card
+              icon={<LayersIcon className="w-4 h-4 text-muted-foreground" />}
+              title={
+                sentProposal.status === 'approved'
+                  ? `Approved design (v${sentProposal.version})`
+                  : `Proposed design (v${sentProposal.version})`
+              }
+            >
+              <PortalDesignSnapshotCard
+                snapshot={sentProposal.canvasSnapshot}
+                versionLabel={`v${sentProposal.version}`}
+              />
             </Card>
           )}
 

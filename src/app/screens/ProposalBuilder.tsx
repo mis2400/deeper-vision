@@ -1304,6 +1304,7 @@ function SendDialog({ proposal, projectId, onClose }: {
   );
   const allContacts = useProjectStore((s) => s.contacts);
   const updateProposal = useProjectStore((s) => s.updateProposal);
+  const sendProposal   = useProjectStore((s) => s.sendProposal);
 
   const contacts = useMemo(() => {
     if (!customer) return [];
@@ -1346,19 +1347,17 @@ function SendDialog({ proposal, projectId, onClose }: {
     if (validationErrors.length > 0) return;
     setBusy(true);
     try {
-      // Re read status from the store so a concurrent Send / supersede
-      // can't be silently overwritten.
-      const current = useProjectStore.getState().proposals[proposal.id];
-      if (!current || current.status !== 'draft') {
+      // SC.6.6 — sendProposal handles the stale-draft re-read + the
+      // status flip + the canvasSnapshot capture in one atomic step.
+      // If the proposal was already moved past draft by another tab
+      // it returns false; we surface the same toast as the prior
+      // inline guard.
+      const ok = sendProposal(proposal.id, { sentTo: selectedContactId || undefined });
+      if (!ok) {
         toast.error('Proposal is no longer a draft.');
         setBusy(false);
         return;
       }
-      updateProposal(proposal.id, {
-        status: 'sent',
-        sentAt: Date.now(),
-        sentTo: selectedContactId || undefined,
-      });
       setPhase('share');
       toast.success(`Proposal v${proposal.version} marked sent.`);
     } finally {

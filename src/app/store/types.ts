@@ -643,6 +643,17 @@ export interface Proposal {
    *  so a sent proposal never silently drifts from what the customer
    *  saw. */
   bomSnapshot: ProposalLine[];
+  /** SC.6.6 — frozen denormalized canvas snapshot. Captured at SEND
+   *  time so the customer portal can render the visual that matches
+   *  the BOM the customer is approving. Optional because:
+   *    * Pre SC.6.6 proposals (v28 and earlier) never captured one.
+   *    * Draft proposals (not yet sent) don't capture one — the
+   *      snapshot belongs to the moment the customer was asked to
+   *      approve, not the moment the operator drafted.
+   *  This is a HISTORICAL DOCUMENT — SC.1.5 orphan sweep must NOT
+   *  walk it. The snapshot's floorId / deviceId references may point
+   *  at records that no longer exist; that's intentional. */
+  canvasSnapshot?: ProposalCanvasSnapshot;
   createdAt: number;
   updatedAt: number;
   createdBy?: string;
@@ -659,6 +670,84 @@ export interface Proposal {
    *  parent project has been deleted. Proposal stays in the store
    *  so the historical record is auditable. */
   isOrphaned?: boolean;
+}
+
+// SC.6.6 — Customer Portal design snapshot. A lean, denormalized,
+// render-ready slice of the canvas state at proposal send time. Not
+// the full Zustand canvas — only the fields a portal viewer needs
+// to render the visual that matched the BOM the customer approved.
+//
+// Design rules:
+//   * Frozen on write. Never patched after capture.
+//   * Self contained. No live store lookups required to render.
+//   * JSON-serializable. No Date objects, Maps, Sets, or functions.
+//   * Lean. Accessories collapse to a count, not the nested array.
+//   * Customer safe. Internal device ids exist so the renderer can
+//     key by them, but the portal renderer must NOT display them.
+
+export interface ProposalCanvasSnapshotFloor {
+  id: string;
+  name: string;
+  level: number;
+  /** Pixel-to-foot scale at capture time. */
+  scalePxToFt: number;
+  /** Optional blueprint background — full FloorBackground shape so
+   *  the renderer doesn't need a translation layer. dataUrl is
+   *  base64 inline; no external storage refs. Inflates persist size
+   *  by the size of the blueprint image (typically 100–500 KB per
+   *  floor). SC.7 watch item: if a typical multi-floor project's
+   *  total persisted blob crosses 2 MB, factor blueprints out to
+   *  IndexedDB. */
+  background?: FloorBackground;
+}
+
+export interface ProposalCanvasSnapshotWall {
+  id: string;
+  floorId: string;
+  /** Two-point line segment. Matches the canvas Wall shape
+   *  (x1/y1/x2/y2) but normalised to a `points` array so future wall
+   *  types (polyline, arc) don't need a shape change. */
+  points: { x: number; y: number }[];
+  type?: string;
+}
+
+export interface ProposalCanvasSnapshotDevice {
+  id: string;
+  /** Maps to Device.type — schema calls it `kind` per SC.6.6 spec
+   *  so the snapshot vocabulary stays consistent across renderers. */
+  kind: DeviceType;
+  label: string;
+  floorId: string;
+  position: { x: number; y: number };
+  /** Body rotation in degrees, CW. */
+  rotation: number;
+  /** Coverage cone / radius / polygon, only when set on the live
+   *  device. Used by the portal renderer to shade coverage. */
+  coverage?: CoverageProfile;
+  /** Count only — the snapshot intentionally drops the nested
+   *  accessory list to keep persist size lean. The BOM line carries
+   *  the accessory pricing detail. */
+  accessoryCount: number;
+}
+
+export interface ProposalCanvasSnapshotRoom {
+  id: string;
+  floorId: string;
+  name: string;
+  /** Closed polygon. May be empty if the canvas room had no shape
+   *  (label-only rooms exist in older floors). */
+  polygon: { x: number; y: number }[];
+  sensitivity?: RoomSensitivity;
+}
+
+export interface ProposalCanvasSnapshot {
+  /** ISO 8601 stamp from the moment of capture. Same wall-clock
+   *  instant as the parent proposal's sentAt. */
+  capturedAt: string;
+  floors:  ProposalCanvasSnapshotFloor[];
+  walls:   ProposalCanvasSnapshotWall[];
+  devices: ProposalCanvasSnapshotDevice[];
+  rooms:   ProposalCanvasSnapshotRoom[];
 }
 
 // ─────────────────────────── Activity feed ────────────────────────
