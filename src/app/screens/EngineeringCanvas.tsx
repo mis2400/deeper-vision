@@ -9,7 +9,7 @@ import type {
   CanvasBomRow, CanvasBomCategory,
 } from '../store/types';
 import { DEFAULT_CANVAS_LAYERS, DEFAULT_DISPLAY_PREFS, coverageForDevice } from '../store/types';
-import type { Device as StoreDevice } from '../store/types';
+import type { Device as StoreDevice, DeviceType as StoreDeviceType, DeviceKind as StoreDeviceKind } from '../store/types';
 import {
   MousePointer2, Hand, Ruler, Type, MessageSquare, ChevronRight, ChevronLeft,
   Search, X, Upload, MapPin, PencilLine, Sparkles, Undo2, Redo2, ZoomIn, ZoomOut,
@@ -79,32 +79,12 @@ type Tool = 'select' | 'pan' | 'measure' | 'wall' | 'cable' | 'conduit' | 'pathw
 
 interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
 
-type DeviceKind =
-  | 'camera' | 'access' | 'network' | 'intrusion' | 'audio' | 'storage' | 'display' | 'power' | 'sensor'
-  | 'infrastructure' | 'cyber' | 'fire' | 'building';
-type DeviceType =
-  | 'cam.bullet' | 'cam.dome' | 'cam.ptz' | 'cam.multisensor' | 'cam.fisheye' | 'cam.thermal' | 'cam.lpr' | 'cam.body'
-  | 'acc.reader' | 'acc.strike' | 'acc.maglock' | 'acc.exit' | 'acc.turnstile' | 'acc.intercom' | 'acc.biometric' | 'acc.panic-bar' | 'acc.dps'
-  | 'net.switch'  | 'net.idf'    | 'net.ap' | 'net.firewall' | 'net.bridge'
-  | 'int.motion' | 'int.glassbreak' | 'int.contact' | 'int.panic' | 'int.vibration' | 'int.keypad'
-  | 'aud.speaker' | 'aud.mic' | 'aud.horn' | 'aud.amp' | 'aud.intercom'
-  | 'sto.nvr' | 'sto.server' | 'sto.archive' | 'sto.cloud'
-  | 'dis.monitor' | 'dis.wall' | 'dis.kiosk' | 'dis.signage'
-  | 'pwr.ups' | 'pwr.poe' | 'pwr.surge' | 'pwr.solar'
-  | 'sen.temp' | 'sen.smoke' | 'sen.water' | 'sen.occupancy' | 'sen.gas' | 'sen.gunshot'
-  // ── Infrastructure host objects ─────────────────────────────────────
-  // Doors are the canonical stacking target: a single door can host a
-  // reader, strike, panic bar, REX, DPS, intercom. The stack chip on the
-  // glyph reveals which accessories live on the door.
-  | 'inf.door-single' | 'inf.door-double' | 'inf.door-storefront' | 'inf.door-sliding'
-  | 'inf.window' | 'inf.wall-brick' | 'inf.wall-fire' | 'inf.wall-concrete'
-  | 'inf.gate-swing' | 'inf.gate-slide' | 'inf.elevator' | 'inf.mdf' | 'inf.rack'
-  // ── Cyber security ──────────────────────────────────────────────────
-  | 'cyb.endpoint' | 'cyb.siem' | 'cyb.firewall-ng' | 'cyb.vpn'
-  // ── Fire / life safety ──────────────────────────────────────────────
-  | 'fls.pull-station' | 'fls.fire-panel' | 'fls.strobe' | 'fls.sprinkler'
-  // ── Building systems ────────────────────────────────────────────────
-  | 'bld.hvac-controller' | 'bld.lighting-panel' | 'bld.bms-gateway';
+// SC.7.5: canvas-local DeviceType / DeviceKind now alias the store
+// unions. Previously the canvas had its own duplicate copies that
+// drifted — dock category arrays used `as any` to bypass the gap.
+// Single source of truth now lives in store/types.ts.
+type DeviceKind = StoreDeviceKind;
+type DeviceType = StoreDeviceType;
 
 /** Tech-model tag for a product. A product can fit multiple ecosystems; in
  *  that case all matching tags are present. `'all'` is shorthand for a product
@@ -15199,25 +15179,43 @@ function BottomDeviceBar({
     { id: 'backbone',     label: 'Cable, power, network' },
     { id: 'site',         label: 'Site' },
   ];
+  // SC.7.5 — dock categories. Type strings normalised against the
+  // unified DeviceType union from store/types. Where the dock had a
+  // shorthand identifier ('inf.door', 'av.speaker', 'fire.pull') the
+  // canonical store name replaces it. Entries that reference device
+  // kinds the schema does not yet model carry an `as DeviceType` cast
+  // with a `// dock-only` comment so a future schema extension can
+  // grep them out.
   const cats: Cat[] = [
-    { id: 'cam',       group: 'surveillance', label: 'Cameras',    icon: Video,           types: ['cam.dome','cam.bullet','cam.turret','cam.ptz','cam.multisensor','cam.fisheye','cam.lpr','cam.thermal'] },
+    // Cameras — `cam.turret` is dock-only; canvas renders it as a generic camera glyph.
+    { id: 'cam',       group: 'surveillance', label: 'Cameras',    icon: Video,           types: ['cam.dome','cam.bullet','cam.turret' as DeviceType /* dock-only */,'cam.ptz','cam.multisensor','cam.fisheye','cam.lpr','cam.thermal'] },
 
-    { id: 'door',      group: 'access', label: 'Doors',      icon: DoorOpen,        types: ['inf.door' as any,'inf.doubledoor' as any,'inf.storefront' as any,'inf.gate' as any] },
-    { id: 'acc',       group: 'access', label: 'Access',     icon: ScanFace,        types: ['acc.reader','acc.keypad','acc.strike','acc.maglock','acc.exit','acc.dps','acc.panic','acc.controller','acc.psu'] as any },
-    { id: 'intercom',  group: 'access', label: 'Intercom',   icon: Phone,           types: ['acc.intercom' as any,'av.intercom' as any] as any },
+    // Doors — canvas dock uses bare 'inf.door' / 'inf.gate' as
+    // category-level pickers that fall through to the specific
+    // variant on click. Marked dock-only so the schema doesn't grow
+    // a member that nothing else renders.
+    { id: 'door',      group: 'access', label: 'Doors',      icon: DoorOpen,        types: ['inf.door' as DeviceType /* dock-only category */, 'inf.door-double' as DeviceType /* dock-only */, 'inf.door-storefront', 'inf.gate-swing'] },
+    { id: 'acc',       group: 'access', label: 'Access',     icon: ScanFace,        types: ['acc.reader','acc.keypad' as DeviceType /* dock-only */, 'acc.strike','acc.maglock','acc.exit','acc.dps','acc.panic-bar','acc.controller','acc.psu'] },
+    { id: 'intercom',  group: 'access', label: 'Intercom',   icon: Phone,           types: ['acc.intercom','aud.intercom'] },
 
-    { id: 'intrusion', group: 'detect', label: 'Intrusion',  icon: ShieldAlert,     types: ['sen.glassbreak' as any,'sen.contact' as any,'sen.panic' as any,'int.contact' as any] as any },
-    { id: 'fire',      group: 'detect', label: 'Fire',       icon: Flame,           types: ['fire.pull' as any,'fire.detector' as any,'fire.horn' as any,'fire.strobe' as any] as any },
-    { id: 'sensor',    group: 'detect', label: 'Sensors',    icon: Thermometer,     types: ['sen.motion' as any,'sen.glassbreak' as any,'sen.smoke' as any,'sen.temp' as any] as any },
+    { id: 'intrusion', group: 'detect', label: 'Intrusion',  icon: ShieldAlert,     types: ['sen.glass','sen.contact','sen.panic','int.contact'] },
+    // Fire / life-safety — schema uses `fls.*`; dock keeps the
+    // `fire.*` ids it was created with until each one is wired to a
+    // renderer. Cast through as dock-only so the audit grep is clean.
+    { id: 'fire',      group: 'detect', label: 'Fire',       icon: Flame,           types: ['fls.pull-station','fls.fire-panel','fls.strobe','fire.horn' as DeviceType /* dock-only, no renderer yet */] },
+    { id: 'sensor',    group: 'detect', label: 'Sensors',    icon: Thermometer,     types: ['sen.motion','sen.glass','sen.smoke','sen.temp'] },
 
-    { id: 'audio',     group: 'av',     label: 'Audio / PA', icon: Volume2,         types: ['av.speaker' as any,'av.amp' as any,'av.mic' as any] as any },
+    { id: 'audio',     group: 'av',     label: 'Audio / PA', icon: Volume2,         types: ['aud.speaker','aud.amp','aud.mic'] },
 
-    { id: 'net',       group: 'backbone', label: 'Network',  icon: NetworkIcon,     types: ['net.switch','net.idf','net.mdf','net.ap','net.firewall' as any] },
+    { id: 'net',       group: 'backbone', label: 'Network',  icon: NetworkIcon,     types: ['net.switch','net.idf','net.mdf','net.ap','net.firewall'] },
     { id: 'cable',     group: 'backbone', label: 'Cabling',  icon: Cable },
     { id: 'conduit',   group: 'backbone', label: 'Conduit',  icon: PencilRuler },
-    { id: 'power',     group: 'backbone', label: 'Power',    icon: BatteryCharging, types: ['inf.ups' as any,'inf.psu' as any,'inf.transformer' as any] as any },
+    // Power — dock kept the legacy `inf.*` ids. Canonical store
+    // names: `pwr.ups`, `acc.psu`. `inf.transformer` has no
+    // renderer; dock-only until the schema grows a transformer.
+    { id: 'power',     group: 'backbone', label: 'Power',    icon: BatteryCharging, types: ['pwr.ups','acc.psu','inf.transformer' as DeviceType /* dock-only, no renderer yet */] },
 
-    { id: 'inf',       group: 'site',   label: 'Site infra', icon: Server,          types: ['inf.rack','inf.mdf','inf.window' as any,'inf.wall' as any] as any },
+    { id: 'inf',       group: 'site',   label: 'Site infra', icon: Server,          types: ['inf.rack','inf.mdf','inf.window','inf.wall-brick'] },
   ];
   // Open a tray on mount if the URL carries `?openTray=<id>` — used by
   // the headless screenshot capture script to reach sub-states cleanly.

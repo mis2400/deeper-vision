@@ -900,19 +900,48 @@ export interface Wall {
 }
 
 // ─────────────────────────── Hardware (canvas devices) ────────────
-// Keep DeviceType in sync with EngineeringCanvas — these strings drive the
-// glyph + cone + toolbar branches.
+// SC.7.5: unified DeviceType. Previously the store-level union was
+// narrower than the EngineeringCanvas local copy — every dock /
+// category array that used the int.* / inf.* / fls.* / cyb.* /
+// bld.* subtypes had to cast through `as any` to satisfy the store
+// type. The canvas's own local DeviceType now derives from this
+// single source of truth.
 export type DeviceType =
+  // Cameras
   | 'cam.bullet' | 'cam.dome' | 'cam.ptz' | 'cam.multisensor' | 'cam.fisheye' | 'cam.thermal' | 'cam.lpr' | 'cam.body'
+  // Access control
   | 'acc.reader' | 'acc.strike' | 'acc.maglock' | 'acc.rex' | 'acc.exit' | 'acc.door' | 'acc.gate' | 'acc.biometric'
+  | 'acc.turnstile' | 'acc.intercom' | 'acc.panic-bar' | 'acc.dps' | 'acc.controller' | 'acc.psu'
+  // Network
   | 'net.idf'   | 'net.mdf'    | 'net.switch'  | 'net.ap'    | 'net.firewall' | 'net.bridge' | 'net.fiber' | 'net.copper' | 'net.wireless'
+  // Power
   | 'pwr.ups'   | 'pwr.poe'    | 'pwr.surge'   | 'pwr.solar'
+  // Sensors (environmental / safety)
   | 'sen.motion' | 'sen.glass' | 'sen.contact' | 'sen.panic' | 'sen.smoke'
-  | 'aud.speaker' | 'aud.intercom' | 'aud.horn' | 'aud.amp'
-  | 'sto.nvr' | 'sto.cloud' | 'sto.server'
-  | 'dis.monitor' | 'dis.video-wall' | 'dis.kiosk';
+  | 'sen.temp' | 'sen.water' | 'sen.occupancy' | 'sen.gas' | 'sen.gunshot'
+  // Intrusion alarm system
+  | 'int.motion' | 'int.glassbreak' | 'int.contact' | 'int.panic' | 'int.vibration' | 'int.keypad'
+  // Audio
+  | 'aud.speaker' | 'aud.intercom' | 'aud.horn' | 'aud.amp' | 'aud.mic'
+  // Storage
+  | 'sto.nvr' | 'sto.cloud' | 'sto.server' | 'sto.archive'
+  // Display
+  | 'dis.monitor' | 'dis.video-wall' | 'dis.kiosk' | 'dis.wall' | 'dis.signage'
+  // Infrastructure host objects (stacking targets — doors, gates, walls, etc)
+  | 'inf.door-single' | 'inf.door-double' | 'inf.door-storefront' | 'inf.door-sliding'
+  | 'inf.window' | 'inf.wall-brick' | 'inf.wall-fire' | 'inf.wall-concrete'
+  | 'inf.gate-swing' | 'inf.gate-slide' | 'inf.elevator' | 'inf.mdf' | 'inf.rack'
+  // Cyber security
+  | 'cyb.endpoint' | 'cyb.siem' | 'cyb.firewall-ng' | 'cyb.vpn'
+  // Fire / life safety
+  | 'fls.pull-station' | 'fls.fire-panel' | 'fls.strobe' | 'fls.sprinkler'
+  // Building systems
+  | 'bld.hvac-controller' | 'bld.lighting-panel' | 'bld.bms-gateway';
 
-export type DeviceKind = 'camera' | 'access' | 'network' | 'power' | 'sensor' | 'audio' | 'storage' | 'display' | 'intrusion';
+export type DeviceKind =
+  | 'camera' | 'access' | 'network' | 'power' | 'sensor' | 'audio'
+  | 'storage' | 'display' | 'intrusion' | 'infrastructure' | 'cyber'
+  | 'fire' | 'building';
 
 // ─────────────────────────── Coverage (Pass 2B.1) ─────────────────
 // Coverage profile per device. Cameras keep their existing per lens
