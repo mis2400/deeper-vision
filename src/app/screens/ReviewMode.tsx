@@ -15,7 +15,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useProjectStore, selectors as sel, deriveCanvasBomRows, DOOR_HARDWARE_PRICE } from '../store/projectStore';
 import { SAMPLE_PRODUCTS as CATALOG } from '../lib/productCatalog';
-import { pathwayLengthFt } from '../lib/engineering';
+import { pathwayLengthFt, ftPerPxForFloor } from '../lib/engineering';
 import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 import type { Device, Pathway, Floor, DoorHardware, CanvasBomRow } from '../store/types';
 import {
@@ -27,7 +27,6 @@ import { toast } from 'sonner';
 import { buildLabel } from '../../build-info';
 
 const SURVEYOR_SYMBOL_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
-const PX_PER_FT = 3.83;
 
 // ─────────────────────────── Helpers ──────────────────────────────
 
@@ -729,7 +728,7 @@ function ReviewCanvas({
 
         {/* Coverage cones (rendered behind glyphs) */}
         {showCoverage && devices.filter((d) => deviceKind(d.type) === 'camera').map((d) => (
-          <FovCone key={`fov-${d.id}`} d={d} highlighted={selectedDevice === d.id} />
+          <FovCone key={`fov-${d.id}`} d={d} pxToFt={ftPerPxForFloor(floor)} highlighted={selectedDevice === d.id} />
         ))}
 
         {/* Pathway lines */}
@@ -754,16 +753,16 @@ function ReviewCanvas({
   );
 }
 
-function FovCone({ d, highlighted }: { d: Device; highlighted: boolean }) {
-  // Single-lens math from EngineeringCanvas (PX_PER_FT 3.83, default range
-  // by camera type, swept-arc path). Multisensor: render each enabled lens.
+function FovCone({ d, pxToFt, highlighted }: { d: Device; pxToFt: number; highlighted: boolean }) {
+  // SC.7.1: per-floor calibrated scale. Was a 3.83 px/ft hardcode that
+  // mis-rendered cones on any calibrated background.
   if (d.type === 'cam.multisensor' && d.lenses) {
     return (
       <g opacity={highlighted ? 0.85 : 0.45}>
         {(['a', 'b', 'c', 'd'] as const).map((k) => {
           const lens = d.lenses![k];
           if (!lens?.enabled) return null;
-          const path = cone(d.x, d.y, d.rot + lens.rotation, lens.fov, lens.range);
+          const path = cone(d.x, d.y, d.rot + lens.rotation, lens.fov, lens.range, pxToFt);
           return <path key={k} d={path} fill="url(#rv-fov-grad)" stroke="#FF7B6B" strokeWidth={0.6} opacity={highlighted ? 0.9 : 0.5} />;
         })}
       </g>
@@ -774,7 +773,7 @@ function FovCone({ d, highlighted }: { d: Device; highlighted: boolean }) {
   const rangeFt = d.range ?? defaultRangeFt;
   const fovDeg  = d.fov ?? defaultFovDeg;
   if (d.type === 'cam.fisheye' || fovDeg >= 350) {
-    const rFish = rangeFt * PX_PER_FT * 0.6;
+    const rFish = (rangeFt / pxToFt) * 0.6;
     return (
       <g opacity={highlighted ? 0.85 : 0.5}>
         <circle cx={d.x} cy={d.y} r={rFish} fill="url(#rv-fov-grad-fish)" />
@@ -782,7 +781,7 @@ function FovCone({ d, highlighted }: { d: Device; highlighted: boolean }) {
       </g>
     );
   }
-  const path = cone(d.x, d.y, d.rot, fovDeg, rangeFt);
+  const path = cone(d.x, d.y, d.rot, fovDeg, rangeFt, pxToFt);
   return (
     <g opacity={highlighted ? 0.95 : 0.55}>
       <path d={path} fill="url(#rv-fov-grad)" />
@@ -791,8 +790,8 @@ function FovCone({ d, highlighted }: { d: Device; highlighted: boolean }) {
   );
 }
 
-function cone(cx: number, cy: number, rot: number, fovDeg: number, rangeFt: number): string {
-  const r = rangeFt * PX_PER_FT;
+function cone(cx: number, cy: number, rot: number, fovDeg: number, rangeFt: number, pxToFt: number): string {
+  const r = rangeFt / pxToFt;
   const half = fovDeg / 2;
   const a1 = ((rot - half) * Math.PI) / 180;
   const a2 = ((rot + half) * Math.PI) / 180;

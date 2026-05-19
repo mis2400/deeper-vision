@@ -54,7 +54,6 @@ const REPORTS_SECTIONS: { id: string; label: string; visibleInCustomer: boolean 
 
 
 const SURVEYOR_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
-const PX_PER_FT = 3.83;
 
 type Mode = 'customer' | 'internal';
 

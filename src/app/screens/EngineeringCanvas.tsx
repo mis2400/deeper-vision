@@ -1655,9 +1655,14 @@ export function EngineeringCanvas() {
     // extends to the device's DORI range; we drop the subject at the
     // observe-band sweet spot (~60% out) so the readout starts in a
     // meaningful regime instead of right at the camera.
+    // SC.7.1: per-floor calibrated scale instead of the legacy 3.83 px/ft
+    // hardcode. ftPerPxForFloor falls back to the canvas default when the
+    // floor has no calibratedAt set.
     const rotRad = (dev.rot * Math.PI) / 180;
     const rangeFt = dev.range ?? (dev.type === 'cam.ptz' ? 44 : dev.type === 'cam.bullet' ? 50 : 30);
-    const reachPx = Math.round(rangeFt * 3.83 * 0.65);
+    const devFloor = useProjectStore.getState().floors[dev.floorId];
+    const ftPerPx = ftPerPxForFloor(devFloor);
+    const reachPx = Math.round((rangeFt / ftPerPx) * 0.65);
     const tx = dev.x + Math.cos(rotRad) * reachPx;
     const ty = dev.y + Math.sin(rotRad) * reachPx;
     setTargetSim({ open: true, x: tx, y: ty });
@@ -3164,7 +3169,7 @@ export function EngineeringCanvas() {
                 blueprint can dominate the eye. Intelligence chips remain
                 as the single contextual overlay (top-right) and default
                 to off. */}
-            <IntelligenceLayer devices={devices.filter((d) => !hiddenIds.has(d.id))} zoom={zoom} open={intelOpen} setOpen={setIntelOpen} />
+            <IntelligenceLayer devices={devices.filter((d) => !hiddenIds.has(d.id))} pxToFt={currentFloorPxToFt} zoom={zoom} open={intelOpen} setOpen={setIntelOpen} />
 
             {/* Floating selection toolbar */}
             {sel && surfaceRef.current && (
@@ -5574,7 +5579,7 @@ function ReportBuilderDialog({
       // Estimate reuses BOM under the hood for now; the audience selector
       // gates the customer/internal label baked into the cover.
       const kind: ReportKind = (reportType === 'estimate' ? 'bom' : reportType) as ReportKind;
-      drawReport(doc, kind, devices, projectId);
+      drawReport(doc, kind, devices, projectId, currentFloorPxToFt);
       const label = `${projectId}-${reportType}-${audience}-${new Date().toISOString().slice(0, 10)}.pdf`;
       doc.save(label);
       toast.success(`Exported · ${TYPES.find((t) => t.id === reportType)?.label}`, {
@@ -6544,7 +6549,7 @@ function ImportFloorplanDialog({ onClose, onImported, onStartCalibrate }: { onCl
   );
 }
 
-function SectionPanel({ section, devices, projectId, onOpenScanBuild, onOpenReport }: { section: string; devices: Device[]; projectId: string; onOpenScanBuild?: () => void; onOpenReport?: () => void }) {
+function SectionPanel({ section, devices, projectId, pxToFt, onOpenScanBuild, onOpenReport }: { section: string; devices: Device[]; projectId: string; pxToFt: number; onOpenScanBuild?: () => void; onOpenReport?: () => void }) {
   const counts = useMemo(() => {
     const c: Record<DeviceKind, number> = { camera: 0, access: 0, network: 0, intrusion: 0, audio: 0, storage: 0, display: 0, power: 0, sensor: 0 };
     devices.forEach((d) => { c[TYPE_KIND[d.type]]++; });
@@ -6680,15 +6685,15 @@ function SectionPanel({ section, devices, projectId, onOpenScanBuild, onOpenRepo
             </div>
           </div>
         )}
-        <ReportExportRow icon={FileBarChart} label="Engineering packet" sub="Cover · device schedule · BOM · cable schedule · findings" tone="#1F6FEB" kind="engineering" devices={devices} projectId={projectId} />
-        <ReportExportRow icon={Sparkles}     label="Customer presentation" sub="Cover · system overview · investment · timeline" tone="#A371F7" kind="customer" devices={devices} projectId={projectId} />
-        <ReportExportRow icon={FileText}     label="Camera schedule" sub={`${devices.filter((d) => TYPE_KIND[d.type] === 'camera').length} cameras · location · model · IR`} tone="#F08F3C" kind="camera-schedule" devices={devices} projectId={projectId} />
-        <ReportExportRow icon={DoorOpen}     label="Door schedule" sub={`${devices.filter((d) => isStackableHost(d.type)).length} openings · hardware stack`} tone="#3FB950" kind="door-schedule" devices={devices} projectId={projectId} />
-        <ReportExportRow icon={Cable}        label="Cable / pathway schedule" sub="Runs · cable type · length · termination" tone="#22D3EE" kind="cable-schedule" devices={devices} projectId={projectId} />
-        <ReportExportRow icon={PencilRuler}  label="Conduit schedule" sub="Conduit · size · cables · fill %" tone="#A371F7" kind="conduit-schedule" devices={devices} projectId={projectId} />
-        <ReportExportRow icon={DollarSign}   label="Bill of materials" sub={`${devices.length} line items · live unit prices`} tone="#E5B23A" kind="bom" devices={devices} projectId={projectId} />
-        <ReportExportRow icon={ListChecks}   label="Compliance checklist" sub="NDAA · ONVIF · ADA · fire egress" tone="#A371F7" kind="compliance" devices={devices} projectId={projectId} />
-        <ReportExportRow icon={ShieldCheck}  label="Commissioning report" sub="Per-device install / firmware / signal / sign-off" tone="#E5484D" kind="commissioning" devices={devices} projectId={projectId} />
+        <ReportExportRow icon={FileBarChart} label="Engineering packet" sub="Cover · device schedule · BOM · cable schedule · findings" tone="#1F6FEB" kind="engineering" devices={devices} projectId={projectId} pxToFt={pxToFt} />
+        <ReportExportRow icon={Sparkles}     label="Customer presentation" sub="Cover · system overview · investment · timeline" tone="#A371F7" kind="customer" devices={devices} projectId={projectId} pxToFt={pxToFt} />
+        <ReportExportRow icon={FileText}     label="Camera schedule" sub={`${devices.filter((d) => TYPE_KIND[d.type] === 'camera').length} cameras · location · model · IR`} tone="#F08F3C" kind="camera-schedule" devices={devices} projectId={projectId} pxToFt={pxToFt} />
+        <ReportExportRow icon={DoorOpen}     label="Door schedule" sub={`${devices.filter((d) => isStackableHost(d.type)).length} openings · hardware stack`} tone="#3FB950" kind="door-schedule" devices={devices} projectId={projectId} pxToFt={pxToFt} />
+        <ReportExportRow icon={Cable}        label="Cable / pathway schedule" sub="Runs · cable type · length · termination" tone="#22D3EE" kind="cable-schedule" devices={devices} projectId={projectId} pxToFt={pxToFt} />
+        <ReportExportRow icon={PencilRuler}  label="Conduit schedule" sub="Conduit · size · cables · fill %" tone="#A371F7" kind="conduit-schedule" devices={devices} projectId={projectId} pxToFt={pxToFt} />
+        <ReportExportRow icon={DollarSign}   label="Bill of materials" sub={`${devices.length} line items · live unit prices`} tone="#E5B23A" kind="bom" devices={devices} projectId={projectId} pxToFt={pxToFt} />
+        <ReportExportRow icon={ListChecks}   label="Compliance checklist" sub="NDAA · ONVIF · ADA · fire egress" tone="#A371F7" kind="compliance" devices={devices} projectId={projectId} pxToFt={pxToFt} />
+        <ReportExportRow icon={ShieldCheck}  label="Commissioning report" sub="Per-device install / firmware / signal / sign-off" tone="#E5484D" kind="commissioning" devices={devices} projectId={projectId} pxToFt={pxToFt} />
       </Wrapper>
     );
   }
@@ -8129,7 +8134,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             const isSel = d.id === selId;
             if (!layers.fov && !isSel) return null;
             const dim = (selId ? (isSel ? 1 : 0.28) : 1) * coverageAlpha;
-            return <FOV key={`fov-${d.id}`} d={d} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} />;
+            return <FOV key={`fov-${d.id}`} d={d} pxToFt={currentFloorPxToFt} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} />;
           })}
         </g>
 
@@ -8616,6 +8621,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                       rotDeg={((L.rotation + s.rot) % 360 + 360) % 360}
                       fovDeg={L.fov}
                       rangeFt={L.range}
+                      pxToFt={currentFloorPxToFt}
                       svgRef={ref as React.RefObject<SVGSVGElement>}
                       zoom={zoom}
                       pan={pan}
@@ -8646,7 +8652,6 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                   );
                 }
                 // Single-lens camera
-                const PX_PER_FT = 3.83;
                 const defaultRangeFt = s.type === 'cam.ptz' ? 44 : s.type === 'cam.bullet' ? 50 : 30;
                 const defaultFovDeg  = s.type === 'cam.ptz' ? 36 : 70;
                 return (
@@ -8655,6 +8660,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                     rotDeg={s.rot}
                     fovDeg={s.fov ?? defaultFovDeg}
                     rangeFt={s.range ?? defaultRangeFt}
+                    pxToFt={currentFloorPxToFt}
                     svgRef={ref as React.RefObject<SVGSVGElement>}
                     zoom={zoom}
                     pan={pan}
@@ -9273,10 +9279,12 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
  *  in feet. Used by both the single-lens FOV branch and the multisensor 4-lens
  *  branch so the visuals stay identical. */
 function FovCone({
-  cx, cy, rotDeg, fovDeg, rangeFt, color, opacity, wireframe, label, telemetry,
-}: { cx: number; cy: number; rotDeg: number; fovDeg: number; rangeFt: number; color: string; opacity: number; wireframe: boolean; label?: string; telemetry?: string }) {
-  const PX_PER_FT = 3.83;
-  const r = rangeFt * PX_PER_FT;
+  cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, color, opacity, wireframe, label, telemetry,
+}: { cx: number; cy: number; rotDeg: number; fovDeg: number; rangeFt: number; pxToFt: number; color: string; opacity: number; wireframe: boolean; label?: string; telemetry?: string }) {
+  // SC.7.1: convert range from feet to pixels using the per-floor
+  // calibrated scale (ftPerPxForFloor falls back to 0.05 ft/px when
+  // the floor has no calibratedAt). Was a hardcoded 3.83 px/ft.
+  const r = rangeFt / pxToFt;
   const half = fovDeg / 2;
   const a1 = ((rotDeg - half) * Math.PI) / 180;
   const a2 = ((rotDeg + half) * Math.PI) / 180;
@@ -9339,7 +9347,7 @@ function FovCone({
   );
 }
 
-function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null }: { d: Device; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null }) {
+function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null }: { d: Device; pxToFt: number; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null }) {
   // Mode-driven render parameters. Tuned down for the ergonomics pass so
   // unselected coverage doesn't dominate the plan. Selected coverage
   // keeps a small 1.2× boost so it reads as clear without being loud —
@@ -9391,6 +9399,7 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
               rotDeg={absRot}
               fovDeg={L.fov}
               rangeFt={L.range}
+              pxToFt={pxToFt}
               color={LENS_TONE[k]}
               opacity={coneOpacity}
               wireframe={wireframe}
@@ -9404,13 +9413,15 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
   }
 
   // ── Single-lens cameras (dome / bullet / ptz / fisheye / thermal / lpr) ──
-  const PX_PER_FT = 3.83;
+  // SC.7.1: range → pixels via the calibrated per-floor scale instead of
+  // the legacy 3.83 px/ft hardcode that made cones lie about coverage on
+  // every calibrated background.
   const defaultRangeFt = d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30;
   const defaultFovDeg  = d.type === 'cam.ptz' ? 36 : d.type === 'cam.fisheye' ? 360 : 70;
   const rangeFt = d.range ?? defaultRangeFt;
   const fovDeg  = d.fov ?? defaultFovDeg;
   if (d.type === 'cam.fisheye' || fovDeg >= 350) {
-    const rFish = rangeFt * PX_PER_FT * 0.6; // fisheye effective radius is smaller (omni)
+    const rFish = (rangeFt / pxToFt) * 0.6; // fisheye effective radius is smaller (omni)
     return (
       <g opacity={opacity}>
         {!wireframe && <circle cx={d.x} cy={d.y} r={rFish} fill="url(#fov-grad-360)" />}
@@ -9418,7 +9429,7 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
       </g>
     );
   }
-  const r = rangeFt * PX_PER_FT;
+  const r = rangeFt / pxToFt;
   const half = fovDeg / 2;
   const rot = d.rot;
   const a1 = ((rot - half) * Math.PI) / 180;
@@ -9470,17 +9481,21 @@ function FOV({ d, mode = 'soft', dim = 1, selected = false, activeLens = 'all', 
  *  Used by both single-lens cameras and the active lens of a multisensor —
  *  the caller wires `onUpdate` to write to either d.fov/d.range OR
  *  d.lenses[activeLens].fov/.range. */
-function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, pan, color, onUpdate }: {
+function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pan, color, onUpdate }: {
   cx: number; cy: number;
   rotDeg: number; fovDeg: number; rangeFt: number;
+  pxToFt: number;
   svgRef: React.RefObject<SVGSVGElement>;
   zoom: number;
   pan: { x: number; y: number };
   color: string;
   onUpdate: (patch: { fov?: number; range?: number }) => void;
 }) {
-  const PX_PER_FT = 3.83;
-  const r = rangeFt * PX_PER_FT;
+  // SC.7.1: handle positions follow the calibrated cone — without the
+  // fix, dragging the tip on a calibrated floor moved the handle to the
+  // wrong distance because the visual cone and the handle math used
+  // different scales.
+  const r = rangeFt / pxToFt;
   const half = fovDeg / 2;
   const aMid = (rotDeg * Math.PI) / 180;
   const a1 = ((rotDeg - half) * Math.PI) / 180;
@@ -9514,7 +9529,9 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, svgRef, zoom, pan, color
 
   const onTipDown = startDrag((mx, my) => {
     const dist = Math.hypot(mx - cx, my - cy);
-    onUpdate({ range: Math.max(5, Math.min(150, Math.round(dist / PX_PER_FT))) });
+    // SC.7.1: pixels → feet via the calibrated per-floor scale so the
+    // tip drag yields the correct range. Was dividing by 3.83 px/ft.
+    onUpdate({ range: Math.max(5, Math.min(150, Math.round(dist * pxToFt))) });
   });
   const onEdgeDown = startDrag((mx, my) => {
     // FOV = 2 × shortest absolute angle between cursor heading and cone center
@@ -12305,7 +12322,6 @@ function FindingRow({ severity, text }: { severity: 'high' | 'warn' | 'ok'; text
 
 function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
   const [mode, setMode] = useState<'overview' | 'prosecution'>('overview');
-  const PX_PER_FT = 3.83;
   const rangeFt = d.range ?? (d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30);
   const fovDeg  = d.fov ?? (d.type === 'cam.ptz' ? 36 : d.type === 'cam.fisheye' ? 360 : 70);
   // px/m at half range — a fair "general usefulness" metric.
@@ -13858,8 +13874,12 @@ interface IntelIssue {
 
 /** Real-time engineering intelligence — pulls signals from the canvas state
  *  and surfaces actionable findings. This is the substrate that drives both
- *  the on-canvas chips AND the embedded AI Assistant panel. */
-function computeIntelIssues(devices: Device[]): IntelIssue[] {
+ *  the on-canvas chips AND the embedded AI Assistant panel.
+ *
+ *  SC.7.1: takes the per-floor pixel-to-foot scale so the physical-distance
+ *  checks (cable run > 90m, etc.) use real feet on calibrated floors. Falls
+ *  back to the canvas default (0.05 ft/px) when the floor is uncalibrated. */
+function computeIntelIssues(devices: Device[], pxToFt: number): IntelIssue[] {
   const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera');
   const access = devices.filter((d) => TYPE_KIND[d.type] === 'access');
   const idfs = devices.filter((d) => d.type === 'net.idf' || d.type === 'net.switch');
@@ -13970,19 +13990,23 @@ function computeIntelIssues(devices: Device[]): IntelIssue[] {
   });
 
   // ── 6. Cable distance over Cat6 spec (~90m / 295ft) ──
-  // Rough heuristic: any camera further than 600px from the nearest IDF.
+  // SC.7.1: convert each candidate distance to feet via the calibrated
+  // scale, then compare against the actual 295 ft threshold. The prior
+  // version compared raw pixels (600 px) and divided by 3.83 px/ft for
+  // the detail string, which mis-fired on every calibrated background.
   if (idfs.length > 0) {
     for (const c of cams) {
       let minPx = Infinity;
       for (const i of idfs) minPx = Math.min(minPx, Math.hypot(c.x - i.x, c.y - i.y));
-      if (minPx > 600) {
+      const minFt = minPx * pxToFt;
+      if (minFt > 295) {
         out.push({
           id: `cab-${c.id}`,
           kind: 'cabling',
           severity: 'warn',
           x: c.x + 18, y: c.y - 18,
           label: 'Cable run exceeds 90m',
-          detail: `${c.id} is ~${Math.round(minPx / 3.83)} ft from nearest IDF.`,
+          detail: `${c.id} is ~${Math.round(minFt)} ft from nearest IDF.`,
           suggestion: 'Add a midspan PoE injector at 70m, switch to fiber, or place a closer IDF.',
         });
       }
@@ -14026,8 +14050,8 @@ function computeIntelIssues(devices: Device[]): IntelIssue[] {
   return out;
 }
 
-function IntelligenceLayer({ devices, zoom, open, setOpen }: { devices: Device[]; zoom: number; open: boolean; setOpen: (b: boolean) => void }) {
-  const issues = useMemo(() => computeIntelIssues(devices), [devices]);
+function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: Device[]; pxToFt: number; zoom: number; open: boolean; setOpen: (b: boolean) => void }) {
+  const issues = useMemo(() => computeIntelIssues(devices, pxToFt), [devices, pxToFt]);
   const summary = useMemo(() => {
     const by: Record<string, number> = {};
     issues.forEach((i) => { by[i.severity] = (by[i.severity] ?? 0) + 1; });
@@ -16027,8 +16051,8 @@ type ReportKind =
   | 'cable-schedule' | 'conduit-schedule' | 'bom' | 'compliance' | 'commissioning';
 
 function ReportExportRow({
-  icon: Icon, label, sub, tone, kind, devices, projectId,
-}: { icon: any; label: string; sub: string; tone: string; kind: ReportKind; devices: Device[]; projectId: string }) {
+  icon: Icon, label, sub, tone, kind, devices, projectId, pxToFt,
+}: { icon: any; label: string; sub: string; tone: string; kind: ReportKind; devices: Device[]; projectId: string; pxToFt: number }) {
   const [busy, setBusy] = useState(false);
   const handleExport = async () => {
     if (busy) return;
@@ -16036,7 +16060,7 @@ function ReportExportRow({
     try {
       const { jsPDF } = await import('jspdf');
       const doc = new jsPDF({ unit: 'pt', format: 'letter' });
-      drawReport(doc, kind, devices, projectId);
+      drawReport(doc, kind, devices, projectId, pxToFt);
       doc.save(`${projectId}-${kind}-${new Date().toISOString().slice(0, 10)}.pdf`);
       toast.success(`Exported · ${label}`, { duration: 3000 });
     } catch (e) {
@@ -16069,7 +16093,7 @@ function ReportExportRow({
 
 /** Top-level report router. Each branch composes its own pages using
  *  shared helpers (drawCover, drawTable, drawHeader). */
-function drawReport(doc: any, kind: ReportKind, devices: Device[], projectId: string) {
+function drawReport(doc: any, kind: ReportKind, devices: Device[], projectId: string, pxToFt: number) {
   drawCover(doc, kind, projectId);
   doc.addPage();
   switch (kind) {
@@ -16080,7 +16104,7 @@ function drawReport(doc: any, kind: ReportKind, devices: Device[], projectId: st
     case 'cable-schedule':    return drawCableSchedule(doc, projectId);
     case 'conduit-schedule':  return drawConduitSchedule(doc, projectId);
     case 'bom':               return drawBOMReport(doc, projectId);
-    case 'compliance':        return drawComplianceReport(doc, devices);
+    case 'compliance':        return drawComplianceReport(doc, devices, pxToFt);
     case 'commissioning':     return drawCommissioningReport(doc, devices);
   }
 }
@@ -16286,12 +16310,12 @@ function drawBOMReport(doc: any, projectId: string) {
   );
 }
 
-function drawComplianceReport(doc: any, devices: Device[]) {
+function drawComplianceReport(doc: any, devices: Device[], pxToFt: number) {
   drawHeader(doc, 'Compliance checklist', 2);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('Compliance checklist', 56, 76);
   const cams = devices.filter((d) => TYPE_KIND[d.type] === 'camera');
   const ndaaPct = cams.length ? Math.round((cams.filter((c) => c.ndaa).length / cams.length) * 100) : 100;
-  const issues = computeIntelIssues(devices).filter((i) => i.severity === 'high' || i.kind === 'compliance' || i.kind === 'ada');
+  const issues = computeIntelIssues(devices, pxToFt).filter((i) => i.severity === 'high' || i.kind === 'compliance' || i.kind === 'ada');
   doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(60, 74, 102);
   doc.text(`NDAA · ${ndaaPct}% of cameras compliant`, 56, 110);
   doc.text(`Fire egress · ${issues.filter((i) => i.kind === 'compliance').length} open issue${issues.filter((i) => i.kind === 'compliance').length === 1 ? '' : 's'}`, 56, 130);
