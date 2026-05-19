@@ -6,6 +6,7 @@ import {
   Command, Search, Settings, HelpCircle, ChevronRight, X, Check,
   User as UserIcon, Layers as LayersIcon,
   LayoutDashboard, FolderKanban, Sparkles, BookOpen, Package, BarChart3, LogOut, ChevronDown,
+  LifeBuoy,
 } from 'lucide-react';
 import { useProjectStore, defaultModeForPhase } from '../store/projectStore';
 import type { ProjectMode, UserRole } from '../store/types';
@@ -152,6 +153,7 @@ const APP_MENU_GROUPS: { id: string; label: string | null; items: { to: string; 
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard',        hint: 'Daily home' },
       { to: '/projects',  icon: FolderKanban,    label: 'Projects',         hint: 'Every active site' },
       { to: '/crm',       icon: BarChart3,       label: 'Pipeline',         hint: 'Pre project sales' },
+      { to: '/tickets',   icon: LifeBuoy,        label: 'Service tickets',  hint: 'Cross customer queue' },
     ],
   },
   {

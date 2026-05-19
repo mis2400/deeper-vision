@@ -45,6 +45,8 @@ import { ThreatDrillLibrary } from './screens/ThreatDrillLibrary';
 import { ThreatDrillEditor } from './screens/ThreatDrillEditor';
 import { BusFleet } from './screens/BusFleet';
 import { BusDesigner } from './screens/BusDesigner';
+import { TicketManager } from './screens/TicketManager';
+import { TicketDetail } from './screens/TicketDetail';
 import { PdfExporter } from './components/PdfExporter';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { Toaster } from './components/ui/sonner';
@@ -132,6 +134,8 @@ export default function App() {
           <Route path="/changeorders/:projectId" element={<ChangeOrders />} />
           <Route path="/kb" element={<KnowledgeBase />} />
           <Route path="/settings" element={<SettingsView />} />
+          <Route path="/tickets" element={<TicketManager />} />
+          <Route path="/ticket/:ticketId" element={<TicketDetail />} />
         </Routes>
         <PdfExporter />
         <ShortcutOverlay />
