@@ -2728,9 +2728,14 @@ export function EngineeringCanvas() {
   }, [devices]);
 
   /* ------------------------------------------------------------------- */
+  // SC.7.2: breadcrumb shows the actual project name (was hardcoded
+  // 'Riverbend HQ' — pre-existing tech debt that leaked into every
+  // project's canvas). Fallback covers the rare case where the route
+  // points at a project id that's missing from the store.
+  const breadcrumbProjectName = useProjectStore((s) => s.projects[projectId]?.name) ?? 'Untitled project';
   return (
     <AppShell
-      crumbs={[{ label: 'Projects', to: '/projects' }, { label: 'Riverbend HQ', to: `/project/${projectId}` }, { label: 'Canvas' }]}
+      crumbs={[{ label: 'Projects', to: '/projects' }, { label: breadcrumbProjectName, to: `/project/${projectId}` }, { label: 'Canvas' }]}
       fullBleed
     >
       <div ref={rootRef} className="h-full flex flex-col bg-background text-foreground relative">
@@ -6581,8 +6586,12 @@ function SectionPanel({ section, devices, projectId, pxToFt, onOpenScanBuild, on
 
   if (section === 'overview') {
     const total = devices.length;
+    // SC.7.2: pull the real project name. The "4 floors · 22,400 ft²"
+    // tail is still placeholder copy from the dead-code era; fix when
+    // this panel is rewired with real metrics.
+    const sectionProjectName = useProjectStore.getState().projects[projectId]?.name ?? 'Project';
     return (
-      <Wrapper title="Project overview" sub="Riverbend HQ · 4 floors · 22,400 ft²">
+      <Wrapper title="Project overview" sub={`${sectionProjectName} · 4 floors · 22,400 ft²`}>
         <div className="p-3 grid grid-cols-2 gap-2">
           {([
             { label: 'Devices placed', value: total, tone: '#2F81F7' },
@@ -6701,8 +6710,13 @@ function SectionPanel({ section, devices, projectId, pxToFt, onOpenScanBuild, on
   // docs
   return (
     <Wrapper title="Documentation" sub="Attached files and references">
+      {/* SC.7.2: this entire list is placeholder mock content from the
+          dead-code era — file names, dates, authors are all fake. The
+          real attachments list lives elsewhere; if this panel is ever
+          rewired, replace the whole array with a query against the
+          project's attachments slice instead of patching one string. */}
       {[
-        { icon: FileText, label: 'Scope of work — Riverbend HQ', sub: 'PDF · 14 pages · Jordan S.' },
+        { icon: FileText, label: 'Scope of work', sub: 'PDF · 14 pages' },
         { icon: FileText, label: 'Statement of work (signed)', sub: 'PDF · countersigned 04-12' },
         { icon: ImageIcon, label: 'Site walk photos (32)', sub: 'Captured during vision scan' },
         { icon: FileText, label: 'Riser diagram — Level 1', sub: 'Drawing · Visio export' },
