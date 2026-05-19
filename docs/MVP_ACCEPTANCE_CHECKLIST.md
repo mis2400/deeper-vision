@@ -645,6 +645,45 @@ Closes audit step 18 (Service Ticket CRUD UI, not implemented before this batch)
 - /portal/:id ApprovalHistoryToggle modal renders inside the portal page, no navigation away. Modal close clears `viewVersion` so a stale ref cannot keep rendering.
 - New canvas snapshots are inline in `proposals` slice persistence. A 24 device, 3 floor seed project snapshots clean at ~3 KB serialized; size warn fires at 2 MB and is loud in DevTools, no UI break.
 
+## 18 · Spine Completion SC.7 — Technical correctness
+
+Closes audit #6 (camera cones using hardcoded PX_PER_FT) and the SC.6.6 blueprint factoring follow-up, plus the cumulative deferred MINORs from prior batches. Two schema bumps (v29 → v30 for the snapshot background field; v30 → v31 for TicketNote.visibility). No new user-facing features.
+
+- [x] **SC.7.1 Camera cone calibration.** Every cone consumer (single-lens FOV, fisheye, multisensor per lens, ConeHandles, FovCone, ReviewMode FovCone, target-sim reach figure, computeIntelIssues + drawComplianceReport via the report pipeline) threads `pxToFt` from `ftPerPxForFloor(floor)` instead of the legacy 3.83 px/ft hardcode. Calibrated backgrounds now paint cones at the correct physical scale; uncalibrated floors fall back to the canvas default (0.05 ft/px) matching wall scale and surface the existing "Default scale" chip. Cable-run > 90m warning compares real feet (295 ft) instead of raw pixels. Dropped two unused PX_PER_FT declarations as dead code. Browser verified: scalePxToFt 0.05 → 0.125 produced an exact 2.5x cone-radius change (1000 → 400 px).
+- [x] **SC.7.2 Breadcrumb fix.** EngineeringCanvas breadcrumb now reads `useProjectStore((s) => s.projects[projectId]?.name)` instead of the hardcoded 'Riverbend HQ'. Two follow-ups in the orphaned SectionPanel: subtitle composes the project name dynamically; the fake docs list uses neutral labels with a comment explaining the placeholder. Verified across `/project/p1/canvas` (Acme HQ — Austin) and `/project/p2/canvas` (Mercy Hospital Tower B) — both render their own name, zero Riverbend leaks.
+- [x] **SC.7.3 Blueprint factoring to IndexedDB (v29 → v30).** New `src/app/lib/blueprintStore.ts` owns a dedicated IndexedDB object store keyed by SHA-1 prefix of the dataUrl content. `captureCanvasSnapshot` is async, writes the dataUrl to IndexedDB and stores a `dataUrlRef` hash in the snapshot. `sendProposal` became async; `ProposalBuilder.handleSend` awaits it. Migration is a no-op (existing SC.6.6 snapshots keep their inline dataUrl). Portal `SnapshotBackground` sub-component resolves dataUrlRef via IndexedDB lazily. Browser verified: 80 KB synthetic blueprint went to IndexedDB; snapshot stored only the 16-char hash; persisted localStorage stayed at 108 KB.
+- [x] **SC.7.4 Typography normalization.** 414 occurrences of legacy `text-[10.5px]` / `text-[11.5px]` / `text-[12.5px]` across 31 files swept to the nearest chrome scale (rounded down to preserve density intent). Zero half-px arbitrary values remain in `src/`.
+- [x] **SC.7.5 DeviceType union completion.** Store-level DeviceType expanded to cover every category the canvas paints (cam.turret, int.*, inf.*, fls.*, cyb.*, bld.*, plus the missing acc / aud / sen subtypes). Canvas's local DeviceType / DeviceKind now alias the store types — single source of truth, no drift. Dock category array normalised to canonical store names; the few aspirational entries that have no renderer yet (cam.turret, inf.door bare, fls dock shorthand, inf.transformer) carry a `// dock-only` comment so the audit grep stays clean.
+- [x] **SC.7.6 Cumulative MINOR cleanup.** `latestApprovalForProject` + `workOrderGate` selectors switched to single-pass max scans. `DeploymentModeMobile` dropped the blanket `as any` on the synthesised partial state — now casts through `unknown as ProjectState` with a narrowing comment. `ProjectHub.relativeUpdated` wrapped in `useMemo`. Two items defer to follow-ups with documented rationale: whole-store `useProjectStore()` subscriptions on 7 screens (substantial pass with UX regression risk), and the `JSON.stringify` dirty detection in ProposalBuilder (correct, perf cost immaterial at MVP proposal sizes).
+- [x] **SC.7.7 TicketNote.visibility flag (v30 → v31).** Closes the deferred CRITICAL #2 from SC.6.3/6.4. `TicketNote.visibility: 'internal' | 'customer'` (optional, defaults to `'customer'`). Migration walks every persisted serviceTicket and backfills `visibility: 'customer'` on every note that lacks the field. `addTicketNote` accepts an optional visibility, defaults to customer. Internal `TicketDetail` gains a Customer / Internal toggle — defaults to Customer, resets to Customer after every post so a stuck-internal state can't silently hide the next reply. Timeline shows an amber "Internal" chip + tinted left border on internal notes. Customer Portal filters notes to `visibility === 'customer' || !n.visibility`; the defensive fallback never needs to fire after the migration. Browser verified: hand-seeded v30 blob with a no-visibility note hydrated to v31 with `visibility = 'customer'`; UI-authored internal note hides on the portal, shows with the Internal chip on the internal detail.
+- [x] **SC.7.8 SC.7 integrity test script.** `scripts/sc7-spine-integrity.mjs` prints a 7-step paste procedure covering cone calibration, breadcrumb per-project, blueprint IndexedDB factoring, ticket visibility round-trip, and the v30 → v31 migration backfill assertion. Every step verified live during the SC.7 sub-pass commits.
+
+### Verification done this pass
+
+- **Build**: `npm run build` green after every sub pass commit. No TS errors.
+- **Persist version**: `deeperVisionStore` v29 → v30 → v31 (two bumps in one batch; both migrations idempotent and safe to re-run).
+- **Review loop**: lean per-sub-pass given the technical-correctness scope. Browser verification ran on every user-visible deliverable.
+- **Browser verified** end to end via the preview server:
+  - Cone radius 2.5x at scalePxToFt 0.05 → 0.125 with no other changes.
+  - Project name shows correctly on p1 and p2 canvases; "Riverbend HQ" never appears.
+  - 80 KB synthetic blueprint goes to IndexedDB; snapshot carries only the hash; portal renderer fetches + paints the blueprint on floor tab change.
+  - Operator-authored internal note hides on the portal, shows with the Internal chip on the internal detail. Toggle defaults to Customer, resets after submit.
+  - v30 → v31 migration walked a pre-migration blob and wrote `visibility = 'customer'` on the legacy un-flagged note.
+
+### Known follow ups deferred
+
+- **Whole-store `useProjectStore()` subscriptions on 7 screens** (EngineeringCanvas, ReportsCenter, ReviewMode, DeploymentMode, EstimatorView, ThreatSimulator, ProjectStateMenu). Narrowing each is a substantial pass; out of scope for the SC.7.6 MINOR cleanup.
+- **`JSON.stringify` dirty detection in ProposalBuilder.dirty**. Code is semantically correct; perf cost is immaterial at MVP proposal sizes. Rip-and-replace risk outweighs the marginal saving.
+- **Orphan SectionPanel in EngineeringCanvas**. Dead code (no JSX callers in the repo). The breadcrumb and overview leaks were patched in place; future cleanup can delete the panel wholesale or rewire it.
+- **Dock-only DeviceType entries** (`cam.turret`, `inf.door` bare, `fls dock shorthand`, `inf.transformer`). Each is tagged with a `// dock-only` comment so a future schema extension can wire renderers + drop the comment.
+- **Lazy migration of SC.6.6 inline blueprints to IndexedDB**. New snapshots write the hash; old SC.6.6 snapshots keep their inline payload until they're superseded out of the store. Lazy migration on portal mount is a future polish pass.
+
+### Risk notes for post deploy smoke test
+
+- Two schema bumps in one batch (v28 → v29 → v30 → v31 across SC.6 + SC.7). Each migration is a no-op or a defensive backfill; tested live against synthetic v29 and v30 blobs.
+- IndexedDB lives at origin `deeper-vision-ashy.vercel.app` independently of the production canvas — fresh deploy gets a fresh `deeper-vision-blueprints` DB on first proposal send. Old snapshots that pre-date SC.7.3 continue to render via inline dataUrl.
+- TicketNote visibility migration touches every persisted ticket, but the inner loop is a single field write per note with no allocation. Safe even on a workspace with 10k tickets.
+
 ## Last verified
 
 - **Date:** 2026-05-18 (MVP Spine Completion SC.4 — Proposal Builder real wiring on top of SC.3)
