@@ -79,6 +79,14 @@ export function DeviceMicroHUD({ device, scaleFtPerPx, containerRef }: Props) {
       className="absolute z-50 pointer-events-none"
       style={{ left, top, width: cardW }}
     >
+      {/* V3.10 — inline hex #0B1220 is intentional design-intent dark
+          for the HUD popover floating over the canvas. Stays dark in
+          every theme (Light Drafting / Slate / Dark) so the HUD reads
+          as a separate technical layer over the floorplan instead of
+          inheriting the theme card color. Sub-9px chip text below is
+          similarly intentional — these are dense engineering readouts
+          where rounding to the nearest chrome token regresses
+          legibility. */}
       <div className="bg-[#0B1220]/95 backdrop-blur-xl border border-primary/40 rounded-lg shadow-2xl overflow-hidden">
         <div className="px-3 py-1.5 bg-primary/15 border-b border-primary/30 flex items-center gap-1.5">
           {isMulti ? <Aperture className="w-3 h-3 text-primary" /> : <Camera className="w-3 h-3 text-primary" />}

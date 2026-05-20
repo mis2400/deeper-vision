@@ -14748,7 +14748,12 @@ function DrawingToolRail({
   return (
     <div className="absolute z-40 top-2 left-2 md:top-3 md:left-3 flex items-start" ref={railRef} data-canvas-chrome="rail">
       {/* Slim black rail — working tools only. Coming-soon tools live
-          inside the "More" panel so they don't clutter the default view. */}
+          inside the "More" panel so they don't clutter the default view.
+          V3.10: inline hex #0B0F19 is intentional. The rail is designed
+          as a black slab regardless of theme so it reads consistently
+          across Light Drafting / Slate / Dark Command. Swapping for a
+          semantic token would let the rail follow the theme card and
+          lose its identity. */}
       <div
         className="flex flex-col items-center gap-0.5 rounded-2xl border bg-[#0B0F19]/95 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)] select-none"
         style={{ borderColor: 'rgba(255,255,255,0.08)' }}
