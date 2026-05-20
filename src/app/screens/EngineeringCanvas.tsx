@@ -2073,13 +2073,19 @@ export function EngineeringCanvas() {
       if (e.key === 'Escape') {
         // Escape unwinds from the most-immersive layer first so a single
         // press always feels predictable — first leave Canvas / Field
-        // view, then close transient pickers, then drop selection.
+        // view, then close transient pickers, then close the right
+        // drawer (V3.3 — selection persists so the pill stays put),
+        // then drop selection.
         if (viewMode === 'canvas') { setViewMode('default'); return; }
         if (viewMode === 'field')  { setViewMode('default'); return; }
         if (reportOpen)            { setReportOpen(false); return; }
         if (scanBuildOpen)         { setScanBuildOpen(false); return; }
         // Cancel a pending click-to-arm placement before generic deselect.
         if (armedProduct)          { setArmedProduct(null); toast.message('Placement cancelled', { duration: 2000 }); return; }
+        // V3.3 Phase A — Esc closes the open drawer without dropping the
+        // underlying selection. The pill stays anchored to the device so
+        // the operator can re-open the drawer or pick a sibling action.
+        if (editOpen)              { setEditOpen(false); return; }
         setSelId(null); setSelIds(new Set()); setDrag(null); setOpenCat(null); setOpenType(null);
         setWallStart(null);
         setMeasure({ start: null, end: null, cursor: null });
@@ -12665,6 +12671,20 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
   );
 }
 
+// V3.3 — small ray-casting point-in-polygon used by the drawer
+// header to resolve which room (if any) contains the selected
+// device. Stays local because no other surface needs it yet.
+function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    const intersect = ((a.y > p.y) !== (b.y > p.y))
+      && (p.x < (b.x - a.x) * (p.y - a.y) / ((b.y - a.y) || 1e-9) + a.x);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode }: {
   d: Device; open: boolean; tab: EditTab; setTab: (t: EditTab) => void; onClose: () => void;
   onUpdate: (p: Partial<Device>) => void;
@@ -12767,51 +12787,123 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
     + (heightPx >= 250 ? 15 : 8)
   ));
 
+  // Canvas V3.3 Phase A — drawer shell redesign. Resolve the
+  // supporting metadata (floor name, container room if the device
+  // sits inside a polygon, survey status) from the live store so
+  // the header reads as a real engineering artifact, not a debug
+  // printout of the device record.
+  const drawerStore = useProjectStore.getState();
+  const drawerFloor = drawerStore.floors[d.floorId];
+  const drawerRoom = (() => {
+    if (!drawerFloor) return undefined;
+    const roomsHere = Object.values(drawerStore.rooms).filter((r) => r.floorId === drawerFloor.id && r.polygon && r.polygon.length >= 3);
+    for (const r of roomsHere) {
+      if (pointInPolygon({ x: d.x, y: d.y }, r.polygon)) return r;
+    }
+    return undefined;
+  })();
+  const headlineName = d.label || product?.model || d.id;
+  const surveyStatus = d.surveyStatus;
+  const STATUS_TONE: Record<string, { label: string; tone: string }> = {
+    verified: { label: 'Verified',      tone: '#3FB950' },
+    issue:    { label: 'Issue flagged', tone: '#E5484D' },
+    todo:     { label: 'Survey pending',tone: '#E5B23A' },
+    skip:     { label: 'Skipped',       tone: '#94A3B8' },
+  };
+  const statusBadge = surveyStatus ? STATUS_TONE[surveyStatus] : null;
   return (
     <div
       data-canvas-chrome={open ? 'drawer' : undefined}
-      className={`absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 pointer-events-auto ${open ? 'translate-x-0' : 'translate-x-full'}`}
+      className={`absolute top-0 right-0 bottom-0 z-50 transition-transform pointer-events-auto w-full md:w-[400px] ${open ? 'translate-x-0' : 'translate-x-full'}`}
       style={{
-        width: 400,
         background: 'var(--drawer-background)',
         color: 'var(--drawer-foreground)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         borderLeft: '1px solid var(--border)',
         boxShadow: '-16px 0 40px -16px rgba(0,0,0,0.35)',
-        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        // V3.3 Phase A: 200ms ease-out per the V3 motion spec.
+        // Decelerate, no overshoot, no bounce.
+        transitionDuration: '200ms',
+        transitionTimingFunction: 'cubic-bezier(0.2, 0, 0, 1)',
       }}
     >
-      {/* Drawer header — editorial. The device id is the headline; the
-          kind sits above it as a soft caption; manufacturer + model
-          supports below. No HUD tracking; calmer hierarchy. */}
-      <div className="px-5 pt-5 pb-4 border-b border-white/[0.05]">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tone, boxShadow: `0 0 6px ${tone}66` }} />
-              <span className="text-[11px] text-muted-foreground tracking-tight">{labelForKind(kind)}</span>
-            </div>
-            <div className="text-[18px] font-medium text-slate-50 tracking-tight truncate leading-tight">{d.id}</div>
-            {product && (
-              <div className="text-[11px] text-muted-foreground mt-1 truncate">{product.mfr} · {product.model}</div>
-            )}
+      {/* Drawer header — V3.3 Phase A.
+            Top row: capability dot + kind label + status pill + close.
+            Body:    headline name (large), supporting metadata line
+                     (mfr · model · floor · room) reading like an
+                     engineering artifact, not a debug record.
+          Click-outside intentionally does NOT close the drawer; only
+          the X button or Esc dismiss. Selection persists either way. */}
+      <div className="px-5 pt-5 pb-4 border-b border-border/40">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="inline-flex items-center gap-2 min-w-0">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tone }} />
+            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{labelForKind(kind)}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-white/[0.05] text-muted-foreground hover:text-foreground transition-colors duration-150"
-            title="Close inspector"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="inline-flex items-center gap-2 shrink-0">
+            {statusBadge && (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.10em] px-1.5 py-0.5 rounded-full border"
+                style={{
+                  color: statusBadge.tone,
+                  borderColor: `${statusBadge.tone}55`,
+                  background: `${statusBadge.tone}14`,
+                }}
+                data-testid="drawer-status-pill"
+              >
+                <span className="w-1 h-1 rounded-full" style={{ background: statusBadge.tone }} />
+                {statusBadge.label}
+              </span>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-md hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
+              title="Close inspector (Esc)"
+              data-testid="drawer-close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <h2
+          className="text-[18px] font-semibold tracking-tight text-foreground truncate leading-tight"
+          data-testid="drawer-headline"
+          title={headlineName}
+        >
+          {headlineName}
+        </h2>
+        <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap min-w-0">
+          {product && (
+            <>
+              <span className="truncate">{product.mfr}</span>
+              <span className="opacity-50">·</span>
+              <span className="truncate">{product.model}</span>
+              <span className="opacity-50">·</span>
+            </>
+          )}
+          <span className="truncate">{d.id}</span>
+          {drawerFloor && (
+            <>
+              <span className="opacity-50">·</span>
+              <span className="truncate" title="Floor">{drawerFloor.name}</span>
+            </>
+          )}
+          {drawerRoom && (
+            <>
+              <span className="opacity-50">·</span>
+              <span className="truncate" title="Room">{drawerRoom.name}</span>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Section grid — 3 icons per row, 4 rows. No horizontal scroll,
-          no hidden tabs. Every section is one click away. The active tile
-          uses a tone-tinted border + soft background so the user can see
-          where they are at a glance. */}
-      <div className="px-3 py-3 border-b border-border/60 grid grid-cols-3 gap-1.5">
+      {/* Section grid — 3 icons per row, no horizontal scroll. V3.3
+          treatment: inactive tiles render with a thin outline so the
+          grid reads as a flat panel of options; the active tile fills
+          with a tone-tinted chrome and a 1px ring in the same tone
+          so "you are here" is unambiguous. */}
+      <div className="px-3 py-3 border-b border-border/40 grid grid-cols-3 gap-1.5">
         {tilesForDevice(d).map((t) => {
           const active = tabGroupOf(tab) === t.id;
           const Icon = t.icon;
@@ -12820,8 +12912,12 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
               key={t.id}
               onClick={() => setTab(t.id)}
               data-track={`drawer-tab-${t.id}`}
-              className={`flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[10px] tracking-tight transition-colors ${
-                active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30'
+              data-testid={`drawer-tab-${t.id}`}
+              data-active={active ? 'true' : undefined}
+              className={`flex flex-col items-center justify-center gap-1 py-2.5 rounded-md text-[10px] tracking-tight transition-colors ${
+                active
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30 border border-border/40'
               }`}
               style={active ? {
                 background: `${tone}14`,
