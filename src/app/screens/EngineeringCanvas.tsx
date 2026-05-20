@@ -15565,7 +15565,14 @@ function BottomDeviceBar({
                         {(p as any).recommended ? (
                           <span className="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-500">Recommended</span>
                         ) : <span />}
-                        <span className="text-muted-foreground">Drag or click to place</span>
+                        {/* V3.8 — explicit drag affordance. The cursor-grab
+                            on the button already signals it; the icon makes
+                            the affordance read at a glance without growing
+                            the card height. */}
+                        <span className="inline-flex items-center gap-1 text-muted-foreground">
+                          <GripVertical className="w-3 h-3 opacity-60" />
+                          Drag or click to place
+                        </span>
                       </div>
                     </button>
                   );
