@@ -14909,25 +14909,24 @@ function ToolPanelBody({
           <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} className="accent-primary" />
         </label>
         <Hint>Click vertices on the plan. Double-click or Enter finishes the wall. Esc cancels.</Hint>
-        <div className="text-[10px] text-muted-foreground italic px-1 mt-2">Wall type, fire-rating, and orthogonal-lock controls ship next pass.</div>
-      </div>
-    );
-  }
-  if (panelId === 'snap') {
-    return (
-      <div className="space-y-1.5">
-        <label className="flex items-center justify-between py-2 px-2.5 rounded-md bg-secondary/20 cursor-pointer">
-          <span className="text-[12px] font-medium">Magnetic snap</span>
-          <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} className="accent-primary" />
-        </label>
-        <div className="rounded-md border border-border bg-secondary/20 p-2.5 text-[11px] space-y-1">
-          <div className="flex items-center justify-between"><span className="text-muted-foreground">Grid</span><span className="text-foreground">20 px / 1 ft</span></div>
-          <div className="flex items-center justify-between"><span className="text-muted-foreground">Tolerance</span><span className="text-foreground">5 px</span></div>
+        {/* Honesty contract per V3.1 / V3.7: wall-type / fire-rating /
+            orthogonal-lock require a schema bump on Wall (currently
+            { id, x1, y1, x2, y2 }). Surfacing them as toggles without
+            wiring would be exactly the dead-control class we just
+            killed. Sized as a DOCUMENTED chip so the operator sees
+            they exist on the roadmap without an interactive affordance. */}
+        <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-border bg-secondary/10 text-[10px] text-muted-foreground">
+          <span className="w-1 h-1 rounded-full bg-muted-foreground/60" />
+          Wall type, fire-rating, and orthogonal-lock land with the wall schema bump.
         </div>
-        <Hint>Snap pulls drag + draw points to the grid and to other devices within tolerance.</Hint>
       </div>
     );
   }
+  // Snap panel branch removed: the rail no longer carries a Snap tile
+  // (it was dropped as a duplicate of the wall-panel snap toggle and the
+  // top-bar overflow snap toggle). With no entry point, the body was
+  // unreachable dead code. The single snap state is owned by the parent
+  // and persists via the wall-panel checkbox + top-bar More menu.
   if (panelId === 'layers') {
     return (
       <div className="space-y-1.5">
