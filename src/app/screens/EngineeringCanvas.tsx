@@ -10343,84 +10343,12 @@ function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
   );
 }
 
-function MultisensorLensChips({
-  activeLens, setActiveLens, lensMode, setLensMode, tone, onLensHover,
-}: { activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void; lensMode: LensMode; setLensMode: (m: LensMode) => void; tone: string; onLensHover?: (lens: LensId | null) => void }) {
-  // Refined lens selector. Each chip carries its lens color as a small dot
-  // that scales up subtly when active — the only motion needed for a feel
-  // of premium tactility. No uppercase tracking; no neon underlines; the
-  // chip background tints in the lens's own color when selected, which
-  // pairs visually with the cone-color screen-blend on the canvas.
-  return (
-    <div
-      className="mb-1.5 flex items-stretch h-8 rounded-lg overflow-hidden text-[11px]"
-      style={{
-        background: 'var(--panel-background)',
-        backdropFilter: 'blur(18px)',
-        WebkitBackdropFilter: 'blur(18px)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 10px 28px -14px rgba(0,0,0,0.5)',
-        animation: 'lens-chip-in 240ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both',
-      }}
-    >
-      <button
-        onClick={() => setActiveLens('all')}
-        className="px-3 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors duration-150 hover:bg-white/[0.04]"
-        style={{
-          background: activeLens === 'all' ? `${tone}28` : 'transparent',
-          color: activeLens === 'all' ? '#F8FAFC' : 'rgba(148,163,184,0.85)',
-          boxShadow: activeLens === 'all' ? `inset 0 -1.5px 0 ${tone}` : 'none',
-        }}
-        title="Control all four lenses together"
-      >
-        <span className="font-medium tracking-tight">All</span>
-      </button>
-      {(['a', 'b', 'c', 'd'] as const).map((l) => {
-        const active = activeLens === l;
-        const lensColor = LENS_TONE[l];
-        return (
-          <button
-            key={l}
-            onClick={() => setActiveLens(l)}
-            onPointerEnter={() => onLensHover?.(l)}
-            onPointerLeave={() => onLensHover?.(null)}
-            className="px-3 inline-flex items-center gap-1.5 border-r border-white/8 transition-colors duration-150 hover:bg-white/[0.04]"
-            style={{
-              // Active chip is more clearly distinguished: a stronger
-              // lens-tinted background plus a bottom indicator line in
-              // the same lens color. Easier to pair "this chip" → "that
-              // cone" at a glance.
-              background: active ? `${lensColor}2A` : 'transparent',
-              color: active ? '#F8FAFC' : 'rgba(148,163,184,0.85)',
-              boxShadow: active ? `inset 0 -1.5px 0 ${lensColor}` : 'none',
-            }}
-            title={`Edit lens ${LENS_LABEL[l]} only — hover to highlight on canvas`}
-          >
-            <span
-              className="rounded-full transition-all duration-200 ease-out"
-              style={{
-                width: active ? 8 : 5,
-                height: active ? 8 : 5,
-                background: active ? lensColor : 'rgba(100,116,139,0.7)',
-                boxShadow: active ? `0 0 8px ${lensColor}AA` : 'none',
-              }}
-            />
-            <span className="font-medium tracking-tight">{LENS_LABEL[l]}</span>
-          </button>
-        );
-      })}
-      <button
-        onClick={() => setLensMode(lensMode === 'linked' ? 'independent' : 'linked')}
-        className="px-3 inline-flex items-center gap-1.5 transition-colors duration-150 hover:bg-white/[0.04]"
-        style={{ color: lensMode === 'linked' ? tone : 'rgba(148,163,184,0.85)' }}
-        title={lensMode === 'linked' ? 'Linked — moving one lens moves all four' : 'Independent — each lens moves alone'}
-      >
-        {lensMode === 'linked' ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-        <span className="font-medium tracking-tight">{lensMode === 'linked' ? 'Linked' : 'Indep.'}</span>
-      </button>
-    </div>
-  );
-}
+// Canvas V3.2 — MultisensorLensChips removed. Was a pill-side strip
+// that the drawer's Coverage section already duplicates (the drawer
+// has inline All / A / B / C / D / Linked-Independent chips that
+// drive the same activeLens + lensMode state). The pill's copy lived
+// under the V2 "selection HUD" pattern; the V3 spec keeps the pill
+// at status dot / id / type / Expand / Edit and nothing else.
 
 function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode, onLensHover, isLocked, onToggleLock }: {
   d: Device; zoom: number; pan: { x: number; y: number };
@@ -10562,85 +10490,12 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
   // device's lifecycle (e.g. cameras: rotate + FOV; doors: electrify +
   // reader + egress). Less-used controls (link, note, schedule, target
   // sim, delete) move behind More so the toolbar stays calm.
-  const actions: ToolbarAction[] = (() => {
-    // SelectionPill primary row is intentionally minimal — Edit / Duplicate /
-    // Delete + a "More" overflow. All kind-specialized actions (Rotate, FOV,
-    // Lens mode, Hardware, Electrify, Egress, Switches, PoE, Cable, etc.)
-    // are accessible from the overflow popover and from the EditDrawer
-    // tiles. This keeps the floating toolbar uncluttered and Edit-first so
-    // the surveyor reaches the deep settings via the right-side drawer
-    // instead of fighting a wide button row near the cursor.
-    const primary: ToolbarAction[] = [
-      { id: 'edit', icon: Settings2, label: 'Edit',      onClick: () => onOpenTab('overview'), primary: true },
-      { id: 'dup',  icon: Copy,      label: 'Duplicate', onClick: onDuplicate },
-      { id: 'del',  icon: Trash2,    label: 'Delete',    onClick: onDelete, danger: true },
-    ];
-    // Per-kind overflow — what was previously in the visible row now lands
-    // here behind the "More" popover. Same handlers / labels; just one
-    // click further from the cursor.
-    const overflow: ToolbarAction[] = [];
-    if (isMultisensor) {
-      overflow.push(
-        { id: 'lens',   icon: Aperture,      label: 'Lens',         onClick: () => onOpenTab('lens'), overflow: true },
-        { id: 'mode',   icon: lensMode === 'linked' ? Lock : Unlock,
-          label: lensMode === 'linked' ? 'Linked' : 'Indep',
-          onClick: () => setLensMode(lensMode === 'linked' ? 'independent' : 'linked'), overflow: true },
-        { id: 'target', icon: ScanFace,      label: 'Target sim',   onClick: onTargetSim, overflow: true },
-        { id: 'auto',   icon: Sparkles,      label: 'AI optimize',  onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'note',   icon: MessageSquare, label: 'Note',         onClick: () => onOpenTab('notes'), overflow: true },
-      );
-    } else if (isCam) {
-      overflow.push(
-        { id: 'rotate', icon: RotateCw,      label: 'Rotate 15°',   onClick: () => onRotate((d.rot + 15) % 360), overflow: true },
-        { id: 'fov',    icon: Aperture,      label: 'FOV',          onClick: () => onOpenTab('lens'), overflow: true },
-        { id: 'ai',     icon: Sparkles,      label: 'AI optimize',  onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'target', icon: ScanFace,      label: 'Target sim',   onClick: onTargetSim, overflow: true },
-        { id: 'link',   icon: GitBranch,     label: 'Link path',    onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'note',   icon: MessageSquare, label: 'Note',         onClick: () => onOpenTab('notes'), overflow: true },
-      );
-    } else if (isReader) {
-      overflow.push(
-        { id: 'linkdoor', icon: KeyRound,    label: 'Link door',    onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'mount',    icon: Crosshair,   label: 'Mount',        onClick: () => onOpenTab('mounting'), overflow: true },
-        { id: 'validate', icon: ShieldCheck, label: 'Validate',     onClick: () => onOpenTab('compliance'), overflow: true },
-        { id: 'ai',       icon: Sparkles,    label: 'AI hint',      onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'note',     icon: MessageSquare, label: 'Note',       onClick: () => onOpenTab('notes'), overflow: true },
-      );
-    } else if (isDoor) {
-      overflow.push(
-        { id: 'hardware', icon: KeyRound,    label: 'Hardware',     onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'elec',     icon: Zap,         label: 'Electrify',    onClick: () => onOpenTab('power'), overflow: true },
-        { id: 'egress',   icon: DoorOpen,    label: 'Egress',       onClick: () => onOpenTab('compliance'), overflow: true },
-        { id: 'validate', icon: ShieldCheck, label: 'Validate',     onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'link',     icon: GitBranch,   label: 'Pathway',      onClick: () => onOpenTab('linked'), overflow: true },
-      );
-    } else if (isIDF) {
-      overflow.push(
-        { id: 'switches', icon: Server,          label: 'Switches', onClick: () => onOpenTab('network'), overflow: true },
-        { id: 'poe',      icon: BatteryCharging, label: 'PoE',      onClick: () => onOpenTab('power'), overflow: true },
-        { id: 'links',    icon: GitBranch,       label: 'Links',    onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'ups',      icon: Zap,             label: 'UPS',      onClick: () => onOpenTab('power'), overflow: true },
-        { id: 'failure',  icon: AlertTriangle,   label: 'Failure analysis', onClick: () => onOpenTab('ai'), overflow: true },
-      );
-    } else if (isPathway) {
-      overflow.push(
-        { id: 'bend',    icon: CircleDot, label: 'Add bend',      onClick: () => onOpenTab('linked'), overflow: true },
-        { id: 'pull',    icon: Hash,      label: 'Add pull box',  onClick: () => onOpenTab('mounting'), overflow: true },
-        { id: 'cable',   icon: Cable,     label: 'Cable',         onClick: () => onOpenTab('network'), overflow: true },
-        { id: 'ai-path', icon: Sparkles,  label: 'AI optimize',   onClick: () => onOpenTab('ai'), overflow: true },
-        { id: 'fill',    icon: BarChart3, label: 'Fill %',        onClick: () => onOpenTab('telemetry'), overflow: true },
-      );
-    } else {
-      overflow.push(
-        { id: 'note', icon: MessageSquare, label: 'Note', onClick: () => onOpenTab('notes'), overflow: true },
-      );
-    }
-    return [...primary, ...overflow];
-  })();
-  const primaryActions = actions.filter((a) => !a.overflow);
-  const overflowActions = actions.filter((a) => a.overflow);
-  const focal = (d.type === 'cam.ptz' ? 4.3 + ((d.rot % 30) / 30) * 25 : d.type === 'cam.fisheye' ? 1.4 : 2.8 + ((Math.abs(d.rot) % 60) / 60) * 6).toFixed(1);
-  const doriRange = d.type === 'cam.ptz' ? 64 : d.type === 'cam.fisheye' ? 14 : 28;
+  // Canvas V3.2 — the V2 `primary` + `overflow` toolbar arrays + the
+  // focal / doriRange / lensMode side-channel were all consumed by
+  // the old HUD-style pill that's no longer rendered. The V3 pill
+  // body only needs the kind label for the identity strip and the
+  // ExpandMenu reads d.color / d.type itself. Deleted ~80 lines of
+  // dead action wiring + helper computations.
   const kindLabel = isCam ? 'Camera' : isDoor ? 'Opening' : isIDF ? 'Network Node' : isPathway ? 'Pathway' : 'Device';
 
   return (
@@ -10672,20 +10527,20 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
       )}
 
       {/* Multisensor lens chips sit above the strip when applicable. */}
-      {isMultisensor && (
-        <MultisensorLensChips
-          activeLens={activeLens} setActiveLens={setActiveLens}
-          lensMode={lensMode} setLensMode={setLensMode}
-          tone={tone}
-          onLensHover={onLensHover}
-        />
-      )}
-
-      {/* Minimal selection pill — field-ready redesign.
-          Identity strip with status dot · ID · type · Expand · Edit.
-          Nothing else. The previous 5-button toolbar moved into the
-          Expand menu so the canvas reads as a calm engineering drawing
-          rather than a HUD. */}
+      {/* Canvas V3.2 — minimal selection pill. Per the V3 spec the
+          pill shows ONLY:
+            * status dot
+            * object ID
+            * object type
+            * Expand button (opens the secondary-actions menu)
+            * Edit button (opens the right drawer)
+          Everything else moved off the pill: Duplicate / Lock / Delete
+          into the Expand menu (with their lock-state styling); the
+          multisensor lens chip strip lives in the drawer's Coverage
+          section (the drawer already renders an identical control —
+          the pill's copy was a duplicate); the read-only stack
+          summary chip is gone — the Stack menu item now routes to
+          the drawer's linked tab where stack edits actually live. */}
       <div
         className="flex items-stretch h-8 rounded-md overflow-hidden"
         style={{
@@ -10696,7 +10551,7 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
           boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
         }}
       >
-        {/* Identity */}
+        {/* Identity: status dot + editable ID + object type */}
         <div className="flex items-center gap-2 pl-2.5 pr-3 border-r border-border/60">
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -10713,7 +10568,7 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
           </span>
         </div>
 
-        {/* Expand — opens a small popover with secondary actions */}
+        {/* Expand — secondary actions live behind this popover */}
         <ExpandMenu
           d={d}
           tone={tone}
@@ -10722,82 +10577,22 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
           onOpenTab={onOpenTab}
           currentColor={d.color}
           onPickColor={(hex) => onUpdate({ color: hex || undefined })}
+          isLocked={isLocked}
+          onToggleLock={onToggleLock}
         />
 
-        {/* Edit — single explicit affordance that opens the right drawer */}
+        {/* Edit — primary drawer affordance */}
         <button
           onClick={() => onOpenTab('overview')}
           title="Edit details"
           data-track="pill-edit"
+          data-testid="pill-edit"
           className="px-3 inline-flex items-center gap-1.5 text-[12px] font-medium border-l border-border/60 text-foreground hover:bg-secondary/30 transition-colors"
         >
           <Settings2 className="w-3.5 h-3.5" style={{ color: tone }} />
           Edit
         </button>
-        {/* Duplicate — promoted to a visible pill button (was inside the
-            More popover). Matches the "minimal Edit-first toolbar" spec:
-            identity · Edit · Lock · Duplicate · Delete · More. */}
-        <button
-          onClick={onDuplicate}
-          title="Duplicate"
-          data-track="pill-duplicate"
-          className={`px-2.5 inline-flex items-center justify-center border-l border-border/60 transition-colors ${isLocked ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:bg-secondary/30 hover:text-foreground'}`}
-        >
-          <Copy className="w-3.5 h-3.5" />
-        </button>
-        {/* Lock toggle — Canvas V2 Pass 1.2. Visible state so the
-            operator can pin a device once they've placed it, and the
-            mutators (setDevices facade) actually refuse to apply
-            changes while it's locked. */}
-        {onToggleLock && (
-          <button
-            onClick={onToggleLock}
-            title={isLocked ? 'Unlock this device' : 'Lock this device'}
-            data-track={isLocked ? 'pill-unlock' : 'pill-lock'}
-            className={`px-2.5 inline-flex items-center justify-center border-l border-border/60 transition-colors ${isLocked ? 'text-primary bg-primary/10 hover:bg-primary/15' : 'text-muted-foreground hover:bg-secondary/30 hover:text-foreground'}`}
-          >
-            {isLocked
-              ? <Lock className="w-3.5 h-3.5" />
-              : <Unlock className="w-3.5 h-3.5" />}
-          </button>
-        )}
-        {/* Delete — promoted to a visible pill button (was inside the
-            More popover). Destructive-tone hover. */}
-        <button
-          onClick={onDelete}
-          title={isLocked ? 'Locked — unlock to delete' : 'Delete'}
-          data-track="pill-delete"
-          className={`px-2.5 inline-flex items-center justify-center border-l border-border/60 transition-colors ${isLocked ? 'text-muted-foreground/40 cursor-not-allowed' : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive'}`}
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
       </div>
-
-      {/* Stack popover — opens when the user clicks the stack chip on a
-          stackable host (door, gate, elevator). Lists the accessories
-          currently mounted. Currently a read-only summary; full inline
-          add-from-popover wires through Insert dock drag. */}
-      {isStackableHost(d.type) && (d.stack?.length ?? 0) > 0 && (
-        <div
-          className="mt-1.5 text-[10px] rounded-md overflow-hidden"
-          style={{
-            background: 'var(--panel-background)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            backdropFilter: 'blur(18px)',
-          }}
-        >
-          <div className="px-2.5 py-1.5 border-b border-white/8 text-muted-foreground uppercase tracking-[0.10em] text-[9px] font-medium">
-            Stack · {d.stack!.length}
-          </div>
-          {/* Names rendered by the parent via stackResolver — fall back to
-              raw ids when not provided. */}
-          {d.stack!.map((id) => (
-            <div key={id} className="px-2.5 py-1 text-foreground font-mono border-b border-white/5 last:border-b-0">
-              {id}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -10807,7 +10602,7 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
  *  color, lock, stack peek, delete, and "more details" (opens drawer to
  *  general). Click outside or press Escape to close. */
 function ExpandMenu({
-  d, tone, onDuplicate, onDelete, onOpenTab, currentColor, onPickColor,
+  d, tone, onDuplicate, onDelete, onOpenTab, currentColor, onPickColor, isLocked, onToggleLock,
 }: {
   d: Device;
   tone: string;
@@ -10816,6 +10611,8 @@ function ExpandMenu({
   onOpenTab: (t: EditTab) => void;
   currentColor?: string;
   onPickColor: (hex: string) => void;
+  isLocked?: boolean;
+  onToggleLock?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
@@ -10829,29 +10626,58 @@ function ExpandMenu({
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
   }, [open]);
 
-  // Duplicate + Delete + Lock removed from this overflow popover:
-  //  - Duplicate is promoted to a visible pill button (matches the
-  //    "minimal Edit-first toolbar" spec).
-  //  - Delete is promoted to a visible pill button (destructive tone).
-  //  - Lock is intentionally absent — not wired through the store yet,
-  //    and the durable rule is "if it doesn't work, don't show it."
-  // What remains in More: color and (when the device is a stackable
-  // host like a door) stack. Canvas V3.1 audit dropped the duplicate
-  // "More details" item that opened the same drawer tab as the pill's
-  // Edit button, and fixed Stack to open the `linked` tab (the stack /
-  // assembly section) instead of the `compliance` tab where it was
-  // landing before. Stack also hides when d.type is not a stackable
-  // host so cameras and isolated sensors don't show a useless menu
-  // item that opens an empty section.
+  // Canvas V3.2 — secondary actions now live exclusively in this
+  // popover so the pill body stays at the spec'd five elements
+  // (status dot / id / type / Expand / Edit). Order matches the V3
+  // brief: Duplicate, Color, Lock, Stack (gated), Delete, More details.
+  // Lock-state styling carries through:
+  //   * Duplicate + Delete render muted + cursor-not-allowed when
+  //     isLocked. The click is also short-circuited at the handler
+  //     so a locked device can't be mutated through the menu.
+  //   * Lock toggle stays interactive in both states.
+  // V3.1 dropped "More details" as a duplicate of the pill's Edit
+  // button. V3.2 brings it back per the V3 spec — Edit on the pill
+  // is the primary affordance; More details is the menu-level
+  // equivalent so the muscle-memory mapping (More → details → drawer)
+  // works for operators who reach for the menu before the button.
   const canStack = isStackableHost(d.type);
-  const items: Array<{ id: string; label: string; icon: any; onClick: () => void; danger?: boolean }> = [
+  const items: Array<{ id: string; label: string; icon: any; onClick: () => void; danger?: boolean; disabled?: boolean; disabledTitle?: string }> = [
+    {
+      id: 'duplicate',
+      label: 'Duplicate',
+      icon: Copy,
+      disabled: !!isLocked,
+      disabledTitle: 'Locked — unlock to duplicate',
+      onClick: () => { if (!isLocked) { onDuplicate(); setOpen(false); } },
+    },
     { id: 'color', label: 'Color', icon: PaintBucket, onClick: () => { setColorOpen((v) => !v); } },
+    ...(onToggleLock ? [{
+      id: 'lock',
+      label: isLocked ? 'Unlock' : 'Lock',
+      icon: isLocked ? Lock : Unlock,
+      onClick: () => { onToggleLock(); setOpen(false); },
+    }] : []),
     ...(canStack ? [{
       id: 'stack',
       label: 'Stack',
       icon: Layers,
       onClick: () => { onOpenTab('linked'); setOpen(false); },
     }] : []),
+    {
+      id: 'delete',
+      label: 'Delete',
+      icon: Trash2,
+      danger: true,
+      disabled: !!isLocked,
+      disabledTitle: 'Locked — unlock to delete',
+      onClick: () => { if (!isLocked) { onDelete(); setOpen(false); } },
+    },
+    {
+      id: 'details',
+      label: 'More details',
+      icon: FileText,
+      onClick: () => { onOpenTab('overview'); setOpen(false); },
+    },
   ];
 
   return (
@@ -10882,20 +10708,27 @@ function ExpandMenu({
             boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
           }}
         >
-          {items.map((it) => (
-            <button
-              key={it.id}
-              onClick={it.onClick}
-              className={`w-full px-3 py-2 text-left text-[12px] flex items-center gap-2 transition-colors ${
-                it.danger
-                  ? 'text-destructive hover:bg-destructive/10'
-                  : 'text-foreground hover:bg-secondary/40'
-              }`}
-            >
-              <it.icon className="w-3.5 h-3.5" />
-              {it.label}
-            </button>
-          ))}
+          {items.map((it) => {
+            const disabled = !!it.disabled;
+            const cls = disabled
+              ? 'text-muted-foreground/40 cursor-not-allowed'
+              : it.danger
+                ? 'text-destructive hover:bg-destructive/10'
+                : 'text-foreground hover:bg-secondary/40';
+            return (
+              <button
+                key={it.id}
+                onClick={disabled ? undefined : it.onClick}
+                disabled={disabled}
+                title={disabled ? it.disabledTitle : undefined}
+                data-testid={`pill-expand-${it.id}`}
+                className={`w-full px-3 py-2 text-left text-[12px] flex items-center gap-2 transition-colors ${cls}`}
+              >
+                <it.icon className="w-3.5 h-3.5" />
+                {it.label}
+              </button>
+            );
+          })}
           {colorOpen && (
             <div className="px-2 py-2 border-t border-border/60 grid grid-cols-5 gap-1">
               {DEVICE_COLOR_PALETTE.map((c) => {
