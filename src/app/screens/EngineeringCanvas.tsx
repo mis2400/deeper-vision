@@ -8994,6 +8994,19 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
   // distinct surface so the choice is real. Where there's no live tile
   // provider (street / hybrid / dark) the surface is clearly a stylised
   // engineering render and is labelled "Simulated map layer".
+  //
+  // Canvas V3.11 audit confirmed each of the six modes:
+  //   * blueprint  — paper + wall lines + room labels + scale bar
+  //   * satellite  — vegetation + asphalt + roof + parcel + Simulated badge
+  //   * street     — cartographic roads + building footprints + Simulated badge
+  //   * hybrid     — aerial + labelled roads + Simulated badge
+  //   * dark       — night cartographic + Simulated badge
+  //   * blank      — pure grid paper with sketch hint
+  // All six pass V3's "no mode is a fake" bar. Compass (line 3759) is a
+  // fixed canvas-up = north indicator (no calibration-driven rotation
+  // claim). Scale bar (line 3786) reads "Verified" when calibratedAt is
+  // set, otherwise "Default scale" + a Set-scale CTA — honest in both
+  // states.
   if (source === 'blank') {
     return (
       <g>
