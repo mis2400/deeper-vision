@@ -2539,7 +2539,40 @@ export function EngineeringCanvas() {
   }, [drag, zoom, snap, devices, pan]);
 
   const updateSel = (patch: Partial<Device>) => sel && setDevices((ds) => ds.map((d) => d.id === sel.id ? { ...d, ...patch } : d));
-  const deleteSel = () => { if (sel) { setDevices((ds) => ds.filter((d) => d.id !== sel.id)); setSelId(null); } };
+  // Canvas V3.12 — pill-menu Delete now warns the operator when the
+  // selected device has linked records (stacked accessories, attached
+  // pathway, linked devices, doors that reference it). Undo is wired
+  // through the canvas history system regardless, so the warning is a
+  // pre-delete review, not the only safety net.
+  const deleteSel = () => {
+    if (!sel) return;
+    // Compute dependents from the live store so we count the latest
+    // state, not a stale closure.
+    const live = useProjectStore.getState();
+    const liveDevices = Object.values(live.devices) as unknown as Device[];
+    const stackedOnSel = (sel.stack ?? []).length;
+    const linkedFromSel = (sel.linkedIds ?? []).length;
+    const attachedPath = sel.attachedPathwayId ? 1 : 0;
+    // Other devices that name this one in their stack or linkedIds.
+    const reverseRefs = liveDevices.filter((d) =>
+      d.id !== sel.id && (
+        (d.stack ?? []).includes(sel.id)
+        || (d.linkedIds ?? []).includes(sel.id)
+        || d.attachedPathwayId === sel.id
+      ),
+    ).length;
+    const depCount = stackedOnSel + linkedFromSel + attachedPath + reverseRefs;
+    const proceed = depCount === 0
+      || window.confirm(
+        `Delete ${sel.id}?\n\nIt has ${depCount} linked record${depCount === 1 ? '' : 's'} `
+        + `(${stackedOnSel} stacked, ${linkedFromSel} linked, ${attachedPath} attached pathway${attachedPath === 1 ? '' : 's'}, `
+        + `${reverseRefs} reverse reference${reverseRefs === 1 ? '' : 's'}).\n\n`
+        + `Delete anyway? You can undo immediately after with Cmd+Z.`,
+      );
+    if (!proceed) return;
+    setDevices((ds) => ds.filter((d) => d.id !== sel.id));
+    setSelId(null);
+  };
   /** Clone the selected device with a new id and a small offset so the user
    *  can visually see the new copy. Selection follows the clone. Deep-clones
    *  the lenses object on multisensors so adjusting one camera doesn't bleed
