@@ -10835,14 +10835,23 @@ function ExpandMenu({
   //  - Delete is promoted to a visible pill button (destructive tone).
   //  - Lock is intentionally absent — not wired through the store yet,
   //    and the durable rule is "if it doesn't work, don't show it."
-  // What remains in More: color / stack / more-details. Specialized
-  // kind actions (Rotate / FOV / Lens / Hardware / Electrify / Egress)
-  // belong in the Edit drawer; surfacing them here would re-clutter the
-  // pill the user explicitly asked to keep minimal.
+  // What remains in More: color and (when the device is a stackable
+  // host like a door) stack. Canvas V3.1 audit dropped the duplicate
+  // "More details" item that opened the same drawer tab as the pill's
+  // Edit button, and fixed Stack to open the `linked` tab (the stack /
+  // assembly section) instead of the `compliance` tab where it was
+  // landing before. Stack also hides when d.type is not a stackable
+  // host so cameras and isolated sensors don't show a useless menu
+  // item that opens an empty section.
+  const canStack = isStackableHost(d.type);
   const items: Array<{ id: string; label: string; icon: any; onClick: () => void; danger?: boolean }> = [
-    { id: 'color',   label: 'Color',        icon: PaintBucket, onClick: () => { setColorOpen((v) => !v); } },
-    { id: 'stack',   label: 'Stack',        icon: Layers,     onClick: () => { onOpenTab('compliance'); setOpen(false); } },
-    { id: 'details', label: 'More details', icon: FileText,   onClick: () => { onOpenTab('overview'); setOpen(false); } },
+    { id: 'color', label: 'Color', icon: PaintBucket, onClick: () => { setColorOpen((v) => !v); } },
+    ...(canStack ? [{
+      id: 'stack',
+      label: 'Stack',
+      icon: Layers,
+      onClick: () => { onOpenTab('linked'); setOpen(false); },
+    }] : []),
   ];
 
   return (
