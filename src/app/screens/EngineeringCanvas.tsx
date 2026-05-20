@@ -2732,10 +2732,9 @@ export function EngineeringCanvas() {
             from { opacity: 0; }
             to   { opacity: 1; }
           }
-          @keyframes lens-chip-in {
-            from { opacity: 0; transform: translateY(2px); }
-            to   { opacity: 1; transform: translateY(0); }
-          }
+          /* V3.9 -- lens-chip-in keyframe removed. Its only consumer
+             was the pill-side MultisensorLensChips strip, which V3.2
+             deleted as a duplicate of the drawer's lens chips. */
           /* Subtle hover lift on every canvas device. Affects the entire
              device group: glyph, halo, and lens dot rise together. Selected
              devices don't double-up the transform (they already have the
@@ -2751,7 +2750,6 @@ export function EngineeringCanvas() {
           @media (prefers-reduced-motion: reduce) {
             @keyframes pill-in { from { opacity: 1; transform: translateX(-50%); } to { opacity: 1; transform: translateX(-50%); } }
             @keyframes soft-fade-in { from { opacity: 1; } to { opacity: 1; } }
-            @keyframes lens-chip-in { from { opacity: 1; } to { opacity: 1; } }
             .dv-device:hover:not(.dv-selected) { transform: none; filter: none; }
           }
         `}</style>
@@ -7899,8 +7897,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       <defs>
         <style>{`
           @keyframes presence-pulse { 0% { opacity: 0.9; } 50% { opacity: 0.4; } 100% { opacity: 0.9; } }
-          @keyframes scan-sweep { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -200; } }
-          @keyframes glow-breathe { 0%,100% { opacity: 0.5; } 50% { opacity: 0.9; } }
+          /* V3.9 -- scan-sweep keyframe removed. Was declared but had
+             zero consumers in the rendered code. */
+          /* V3.9 -- glow-breathe keyframe removed alongside its only
+             consumer (the selected-multisensor breathing ring). */
         `}</style>
         {/* Canvas atmosphere — refined for spatial depth. Two grid scales
             (fine + coarse) plus a single soft vignette. The grid dots
@@ -8391,17 +8391,14 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                   style={{ animation: 'soft-fade-in 200ms ease-out both' }}
                 />
               )}
-              {/* Multisensor signature — when the camera is the selected
-                  multisensor, a subtle inner ring breathes at the body's
-                  edge. Slow, quiet, only visible on the active device. */}
-              {isSel && d.type === 'cam.multisensor' && (
-                <circle
-                  cx={d.x} cy={d.y} r={10.5 * iconScale}
-                  fill="none" stroke={tone} strokeWidth="0.45"
-                  opacity="0.4"
-                  style={{ animation: 'glow-breathe 3.2s ease-in-out infinite' }}
-                />
-              )}
+              {/* Canvas V3.9 — multisensor "breathing ring" removed. Was
+                  a 3.2s ease-in-out infinite opacity loop on the selected
+                  camera body. Per the V3 motion brief: "no decorative
+                  motion, no playful springs" and "Selection: precise ring
+                  or stroke, no halo or glow." The selection halo + lens
+                  cones already telegraph which camera is active; the
+                  breathing ring was consumer-SaaS warmth, not Bluebeam
+                  restraint. */}
               {multi && !isSel && <circle cx={d.x} cy={d.y} r={12 * iconScale} fill="none" stroke={tone} strokeWidth="0.8" strokeDasharray="2 2" opacity="0.45" />}
               {/* Transparent hit-circle — guarantees the device is clickable
                   even when the underlying glyph is a thin line or a small
