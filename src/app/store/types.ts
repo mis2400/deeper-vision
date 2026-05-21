@@ -1325,6 +1325,12 @@ export interface Room {
   polygon: { x: number; y: number }[];
   occupancyEstimate?: number;
   sensitivity?: RoomSensitivity;
+  /** Indoor / outdoor / unknown tag used by the DV Assist
+   *  "exterior product in an interior area" rule. Default is
+   *  undefined (treated as 'unknown') so the rule stays silent
+   *  until the operator tags the room. Optional, no migration
+   *  needed for older rooms. */
+  environment?: 'indoor' | 'outdoor' | 'unknown';
   createdAt: number;
   updatedAt: number;
 }
