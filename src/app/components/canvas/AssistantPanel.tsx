@@ -22,6 +22,10 @@ import { useProjectStore } from '../../store/projectStore';
 import type { AiAction, AssistantPanelMode } from '../../store/types';
 import { runAllRules, type Finding, type FindingSeverity, type SuggestedFix } from '../../lib/assistantRules';
 import { executeAction, undoAction } from '../../lib/assistantActions';
+import {
+  BULK_PRESETS, previewBulkOperation, executeBulkOperation, undoBulkOperation,
+  type BulkPreset,
+} from '../../lib/bulkOperations';
 
 interface Props {
   projectId: string;
@@ -354,33 +358,134 @@ function ActionBody({ projectId }: { projectId: string }) {
   // real undo path; nothing inline triggers this.
   const onUndo = useCallback((_f: Finding) => {}, []);
 
-  if (findings.length === 0) {
-    return (
-      <div className="space-y-3">
-        <p className="text-muted-foreground">{MODE_DESCRIPTION.action}</p>
+  return (
+    <div className="space-y-3">
+      <BulkOperations projectId={projectId} />
+      {findings.length === 0 ? (
         <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-foreground/90">
           <CircleCheck className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
           <p className="text-[12px]">Nothing to fix. Switch to Suggestion to scan again as you design.</p>
         </div>
-      </div>
-    );
-  }
+      ) : (
+        <div className="space-y-2">
+          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.10em]">
+            {findings.length} finding{findings.length === 1 ? '' : 's'}
+          </p>
+          <ul className="space-y-1.5">
+            {findings.map((f) => (
+              <FindingRow
+                key={f.id}
+                f={f}
+                interactive
+                onApply={onApply}
+                onUndo={onUndo}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────── Bulk operations ──────────────────────
+
+function BulkOperations({ projectId }: { projectId: string }) {
+  // Re render the bulk previews when devices change (since fixing
+  // individual findings affects how many devices remain in scope).
+  // We subscribe to the devices slice with a shallow check; the
+  // preview itself is computed inline.
+  useProjectStore((s) => s.devices);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  // Compute previews for every preset so the button captions can
+  // surface honest counts ("Apply to 3 cameras"). This is cheap —
+  // a handful of preset rows × small device counts.
+  const previews = BULK_PRESETS.map((p) => ({ preset: p, preview: previewBulkOperation({ scope: p.scope, action: p.action }, projectId) }));
+  const runnable = previews.filter((row) => row.preview.affected.length > 0);
+  if (runnable.length === 0) return null;
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <p className="text-muted-foreground text-[11px] uppercase tracking-[0.10em]">
-        {findings.length} finding{findings.length === 1 ? '' : 's'}
+        Bulk
       </p>
       <ul className="space-y-1.5">
-        {findings.map((f) => (
-          <FindingRow
-            key={f.id}
-            f={f}
-            interactive
-            onApply={onApply}
-            onUndo={onUndo}
-          />
+        {runnable.map(({ preset, preview }) => (
+          <li
+            key={preset.id}
+            data-testid={`bulk-${preset.id}`}
+            className="px-2.5 py-2 rounded-md border border-border/60 bg-secondary/20"
+          >
+            <p className="text-[12px] font-medium text-foreground leading-tight">{preset.label}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {preview.affected.length} device{preview.affected.length === 1 ? '' : 's'} would change
+              {preview.alreadyDone.length > 0 && <> · {preview.alreadyDone.length} already done</>}
+              {preview.unreachable.length > 0 && <> · {preview.unreachable.length} no fix path</>}
+            </p>
+            {confirmId === preset.id ? (
+              <BulkConfirmRow preset={preset} projectId={projectId} onDone={() => setConfirmId(null)} />
+            ) : (
+              <button
+                data-testid={`bulk-trigger-${preset.id}`}
+                onClick={() => setConfirmId(preset.id)}
+                className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-primary-foreground bg-primary hover:opacity-90 transition-opacity"
+              >
+                <Wrench className="w-3 h-3" /> Review and apply
+              </button>
+            )}
+          </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function BulkConfirmRow({
+  preset,
+  projectId,
+  onDone,
+}: {
+  preset: BulkPreset;
+  projectId: string;
+  onDone: () => void;
+}) {
+  const preview = previewBulkOperation({ scope: preset.scope, action: preset.action }, projectId);
+  const sample = preview.affected.slice(0, 3).map((a) => a.device.label || a.device.id).join(', ');
+  const more = preview.affected.length - 3;
+  const onConfirm = () => {
+    const res = executeBulkOperation({ scope: preset.scope, action: preset.action }, projectId);
+    if (res.undoPayloads.length === 0) {
+      toast.message(res.result);
+    } else {
+      toast.success(res.result, {
+        action: {
+          label: 'Undo',
+          onClick: () => { const r = undoBulkOperation(res.undoPayloads); toast.success(r); },
+        },
+        duration: 8000,
+      });
+    }
+    onDone();
+  };
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      <p className="text-[11px] text-foreground/80">
+        Will apply to: {sample}{more > 0 ? ` + ${more} more` : ''}.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          data-testid={`bulk-confirm-${preset.id}`}
+          onClick={onConfirm}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-primary-foreground bg-primary hover:opacity-90 transition-opacity"
+        >
+          <CircleCheck className="w-3 h-3" /> Confirm {preview.affected.length}
+        </button>
+        <button
+          onClick={onDone}
+          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
