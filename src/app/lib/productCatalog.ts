@@ -38,6 +38,11 @@ export type ProductCategory =
   | 'sensor' | 'temperature' | 'water-leak' | 'occupancy' | 'gas' | 'gunshot'
   // Mount / accessory
   | 'accessory'
+  // DV Assist Phase 1 — license SKUs for VMS / analytics / access-control /
+  // cloud VMS / cyber. Per-camera or per-door term-based licenses live as
+  // first-class products so the BOM rollup picks them up automatically when
+  // an operator (or the DV Assist Action mode) applies one.
+  | 'license'
   // Legacy compatibility for older callers
   | 'av' | 'network' | 'power' | 'recorder';
 
@@ -135,6 +140,79 @@ export interface Product {
   /** Top-pick within its category for its tech model — drives the
    *  "Recommended" badge in the dock. */
   recommended?: boolean;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // DV Assist Phase 1 — design-validation metadata (SEED, not Data Hub).
+  //
+  // These fields are read by the DV Assist rules engine to surface real
+  // findings ("camera missing a license", "switch over PoE budget", "Cat6
+  // run exceeds 328 ft", "exterior camera in interior room"). Every field
+  // is optional — when undefined, the rule that would have consumed it
+  // stays silent rather than guessing. That keeps the engine honest until
+  // the future Data Hub backend replaces this seed with the full catalog.
+  // See `docs/DV_ASSIST_PHASE1.md` for the full contract.
+
+  /** TRUE when the device requires a separate license SKU to operate at
+   *  full capability (recording, analytics, cloud VMS, access control).
+   *  Verkada-style all-in-one SKUs leave this undefined or false. */
+  requiresLicense?: boolean;
+  /** When `requiresLicense`, the recommended license SKU id. The rules
+   *  engine offers this as the "Add license" suggested fix; the operator
+   *  can swap to a different valid license at action time. */
+  defaultLicenseId?: string;
+
+  // ── License SKU fields (only set on category === 'license' rows) ────
+  /** What capability this license unlocks. */
+  licenseType?: 'recording' | 'analytics' | 'cloud-vms' | 'access-control'
+              | 'maintenance' | 'firewall' | 'siem' | 'intrusion';
+  /** Term length in years for THIS specific license SKU.
+   *  Use `licenseTermOptions` on a parent family product when a single
+   *  family offers multiple terms; use `licenseTermYears` on each
+   *  per-term SKU row when each term has its own product id. */
+  licenseTermYears?: number;
+  /** Term options offered by this license family, in years. Lets the
+   *  Action-mode "Add license" picker show 1 / 3 / 5 year choices off a
+   *  single family entry instead of three separate rows. */
+  licenseTermOptions?: number[];
+  /** Categories this license covers — e.g. ['camera'] for a per-camera
+   *  VMS license, ['door'] for an access-control license. */
+  coversCategories?: ProductCategory[];
+  /** Specific product ids this license covers, when the license is tied
+   *  to a specific product family. Leave undefined for vendor agnostic
+   *  per device licenses. */
+  coversProductIds?: string[];
+  /** Manufacturers this license covers. Axis Camera Station is licensed
+   *  only against Axis cameras (plus a small ONVIF allowlist); Genetec,
+   *  Milestone, Avigilon, and Eagle Eye are genuinely vendor agnostic
+   *  via ONVIF and leave this undefined. The rules engine filters
+   *  license matches through this when set. */
+  coversManufacturers?: string[];
+
+  // ── Switch capacity (only set on category === 'switch' rows) ────────
+  /** Total port count. Drives the "switch overloaded" rule. */
+  portCount?: number;
+  /** Count of PoE-capable ports (often a subset of `portCount`). */
+  poePortCount?: number;
+  /** Total PoE budget in watts across all PoE ports. Drives the
+   *  "PoE device on a switch without enough power budget" rule. */
+  poeBudgetWatts?: number;
+
+  // ── Cable run distance (only set on category === 'cable' rows) ──────
+  /** Maximum recommended run length in feet. Cat6/6a copper = 328 ft
+   *  (100 m) per TIA/EIA-568; multimode fiber depends on grade and
+   *  rate (OM4 at 10G = ~1,300 ft). Drives the "cable run too long"
+   *  rule. */
+  maxCableRunFt?: number;
+
+  // ── Accessory / mount targeting (only set on category === 'accessory' rows) ─
+  /** Device types this mount accessory is recommended for. Lets the
+   *  "device missing a mount" rule pick a real, in-catalog mount
+   *  product as the suggested fix. */
+  mountForDeviceTypes?: DeviceType[];
+  /** When set on a host product (e.g. a camera), this points at the
+   *  preferred mount accessory id from `compatibleAccessories`. The
+   *  Action-mode "Add recommended mount" fix uses this. */
+  recommendedMountId?: string;
 }
 
 // ─────────────────────────── Helpers ─────────────────────────────────
@@ -161,6 +239,103 @@ export function accessoriesFor(p: Product): Product[] {
 /** True when the product is a top pick for its tech model + category. */
 export function isRecommended(p: Product): boolean { return !!p.recommended; }
 
+// ─────────────────────────── DV Assist Phase 1 helpers ──────────────
+// These wrap the new seed metadata in pure functions the rules engine
+// + Action mode call into. Keep all reads through these helpers so the
+// future Data Hub swap is a single-module change.
+
+/** True when this product requires a separate license SKU to operate. */
+export function requiresLicense(p: Product): boolean { return !!p.requiresLicense; }
+
+/** License SKUs from the catalog that cover the given host product.
+ *  Returns empty when the host doesn't require a license, so callers
+ *  can wire this straight into the Action mode picker without a
+ *  second guard. Matches in priority order:
+ *    1. `coversProductIds` (specific id allowlist on the license),
+ *    2. `coversCategories` (category match) — additionally requires
+ *       `coversManufacturers` to include the host manufacturer when
+ *       the license declares a manufacturer scope.
+ *  Vendor agnostic licenses (Genetec, Milestone, Avigilon, Eagle Eye)
+ *  leave `coversManufacturers` undefined and match every camera in
+ *  their covered categories. */
+export function licensesFor(host: Product): Product[] {
+  if (!host.requiresLicense) return [];
+  return SAMPLE_PRODUCTS.filter((lic) => {
+    if (lic.category !== 'license') return false;
+    if (lic.coversProductIds?.includes(host.id)) return true;
+    if (!lic.coversCategories?.includes(host.category)) return false;
+    if (lic.coversManufacturers && !lic.coversManufacturers.includes(host.manufacturer)) return false;
+    return true;
+  });
+}
+
+/** Default license SKU recommended for the given host, or undefined if
+ *  the host doesn't require a license or no default is named. */
+export function defaultLicenseFor(host: Product): Product | undefined {
+  if (!host.requiresLicense || !host.defaultLicenseId) return undefined;
+  return productById(host.defaultLicenseId);
+}
+
+/** Term lengths in years offered by a license SKU. Reconciles the two
+ *  shapes a license row can carry: `licenseTermYears` for per term
+ *  SKUs (returns a single value), `licenseTermOptions` for family
+ *  SKUs (returns the list). One read site for the BOM display + the
+ *  Action mode picker. */
+export function licenseTerms(p: Product): number[] {
+  if (typeof p.licenseTermYears === 'number') return [p.licenseTermYears];
+  return p.licenseTermOptions ?? [];
+}
+
+/** Accessory mount products targeting a given device type. */
+export function mountsForDeviceType(t: DeviceType): Product[] {
+  return SAMPLE_PRODUCTS.filter((p) =>
+    p.category === 'accessory' && p.mountForDeviceTypes?.includes(t));
+}
+
+/** Recommended mount accessory for a host product, or undefined. */
+export function recommendedMountFor(host: Product): Product | undefined {
+  if (!host.recommendedMountId) return undefined;
+  return productById(host.recommendedMountId);
+}
+
+/** Switch capacity helpers. Return undefined when the product is not a
+ *  switch or the capacity isn't known. Undefined = silent (the rule
+ *  doesn't fire), per the honesty contract. */
+export function switchPortCount(p: Product): number | undefined {
+  return p.category === 'switch' ? p.portCount : undefined;
+}
+export function switchPoeBudget(p: Product): number | undefined {
+  return p.category === 'switch' ? p.poeBudgetWatts : undefined;
+}
+
+/** Watts consumed by a PoE host (camera, AP, reader). Returns the
+ *  explicit `powerDrawWatts` when set, otherwise the IEEE class max as
+ *  a pessimistic ceiling, otherwise undefined.
+ *
+ *  IMPORTANT for DVA.3 callers: undefined means "unknown draw, don't
+ *  add this device to the PoE budget sum" — it does NOT mean 0. A
+ *  device with no PoE class and no powerDrawWatts may be AC powered
+ *  (an NVR, a server, a wall mounted display), or it may be a PoE
+ *  device the seed hasn't measured. Either way the rule should skip
+ *  it rather than assume zero draw. The class max fallback above is
+ *  pessimistic on purpose so a real PoE camera missing its specific
+ *  draw doesn't quietly under count budget. */
+export function poeDrawWatts(p: Product): number | undefined {
+  if (typeof p.powerDrawWatts === 'number') return p.powerDrawWatts;
+  // IEEE class -> max device watts:
+  // 1 = 802.3af (15.4W at port / 12.95W at device)
+  // 2 = 802.3at (30W / 25.5W)
+  // 3 = 802.3bt Type 3 (60W / 51W)
+  // 4 = 802.3bt Type 4 (90W / 71W)
+  const classMax: Record<1 | 2 | 3 | 4, number> = { 1: 12.95, 2: 25.5, 3: 51, 4: 71 };
+  return p.poeClass ? classMax[p.poeClass] : undefined;
+}
+
+/** Maximum recommended cable run length in feet for a cable product. */
+export function maxCableRunFor(p: Product): number | undefined {
+  return p.category === 'cable' ? p.maxCableRunFt : undefined;
+}
+
 // ─────────────────────────── The catalog ─────────────────────────────
 // Sample only. Pricing is approximate retail; verify against distributor
 // list before quoting. Coverage is intentionally broad across the major
@@ -186,7 +361,9 @@ export const SAMPLE_PRODUCTS: Product[] = [
     compatibleAccessories: ['acc-axis-t91', 'acc-axis-t94', 'acc-axis-tg6', 'acc-axis-tp01', 'acc-jb-4x4'],
     compatibleVMS: ['Genetec', 'Milestone', 'Axis Camera Station', 'Eagle Eye'],
     warrantyYears: 5, recommended: true,
-    notes: 'Top-pick fixed bullet for general outdoor coverage.' },
+    requiresLicense: true, defaultLicenseId: 'lic-axis-acs-pro-5yr',
+    recommendedMountId: 'acc-axis-t91',
+    notes: 'Top pick fixed bullet for general outdoor coverage.' },
   { id: 'p-axis-p1465', manufacturer: 'Axis', model: 'P1465-LE',
     category: 'camera', subcategory: 'bullet', cameraType: 'bullet',
     deviceType: 'cam.bullet', techModels: ['on_prem', 'hybrid'],
@@ -247,7 +424,9 @@ export const SAMPLE_PRODUCTS: Product[] = [
     resolution: '4K', indoorOutdoor: 'outdoor', vandalRating: 'IK10', ipRating: 'IP66',
     poeClass: 4, powerDrawWatts: 14, mounts: ['wall', 'pole'],
     compatibleAccessories: ['acc-hanwha-mwd', 'acc-hanwha-mpl'],
-    warrantyYears: 5 },
+    warrantyYears: 5,
+    requiresLicense: true, defaultLicenseId: 'lic-milestone-xprotect',
+    recommendedMountId: 'acc-hanwha-mwd' },
   { id: 'p-hanwha-xnd-9082', manufacturer: 'Hanwha', model: 'XND-9082RF',
     category: 'camera', subcategory: 'dome', cameraType: 'dome', deviceType: 'cam.dome',
     techModels: ['on_prem', 'hybrid'], msrp: 1399, dealerCost: 909, laborUnits: 1.75,
@@ -631,16 +810,25 @@ export const SAMPLE_PRODUCTS: Product[] = [
     msrp: 22, dealerCost: 14 },
   { id: 'acc-axis-t91', manufacturer: 'Axis', model: 'T91 wall arm',
     category: 'accessory', subcategory: 'wall-mount', techModels: ['cloud', 'on_prem', 'hybrid'],
-    msrp: 65, dealerCost: 42 },
+    msrp: 65, dealerCost: 42,
+    // Bullet + dome only. T91 supports turret cameras in practice but
+    // no turret SKU in the seed currently lists it in compatibleAccessories,
+    // and DVA.3 will intersect `mountsForDeviceType(t)` with the host's
+    // declared compatibleAccessories. Adding turret here would surface
+    // a fix path the host vendor never validated.
+    mountForDeviceTypes: ['cam.bullet', 'cam.dome'] },
   { id: 'acc-axis-t94', manufacturer: 'Axis', model: 'T94 pole adapter',
     category: 'accessory', subcategory: 'pole-mount', techModels: ['cloud', 'on_prem', 'hybrid'],
-    msrp: 95, dealerCost: 62 },
+    msrp: 95, dealerCost: 62,
+    mountForDeviceTypes: ['cam.bullet', 'cam.dome'] },
   { id: 'acc-axis-tg6', manufacturer: 'Axis', model: 'TG6 corner adapter',
     category: 'accessory', subcategory: 'corner-mount', techModels: ['cloud', 'on_prem', 'hybrid'],
-    msrp: 85, dealerCost: 55 },
+    msrp: 85, dealerCost: 55,
+    mountForDeviceTypes: ['cam.bullet'] },
   { id: 'acc-axis-tp01', manufacturer: 'Axis', model: 'TP01 parapet mount',
     category: 'accessory', subcategory: 'parapet-mount', techModels: ['cloud', 'on_prem', 'hybrid'],
-    msrp: 110, dealerCost: 72 },
+    msrp: 110, dealerCost: 72,
+    mountForDeviceTypes: ['cam.bullet'] },
   { id: 'acc-axis-tp1', manufacturer: 'Axis', model: 'TP1 ceiling plate',
     category: 'accessory', techModels: ['cloud', 'on_prem', 'hybrid'],
     msrp: 35, dealerCost: 23 },
@@ -649,16 +837,20 @@ export const SAMPLE_PRODUCTS: Product[] = [
     msrp: 45, dealerCost: 29 },
   { id: 'acc-hanwha-mwd', manufacturer: 'Hanwha', model: 'MWD wall mount',
     category: 'accessory', subcategory: 'wall-mount', techModels: ['cloud', 'on_prem', 'hybrid'],
-    msrp: 55, dealerCost: 36 },
+    msrp: 55, dealerCost: 36,
+    mountForDeviceTypes: ['cam.bullet', 'cam.dome'] },
   { id: 'acc-hanwha-mpl', manufacturer: 'Hanwha', model: 'MPL pole adapter',
     category: 'accessory', subcategory: 'pole-mount', techModels: ['cloud', 'on_prem', 'hybrid'],
-    msrp: 90, dealerCost: 58 },
+    msrp: 90, dealerCost: 58,
+    mountForDeviceTypes: ['cam.bullet'] },
   { id: 'acc-verkada-cb-wall', manufacturer: 'Verkada', model: 'CB wall mount',
     category: 'accessory', subcategory: 'wall-mount', techModels: ['cloud', 'hybrid'],
-    msrp: 75, dealerCost: 53 },
+    msrp: 75, dealerCost: 53,
+    mountForDeviceTypes: ['cam.bullet', 'cam.dome'] },
   { id: 'acc-verkada-cb-pole', manufacturer: 'Verkada', model: 'CB pole mount',
     category: 'accessory', subcategory: 'pole-mount', techModels: ['cloud', 'hybrid'],
-    msrp: 120, dealerCost: 84 },
+    msrp: 120, dealerCost: 84,
+    mountForDeviceTypes: ['cam.bullet', 'cam.dome'] },
   { id: 'acc-jb-4x4', manufacturer: 'Universal', model: '4×4 weatherproof J-box',
     category: 'accessory', techModels: ['cloud', 'on_prem', 'hybrid'],
     msrp: 25, dealerCost: 16 },
@@ -670,14 +862,17 @@ export const SAMPLE_PRODUCTS: Product[] = [
     model: 'C9300-48P', category: 'switch', subcategory: 'poe-switch',
     deviceType: 'net.switch', techModels: ['on_prem', 'hybrid'],
     msrp: 7295, dealerCost: 4742, laborUnits: 3.0, ndaa: true, recommended: true,
-    notes: '48-port PoE+ access switch. 740W PoE budget.' },
+    portCount: 48, poePortCount: 48, poeBudgetWatts: 740,
+    notes: '48 port PoE+ access switch. 740W PoE budget.' },
   { id: 'p-cisco-c9300-24p', manufacturer: 'Cisco', model: 'C9300-24P',
     category: 'switch', subcategory: 'poe-switch', deviceType: 'net.switch',
-    techModels: ['on_prem', 'hybrid'], msrp: 4995, dealerCost: 3247, laborUnits: 2.5, ndaa: true },
+    techModels: ['on_prem', 'hybrid'], msrp: 4995, dealerCost: 3247, laborUnits: 2.5, ndaa: true,
+    portCount: 24, poePortCount: 24, poeBudgetWatts: 445 },
   { id: 'p-meraki-ms355-48x', manufacturer: 'Meraki', model: 'MS355-48X2',
     category: 'switch', subcategory: 'poe-switch', deviceType: 'net.switch',
     techModels: ['cloud', 'hybrid'], msrp: 8995, dealerCost: 5847, laborUnits: 3.0, ndaa: true,
-    notes: '48-port multigig PoE++. Cloud-managed.' },
+    portCount: 48, poePortCount: 48, poeBudgetWatts: 740,
+    notes: '48 port multigig PoE++. Cloud managed.' },
   { id: 'p-cisco-c9166', manufacturer: 'Cisco', model: 'C9166',
     category: 'access-point', subcategory: 'wifi6e', deviceType: 'net.ap',
     techModels: ['cloud', 'on_prem', 'hybrid'], msrp: 1245, dealerCost: 809, laborUnits: 1.5, ndaa: true },
@@ -687,20 +882,24 @@ export const SAMPLE_PRODUCTS: Product[] = [
     notes: 'Wi-Fi 6E · cloud-managed.' },
   { id: 'p-aruba-cx-6300', manufacturer: 'HPE Aruba', model: 'CX 6300 48-port',
     category: 'switch', subcategory: 'poe-switch', deviceType: 'net.switch',
-    techModels: ['on_prem', 'hybrid'], msrp: 6295, dealerCost: 4092, laborUnits: 3.0, ndaa: true },
+    techModels: ['on_prem', 'hybrid'], msrp: 6295, dealerCost: 4092, laborUnits: 3.0, ndaa: true,
+    portCount: 48, poePortCount: 48, poeBudgetWatts: 1440 },
   { id: 'p-aruba-2930f', manufacturer: 'HPE Aruba', model: '2930F 48-port',
     category: 'switch', subcategory: 'access-switch', deviceType: 'net.switch',
-    techModels: ['on_prem', 'hybrid'], msrp: 3495, dealerCost: 2272, laborUnits: 2.5, ndaa: true },
+    techModels: ['on_prem', 'hybrid'], msrp: 3495, dealerCost: 2272, laborUnits: 2.5, ndaa: true,
+    portCount: 48, poePortCount: 24, poeBudgetWatts: 370 },
   { id: 'p-aruba-ap-635', manufacturer: 'HPE Aruba', model: 'AP-635',
     category: 'access-point', subcategory: 'wifi6e', deviceType: 'net.ap',
     techModels: ['on_prem', 'hybrid'], msrp: 1295, dealerCost: 842, laborUnits: 1.5, ndaa: true },
   { id: 'p-ruckus-icx-7150', manufacturer: 'Ruckus', model: 'ICX 7150-48P',
     category: 'switch', subcategory: 'poe-switch', deviceType: 'net.switch',
-    techModels: ['on_prem', 'hybrid'], msrp: 4495, dealerCost: 2922, laborUnits: 2.5, ndaa: true },
+    techModels: ['on_prem', 'hybrid'], msrp: 4495, dealerCost: 2922, laborUnits: 2.5, ndaa: true,
+    portCount: 48, poePortCount: 48, poeBudgetWatts: 740 },
   { id: 'p-ubnt-usw-pro-48', manufacturer: 'Ubiquiti', model: 'USW-Pro-48-PoE',
     category: 'switch', subcategory: 'poe-switch', deviceType: 'net.switch',
     techModels: ['hybrid', 'cloud'], msrp: 999, dealerCost: 699, laborUnits: 2.0, ndaa: true,
-    recommended: true, notes: '48-port Gen2 PoE+ · UniFi managed.' },
+    recommended: true, portCount: 48, poePortCount: 40, poeBudgetWatts: 600,
+    notes: '48 port Gen2 PoE+ · UniFi managed.' },
   { id: 'p-ubnt-airfiber60', manufacturer: 'Ubiquiti', model: 'airFiber 60',
     category: 'bridge', deviceType: 'net.bridge', techModels: ['hybrid', 'on_prem'],
     msrp: 549, dealerCost: 384, laborUnits: 2.5, ndaa: true,
@@ -711,10 +910,12 @@ export const SAMPLE_PRODUCTS: Product[] = [
   { id: 'p-netgear-gsm4248px', manufacturer: 'Netgear', model: 'GSM4248PX-100NES',
     category: 'switch', subcategory: 'poe-switch', deviceType: 'net.switch',
     techModels: ['on_prem', 'hybrid'], msrp: 2495, dealerCost: 1622, laborUnits: 2.5, ndaa: true,
-    notes: '48-port 2.5G multigig PoE+.' },
+    portCount: 48, poePortCount: 48, poeBudgetWatts: 1440,
+    notes: '48 port 2.5G multigig PoE+.' },
   { id: 'p-juniper-ex4300', manufacturer: 'Juniper', model: 'EX4300-48P',
     category: 'switch', subcategory: 'core-switch', deviceType: 'net.switch',
-    techModels: ['on_prem', 'hybrid'], msrp: 8495, dealerCost: 5522, laborUnits: 4.0, ndaa: true },
+    techModels: ['on_prem', 'hybrid'], msrp: 8495, dealerCost: 5522, laborUnits: 4.0, ndaa: true,
+    portCount: 48, poePortCount: 48, poeBudgetWatts: 900 },
   { id: 'p-fortinet-100f', manufacturer: 'Fortinet', model: 'FortiGate 100F',
     category: 'firewall', deviceType: 'net.firewall', techModels: ['on_prem', 'hybrid'],
     msrp: 4895, dealerCost: 3182, laborUnits: 3.5, ndaa: true,
@@ -734,10 +935,10 @@ export const SAMPLE_PRODUCTS: Product[] = [
     msrp: 295, dealerCost: 192, laborUnits: 1.5 },
   { id: 'p-belden-cat6a', manufacturer: 'Belden', model: 'Cat6A · 10X8P (1000 ft)',
     category: 'cable', subcategory: 'cat6a', techModels: ['cloud', 'on_prem', 'hybrid'],
-    msrp: 780, dealerCost: 507 },
+    msrp: 780, dealerCost: 507, maxCableRunFt: 328 },
   { id: 'p-commscope-fiber-mm', manufacturer: 'CommScope', model: 'Multimode OM4 fiber',
     category: 'cable', subcategory: 'fiber-mm', techModels: ['cloud', 'on_prem', 'hybrid'],
-    msrp: 1650, dealerCost: 1072 },
+    msrp: 1650, dealerCost: 1072, maxCableRunFt: 1300 },
   { id: 'p-apc-smt-3000', manufacturer: 'APC', model: 'Smart-UPS 3000',
     category: 'ups', deviceType: 'pwr.ups', techModels: ['cloud', 'on_prem', 'hybrid'],
     msrp: 1620, dealerCost: 1053, laborUnits: 1.5, ndaa: true, recommended: true,
@@ -909,6 +1110,75 @@ export const SAMPLE_PRODUCTS: Product[] = [
   { id: 'p-msa-altair', manufacturer: 'MSA', model: 'Altair 4XR multi-gas',
     category: 'gas', deviceType: 'sen.gas', techModels: ['cloud', 'on_prem', 'hybrid'],
     msrp: 595, dealerCost: 387 },
+
+  // ════════════════════════════════════════════════════════════════════
+  // LICENSES — DV Assist Phase 1 seed. Per-camera and per-door VMS /
+  // access-control licenses. The rules engine surfaces a finding when a
+  // device with `requiresLicense: true` has no license accessory in its
+  // accessory list; the Action-mode "Add license" fix applies one of
+  // these SKUs. Real industry products, sample retail pricing — verify
+  // against a current distributor list before quoting.
+  // ════════════════════════════════════════════════════════════════════
+  // Axis Camera Station Pro — per camera, Axis only (plus a small
+  // ONVIF allowlist not represented in the seed yet). Term based.
+  { id: 'lic-axis-acs-pro-3yr', manufacturer: 'Axis', productLine: 'Camera Station Pro',
+    model: 'ACS Pro Universal · 3 yr', category: 'license',
+    techModels: ['on_prem', 'hybrid'], msrp: 285, dealerCost: 185,
+    licenseType: 'recording', licenseTermYears: 3,
+    coversCategories: ['camera'], coversManufacturers: ['Axis'],
+    notes: '3 yr ACS Pro per camera license. Axis cameras only.' },
+  { id: 'lic-axis-acs-pro-5yr', manufacturer: 'Axis', model: 'ACS Pro Universal · 5 yr',
+    category: 'license', techModels: ['on_prem', 'hybrid'],
+    msrp: 425, dealerCost: 276,
+    licenseType: 'recording', licenseTermYears: 5,
+    coversCategories: ['camera'], coversManufacturers: ['Axis'],
+    notes: '5 yr ACS Pro per camera license. Axis cameras only.' },
+
+  // Genetec Security Center — per-camera, multi-term family.
+  { id: 'lic-genetec-sc-camera', manufacturer: 'Genetec', productLine: 'Security Center',
+    model: 'Omnicast per camera', category: 'license', techModels: ['on_prem', 'hybrid'],
+    msrp: 295, dealerCost: 192,
+    licenseType: 'recording', licenseTermOptions: [1, 3, 5],
+    coversCategories: ['camera'], recommended: true,
+    notes: 'Per camera VMS connection license. Term selected at order time.' },
+
+  // Milestone XProtect — per-camera, term based.
+  { id: 'lic-milestone-xprotect', manufacturer: 'Milestone', model: 'XProtect Express+',
+    category: 'license', techModels: ['on_prem', 'hybrid'],
+    msrp: 145, dealerCost: 94,
+    licenseType: 'recording', licenseTermOptions: [1, 3, 5],
+    coversCategories: ['camera'],
+    notes: 'XProtect per device license with Care Plus maintenance.' },
+
+  // Eagle Eye Cloud VMS — per camera per year.
+  { id: 'lic-eagleeye-cloud-1yr', manufacturer: 'Eagle Eye Networks', model: 'Cloud VMS · 1 yr',
+    category: 'license', techModels: ['cloud', 'hybrid'],
+    msrp: 240, dealerCost: 168,
+    licenseType: 'cloud-vms', licenseTermYears: 1,
+    coversCategories: ['camera'],
+    notes: 'Cloud VMS subscription per camera. 30 day retention.' },
+
+  // Avigilon ACC — per-camera enterprise license.
+  { id: 'lic-avigilon-acc-ent', manufacturer: 'Avigilon', model: 'ACC Enterprise · per camera',
+    category: 'license', techModels: ['on_prem', 'hybrid'],
+    msrp: 395, dealerCost: 257,
+    licenseType: 'recording', licenseTermOptions: [3, 5],
+    coversCategories: ['camera'],
+    notes: 'ACC Enterprise channel license with analytics.' },
+
+  // HID Mercury / OnGuard per-door access control.
+  { id: 'lic-lenel-onguard-door', manufacturer: 'LenelS2', model: 'OnGuard · per reader',
+    category: 'license', techModels: ['on_prem', 'hybrid'],
+    msrp: 175, dealerCost: 114,
+    licenseType: 'access-control', licenseTermOptions: [1, 3],
+    coversCategories: ['reader', 'controller', 'door'],
+    notes: 'OnGuard per reader license. Card holder + cred features.' },
+  { id: 'lic-genetec-synergis', manufacturer: 'Genetec', model: 'Synergis · per reader',
+    category: 'license', techModels: ['on_prem', 'hybrid'],
+    msrp: 195, dealerCost: 127,
+    licenseType: 'access-control', licenseTermOptions: [1, 3, 5],
+    coversCategories: ['reader', 'controller', 'door'],
+    notes: 'Synergis Cloud Link per reader license.' },
 
   // ════════════════════════════════════════════════════════════════════
   // INFRASTRUCTURE PLACEABLES — generic doors/walls/gates/etc.
