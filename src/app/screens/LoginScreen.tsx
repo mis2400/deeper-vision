@@ -1,81 +1,153 @@
-// LoginScreen — Phase 4A.
-// Sign in / Create account / Forgot password flows with SSO buttons.
-// No real auth backend; persistence is local (writes the operator's
-// email + name into userPrefs so the rest of the app reads it).
-// Every backend gap is honest about what works today.
+// LoginScreen — Backend Phase 1A · BF1A.4 (real Supabase Auth).
+//
+// Email + password sign in, sign up, and password reset flows backed
+// by Supabase Auth. Honest states throughout: real Supabase errors
+// surfaced verbatim, real loading on every async call, real session
+// (persistSession + autoRefreshToken on the client mean refresh
+// keeps the operator signed in).
+//
+// On sign up: Supabase fires the on_auth_user_created trigger which
+// inserts the matching profiles row. No client side profile write
+// needed.
+//
+// Honest deferrals — these affordances ARE NOT rendered today
+// because they would require backend work that hasn't landed:
+//   - SSO (Google / Microsoft / SAML): hidden until OAuth providers
+//     are configured in Supabase and tested end to end. Adding a
+//     fake button that toasts "saved locally" violates the honesty
+//     contract.
+//   - Public demo one-click: hidden. The demo credentials don't
+//     correspond to a real Supabase user. Reviewers sign up like
+//     any other operator.
+//   - Forgot password: hidden until the SMTP provider is wired
+//     (Phase 1B). Supabase's resetPasswordForEmail returns 200
+//     even when no email gets sent, so the user would see a
+//     success toast for an email that never arrives. That's worse
+//     than not offering it.
+//
+// Post sign in routing: navigate to /dashboard. BF1A.6 layers the
+// org gate on top — a user with no organization gets routed to the
+// org create / join flow first.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '../components/Button';
 import { BrandLogo } from '../components/BrandLogo';
-import { Mail, Lock, ArrowRight, Sparkles, User as UserIcon, KeyRound, AlertCircle } from 'lucide-react';
-import { useProjectStore } from '../store/projectStore';
-import { toast } from 'sonner';
+import { Mail, Lock, ArrowRight, User as UserIcon, AlertCircle, MailCheck } from 'lucide-react';
+import { supabase, supabaseConfigured } from '../lib/supabaseClient';
 
-/** Demo credentials advertised publicly on the login page so any
- *  reviewer (human or AI browser) can step in without friction. Any
- *  other input also works — the form has no real auth backend yet. */
-const DEMO_EMAIL    = 'demo@deepervision.ai';
-const DEMO_PASSWORD = 'Demo123!';
-
-type Mode = 'sign-in' | 'create-account' | 'forgot';
+type Mode = 'sign-in' | 'create-account';
 
 export function LoginScreen() {
   const navigate = useNavigate();
-  const setUserPrefs = useProjectStore((s) => s.setUserPrefs);
 
   const [mode, setMode] = useState<Mode>('sign-in');
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading]   = useState(false);
+  // After sign up when email confirmation is required, the form
+  // flips to a "Check your email" state so the operator doesn't
+  // think they're signed in.
+  const [signedUpAwaitingConfirm, setSignedUpAwaitingConfirm] = useState<string | null>(null);
+
+  // If the operator is already signed in, skip the login form entirely.
+  // Handles the refresh on an authenticated session.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      if (data.session) navigate('/dashboard', { replace: true });
+    });
+    return () => { cancelled = true; };
+  }, [navigate]);
 
   const validEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
-  const onSignIn = (e: React.FormEvent) => {
+  const onSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!validEmail(email)) return setError('Enter a valid work email.');
-    if (password.length < 6) return setError('Password must be at least 6 characters.');
-    // Local-only "sign in": write the email into userPrefs so the
-    // rest of the app reads the operator's identity. Real session
-    // tokens land with the auth backend.
-    setUserPrefs({ email });
-    toast.success('Signed in.', { duration: 2000 });
-    navigate('/dashboard');
+    if (!supabaseConfigured) {
+      setError('Auth is not configured on this build. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
+      return;
+    }
+    if (!validEmail(email)) { setError('Enter a valid email.'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    setLoading(true);
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    navigate('/dashboard', { replace: true });
   };
 
-  const onCreate = (e: React.FormEvent) => {
+  const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!fullName.trim()) return setError('Tell us your name.');
-    if (!validEmail(email)) return setError('Enter a valid work email.');
-    if (password.length < 8) return setError('Password must be at least 8 characters.');
-    setUserPrefs({ email, fullName: fullName.trim() });
-    toast.success(`Account created for ${email}. Real provisioning + verification lands with the auth backend.`, { duration: 4000 });
-    navigate('/dashboard');
+    if (!supabaseConfigured) {
+      setError('Auth is not configured on this build. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
+      return;
+    }
+    if (!fullName.trim())     { setError('Tell us your name.'); return; }
+    if (!validEmail(email))   { setError('Enter a valid email.'); return; }
+    if (password.length < 8)  { setError('Password must be at least 8 characters.'); return; }
+    setLoading(true);
+    const { data, error: err } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { display_name: fullName.trim() },
+      },
+    });
+    setLoading(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    // Two possible Supabase outcomes:
+    //   1. Email confirmation required: session is null, user.confirmed_at
+    //      is null. Show "Check your email" and stay on the form.
+    //   2. Auto confirm on: session is present, user is fully active.
+    //      Navigate straight in.
+    if (data.session) {
+      navigate('/dashboard', { replace: true });
+      return;
+    }
+    setSignedUpAwaitingConfirm(email);
   };
 
-  const onForgot = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (!validEmail(email)) return setError('Enter the email on your account.');
-    toast.success(`Reset link queued for ${email}. Real delivery lands with the auth backend.`, { duration: 4500 });
-    setMode('sign-in');
-  };
-
-  const fillDemo = () => {
-    setEmail(DEMO_EMAIL);
-    setPassword(DEMO_PASSWORD);
-    setUserPrefs({ email: DEMO_EMAIL, fullName: 'Demo operator' });
-    setTimeout(() => navigate('/dashboard'), 60);
-  };
-
-  const onSso = (provider: 'google' | 'microsoft' | 'saml') => {
-    const label = provider === 'google' ? 'Google' : provider === 'microsoft' ? 'Microsoft' : 'your IdP';
-    toast.success(`${label} sign in saved locally. Real OAuth lands with the auth backend.`, { duration: 3500 });
-    navigate('/dashboard');
-  };
+  // ── "Check your email" state after sign up ────────────────────────
+  if (signedUpAwaitingConfirm) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-6 py-10">
+        <div className="w-full max-w-sm text-center">
+          <BrandLogo variant="full" theme="dark" height={28} />
+          <div className="mt-8 inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+            <MailCheck className="w-6 h-6 text-primary" />
+          </div>
+          <h1 className="mt-4 text-lg font-medium">Check your email</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            We sent a confirmation link to <span className="text-foreground">{signedUpAwaitingConfirm}</span>. Click it to activate your account, then sign in.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setSignedUpAwaitingConfirm(null);
+              setMode('sign-in');
+              setError(null);
+              setPassword('');
+            }}
+            className="mt-6 text-sm text-primary hover:underline"
+          >
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -86,48 +158,28 @@ export function LoginScreen() {
             <p className="mt-4 text-sm text-muted-foreground">Engineering OS for physical security.</p>
           </div>
 
-          {/* Public-demo affordance. */}
-          {mode !== 'forgot' && (
+          {/* Sign in / Create account tabs */}
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden text-[12px] mb-4">
             <button
               type="button"
-              onClick={fillDemo}
-              className="w-full mb-5 px-3 py-2.5 rounded-md border border-primary/40 bg-primary/5 hover:bg-primary/10 text-left transition-colors group"
-              data-testid="login-demo"
+              onClick={() => { setMode('sign-in'); setError(null); }}
+              className={`px-3 py-1.5 transition-colors ${mode === 'sign-in' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary/40 text-muted-foreground'}`}
+              data-testid="login-tab-signin"
             >
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-3.5 h-3.5 text-primary" />
-                <span className="text-xs font-medium text-primary">Try the demo · one click</span>
-                <ArrowRight className="w-3.5 h-3.5 text-primary ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-              <div className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground font-mono">
-                <span>email</span>    <span className="text-foreground">{DEMO_EMAIL}</span>
-                <span>password</span> <span className="text-foreground">{DEMO_PASSWORD}</span>
-              </div>
+              Sign in
             </button>
-          )}
-
-          {/* Sign in / Create account tabs */}
-          {mode !== 'forgot' && (
-            <div className="inline-flex rounded-md border border-border bg-background overflow-hidden text-[12px] mb-4">
-              <button
-                onClick={() => { setMode('sign-in'); setError(null); }}
-                className={`px-3 py-1.5 transition-colors ${mode === 'sign-in' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary/40 text-muted-foreground'}`}
-                data-testid="login-tab-signin"
-              >
-                Sign in
-              </button>
-              <button
-                onClick={() => { setMode('create-account'); setError(null); }}
-                className={`px-3 py-1.5 transition-colors ${mode === 'create-account' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary/40 text-muted-foreground'}`}
-                data-testid="login-tab-create"
-              >
-                Create account
-              </button>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={() => { setMode('create-account'); setError(null); }}
+              className={`px-3 py-1.5 transition-colors ${mode === 'create-account' ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary/40 text-muted-foreground'}`}
+              data-testid="login-tab-create"
+            >
+              Create account
+            </button>
+          </div>
 
           {error && (
-            <div className="mb-3 inline-flex items-start gap-1.5 text-[11px] text-rose-600" role="alert">
+            <div className="mb-3 inline-flex items-start gap-1.5 text-[11px] text-rose-600" role="alert" data-testid="login-error">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               {error}
             </div>
@@ -137,11 +189,9 @@ export function LoginScreen() {
             <form onSubmit={onSignIn} className="space-y-3">
               <FieldEmail value={email} onChange={setEmail} />
               <FieldPassword value={password} onChange={setPassword} />
-              <div className="flex items-center justify-between">
-                <button type="button" onClick={() => { setError(null); setMode('forgot'); }} className="text-[11px] text-primary hover:underline" data-testid="login-forgot">Forgot password?</button>
-              </div>
-              <Button type="submit" className="w-full">Sign in <ArrowRight className="w-4 h-4 ml-1" /></Button>
-              <SsoRow onSso={onSso} />
+              <Button type="submit" className="w-full" disabled={loading} data-testid="login-submit">
+                {loading ? 'Signing in...' : <>Sign in <ArrowRight className="w-4 h-4 ml-1" /></>}
+              </Button>
               <p className="text-[11px] text-muted-foreground text-center">
                 No account? <button type="button" onClick={() => { setError(null); setMode('create-account'); }} className="text-primary hover:underline">Create one</button>
               </p>
@@ -153,33 +203,22 @@ export function LoginScreen() {
               <FieldName value={fullName} onChange={setFullName} />
               <FieldEmail value={email} onChange={setEmail} />
               <FieldPassword value={password} onChange={setPassword} hint="At least 8 characters." />
-              <Button type="submit" className="w-full">Create account <ArrowRight className="w-4 h-4 ml-1" /></Button>
-              <SsoRow onSso={onSso} />
+              <Button type="submit" className="w-full" disabled={loading} data-testid="login-submit">
+                {loading ? 'Creating...' : <>Create account <ArrowRight className="w-4 h-4 ml-1" /></>}
+              </Button>
               <p className="text-[11px] text-muted-foreground text-center">
-                Already on DeeperVision? <button type="button" onClick={() => { setError(null); setMode('sign-in'); }} className="text-primary hover:underline">Sign in</button>
+                Already have an account? <button type="button" onClick={() => { setError(null); setMode('sign-in'); }} className="text-primary hover:underline">Sign in</button>
               </p>
             </form>
           )}
 
-          {mode === 'forgot' && (
-            <form onSubmit={onForgot} className="space-y-3">
-              <div className="mb-1">
-                <div className="text-sm font-medium">Reset your password</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">Enter your account email. We send a reset link with one-time use.</div>
-              </div>
-              <FieldEmail value={email} onChange={setEmail} />
-              <Button type="submit" className="w-full"><KeyRound className="w-3.5 h-3.5 mr-1" />Send reset link</Button>
-              <button type="button" onClick={() => { setError(null); setMode('sign-in'); }} className="block w-full text-[11px] text-muted-foreground hover:text-foreground text-center">Back to sign in</button>
-            </form>
-          )}
-
           <div className="mt-10 text-[10px] text-muted-foreground/80 text-center leading-relaxed">
-            By continuing you agree to our terms and the privacy notice. Local persistence only until the auth backend ships.
+            By continuing you agree to our terms and the privacy notice.
           </div>
         </div>
       </div>
 
-      {/* Brand panel — kept from the prior login. */}
+      {/* Brand panel — visual only. */}
       <div className="hidden lg:flex flex-1 border-l border-border items-center justify-center relative overflow-hidden">
         <svg className="absolute inset-0 w-full h-full opacity-40" preserveAspectRatio="xMidYMid slice" viewBox="0 0 800 800">
           <defs>
@@ -208,7 +247,7 @@ export function LoginScreen() {
 function FieldEmail({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div>
-      <label className="text-xs text-muted-foreground">Work email</label>
+      <label className="text-xs text-muted-foreground">Email</label>
       <div className="mt-1 relative">
         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
@@ -216,6 +255,7 @@ function FieldEmail({ value, onChange }: { value: string; onChange: (v: string) 
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="you@firm.com"
+          autoComplete="email"
           className="w-full bg-input-background border border-input-border rounded-md pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-primary"
           data-testid="login-email"
         />
@@ -236,6 +276,7 @@ function FieldPassword({ value, onChange, hint }: { value: string; onChange: (v:
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="••••••••"
+          autoComplete={hint ? 'new-password' : 'current-password'}
           className="w-full bg-input-background border border-input-border rounded-md pl-9 pr-10 py-2 text-sm focus:outline-none focus:border-primary"
           data-testid="login-password"
         />
@@ -263,56 +304,11 @@ function FieldName({ value, onChange }: { value: string; onChange: (v: string) =
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Jamie Rivera"
+          autoComplete="name"
           className="w-full bg-input-background border border-input-border rounded-md pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-primary"
           data-testid="login-fullname"
         />
       </div>
     </div>
-  );
-}
-
-function SsoRow({ onSso }: { onSso: (p: 'google' | 'microsoft' | 'saml') => void }) {
-  return (
-    <>
-      <div className="relative my-3">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
-        <div className="relative flex justify-center text-[10px] uppercase tracking-wider"><span className="bg-background px-2 text-muted-foreground">or continue with</span></div>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <Button type="button" variant="outline" onClick={() => onSso('google')} data-testid="login-sso-google">
-          <GoogleGlyph className="w-3.5 h-3.5 mr-1.5" />Google
-        </Button>
-        <Button type="button" variant="outline" onClick={() => onSso('microsoft')} data-testid="login-sso-microsoft">
-          <MicrosoftGlyph className="w-3.5 h-3.5 mr-1.5" />Microsoft
-        </Button>
-      </div>
-      <Button type="button" variant="outline" className="w-full mt-2" onClick={() => onSso('saml')} data-testid="login-sso-saml">
-        SAML SSO
-      </Button>
-    </>
-  );
-}
-
-// Inline SVG glyphs so we don't ship a logo bitmap. Recognizable
-// without being a trademarked asset.
-function GoogleGlyph({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 18 18" className={className} aria-hidden>
-      <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.17-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.79 2.72v2.26h2.9c1.7-1.56 2.69-3.87 2.69-6.62z" />
-      <path fill="#34A853" d="M9 18c2.43 0 4.47-.81 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z" />
-      <path fill="#FBBC04" d="M3.95 10.7A5.41 5.41 0 0 1 3.66 9c0-.59.1-1.16.29-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.33z" />
-      <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58A9 9 0 0 0 9 0 9 9 0 0 0 .96 4.97l2.99 2.33C4.66 5.17 6.65 3.58 9 3.58z" />
-    </svg>
-  );
-}
-
-function MicrosoftGlyph({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} aria-hidden>
-      <rect x="0" y="0" width="7.5" height="7.5" fill="#F35325" />
-      <rect x="8.5" y="0" width="7.5" height="7.5" fill="#81BC06" />
-      <rect x="0" y="8.5" width="7.5" height="7.5" fill="#05A6F0" />
-      <rect x="8.5" y="8.5" width="7.5" height="7.5" fill="#FFBA08" />
-    </svg>
   );
 }
