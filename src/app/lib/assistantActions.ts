@@ -109,6 +109,56 @@ export function executeAction(action: AiAction, projectId: string): ApplyResult 
         // No undo for navigation — handled by the back button.
       };
     }
+
+    // ── DV Assist Phase 1 (DVA.6) ─────────────────────────────────
+    // Three shapes share the same mutation: append a product id to
+    // the target device's `accessories` array. The undo restores the
+    // exact prior array. Same executor path, distinct AiAction kinds
+    // so the conversation thread / panel can show different labels
+    // ("Added license", "Added mount", "Added accessory").
+    case 'add-license':
+    case 'add-mount':
+    case 'add-accessory': {
+      const dev = store.devices[action.deviceId];
+      if (!dev) return refused(`Cannot add: device ${action.deviceId} not found.`);
+      const prevAccessories = dev.accessories ? [...dev.accessories] : [];
+      if (prevAccessories.includes(action.productId)) {
+        return refused(`${action.label} already attached.`);
+      }
+      const nextAccessories = [...prevAccessories, action.productId];
+      store.updateDevice(action.deviceId, { accessories: nextAccessories }, { log: false });
+      const verb = action.kind === 'add-license' ? 'license'
+                 : action.kind === 'add-mount'   ? 'mount'
+                 :                                  'accessory';
+      return {
+        result: `Added ${verb}: ${action.label}.`,
+        undoPayload: {
+          kind: 'restore-device-accessories',
+          deviceId: action.deviceId,
+          prevAccessories,
+        },
+      };
+    }
+
+    case 'select-and-edit': {
+      // Manual fix path. The panel sets `assistantContext.selectionId`
+      // before calling executeAction so the canvas (or wherever the
+      // operator lands) can scope to the object. No mutation, no
+      // undo — this is a navigation cue, not a change.
+      store.setAssistantContext({
+        surface: 'canvas',
+        projectId,
+        selectionKind: action.objectKind === 'pathway' ? 'pathway'
+                     : action.objectKind === 'device'  ? 'device'
+                     : undefined,
+        selectionId: action.objectId,
+        selectionLabel: action.label,
+      });
+      return {
+        result: `Opened ${action.label}.`,
+        // No undoPayload — operator just opened a thing to look at it.
+      };
+    }
   }
 }
 
@@ -132,6 +182,12 @@ export function undoAction(applied: AiAppliedRecord): string | null {
     case 'remove-task':
       store.removeTask(payload.taskId);
       return 'Removed the scheduled check.';
+    case 'restore-device-accessories': {
+      const dev = store.devices[payload.deviceId];
+      if (!dev) return null;
+      store.updateDevice(payload.deviceId, { accessories: payload.prevAccessories }, { log: false });
+      return `Reverted accessories on ${payload.deviceId}.`;
+    }
     default:
       return null;
   }

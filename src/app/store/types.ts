@@ -2074,7 +2074,17 @@ export type AiAction =
   | { id: string; kind: 'assign-workflow'; label: string; refId: string; assignTo: string; hint?: string }
   | { id: string; kind: 'create-note'; label: string; body: string; hint?: string }
   | { id: string; kind: 'schedule-check'; label: string; refId: string; dueInDays: number; hint?: string }
-  | { id: string; kind: 'generate-report'; label: string; reportKind: 'engineering' | 'customer' | 'commissioning'; hint?: string };
+  | { id: string; kind: 'generate-report'; label: string; reportKind: 'engineering' | 'customer' | 'commissioning'; hint?: string }
+  // DV Assist Phase 1 (DVA.6) — design time fixes surfaced by the
+  // rules engine. Each appends a product id to the target device's
+  // accessories list; undo restores the prior list. The BOM rollup
+  // picks up the new line item automatically (SC.3 / SC.4 chain).
+  | { id: string; kind: 'add-license'; label: string; deviceId: string; productId: string; hint?: string }
+  | { id: string; kind: 'add-mount'; label: string; deviceId: string; productId: string; hint?: string }
+  | { id: string; kind: 'add-accessory'; label: string; deviceId: string; productId: string; hint?: string }
+  // Manual fix path — opens the object so the operator can resolve
+  // by hand. Records no mutation and carries no undo.
+  | { id: string; kind: 'select-and-edit'; label: string; objectId: string; objectKind: 'device' | 'pathway' | 'floor' | 'room'; hint?: string };
 
 export interface AiAppliedRecord {
   actionId: string;
