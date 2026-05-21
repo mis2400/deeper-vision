@@ -6,3 +6,12 @@ node_modules/.package-lock.json
 
 # Local Claude Code config (preview server entries, etc.) — machine-specific.
 .claude/
+
+# Environment variables — Supabase URL + publishable key + anything else
+# that lives per machine. `.env.local` carries the live Supabase project's
+# publishable key (safe in the browser at runtime via Vite's import.meta.env,
+# but never committed). The service role / secret key NEVER lands in any
+# env file in this repo.
+.env
+.env.local
+.env.*.local
