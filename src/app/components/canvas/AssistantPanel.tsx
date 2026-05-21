@@ -26,6 +26,8 @@ import {
   BULK_PRESETS, previewBulkOperation, executeBulkOperation, undoBulkOperation,
   type BulkPreset,
 } from '../../lib/bulkOperations';
+import { DesignReview } from './DesignReview';
+import { ClipboardCheck } from 'lucide-react';
 
 interface Props {
   projectId: string;
@@ -51,6 +53,7 @@ export function AssistantPanel({ projectId }: Props) {
   const mode = useProjectStore((s) => s.assistantPanelMode);
   const setMode = useProjectStore((s) => s.setAssistantPanelMode);
   const [open, setOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -79,22 +82,25 @@ export function AssistantPanel({ projectId }: Props) {
   // when the canvas is mounted. Restrained chrome per V3.9.
   if (!open) {
     return (
-      <button
-        data-testid="assistant-panel-trigger"
-        onClick={() => setOpen(true)}
-        title="Open DV Assist"
-        className="absolute bottom-3 right-3 z-40 inline-flex items-center gap-2 px-3 py-2 rounded-full bg-card border border-border shadow-md text-foreground hover:bg-secondary/40 transition-colors"
-        style={{
-          // V3.9 motion discipline: opacity + color only, no scale, no
-          // bounce. 120ms standard token.
-          transitionDuration: 'var(--motion-fast, 120ms)',
-        }}
-      >
-        <Sparkles className="w-4 h-4 text-primary" />
-        <span className="text-[12px] font-medium tracking-tight">DV Assist</span>
-        <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{MODE_LABEL[mode]}</span>
-        <ChevronUp className="w-3 h-3 text-muted-foreground" />
-      </button>
+      <>
+        <button
+          data-testid="assistant-panel-trigger"
+          onClick={() => setOpen(true)}
+          title="Open DV Assist"
+          className="absolute bottom-3 right-3 z-40 inline-flex items-center gap-2 px-3 py-2 rounded-full bg-card border border-border shadow-md text-foreground hover:bg-secondary/40 transition-colors"
+          style={{
+            // V3.9 motion discipline: opacity + color only, no scale, no
+            // bounce. 120ms standard token.
+            transitionDuration: 'var(--motion-fast, 120ms)',
+          }}
+        >
+          <Sparkles className="w-4 h-4 text-primary" />
+          <span className="text-[12px] font-medium tracking-tight">DV Assist</span>
+          <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{MODE_LABEL[mode]}</span>
+          <ChevronUp className="w-3 h-3 text-muted-foreground" />
+        </button>
+        <DesignReview projectId={projectId} open={reviewOpen} onClose={() => setReviewOpen(false)} />
+      </>
     );
   }
 
@@ -118,6 +124,14 @@ export function AssistantPanel({ projectId }: Props) {
         <Sparkles className="w-4 h-4 text-primary" />
         <span className="text-[13px] font-semibold tracking-tight text-foreground">DV Assist</span>
         <span className="ml-auto inline-flex items-center gap-1">
+          <button
+            data-testid="assistant-panel-review"
+            onClick={() => setReviewOpen(true)}
+            title="Run final design review"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors"
+          >
+            <ClipboardCheck className="w-3.5 h-3.5" />
+          </button>
           <button
             data-testid="assistant-panel-open-route"
             onClick={() => navigate(`/ai/${projectId}`)}
@@ -173,6 +187,7 @@ export function AssistantPanel({ projectId }: Props) {
           <ActionBody projectId={projectId} />
         )}
       </div>
+      <DesignReview projectId={projectId} open={reviewOpen} onClose={() => setReviewOpen(false)} />
     </div>
   );
 }
