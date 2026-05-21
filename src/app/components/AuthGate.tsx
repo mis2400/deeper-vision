@@ -1,24 +1,34 @@
 // AuthGate — Backend Phase 1A · BF1A.6.
 //
-// UX layer gate around every authenticated route. Three states:
+// UX layer gate around every authenticated route. States:
 //
-//   1. No session (signed out) -> redirect to /login.
-//   2. Session, no memberships -> redirect to /org/setup.
-//   3. Session + at least one membership -> render children.
+//   - checking     : initial async check in flight; loading frame.
+//   - no-session   : no Supabase session; bounce to /login.
+//   - no-org       : session present but zero memberships; bounce
+//                    to /org/setup.
+//   - ready        : session + at least one membership; render
+//                    children.
+//   - check-error  : membership query failed (network / transient);
+//                    render an inline retry rather than fail closed
+//                    to /login (which would loop on a flaky network).
 //
-// IMPORTANT scope note for 1A: this gate is purely a routing gate.
-// The design data behind it (projects, devices, pathways, the whole
-// Zustand store) STAYS in localStorage in 1A. The gate enforces
-// presence of a Supabase session + organization membership; it does
-// not touch any design data and does not block access to localStorage.
-// 1B will move the design data to Postgres and let RLS take over.
+// IMPORTANT scope note for Phase 1A: this gate is purely a routing
+// gate. The design data behind it (projects, devices, pathways, the
+// whole Zustand store) STAYS in localStorage. The gate enforces
+// presence of a Supabase session + an organization membership; it
+// does NOT touch any design data and does NOT block localStorage
+// access. Phase 1B moves the design data to Postgres and lets RLS
+// take over the real isolation.
 //
-// Auth state changes (sign in / sign out elsewhere in the app) flow
-// through onAuthStateChange so the gate re-evaluates without a
-// manual route push.
+// Auth state changes from elsewhere in the app (sign out via
+// AppShell, sign in in another tab) flow through onAuthStateChange
+// so the gate re-evaluates without a manual route push. SIGNED_OUT
+// renders the loading frame synchronously to avoid a one-frame
+// flash of protected content before the redirect lands.
 
-import { useEffect, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router';
+import { useCallback, useEffect, useState } from 'react';
+import { Outlet, useNavigate } from 'react-router';
+import { AlertTriangle, RotateCw } from 'lucide-react';
 import { supabase, supabaseConfigured } from '../lib/supabaseClient';
 import { fetchMyMemberships } from '../lib/orgs';
 
@@ -40,81 +50,123 @@ type GateState =
   | { kind: 'checking' }
   | { kind: 'no-session' }
   | { kind: 'no-org' }
-  | { kind: 'ready' };
+  | { kind: 'ready' }
+  | { kind: 'check-error'; message: string };
 
 export function AuthGate({ children }: Props) {
   const navigate = useNavigate();
-  const location = useLocation();
   const [state, setState] = useState<GateState>({ kind: 'checking' });
 
-  useEffect(() => {
+  const evaluate = useCallback(async (signal?: { cancelled: boolean }) => {
     if (!supabaseConfigured) {
-      // Mirror the LoginScreen's behavior — without env vars, fall
-      // through to /login which renders its own honest error.
+      if (signal?.cancelled) return;
       setState({ kind: 'no-session' });
-      navigate('/login', { replace: true, state: { from: location.pathname } });
+      navigate('/login', { replace: true, state: { from: window.location.pathname } });
       return;
     }
-
-    let cancelled = false;
-
-    const evaluate = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (cancelled) return;
-      if (!data.session) {
-        setState({ kind: 'no-session' });
-        navigate('/login', { replace: true, state: { from: location.pathname } });
+    const { data } = await supabase.auth.getSession();
+    if (signal?.cancelled) return;
+    if (!data.session) {
+      setState({ kind: 'no-session' });
+      navigate('/login', { replace: true, state: { from: window.location.pathname } });
+      return;
+    }
+    try {
+      const memberships = await fetchMyMemberships();
+      if (signal?.cancelled) return;
+      if (memberships.length === 0) {
+        setState({ kind: 'no-org' });
+        navigate('/org/setup', { replace: true, state: { from: window.location.pathname } });
         return;
       }
-      try {
-        const memberships = await fetchMyMemberships();
-        if (cancelled) return;
-        if (memberships.length === 0) {
-          setState({ kind: 'no-org' });
-          navigate('/org/setup', { replace: true, state: { from: location.pathname } });
+      setState({ kind: 'ready' });
+    } catch (e: any) {
+      // Distinguish transport / RLS errors from auth-actually-broken.
+      // We have a valid session; the membership query failed (network
+      // hiccup, transient Supabase 5xx, RLS regression). Stay on the
+      // gate and offer a retry rather than bouncing to /login, which
+      // would loop because the existing-session redirect on the login
+      // screen would push us right back here.
+      if (signal?.cancelled) return;
+      setState({ kind: 'check-error', message: e?.message ?? String(e) });
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    const signal = { cancelled: false };
+    evaluate(signal);
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (signal.cancelled) return;
+      switch (event) {
+        case 'SIGNED_OUT': {
+          // Render the loading frame synchronously to avoid a one
+          // frame flash of children mounted against a null session
+          // before the route push lands.
+          setState({ kind: 'checking' });
+          navigate('/login', { replace: true });
           return;
         }
-        setState({ kind: 'ready' });
-      } catch (e) {
-        // If the membership query errored (network, RLS misconfig),
-        // fail closed — push the user back to login rather than
-        // letting them through with an unverified org boundary.
-        // eslint-disable-next-line no-console
-        console.warn('[AuthGate] membership check failed:', e);
-        setState({ kind: 'no-session' });
-        navigate('/login', { replace: true, state: { from: location.pathname } });
+        case 'SIGNED_IN': {
+          // A user signed in (e.g. from another tab). Re-run the
+          // membership check from scratch so the gate reflects the
+          // new identity rather than the stale one.
+          setState({ kind: 'checking' });
+          evaluate(signal);
+          return;
+        }
+        case 'USER_UPDATED': {
+          // The user metadata changed (e.g. profile patch). The
+          // session is still valid; nothing to do here.
+          return;
+        }
+        // TOKEN_REFRESHED, PASSWORD_RECOVERY, INITIAL_SESSION: no op.
+        default: {
+          if (!session && state.kind === 'ready') {
+            // Defensive: if any event arrives with no session while
+            // we're rendering protected content, treat as signed out.
+            setState({ kind: 'checking' });
+            navigate('/login', { replace: true });
+          }
+          return;
+        }
       }
-    };
-
-    evaluate();
-
-    // React to sign in / sign out events from elsewhere in the app
-    // (e.g. the future sign out button in the app shell). When a
-    // user signs out, the session vanishes and we want the gate to
-    // bounce them to /login immediately.
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (cancelled) return;
-      if (event === 'SIGNED_OUT') {
-        setState({ kind: 'no-session' });
-        navigate('/login', { replace: true });
-      }
-      // SIGNED_IN and TOKEN_REFRESHED already keep the session
-      // current; re-running evaluate would just reroute to the same
-      // place. Skip them.
     });
 
     return () => {
-      cancelled = true;
+      signal.cancelled = true;
       sub.subscription.unsubscribe();
     };
-  // location.pathname intentionally omitted from deps — we don't
-  // want to re-run the whole evaluate on every internal navigation.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate]);
+    // navigate identity is stable across renders; location.pathname
+    // is read via window.location at call time so it's always fresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evaluate]);
+
+  if (state.kind === 'check-error') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-6">
+        <div className="max-w-sm text-center">
+          <div className="inline-flex w-10 h-10 rounded-full bg-amber-500/10 items-center justify-center">
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+          </div>
+          <h2 className="mt-3 text-sm font-medium">Couldn't reach your workspace</h2>
+          <p className="mt-2 text-[12px] text-muted-foreground">
+            {state.message}
+          </p>
+          <button
+            type="button"
+            onClick={() => { setState({ kind: 'checking' }); evaluate(); }}
+            className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-[12px] hover:bg-secondary/40 transition-colors"
+            data-testid="authgate-retry"
+          >
+            <RotateCw className="w-3.5 h-3.5" /> Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (state.kind !== 'ready') {
-    // Brief loading frame so the unauthenticated user doesn't see a
-    // flash of protected content before the redirect.
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <p className="text-sm text-muted-foreground">Loading...</p>

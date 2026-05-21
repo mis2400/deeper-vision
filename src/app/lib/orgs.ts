@@ -5,7 +5,6 @@
 // verbatim so the UI can surface them honestly.
 
 import { supabase } from './supabaseClient';
-import type { Session } from '@supabase/supabase-js';
 
 export interface Membership {
   organization_id: string;
@@ -48,52 +47,33 @@ export async function fetchMyMemberships(): Promise<MembershipWithOrg[]> {
   }));
 }
 
-/** Slugify a free form org name into the canonical lower-kebab-case
- *  shape we store on `organizations.slug`. Adds a short random tail
- *  so collisions are rare for orgs that happen to pick the same
- *  name. */
-export function slugify(name: string): string {
-  const base = name.toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) || 'org';
-  const tail = Math.random().toString(36).slice(2, 6);
-  return `${base}-${tail}`;
-}
-
 /** Create a new organization with the calling user as the owner.
- *  Two inserts: the org row (created_by must equal auth.uid() per
- *  RLS) then the owner membership row (the bootstrap policy allows
- *  this when the org has no existing members). */
-export async function createOrganization(session: Session, name: string): Promise<Organization> {
+ *  Delegates to the `create_organization_with_owner` SECURITY DEFINER
+ *  RPC which performs both inserts (org + owner membership) inside
+ *  one DB transaction. A failure rolls everything back — no orphan
+ *  org rows are possible from the client side. */
+export async function createOrganization(name: string): Promise<Organization> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Organization name is required.');
-  const slug = slugify(trimmed);
 
-  const { data: orgRow, error: orgErr } = await supabase
-    .from('organizations')
-    .insert({ name: trimmed, slug, created_by: session.user.id })
-    .select()
-    .single();
-  if (orgErr) throw orgErr;
-
-  const { error: memErr } = await supabase
-    .from('organization_members')
-    .insert({
-      organization_id: orgRow.id,
-      user_id: session.user.id,
-      org_role: 'owner',
-    });
-  if (memErr) {
-    // The org row was created but the membership insert failed.
-    // We can't easily roll the org back from the client (RLS would
-    // bounce the delete since the user isn't yet a member). Surface
-    // the error verbatim so the operator can recover; the followup
-    // is to retry the membership insert from the dashboard.
-    throw new Error(`Org created (id ${orgRow.id}) but owner membership insert failed: ${memErr.message}`);
+  const { data, error } = await supabase.rpc('create_organization_with_owner', {
+    org_name: trimmed,
+  });
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error('create_organization_with_owner returned no row.');
   }
-
-  return orgRow as Organization;
+  // The RPC returns id, name, slug. created_at / created_by aren't
+  // surfaced — fetch the full row so the caller has the same shape
+  // a direct insert would have returned.
+  const { id } = data[0];
+  const { data: full, error: fullErr } = await supabase
+    .from('organizations')
+    .select('id, name, slug, created_at, created_by')
+    .eq('id', id)
+    .single();
+  if (fullErr) throw fullErr;
+  return full as Organization;
 }
 
 /** Redeem an invite code via the SECURITY DEFINER RPC. Returns the

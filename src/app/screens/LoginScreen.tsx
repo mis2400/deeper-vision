@@ -53,14 +53,25 @@ export function LoginScreen() {
   const [signedUpAwaitingConfirm, setSignedUpAwaitingConfirm] = useState<string | null>(null);
 
   // If the operator is already signed in, skip the login form entirely.
-  // Handles the refresh on an authenticated session.
+  // Handles the refresh on an authenticated session AND a sign in
+  // that happens in another tab (the supabase client mirrors the
+  // session across tabs by listening to localStorage events).
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
       if (data.session) navigate('/dashboard', { replace: true });
     });
-    return () => { cancelled = true; };
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      if (event === 'SIGNED_IN' && session) {
+        navigate('/dashboard', { replace: true });
+      }
+    });
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, [navigate]);
 
   const validEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);

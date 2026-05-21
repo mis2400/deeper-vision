@@ -2,7 +2,6 @@ import { ReactNode, useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { supabase } from '../lib/supabaseClient';
 import { BrandLogo } from './BrandLogo';
-import { Button } from './Button';
 import {
   Command, Search, Settings, HelpCircle, ChevronRight, X, Check,
   User as UserIcon, Layers as LayersIcon,

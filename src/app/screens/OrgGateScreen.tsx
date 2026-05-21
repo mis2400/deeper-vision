@@ -48,6 +48,9 @@ export function OrgGateScreen() {
   // On mount: if the user is unauthenticated push them to /login.
   // If the user is authenticated AND has at least one membership,
   // push them to /dashboard. Otherwise show the create / join form.
+  // Also subscribe to onAuthStateChange so a sign out elsewhere
+  // (other tab, AppShell on a different screen) routes us away
+  // cleanly.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -70,7 +73,18 @@ export function OrgGateScreen() {
         if (!cancelled) setBootstrapping(false);
       }
     })();
-    return () => { cancelled = true; };
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (cancelled) return;
+      if (event === 'SIGNED_OUT') {
+        navigate('/login', { replace: true });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, [navigate]);
 
   const onCreate = async (e: React.FormEvent) => {
@@ -84,7 +98,7 @@ export function OrgGateScreen() {
         navigate('/login', { replace: true });
         return;
       }
-      const org = await createOrganization(data.session, orgName);
+      const org = await createOrganization(orgName);
       setCreatedOrg(org);
       // Surface the first invite code right after creation so the
       // operator can hand it to a teammate without a second screen.
