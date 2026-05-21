@@ -724,3 +724,51 @@ Closes audit #6 (camera cones using hardcoded PX_PER_FT) and the SC.6.6 blueprin
   - `DOOR_HARDWARE_PRICE` is a preview default. The Impact section footer says so explicitly; do not use the preview totals as a customer estimate without recalibrating against the integrator's pricebook.
   - Old persisted stores with the pre-fix `scalePxToFt > 1` are auto-inverted on first v5 hydrate. That is a destructive write to the user's localStorage scale — back up before the upgrade if a user has carefully calibrated scales they care about.
   - Real-cursor (human-driven) verification was not performed this pass; programmatic `MouseEvent('click')` is the strongest signal short of that. Recommend a Playwright run before each release.
+
+## Backend Phase 1A — Supabase Auth + multi tenancy (this batch)
+
+Two worlds coexist after this batch. Auth + organizations live in
+Supabase; the Zustand store (design data, currently v31) still lives
+in localStorage exactly as before. Phase 1B will move the design
+data over.
+
+- **BF1A.0-1 — Supabase client.** Project created in dashboard;
+  URL + publishable key in `.env.local` (gitignored). Service role
+  key never touched. Client at `src/app/lib/supabaseClient.ts`.
+  Live health probe returns 200.
+- **BF1A.2-3 — Schema + RLS.** Three tables live (`profiles`,
+  `organizations`, `organization_members`). `is_org_member` /
+  `is_org_admin` / `is_org_owner` SECURITY DEFINER helpers gate
+  every cross row read. Bootstrap insert policy lets the org
+  creator claim ownership; the post review patch (BF1A security
+  patches) additionally requires `created_by = auth.uid()` to
+  close the orphan org takeover surface.
+- **BF1A.4 — Login screen.** Email + password sign in / sign up via
+  Supabase Auth. Real errors, real loading, real session persistence.
+  SSO / forgot / demo affordances HIDDEN until backend work for
+  each lands. "Check your email" state after sign up.
+- **BF1A.5 — Org create / join.** Invite codes (no SMTP dependency).
+  `create_organization_with_owner` SECURITY DEFINER RPC creates
+  org + first owner membership atomically. `create_invite` /
+  `accept_invite` RPCs gate role conferral (admins can only mint
+  member; owners can mint owner / admin) and rate limit acceptance
+  to 10 attempts per 5 minutes per uid.
+- **BF1A.6 — Auth gate.** UX layer routing gate around every
+  internal route. Three real states + a transport error retry.
+  SIGNED_OUT renders the loading frame synchronously before
+  navigate to avoid a flash of protected content. The design data
+  remains in localStorage behind the gate.
+- **BF1A.7 — Verification doc + deploy proposal.** Full record in
+  `docs/BACKEND_PHASE1A_VERIFICATION.md`.
+
+**Deferred to Phase 1B:** every design entity (projects, devices,
+pathways, idfs, proposals, approvals, work orders, tickets, etc.)
+migrates from localStorage to Supabase tables carrying
+`organization_id`. The schema plan is fully written out in
+`docs/BACKEND_SCHEMA_PLAN.md` so 1B is a clean continuation.
+
+**Live RLS isolation test deferred:** the clean test that signs up
+two real users through the public auth endpoint requires
+`mailer_autoconfirm: true` AND a cleared email rate limit. Both
+prerequisites pending. The shell script is in chat; runs against
+the live project as soon as both clear.
