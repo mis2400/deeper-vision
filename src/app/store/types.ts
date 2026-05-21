@@ -1992,6 +1992,13 @@ export interface Bus {
  *  scope so a question asked from a selected camera answers about
  *  that camera, not the whole project. NOT persisted; cleared on
  *  reload. */
+/** DV Assist Phase 1 — panel operating mode.
+ *  - 'passive':    panel present, quiet, ready. No proactive interruptions.
+ *  - 'suggestion': surfaces rules engine findings as the user designs.
+ *  - 'action':     can execute approved fixes against the design.
+ *  Defaults to 'passive' at app boot; not persisted (session preference). */
+export type AssistantPanelMode = 'passive' | 'suggestion' | 'action';
+
 export interface AssistantContext {
   /** Which shipped surface set the context. */
   surface: 'canvas' | 'reports' | 'deployment' | 'review' | 'projects' | 'dashboard' | 'project-center' | 'assistant';

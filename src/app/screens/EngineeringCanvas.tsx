@@ -33,6 +33,7 @@ import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/Su
 import { ProjectStateMenu } from '../components/canvas/ProjectStateMenu';
 import { PricebookEditor } from '../components/canvas/PricebookEditor';
 import { AttachmentPanel } from '../components/canvas/AttachmentPanel';
+import { AssistantPanel } from '../components/canvas/AssistantPanel';
 const SURVEYOR_SYMBOL_SET = new Set<string>(SURVEYOR_SYMBOL_IDS as unknown as string[]);
 function SURVEYOR_SYMBOL_HAS(t: string): boolean { return SURVEYOR_SYMBOL_SET.has(t); }
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
@@ -3458,6 +3459,12 @@ export function EngineeringCanvas() {
                 </button>
               </div>
             )}
+
+            {/* DV Assist Phase 1 panel — always present on the canvas
+                surface as the bottom right pill. Three operating modes
+                (Passive / Suggestion / Action). Default Passive — quiet
+                until the operator switches. */}
+            <AssistantPanel projectId={projectId} />
 
             {/* Right-side engineering inspector drawer */}
             {sel && (

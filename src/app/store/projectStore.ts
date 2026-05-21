@@ -16,7 +16,7 @@ import {
   ProjectMode, UserRole, EngineeringLayer, CanvasLayerState, DEFAULT_CANVAS_LAYERS,
   CanvasDisplayPrefs, DEFAULT_DISPLAY_PREFS, ProjectTechModel,
   SurveyItem, SurveyObjectType,
-  AiConversation, AiMsg, AiAppliedRecord, AssistantContext,
+  AiConversation, AiMsg, AiAppliedRecord, AssistantContext, AssistantPanelMode,
   UserPrefs, DEFAULT_USER_PREFS,
   BillingState, DEFAULT_BILLING, Invoice, PaymentMethod, PlanTier, BillingCycle,
   IntegrationId, IntegrationStatus, IntegrationRecord,
@@ -118,6 +118,11 @@ export interface ProjectState {
    *  persisted; cleared on reload. The Assistant reads this to scope
    *  questions implicitly. */
   assistantContext: AssistantContext | null;
+  /** DV Assist canvas panel mode (passive / suggestion / action).
+   *  NOT persisted — defaults to 'passive' at app boot so the
+   *  panel never auto starts in a proactive mode the operator
+   *  didn't choose. */
+  assistantPanelMode: AssistantPanelMode;
   /** Operator preferences — Phase 3A. Density, accent, language,
    *  time zone, plus profile headline. Persisted. */
   userPrefs: UserPrefs;
@@ -608,6 +613,11 @@ export interface ProjectState {
   /** Set (or clear) the transient assistant context. Called by every
    *  shipped surface as the operator's focus changes. */
   setAssistantContext: (ctx: Partial<AssistantContext> | null) => void;
+  /** Switch the DV Assist panel between Passive / Suggestion / Action.
+   *  Honors the V1 honesty contract: switching to Suggestion or
+   *  Action does not auto run any side effects — the panel reads
+   *  the new mode and renders the appropriate content. */
+  setAssistantPanelMode: (mode: AssistantPanelMode) => void;
   /** Patch operator preferences. Only the fields included in the
    *  patch change; the rest keep their current values. */
   setUserPrefs: (patch: Partial<UserPrefs>) => void;
@@ -808,6 +818,7 @@ export const useProjectStore = create<ProjectState>()(
       projectPricebooks: {},
       attachments:       {},
       aiConversations:   {},
+      assistantPanelMode: 'passive',
       assistantContext:  null,
       userPrefs:         { ...DEFAULT_USER_PREFS },
       billing:           { ...DEFAULT_BILLING },
@@ -2605,6 +2616,8 @@ export const useProjectStore = create<ProjectState>()(
           };
           return { assistantContext: next };
         }),
+
+      setAssistantPanelMode: (mode) => set({ assistantPanelMode: mode }),
 
       resetDemoData: () => set((s) => {
         // Pass 2A.1 — initialise currentFloorIdByProject from the
