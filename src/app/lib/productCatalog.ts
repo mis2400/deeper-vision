@@ -336,6 +336,19 @@ export function maxCableRunFor(p: Product): number | undefined {
   return p.category === 'cable' ? p.maxCableRunFt : undefined;
 }
 
+/** Cable products whose subcategory matches the given label (case
+ *  insensitive). Used by the rules engine to resolve a pathway's
+ *  `cableType` label ("cat6a" / "fiber-mm" / etc.) into the catalog
+ *  row that carries `maxCableRunFt`. Empty when no cable in the seed
+ *  matches the label — at which point the distance rule stays silent
+ *  rather than guessing a limit. */
+export function cablesBySubcategory(label: string | undefined): Product[] {
+  if (!label) return [];
+  const norm = String(label).toLowerCase().trim();
+  return SAMPLE_PRODUCTS.filter((p) =>
+    p.category === 'cable' && (p.subcategory ?? '').toLowerCase() === norm);
+}
+
 // ─────────────────────────── The catalog ─────────────────────────────
 // Sample only. Pricing is approximate retail; verify against distributor
 // list before quoting. Coverage is intentionally broad across the major
@@ -936,9 +949,15 @@ export const SAMPLE_PRODUCTS: Product[] = [
   { id: 'p-belden-cat6a', manufacturer: 'Belden', model: 'Cat6A · 10X8P (1000 ft)',
     category: 'cable', subcategory: 'cat6a', techModels: ['cloud', 'on_prem', 'hybrid'],
     msrp: 780, dealerCost: 507, maxCableRunFt: 328 },
+  { id: 'p-belden-cat6', manufacturer: 'Belden', model: 'Cat6 · 7965ENH (1000 ft)',
+    category: 'cable', subcategory: 'cat6', techModels: ['cloud', 'on_prem', 'hybrid'],
+    msrp: 520, dealerCost: 338, maxCableRunFt: 328 },
   { id: 'p-commscope-fiber-mm', manufacturer: 'CommScope', model: 'Multimode OM4 fiber',
     category: 'cable', subcategory: 'fiber-mm', techModels: ['cloud', 'on_prem', 'hybrid'],
     msrp: 1650, dealerCost: 1072, maxCableRunFt: 1300 },
+  { id: 'p-commscope-fiber-sm', manufacturer: 'CommScope', model: 'Singlemode OS2 fiber',
+    category: 'cable', subcategory: 'fiber-sm', techModels: ['cloud', 'on_prem', 'hybrid'],
+    msrp: 1450, dealerCost: 942, maxCableRunFt: 32800 /* practical SM run, well past LAN scales */ },
   { id: 'p-apc-smt-3000', manufacturer: 'APC', model: 'Smart-UPS 3000',
     category: 'ups', deviceType: 'pwr.ups', techModels: ['cloud', 'on_prem', 'hybrid'],
     msrp: 1620, dealerCost: 1053, laborUnits: 1.5, ndaa: true, recommended: true,

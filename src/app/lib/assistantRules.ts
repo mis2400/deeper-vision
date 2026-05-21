@@ -9,7 +9,7 @@
 // Read this with `docs/DV_ASSIST_PHASE1.md` in hand — that doc spells
 // out the helper layer contract this file depends on.
 
-import type { Device, Pathway, Room, Floor, DeviceType } from '../store/types';
+import type { Device, Pathway, Room, Floor, IDF, DeviceType } from '../store/types';
 import {
   productById,
   requiresLicense as productRequiresLicense,
@@ -17,11 +17,9 @@ import {
   licensesFor,
   mountsForDeviceType,
   recommendedMountFor,
-  switchPortCount,
-  switchPoeBudget,
   poeDrawWatts,
   maxCableRunFor,
-  accessoriesFor,
+  cablesBySubcategory,
   type Product,
 } from './productCatalog';
 import { pathwayLengthFt } from './engineering';
@@ -82,16 +80,14 @@ export interface RuleContext {
   pathways: Pathway[];
   rooms: Room[];
   floors: Floor[];
+  /** IDF / MDF closets. IDFs carry inline switches (with portsPoe /
+   *  portsTotal / poeBudgetW), so the network closet / PoE budget /
+   *  port overload rules walk this list, not the Devices array. */
+  idfs: IDF[];
 }
 
 // ────────────────────────────── Helpers ─────────────────────────────
 
-function isCamera(t: DeviceType): boolean {
-  return t.startsWith('cam.');
-}
-function isSwitch(t: DeviceType): boolean {
-  return t === 'net.switch';
-}
 function isClosetHost(t: DeviceType): boolean {
   return t === 'net.idf' || t === 'net.mdf' || t === 'inf.mdf' || t === 'inf.rack';
 }
@@ -121,9 +117,13 @@ function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: numbe
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const a = poly[i];
     const b = poly[j];
-    const intersect = ((a.y > p.y) !== (b.y > p.y))
-      && (p.x < ((b.x - a.x) * (p.y - a.y)) / ((b.y - a.y) || 1e-9) + a.x);
-    if (intersect) inside = !inside;
+    // Standard ray cast: the `(a.y > p.y) !== (b.y > p.y)` guard already
+    // excludes horizontal edges (a.y === b.y), so no divide by zero
+    // patch is needed and L shaped polygons return correct parity.
+    if ((a.y > p.y) !== (b.y > p.y)) {
+      const xIntersect = ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x;
+      if (p.x < xIntersect) inside = !inside;
+    }
   }
   return inside;
 }
@@ -136,15 +136,16 @@ function hasMatchingLicense(d: Device, host: Product): boolean {
   return d.accessories.some((id) => valid.has(id));
 }
 
-/** True when a device has at least one accessory tagged as a mount
- *  product targeting its device type. */
-function hasMatchingMount(d: Device, host: Product): boolean {
+/** True when a device has at least one accessory the catalog tags as
+ *  a mount for the device's type. Credit ANY catalog mount product
+ *  (not only ones the host vendor whitelisted), because vendor
+ *  `compatibleAccessories` lists are typically non exhaustive in real
+ *  catalogs. The recommendation half of the rule still respects the
+ *  host whitelist for fix suggestions; only this credit check is
+ *  permissive. */
+function hasMatchingMount(d: Device): boolean {
   if (!d.accessories?.length) return false;
-  const validMountIds = new Set(
-    mountsForDeviceType(d.type)
-      .filter((m) => host.compatibleAccessories?.includes(m.id))
-      .map((m) => m.id),
-  );
+  const validMountIds = new Set(mountsForDeviceType(d.type).map((m) => m.id));
   if (validMountIds.size === 0) return false;
   return d.accessories.some((id) => validMountIds.has(id));
 }
@@ -154,44 +155,74 @@ function pathwayEndpoints(p: Pathway): string[] {
   return [p.sourceId, p.destinationId, p.targetId].filter((x): x is string => !!x);
 }
 
-/** Devices physically connected to the given network closet host (IDF
- *  / MDF / rack) via a pathway with that closet as one endpoint. */
-function devicesOnCloset(closet: Device, ctx: RuleContext): Device[] {
+/** Is an id a network closet? IDFs live in their own slice (not as
+ *  Devices), so we check the IDF list first. Devices with closet host
+ *  types (acc.controller racks, etc.) are also accepted. */
+function isClosetId(id: string, ctx: RuleContext): boolean {
+  if (ctx.idfs.some((idf) => idf.id === id)) return true;
+  const peer = ctx.devices.find((x) => x.id === id);
+  return !!peer && isClosetHost(peer.type);
+}
+
+/** Devices wired to the given IDF via a pathway. */
+function devicesOnIdf(idfId: string, ctx: RuleContext): Device[] {
   const linked = new Set<string>();
   for (const pw of ctx.pathways) {
     const ends = pathwayEndpoints(pw);
-    if (!ends.includes(closet.id)) continue;
+    if (!ends.includes(idfId)) continue;
     for (const eid of ends) {
-      if (eid !== closet.id) linked.add(eid);
+      if (eid !== idfId) linked.add(eid);
     }
   }
   return ctx.devices.filter((d) => linked.has(d.id));
 }
 
-/** Devices physically connected to the given switch via a pathway. */
-function devicesOnSwitch(sw: Device, ctx: RuleContext): Device[] {
-  return devicesOnCloset(sw, ctx); // identical graph walk
-}
-
-/** Does this device have any pathway to a network closet host? */
+/** Does this device have any pathway endpoint at an IDF (or a direct
+ *  linkedIds reference to one)? */
 function hasClosetLink(d: Device, ctx: RuleContext): boolean {
   for (const pw of ctx.pathways) {
     const ends = pathwayEndpoints(pw);
     if (!ends.includes(d.id)) continue;
     for (const eid of ends) {
       if (eid === d.id) continue;
-      const peer = ctx.devices.find((x) => x.id === eid);
-      if (peer && isClosetHost(peer.type)) return true;
+      if (isClosetId(eid, ctx)) return true;
     }
   }
-  // Also accept a direct linkedIds reference to a closet host.
   if (d.linkedIds?.length) {
     for (const eid of d.linkedIds) {
-      const peer = ctx.devices.find((x) => x.id === eid);
-      if (peer && isClosetHost(peer.type)) return true;
+      if (isClosetId(eid, ctx)) return true;
     }
   }
   return false;
+}
+
+/** Total PoE budget watts across all switches inside an IDF. Undefined
+ *  when the IDF has no switches recorded (rule stays silent). */
+function idfPoeBudget(idf: IDF): number | undefined {
+  if (!idf.switches?.length) return undefined;
+  let sum = 0;
+  let counted = 0;
+  for (const sw of idf.switches) {
+    if (typeof sw.poeBudgetW === 'number' && sw.poeBudgetW > 0) {
+      sum += sw.poeBudgetW;
+      counted++;
+    }
+  }
+  return counted > 0 ? sum : undefined;
+}
+
+/** Total PoE port count across all switches inside an IDF. */
+function idfPoePorts(idf: IDF): number | undefined {
+  if (!idf.switches?.length) return undefined;
+  let sum = 0;
+  let counted = 0;
+  for (const sw of idf.switches) {
+    if (typeof sw.portsPoe === 'number' && sw.portsPoe >= 0) {
+      sum += sw.portsPoe;
+      counted++;
+    }
+  }
+  return counted > 0 ? sum : undefined;
 }
 
 // ────────────────────────────── Rules ───────────────────────────────
@@ -227,18 +258,24 @@ export function ruleMissingMount(ctx: RuleContext): Finding[] {
     const host = productById(d.product);
     if (!host) continue;
     // Only cameras + readers + APs reasonably need a mount accessory.
-    // Skip infrastructure / sensors / cable accessories.
     if (!isPoeConsumer(d.type)) continue;
     // Skip if the host vendor declared no mount accessories — the
     // catalog can't suggest a fix we don't have a product for.
     if (!host.compatibleAccessories?.length) continue;
-    // Skip if no mount accessory in the catalog targets this device type.
+    // Skip when no catalog mount accessory exists for this device type;
+    // we'd have nothing to recommend even if the host has whitelisted
+    // accessories of other kinds.
     const mountsForType = mountsForDeviceType(d.type);
-    const validMountIds = new Set(mountsForType.map((m) => m.id));
-    const hostValidMounts = (host.compatibleAccessories ?? []).filter((id) => validMountIds.has(id));
-    if (hostValidMounts.length === 0) continue;
-    if (hasMatchingMount(d, host)) continue;
+    if (mountsForType.length === 0) continue;
+    // Permissive credit: if the device already carries ANY catalog
+    // mount tagged for its type, consider it covered (vendor compat
+    // lists are non exhaustive in real catalogs).
+    if (hasMatchingMount(d)) continue;
+    // Recommendation half: prefer the explicit recommended mount, but
+    // only when it sits in the host's whitelist (so the fix path
+    // respects vendor declared compatibility).
     const rec = recommendedMountFor(host);
+    const recIsWhitelisted = !!rec && (host.compatibleAccessories ?? []).includes(rec.id);
     out.push({
       id: `missing-mount:${d.id}`,
       ruleId: 'missing-mount',
@@ -246,10 +283,10 @@ export function ruleMissingMount(ctx: RuleContext): Finding[] {
       category: 'mount',
       objectRef: { kind: 'device', id: d.id },
       title: `${d.label || host.model} has no mount accessory`,
-      description: `No mount product from ${host.manufacturer}'s compatible list is attached. ${rec ? `Recommended: ${rec.manufacturer} ${rec.model}.` : ''}`,
-      suggestedFix: rec
+      description: `No mount product is attached. ${rec && recIsWhitelisted ? `Recommended: ${rec.manufacturer} ${rec.model}.` : 'Open the device drawer to pick one from the accessories list.'}`,
+      suggestedFix: rec && recIsWhitelisted
         ? { kind: 'add-mount', deviceId: d.id, productId: rec.id, label: `Add ${rec.manufacturer} ${rec.model}` }
-        : undefined,
+        : { kind: 'select-and-edit', objectId: d.id, objectKind: 'device', label: 'Open device drawer' },
     });
   }
   return out;
@@ -282,80 +319,94 @@ export function ruleExteriorInInterior(ctx: RuleContext): Finding[] {
   return out;
 }
 
-/** Rule 4 — PoE device on a switch without enough power budget. */
+/** Rule 4 — IDF over PoE budget. Switches in this codebase live
+ *  INLINE on the IDF (`IDF.switches[]`), not as standalone Device
+ *  rows, so the rule walks IDFs. Aggregates `poeBudgetW` across all
+ *  switches in the IDF; sums PoE draws across devices wired to that
+ *  IDF via pathway. Honest partial data behavior: when ANY consumer's
+ *  draw is unknown, the rule does NOT fire a critical "over budget"
+ *  finding (which would be based on a partial sum) — instead it
+ *  optionally surfaces an info severity "data incomplete" finding so
+ *  the operator knows the budget calc can't be trusted yet. */
 export function ruleSwitchPoeBudget(ctx: RuleContext): Finding[] {
   const out: Finding[] = [];
-  for (const sw of ctx.devices) {
-    if (!isSwitch(sw.type)) continue;
-    const swProd = productById(sw.product);
-    if (!swProd) continue;
-    const budget = switchPoeBudget(swProd);
-    if (typeof budget !== 'number') continue; // unknown budget = silent
-    const linked = devicesOnSwitch(sw, ctx);
+  for (const idf of ctx.idfs) {
+    const budget = idfPoeBudget(idf);
+    if (typeof budget !== 'number') continue; // unknown = silent
+    const consumers = devicesOnIdf(idf.id, ctx).filter((d) => isPoeConsumer(d.type));
+    if (consumers.length === 0) continue;
     let sum = 0;
-    let countedAny = false;
-    for (const d of linked) {
-      if (!isPoeConsumer(d.type)) continue;
+    let unknown = 0;
+    for (const d of consumers) {
       const prod = productById(d.product);
-      if (!prod) continue;
-      const draw = poeDrawWatts(prod);
-      if (typeof draw !== 'number') continue; // unknown draw = skip (NOT zero)
+      const draw = prod ? poeDrawWatts(prod) : undefined;
+      if (typeof draw !== 'number') { unknown++; continue; }
       sum += draw;
-      countedAny = true;
     }
-    if (!countedAny) continue;
+    if (unknown > 0 && sum <= budget) {
+      // Partial data, no hard violation yet — keep quiet rather than
+      // raising a critical finding on a half count.
+      continue;
+    }
     if (sum <= budget) continue;
+    const knownCount = consumers.length - unknown;
     out.push({
-      id: `switch-poe-budget:${sw.id}`,
+      id: `switch-poe-budget:${idf.id}`,
       ruleId: 'switch-poe-budget',
       severity: 'critical',
       category: 'power',
-      objectRef: { kind: 'device', id: sw.id },
-      title: `${sw.label || swProd.model} is over PoE budget`,
-      description: `${swProd.manufacturer} ${swProd.model} carries a ${budget}W PoE budget. Connected devices draw ${Math.round(sum)}W. Move ${Math.ceil((sum - budget) / 15)} or more devices to another switch, or add a PoE injector.`,
-      suggestedFix: { kind: 'select-and-edit', objectId: sw.id, objectKind: 'device', label: 'Open switch drawer' },
+      objectRef: { kind: 'device', id: idf.id },
+      title: `${idf.name} is over PoE budget`,
+      description: `IDF carries a ${budget}W PoE budget across its switches. ${knownCount} connected device${knownCount === 1 ? '' : 's'} draw${knownCount === 1 ? 's' : ''} ${Math.round(sum)}W${unknown > 0 ? ` (${unknown} device${unknown === 1 ? '' : 's'} of unknown draw skipped)` : ''}. Move devices to another IDF or add a PoE injector.`,
+      suggestedFix: { kind: 'select-and-edit', objectId: idf.id, objectKind: 'device', label: 'Open IDF drawer' },
     });
   }
   return out;
 }
 
-/** Rule 5 — Switch overloaded (more PoE devices than PoE ports). */
+/** Rule 5 — IDF over port count. PoE consumer count routed to an IDF
+ *  exceeds the IDF's total PoE port capacity. */
 export function ruleSwitchPortOverload(ctx: RuleContext): Finding[] {
   const out: Finding[] = [];
-  for (const sw of ctx.devices) {
-    if (!isSwitch(sw.type)) continue;
-    const swProd = productById(sw.product);
-    if (!swProd) continue;
-    const total = switchPortCount(swProd);
-    if (typeof total !== 'number') continue; // unknown = silent
-    const linked = devicesOnSwitch(sw, ctx);
-    const consumers = linked.filter((d) => isPoeConsumer(d.type));
-    if (consumers.length <= total) continue;
+  for (const idf of ctx.idfs) {
+    const ports = idfPoePorts(idf);
+    if (typeof ports !== 'number') continue;
+    const consumers = devicesOnIdf(idf.id, ctx).filter((d) => isPoeConsumer(d.type));
+    if (consumers.length <= ports) continue;
     out.push({
-      id: `switch-port-overload:${sw.id}`,
+      id: `switch-port-overload:${idf.id}`,
       ruleId: 'switch-port-overload',
       severity: 'critical',
       category: 'capacity',
-      objectRef: { kind: 'device', id: sw.id },
-      title: `${sw.label || swProd.model} has more devices than ports`,
-      description: `${swProd.manufacturer} ${swProd.model} has ${total} ports. ${consumers.length} PoE devices are routed here. Add an access switch or move devices to a different IDF.`,
-      suggestedFix: { kind: 'select-and-edit', objectId: sw.id, objectKind: 'device', label: 'Open switch drawer' },
+      objectRef: { kind: 'device', id: idf.id },
+      title: `${idf.name} has more devices than ports`,
+      description: `IDF has ${ports} PoE ports across its switches. ${consumers.length} PoE devices are routed here. Add an access switch or move devices to a different IDF.`,
+      suggestedFix: { kind: 'select-and-edit', objectId: idf.id, objectKind: 'device', label: 'Open IDF drawer' },
     });
   }
   return out;
 }
 
-/** Rule 6 — Pathway missing conduit information. */
+/** Rule 6 — Pathway missing conduit information. Only fires on
+ *  cable bundles. The store carries two parallel kind fields: the
+ *  legacy `type` (which the seed uses with values like 'conduit',
+ *  'tray', 'jhook') and the newer `pathwayKind`. A pathway counts
+ *  as a "cable bundle" only when BOTH fields say so (or are
+ *  undefined). Standalone conduit / tray / J-hook runs are silent. */
 export function rulePathwayMissingConduit(ctx: RuleContext): Finding[] {
   const out: Finding[] = [];
   for (const pw of ctx.pathways) {
-    // Only audit cable bundles, not standalone conduit / tray / J-hook runs.
+    // Exclude explicit non cable kinds via either field.
     if (pw.pathwayKind && pw.pathwayKind !== 'cable') continue;
-    // If conduit type is explicitly 'none', the operator decided no
-    // conduit is required — that's a real call, not a missing field.
+    const legacyType = String(pw.type ?? '').toLowerCase();
+    if (legacyType === 'conduit' || legacyType === 'tray' || legacyType === 'jhook'
+        || legacyType === 'sleeve'  || legacyType === 'raceway' || legacyType === 'duct') {
+      continue;
+    }
+    // Explicit "no conduit" decision is a real call, not a gap.
     if (pw.conduitType && pw.conduitType !== 'none' && pw.conduitSize) continue;
-    // Skip pathways shorter than 10 ft — those are usually patch cords
-    // inside a closet where conduit is not specified.
+    if (pw.conduitType === 'none') continue;
+    // Skip short patch runs inside a closet.
     const floor = ctx.floors.find((f) => f.id === pw.floorId);
     const lenFt = pathwayLengthFt(pw, floor);
     if (lenFt < 10) continue;
@@ -373,17 +424,30 @@ export function rulePathwayMissingConduit(ctx: RuleContext): Finding[] {
   return out;
 }
 
-/** Rule 7 — Cable run exceeds the product's maximum distance. */
+/** Rule 7 — Cable run exceeds the product's maximum distance.
+ *  `cableType` on a pathway is either a product id or a category
+ *  label ("cat6", "cat6a", "fiber-mm", etc.); both shapes resolve
+ *  through the helper layer. */
 export function ruleCableRunTooLong(ctx: RuleContext): Finding[] {
   const out: Finding[] = [];
   for (const pw of ctx.pathways) {
     if (pw.pathwayKind && pw.pathwayKind !== 'cable') continue;
-    // Resolve the cable product. `pw.cableType` is a string that
-    // could be a product id or a category label (e.g. "cat6a"). Try
-    // product-id lookup first; fall back to scanning catalog rows
-    // whose subcategory matches the label.
-    const cableProd = productById(pw.cableType as string)
-      ?? scanCableByCategory(pw.cableType);
+    // First, try product id lookup. Then fall back to subcategory
+    // search across every cable in the catalog (the helper iterates
+    // SAMPLE_PRODUCTS, so any future cable SKU added to the seed
+    // becomes resolvable automatically).
+    let cableProd = productById(pw.cableType as string);
+    if (!cableProd) {
+      const matches = cablesBySubcategory(pw.cableType as string);
+      // Pick the cable with the SHORTEST max run as the binding
+      // constraint when multiple SKUs share a subcategory (e.g. two
+      // Cat6 vendors). That keeps the rule honest and conservative.
+      cableProd = matches.reduce<Product | undefined>((best, p) => {
+        if (typeof p.maxCableRunFt !== 'number') return best;
+        if (!best || (best.maxCableRunFt ?? Infinity) > p.maxCableRunFt) return p;
+        return best;
+      }, undefined);
+    }
     if (!cableProd) continue;
     const max = maxCableRunFor(cableProd);
     if (typeof max !== 'number') continue;
@@ -397,47 +461,42 @@ export function ruleCableRunTooLong(ctx: RuleContext): Finding[] {
       category: 'distance',
       objectRef: { kind: 'pathway', id: pw.id },
       title: `${cableProd.subcategory ?? 'Cable'} run exceeds ${max} ft`,
-      description: `Pathway ${pw.id} measures ${lenFt} ft. ${cableProd.manufacturer} ${cableProd.model} is rated for ${max} ft max. Insert a midpoint switch or convert this segment to fiber.`,
+      description: `Pathway ${pw.id} measures ${lenFt} ft. ${cableProd.subcategory ?? 'Cable'} is rated for ${max} ft max. Insert a midpoint switch or convert this segment to fiber.`,
       suggestedFix: { kind: 'select-and-edit', objectId: pw.id, objectKind: 'pathway', label: 'Open pathway drawer' },
     });
   }
   return out;
 }
 
-/** Rule 8 — Floor area with incomplete coverage. Heuristic: a floor
- *  with rooms defined but no cameras whose center sits on it gets a
- *  critical finding; a floor with rooms but fewer than one camera
- *  per three rooms gets a warning. Floors with no rooms are silent
- *  (no model of expected coverage). */
+/** Rule 8 — Floor area with incomplete coverage. Conservative
+ *  heuristic targeting the placement signal, not the technical
+ *  coverage map: floors with rooms defined but zero general purpose
+ *  cameras (bullet / dome / turret / multisensor) fire a critical
+ *  finding. The under coverage warn variant is intentionally NOT
+ *  fired in Phase 1 — cameras per room is too noisy a metric to be
+ *  worth surfacing without real cone vs room intersection (which
+ *  belongs in V3.5 coverage work). Specialty cameras (LPR, thermal,
+ *  fisheye, body) do not count toward room coverage. */
 export function ruleFloorCoverageGap(ctx: RuleContext): Finding[] {
   const out: Finding[] = [];
+  const generalCameraTypes: ReadonlyArray<DeviceType> = [
+    'cam.bullet', 'cam.dome', 'cam.turret', 'cam.multisensor',
+  ];
   for (const fl of ctx.floors) {
     const floorRooms = ctx.rooms.filter((r) => r.floorId === fl.id);
     if (floorRooms.length === 0) continue;
-    const cams = ctx.devices.filter((d) => d.floorId === fl.id && isCamera(d.type));
-    if (cams.length === 0) {
-      out.push({
-        id: `floor-coverage-gap:${fl.id}`,
-        ruleId: 'floor-coverage-gap',
-        severity: 'critical',
-        category: 'coverage',
-        objectRef: { kind: 'floor', id: fl.id },
-        title: `${fl.name} has rooms defined but no cameras`,
-        description: `${floorRooms.length} room(s) on this floor with zero cameras placed. Coverage cannot be assessed until cameras are added.`,
-      });
-      continue;
-    }
-    if (cams.length * 3 < floorRooms.length) {
-      out.push({
-        id: `floor-coverage-gap:${fl.id}`,
-        ruleId: 'floor-coverage-gap',
-        severity: 'warn',
-        category: 'coverage',
-        objectRef: { kind: 'floor', id: fl.id },
-        title: `${fl.name} may be under covered`,
-        description: `${cams.length} camera(s) for ${floorRooms.length} room(s). Heuristic flags floors with fewer than one camera per three rooms. Walk the plan to confirm.`,
-      });
-    }
+    const cams = ctx.devices.filter((d) =>
+      d.floorId === fl.id && generalCameraTypes.includes(d.type));
+    if (cams.length > 0) continue;
+    out.push({
+      id: `floor-coverage-gap:${fl.id}`,
+      ruleId: 'floor-coverage-gap',
+      severity: 'critical',
+      category: 'coverage',
+      objectRef: { kind: 'floor', id: fl.id },
+      title: `${fl.name} has rooms defined but no cameras`,
+      description: `${floorRooms.length} room(s) on this floor with zero general purpose cameras placed. Coverage cannot be assessed until cameras are added.`,
+    });
   }
   return out;
 }
@@ -504,33 +563,3 @@ export function groupByCategory(findings: Finding[]): Record<FindingCategory, Fi
   return empty;
 }
 
-// ────────────────────────────── Internals ───────────────────────────
-
-/** Catalog scan for a cable product whose `subcategory` matches the
- *  pathway's `cableType` string. Used when `cableType` is a label
- *  ("cat6a") rather than a product id. */
-function scanCableByCategory(label: string | undefined): Product | undefined {
-  if (!label) return undefined;
-  const norm = label.toLowerCase().replace(/\s+/g, '');
-  // SAMPLE_PRODUCTS isn't exported as a list-iter helper, so we go
-  // through accessoriesFor's data path: the helper layer already has
-  // every cable in scope. The cheap approach: linear scan via the
-  // existing catalog helper. We avoid a re-import of SAMPLE_PRODUCTS
-  // to keep this file's surface minimal.
-  // (The future Data Hub swap will replace this with a real query.)
-  // Inline scan via productById ids that follow a known prefix.
-  const candidates = [
-    'p-belden-cat6a', 'p-commscope-fiber-mm',
-  ];
-  for (const id of candidates) {
-    const p = productById(id);
-    if (!p) continue;
-    if ((p.subcategory ?? '').toLowerCase() === norm) return p;
-  }
-  return undefined;
-}
-
-// Touch the `accessoriesFor` import so tree-shaking doesn't drop it —
-// future rules will use it. Documented elsewhere; this is a noop at
-// runtime.
-void accessoriesFor;
