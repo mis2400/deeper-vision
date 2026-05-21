@@ -1,5 +1,6 @@
 import { ReactNode, useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router';
+import { supabase } from '../lib/supabaseClient';
 import { BrandLogo } from './BrandLogo';
 import { Button } from './Button';
 import {
@@ -227,10 +228,18 @@ function AppMenu() {
             </div>
           ))}
           {/* Log out lives at the bottom, separated, treated as a
-              destructive action so it doesn't sit next to nav routes. */}
+              destructive action so it doesn't sit next to nav routes.
+              Hits Supabase Auth so the session is actually killed —
+              not just a navigation. The AuthGate's onAuthStateChange
+              subscription picks up the SIGNED_OUT event and reroutes
+              any remaining authenticated screens to /login. */}
           <div className="border-t border-border/60 px-1 py-1.5">
             <button
-              onClick={() => { setOpen(false); navigate('/login'); }}
+              onClick={async () => {
+                setOpen(false);
+                try { await supabase.auth.signOut(); } catch { /* swallow */ }
+                navigate('/login');
+              }}
               className="w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2.5 hover:bg-destructive/10 hover:text-destructive transition-colors text-muted-foreground"
             >
               <LogOut className="w-3.5 h-3.5 shrink-0" />
