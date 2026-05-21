@@ -94,7 +94,7 @@ function isClosetHost(t: DeviceType): boolean {
 function isPoeConsumer(t: DeviceType): boolean {
   // Cameras, APs, readers, IP intercoms — anything that draws PoE in
   // typical deployments.
-  return isCamera(t)
+  return t.startsWith('cam.')
       || t === 'net.ap'
       || t === 'acc.reader'
       || t === 'acc.intercom'

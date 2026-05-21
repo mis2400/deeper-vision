@@ -10,11 +10,15 @@
 // `aiConversations` slice in the store and can hand context back
 // and forth via `assistantContext`. Two views, one mind.
 
-import { useEffect, useRef, useState } from 'react';
-import { Sparkles, ChevronUp, ChevronDown, X, ExternalLink } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Sparkles, ChevronUp, ChevronDown, ExternalLink,
+  AlertCircle, AlertTriangle, Info, CircleCheck,
+} from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useProjectStore } from '../../store/projectStore';
 import type { AssistantPanelMode } from '../../store/types';
+import { runAllRules, type Finding, type FindingSeverity } from '../../lib/assistantRules';
 
 interface Props {
   projectId: string;
@@ -156,7 +160,7 @@ export function AssistantPanel({ projectId }: Props) {
           <PassiveBody projectId={projectId} onNavigate={() => navigate(`/ai/${projectId}`)} />
         )}
         {mode === 'suggestion' && (
-          <SuggestionBodyPlaceholder />
+          <SuggestionBody projectId={projectId} />
         )}
         {mode === 'action' && (
           <ActionBodyPlaceholder />
@@ -191,19 +195,62 @@ function PassiveBody({ projectId, onNavigate }: { projectId: string; onNavigate:
   );
 }
 
-// Placeholders for DVA.5 / DVA.6. These render NOTHING that looks like
-// a real finding or a real action — they just describe the mode and
-// point the operator at the right next step. Honest empty state.
-function SuggestionBodyPlaceholder() {
+// DVA.5 — real findings into Suggestion mode. The panel subscribes
+// to the slices the rules engine needs and re-runs the rules on each
+// store update. Findings are sorted critical → warn → info by
+// `runAllRules`; we just render them. The Apply button for fixes is
+// deferred to DVA.6 (honesty contract: no inert buttons).
+function SuggestionBody({ projectId }: { projectId: string }) {
+  const findings = useProjectFindings(projectId);
+  if (findings.length === 0) {
+    return (
+      <div className="space-y-3">
+        <p className="text-muted-foreground">{MODE_DESCRIPTION.suggestion}</p>
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-foreground/90">
+          <CircleCheck className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+          <p className="text-[12px]">No issues detected in the current design.</p>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="space-y-3">
-      <p className="text-muted-foreground">{MODE_DESCRIPTION.suggestion}</p>
-      <p className="text-foreground/80">
-        DV Assist will surface real design findings here. The rules engine ships in the next sub pass; until then no suggestions are shown.
+    <div className="space-y-2">
+      <p className="text-muted-foreground text-[11px] uppercase tracking-[0.10em]">
+        {findings.length} finding{findings.length === 1 ? '' : 's'}
       </p>
+      <ul className="space-y-1.5">
+        {findings.map((f) => (
+          <FindingRow key={f.id} f={f} />
+        ))}
+      </ul>
     </div>
   );
 }
+
+function FindingRow({ f }: { f: Finding }) {
+  const sevMeta = SEVERITY_META[f.severity];
+  return (
+    <li
+      data-testid={`finding-${f.id}`}
+      data-severity={f.severity}
+      className="px-2.5 py-2 rounded-md border border-border/60 bg-secondary/20"
+    >
+      <div className="flex items-start gap-2">
+        <sevMeta.Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${sevMeta.tone}`} />
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] font-medium text-foreground leading-tight">{f.title}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{f.description}</p>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+const SEVERITY_META: Record<FindingSeverity, { Icon: typeof AlertCircle; tone: string }> = {
+  critical: { Icon: AlertCircle,    tone: 'text-red-500' },
+  warn:     { Icon: AlertTriangle,  tone: 'text-amber-500' },
+  info:     { Icon: Info,           tone: 'text-sky-500' },
+};
 
 function ActionBodyPlaceholder() {
   return (
@@ -214,4 +261,28 @@ function ActionBodyPlaceholder() {
       </p>
     </div>
   );
+}
+
+// ────────────────────────────── Findings selector ───────────────────
+
+/** Run the rules engine against the project's current store slice.
+ *  Memoized on the slice identities so the rules only re-run when
+ *  devices / pathways / rooms / floors / idfs actually change. */
+function useProjectFindings(projectId: string): Finding[] {
+  const devices  = useProjectStore((s) => s.devices);
+  const pathways = useProjectStore((s) => s.pathways);
+  const rooms    = useProjectStore((s) => s.rooms);
+  const floors   = useProjectStore((s) => s.floors);
+  const idfs     = useProjectStore((s) => s.idfs);
+  return useMemo(() => {
+    const filterByProject = <T extends { projectId: string }>(rec: Record<string, T>): T[] =>
+      Object.values(rec).filter((x) => x.projectId === projectId);
+    return runAllRules({
+      devices:  filterByProject(devices),
+      pathways: filterByProject(pathways),
+      rooms:    filterByProject(rooms),
+      floors:   filterByProject(floors),
+      idfs:     filterByProject(idfs),
+    });
+  }, [projectId, devices, pathways, rooms, floors, idfs]);
 }
