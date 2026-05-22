@@ -767,8 +767,28 @@ migrates from localStorage to Supabase tables carrying
 `organization_id`. The schema plan is fully written out in
 `docs/BACKEND_SCHEMA_PLAN.md` so 1B is a clean continuation.
 
-**Live RLS isolation test deferred:** the clean test that signs up
-two real users through the public auth endpoint requires
-`mailer_autoconfirm: true` AND a cleared email rate limit. Both
-prerequisites pending. The shell script is in chat; runs against
-the live project as soon as both clear.
+**Live RLS isolation test — PASSED (2026-05-21).** Eleven
+assertions against the live project with two real users in two
+real organizations. User A: Mohammad's account, owner of "Access
+Tech Security." User B: dashboard created auto confirmed test user,
+created their own org via `create_organization_with_owner`. User B
+saw exactly 1 org (their own), 1 membership (their own), 1 profile
+(their own); could not see Mohammad's org by name, could not see
+any foreign row via wildcard query, could not insert a membership
+for a foreign org (403 with explicit RLS policy violation), could
+not update a foreign org's membership (200 with empty body — RLS
+silently filtered the WHERE clause). Cross org isolation is proven
+end to end. Full table of results in
+`docs/BACKEND_PHASE1A_VERIFICATION.md`.
+
+**Outstanding configuration deferred to before Phase 1B:**
+- Wire a real email provider (recommendation: Resend) so production
+  signups don't depend on the 4/hour default sender. Keep email
+  confirmation ON.
+- Clean up the RLS test artifacts (`rls-test-b@dvtest.io` + "RLS
+  Test Org B") via the dashboard Users + Tables editor once
+  you're satisfied with the test record.
+
+**Phase 1A is closed. Phase 1B is not started.** The Zustand store
+(v31) still owns every design entity exactly as before. No design
+data was touched in this batch.

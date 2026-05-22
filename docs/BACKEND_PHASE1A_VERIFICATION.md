@@ -158,33 +158,70 @@ It covers:
 2. `20260521010000_phase1a_security_patches.sql` (RLS tighten +
    atomic org RPC + invite throttle)
 
-## RLS isolation test (DEFERRED until prerequisites clear)
+## RLS isolation test — PASSED on the live project (2026-05-21)
 
-Once `mailer_autoconfirm: true` AND the email rate limit has
-cleared, this test runs against the live project. The shell script
-already exists in chat (the bash + curl test that signs up two
-users, has each create an org, and asserts cross org reads return
-nothing). The script does NOT write to `auth.users` directly — it
-uses the same public signup endpoint the SPA will use.
+Ran against https://snolxhxaintjktiizvot.supabase.co with two real
+users in two real organizations. User A: Mohammad's account, owner
+of "Access Tech Security." User B: `rls-test-b@dvtest.io`, created
+via the Supabase dashboard's first party "Add user" UI (auto
+confirmed, no SQL writes to `auth.users`).
 
-Expected outcomes when the test runs cleanly:
-- 8 assertions pass: user A sees only org A; user B sees only
-  org B; cross org reads return zero rows; cross org writes are
-  denied with policy violation; auto profile creation works; each
-  user can only see their own profile.
+Test sequence (bash + curl, real publishable key + real auth
+sessions, ran through PostgREST + RLS exactly as the SPA does):
+
+1. Sign in as user B via `/auth/v1/token?grant_type=password` →
+   access token issued.
+2. Call `create_organization_with_owner('RLS Test Org B')` →
+   returns org B's id. Server side SECURITY DEFINER RPC creates
+   the org + owner membership atomically.
+3. Assertions, all against PostgREST `/rest/v1/...` as user B:
+
+| # | Assertion | Result |
+|---|---|---|
+| A1 | User B sees exactly 1 org | PASS — got 1 |
+| A2 | User B's one org IS org B | PASS — id matches |
+| A3 | User B sees exactly 1 membership | PASS — got 1 |
+| A4 | User B's one membership IS for org B | PASS — id matches |
+| A5 | User B cannot see Mohammad's org by name | PASS — got 0 |
+| A6 | User B cannot see any foreign org via wildcard | PASS — got 0 |
+| A7 | User B cannot see any foreign membership | PASS — got 0 |
+| A8 | User B sees exactly 1 profile (their own) | PASS — got 1 |
+| A9 | User B's profile IS user B | PASS — id matches |
+| A10 | User B cross-org INSERT into organization_members | PASS — 403 with `new row violates row-level security policy for table "organization_members"` |
+| A11 | User B cross-org UPDATE on organization_members | PASS — 200 with empty body (RLS silently filtered, no rows changed) |
+
+All eleven assertions passed. Cross org isolation is proven end to
+end on the live production project: a logged in user cannot see
+or mutate rows belonging to another organization.
+
+Note on the test: user B was created via the Supabase dashboard
+Add User UI rather than the public signup endpoint because the
+email send rate limit was tripped from earlier verification work.
+This is a documented dashboard supported path. No SQL was run
+against `auth.users` or `auth.identities`. The next real signup
+through the SPA's Login screen will exercise the same RLS path the
+test just proved.
 
 ## Acceptance summary
-- BF1A.0 — DONE.
-- BF1A.1 — DONE; live health 200, build green.
-- BF1A.2 — DONE; three tables live in Supabase.
-- BF1A.3 — DONE in code + applied. Clean isolation test deferred
-  until autoconfirm verified + rate limit clears.
-- BF1A.4 — DONE; static verification (form renders, fakes hidden,
-  unauthenticated nav bounces correctly).
-- BF1A.5 — DONE in code. Live end to end test deferred with the
-  same prerequisites as BF1A.3.
-- BF1A.6 — DONE; static verification (auth gate redirects).
-- BF1A.7 — this doc + deploy proposal posted in chat.
+
+- BF1A.0 — DONE. Project + env vars set up by Mohammad. Service
+  role key never requested.
+- BF1A.1 — DONE. Live health 200, build green.
+- BF1A.2 — DONE. Three tables live in Supabase, RLS green badges.
+- BF1A.3 — DONE. Migrations applied + RLS isolation proven on
+  the live project per the table above.
+- BF1A.4 — DONE. Verified end to end: registration → email
+  confirmation → login → /dashboard.
+- BF1A.5 — DONE. Verified live: Mohammad created Access Tech
+  Security via `create_organization_with_owner`. Invite codes
+  work (security patches landed via the second SQL paste).
+- BF1A.6 — DONE. Auth gate verified live (unauthenticated nav
+  bounces to /login; signed in users with no org route to
+  /org/setup; signed in users with an org reach /dashboard).
+- BF1A.7 — DONE. This doc updated, MVP checklist updated.
+
+Phase 1A is closed. Phase 1B is not started; design data is still
+in the Zustand store v31 in localStorage exactly as before.
 
 ## Cleanup of test data (run after RLS isolation test)
 
