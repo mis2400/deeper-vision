@@ -325,7 +325,10 @@ const CATEGORIES: Array<{
   id: DeviceKind; label: string; tone: string;
   types: Array<{ id: DeviceType; label: string }>;
 }> = [
-  { id: 'camera',  label: 'Cameras',  tone: '#F08F3C', types: [
+  // V3 prep: camera category tone pulled from '#F08F3C' (orange) to
+  // neutral gray to match the KIND_TONE.camera change above. Replacement
+  // confirmed with Mohammad later.
+  { id: 'camera',  label: 'Cameras',  tone: '#9CA3AF', types: [
     { id: 'cam.bullet',      label: 'Bullet' },
     { id: 'cam.dome',        label: 'Dome' },
     { id: 'cam.ptz',         label: 'PTZ' },
@@ -544,7 +547,12 @@ const TYPE_KIND: Record<DeviceType, DeviceKind> = {
 };
 
 const KIND_TONE: Record<DeviceKind, string> = {
-  camera: '#F08F3C', access: '#3FB950', network: '#E5B23A',
+  // V3 prep: camera was '#F08F3C' (orange). Mohammad called it out as
+  // the wrong accent for the canvas / dock. Pulled to neutral gray
+  // (#9CA3AF, same neutral as infrastructure) until the replacement
+  // accent is confirmed. Other kind tones stay as the existing
+  // category colors for now — narrow change, no aesthetic drift.
+  camera: '#9CA3AF', access: '#3FB950', network: '#E5B23A',
   intrusion: '#E5484D', audio: '#A371F7', storage: '#1F6FEB',
   display: '#00B5D8', power: '#8B5CF6', sensor: '#14B8A6',
   infrastructure: '#9CA3AF',
@@ -10624,18 +10632,14 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
           </span>
         </div>
 
-        {/* Expand — secondary actions live behind this popover */}
-        <ExpandMenu
-          d={d}
-          tone={tone}
-          onDuplicate={onDuplicate}
-          onDelete={onDelete}
-          onOpenTab={onOpenTab}
-          currentColor={d.color}
-          onPickColor={(hex) => onUpdate({ color: hex || undefined })}
-          isLocked={isLocked}
-          onToggleLock={onToggleLock}
-        />
+        {/* V3 prep — the kebab Expand menu was reported dead in live use.
+            Removed from the pill rather than left as a visible-but-broken
+            control. Its actions (duplicate / color / lock / stack / delete
+            / more details) remain reachable: keyboard shortcuts handle
+            Delete + Cmd+D + L, and the Edit button below routes to the
+            drawer where V3.4 will surface duplicate / color / lock /
+            stack inline. The ExpandMenu function definition stays in
+            the file as dead code in case we want to put it back. */}
 
         {/* Edit — primary drawer affordance */}
         <button
