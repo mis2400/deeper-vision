@@ -29,7 +29,7 @@ import {
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
 } from 'lucide-react';
-import { SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
+import { SurveyorSymbol, SurveyorSymbolBody, SURVEYOR_SYMBOL_IDS } from '../components/canvas/SurveyorSymbols';
 import { ProjectStateMenu } from '../components/canvas/ProjectStateMenu';
 import { PricebookEditor } from '../components/canvas/PricebookEditor';
 import { AttachmentPanel } from '../components/canvas/AttachmentPanel';
@@ -3906,7 +3906,7 @@ export function EngineeringCanvas() {
             {drag && (
               <div className="pointer-events-none absolute z-50" style={{ left: drag.x - 16, top: drag.y - 16 }}>
                 <div className="w-8 h-8 rounded-full bg-card border border-primary flex items-center justify-center shadow-lg">
-                  <DeviceGlyph type={drag.product.type} size={20} tone={KIND_TONE[TYPE_KIND[drag.product.type]]} />
+                  <DeviceGlyph type={drag.product.type} size={20} />
                 </div>
                 <div className="mt-1.5 text-[11px] text-center bg-card border border-border rounded px-1.5 py-0.5 text-foreground whitespace-nowrap">
                   Drop to place
@@ -7129,7 +7129,7 @@ function InsertDock(props: {
                             transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
                           }}
                         >
-                          <DeviceGlyph type={p.type} size={22} tone={activeCat.tone} />
+                          <DeviceGlyph type={p.type} size={22} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-[12px] truncate leading-tight flex items-center gap-2">
@@ -7203,7 +7203,7 @@ function InsertDock(props: {
                       className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-secondary text-left group transition-colors"
                     >
                       <div className="w-9 h-9 rounded-lg bg-secondary group-hover:bg-background border border-border flex items-center justify-center shrink-0">
-                        <DeviceGlyph type={t.id} size={20} tone={cat.tone} />
+                        <DeviceGlyph type={t.id} size={20} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm">{t.label}</div>
@@ -7254,7 +7254,7 @@ function InsertDock(props: {
                     className="w-full text-left p-2.5 rounded-xl border border-border hover:border-primary/60 hover:bg-primary/[0.04] cursor-grab active:cursor-grabbing flex items-center gap-3 transition-colors group"
                   >
                     <div className="w-11 h-11 rounded-lg bg-secondary group-hover:bg-background border border-border flex items-center justify-center shrink-0">
-                      <DeviceGlyph type={p.type} size={24} tone={cat.tone} />
+                      <DeviceGlyph type={p.type} size={24} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{p.mfr} <span className="text-muted-foreground">{p.model}</span></div>
@@ -7381,7 +7381,7 @@ function LayersPanel({ devices, selId, setSelId, selIds, setSelIds, hiddenIds, s
                   className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${active ? 'bg-primary/10 ring-1 ring-primary/30' : multi ? 'bg-primary/[0.06] ring-1 ring-primary/20' : 'hover:bg-secondary'}`}
                 >
                   <div className="w-6 h-6 rounded bg-secondary border border-border flex items-center justify-center shrink-0">
-                    <DeviceGlyph type={d.type} size={14} tone={g.tone} />
+                    <DeviceGlyph type={d.type} size={14} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className={`text-xs truncate ${hidden ? 'text-muted-foreground/60 line-through' : ''}`}>{d.id}</div>
@@ -9748,7 +9748,12 @@ const DEVICE_ICON: Record<DeviceType, any> = {
 function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: string; selected: boolean; scale?: number }) {
   const kind = TYPE_KIND[d.type];
   const rot = d.rot;
-  const ink = tone;
+  // V3.6 marker color rule: plotted markers render in a quiet neutral
+  // by default. Per-object color overrides (set via the color picker)
+  // still apply so operators can group / tag devices visually. The
+  // resting state on the plan is monochrome; the selection ring carries
+  // the only accent color (cool primary).
+  const ink = d.color || 'var(--foreground)';
   const sw = 1.4;
   const accKind = (d as any).accessoryKind as string | undefined;
 
@@ -9892,7 +9897,10 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
             </text>
           </g>
         )}
-        {selected && <circle r={10} fill="none" stroke={tone} strokeWidth="0.7" opacity="0.85" />}
+        {/* V3.6 selection ring → single cool accent. No longer
+            picks up category tone, so the only color signal in the
+            plan is "you have this device selected." */}
+        {selected && <circle r={10} fill="none" stroke="var(--primary)" strokeWidth="0.9" opacity="0.95" />}
       </g>
     );
   }
@@ -10210,11 +10218,41 @@ function IsoDeviceBadge({ d }: { d: Device }) {
   );
 }
 
-function DeviceGlyph({ type, size, tone }: { type: DeviceType; size: number; tone: string }) {
-  const Icon = DEVICE_ICON[type] ?? Video;
+function DeviceGlyph({ type, size, tone }: { type: DeviceType; size: number; tone?: string }) {
+  // V3.6 unification: dock / palette / drag-ghost / layer rows render
+  // the SAME schematic plan symbols the canvas plots, not lucide
+  // SaaS icons. Default color is the neutral foreground (monochrome
+  // marker rule); callers that genuinely need a category color (e.g.,
+  // the category nav header) can still pass `tone` and override.
+  const ink = tone ?? 'var(--foreground)';
+  if (SURVEYOR_SYMBOL_HAS(type)) {
+    // Stroke widens slightly for smaller chrome sizes so the symbol
+    // still reads crisp at 14-16px. At 24+ the default holds.
+    const stroke = size <= 16 ? 1.6 : size <= 22 ? 1.5 : 1.4;
+    return (
+      <span
+        className="inline-flex items-center justify-center"
+        style={{ width: size, height: size, color: ink }}
+      >
+        <SurveyorSymbol id={type} size={size} stroke={stroke} />
+      </span>
+    );
+  }
+  // Fallback for any device type we genuinely don't have a symbol
+  // for. Flagged via console so we add the symbol rather than ship
+  // a mismatched lucide marker. Renders an empty box, deliberately
+  // ugly so the missing symbol is visible during development.
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.warn('[DeviceGlyph] no SurveyorSymbol for device type', type);
+  }
   return (
-    <span className="inline-flex items-center justify-center" style={{ width: size, height: size, color: tone }}>
-      <Icon style={{ width: size, height: size }} strokeWidth={1.9} />
+    <span
+      className="inline-flex items-center justify-center border border-dashed border-current/40"
+      style={{ width: size, height: size, color: ink, fontSize: Math.max(8, size * 0.45) }}
+      title={`Missing icon for ${type}`}
+    >
+      ?
     </span>
   );
 }
@@ -15719,7 +15757,7 @@ function BottomDeviceBar({
                     >
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-md flex items-center justify-center shrink-0" style={{ background: `${tone}14`, color: tone, boxShadow: `inset 0 0 0 1px ${tone}55` }}>
-                          <DeviceGlyph type={p.type} size={20} tone={tone} />
+                          <DeviceGlyph type={p.type} size={20} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-medium tracking-tight truncate text-foreground">{p.model}</div>

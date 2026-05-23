@@ -24,15 +24,16 @@ export type SymbolId =
   // Access
   | 'acc.reader' | 'acc.keypad' | 'acc.strike' | 'acc.maglock'
   | 'acc.exit' | 'acc.dps' | 'acc.panic' | 'acc.controller' | 'acc.psu' | 'acc.intercom'
-  | 'acc.biometric'
+  | 'acc.biometric' | 'acc.turnstile' | 'acc.panic-bar'
   // Infrastructure
   | 'inf.door-single' | 'inf.door-double' | 'inf.door-storefront'
   | 'inf.door-sliding' | 'inf.gate-swing' | 'inf.gate-slide'
   | 'inf.elevator' | 'inf.window' | 'inf.wall' | 'inf.wall-brick' | 'inf.wall-fire'
+  | 'inf.wall-concrete'
   // Network / IDF
   | 'net.idf' | 'net.mdf' | 'inf.rack' | 'inf.mdf'
-  | 'net.switch' | 'net.patch' | 'net.ap' | 'net.firewall'
-  | 'sto.nvr' | 'sto.server'
+  | 'net.switch' | 'net.patch' | 'net.ap' | 'net.firewall' | 'net.bridge'
+  | 'sto.nvr' | 'sto.server' | 'sto.archive' | 'sto.cloud'
   // Cabling
   | 'cab.cable' | 'cab.bundle' | 'cab.conduit' | 'cab.pullbox' | 'cab.jbox'
   | 'cab.jhook' | 'cab.tray' | 'cab.coupler' | 'cab.jack'
@@ -41,8 +42,25 @@ export type SymbolId =
   | 'cab.pp24' | 'cab.pp48' | 'cab.pp-fiber'
   // Power
   | 'pwr.psu' | 'pwr.transformer' | 'pwr.battery' | 'pwr.poe' | 'pwr.ups'
-  // Sensors / fire (minimal coverage)
-  | 'sen.motion' | 'sen.glass' | 'sen.smoke' | 'fire.pull' | 'fire.horn';
+  | 'pwr.surge' | 'pwr.solar'
+  // Sensors
+  | 'sen.motion' | 'sen.glass' | 'sen.smoke'
+  | 'sen.temp' | 'sen.water' | 'sen.occupancy' | 'sen.gas' | 'sen.gunshot'
+  // Intrusion alarm panel sensors (aliases share JSX with their sen.*
+  // / acc.* counterparts — same physical hardware, different domain id)
+  | 'int.motion' | 'int.glassbreak' | 'int.contact'
+  | 'int.panic' | 'int.vibration' | 'int.keypad'
+  // Audio
+  | 'aud.speaker' | 'aud.mic' | 'aud.amp' | 'aud.horn' | 'aud.intercom'
+  // Display
+  | 'dis.monitor' | 'dis.wall' | 'dis.kiosk' | 'dis.signage'
+  // Fire / life safety
+  | 'fire.pull' | 'fire.horn'
+  | 'fls.pull-station' | 'fls.fire-panel' | 'fls.strobe' | 'fls.sprinkler'
+  // Cyber (plan style appliances)
+  | 'cyb.endpoint' | 'cyb.siem' | 'cyb.firewall-ng' | 'cyb.vpn'
+  // Building systems
+  | 'bld.hvac-controller' | 'bld.lighting-panel' | 'bld.bms-gateway';
 
 const VB = 24;
 
@@ -625,7 +643,296 @@ const SYMBOLS: Record<string, React.ReactNode> = {
       <path d="M 15 9 L 20 5 L 20 19 L 15 15 Z" />
     </g>
   ),
+
+  // ─────────────────────────────────────────────────────────────────
+  // V3.6 unification — new plan-symbol glyphs for the previously
+  // lucide-fallback types. Same monochrome currentColor language,
+  // 24-unit viewBox, technical voice. Where two device-type ids
+  // refer to the same physical object (e.g. int.motion vs sen.motion),
+  // the entries share the same JSX so the look is identical.
+  // ─────────────────────────────────────────────────────────────────
+
+  // Sensors
+  'sen.temp': (
+    <g>
+      <path d="M 10.5 5 v 9.2 a 2.4 2.4 0 1 0 3 0 v -9.2 a 1.5 1.5 0 1 0 -3 0 z" />
+      <line x1={10.5} y1={9} x2={13.5} y2={9} />
+      <line x1={10.5} y1={11.5} x2={13.5} y2={11.5} />
+    </g>
+  ),
+  'sen.water': (
+    <g>
+      <path d="M 12 4 C 6.5 11 7 16.5 12 19.5 C 17 16.5 17.5 11 12 4 Z" />
+      <path d="M 9 14.5 C 9.6 16 10.5 17 12 17.2" />
+    </g>
+  ),
+  'sen.occupancy': (
+    <g>
+      <circle cx={12} cy={7.5} r={2.4} />
+      <path d="M 7 19 L 7 13.5 C 7 12 8 11 9.5 11 L 14.5 11 C 16 11 17 12 17 13.5 L 17 19" />
+    </g>
+  ),
+  'sen.gas': (
+    <g>
+      <path d="M 5 9 C 7 7.5 9 7.5 11 9 C 13 10.5 15 10.5 17 9" />
+      <path d="M 5 13 C 7 11.5 9 11.5 11 13 C 13 14.5 15 14.5 17 13" />
+      <path d="M 5 17 C 7 15.5 9 15.5 11 17 C 13 18.5 15 18.5 17 17" />
+    </g>
+  ),
+  'sen.gunshot': (
+    <g>
+      <path d="M 12 4 L 13.4 10.6 L 20 12 L 13.4 13.4 L 12 20 L 10.6 13.4 L 4 12 L 10.6 10.6 Z" />
+      <circle cx={12} cy={12} r={1.8} />
+    </g>
+  ),
+
+  // Intrusion alarm panel sensors. Most are aliases of the corresponding
+  // physical sensors already defined above / in the access set.
+  'int.motion':     null as any, // set below via alias merge
+  'int.glassbreak': null as any,
+  'int.contact':    null as any,
+  'int.panic':      null as any,
+  'int.vibration': (
+    <g>
+      <rect x={5} y={8} width={14} height={8} rx={1} />
+      <path d="M 9 19 q 0.8 -1.5 0 -3" />
+      <path d="M 12 19 q 1.1 -1.5 0 -3" />
+      <path d="M 15 19 q 0.8 -1.5 0 -3" />
+    </g>
+  ),
+  'int.keypad': null as any,
+
+  // Audio
+  'aud.speaker': (
+    <g>
+      <rect x={6} y={5} width={12} height={14} rx={1} />
+      <circle cx={12} cy={10} r={1.6} />
+      <circle cx={12} cy={15.2} r={3.0} />
+      <circle cx={12} cy={15.2} r={1.2} />
+    </g>
+  ),
+  'aud.mic': (
+    <g>
+      <rect x={9.5} y={4.5} width={5} height={9} rx={2.5} />
+      <path d="M 6.5 12 C 6.5 16 9.5 18 12 18 C 14.5 18 17.5 16 17.5 12" />
+      <line x1={12} y1={18} x2={12} y2={20.5} />
+      <line x1={9.5} y1={20.5} x2={14.5} y2={20.5} />
+    </g>
+  ),
+  'aud.amp': (
+    <g>
+      <rect x={3.5} y={7} width={17} height={10} rx={1} />
+      <circle cx={7} cy={12} r={1.4} />
+      <circle cx={11.5} cy={12} r={1.4} />
+      <circle cx={16} cy={12} r={1.4} />
+      <line x1={5} y1={9.5} x2={19} y2={9.5} strokeOpacity="0.5" />
+    </g>
+  ),
+  'aud.horn':     null as any, // alias of fire.horn (same hardware)
+  'aud.intercom': null as any, // alias of acc.intercom
+
+  // Display
+  'dis.monitor': (
+    <g>
+      <rect x={3.5} y={5} width={17} height={11} rx={1} />
+      <line x1={9.5} y1={19} x2={14.5} y2={19} />
+      <line x1={12} y1={16} x2={12} y2={19} />
+    </g>
+  ),
+  'dis.wall': (
+    <g>
+      <rect x={2.5} y={4} width={19} height={13} rx={0.8} />
+      <line x1={9} y1={4} x2={9} y2={17} strokeOpacity="0.45" />
+      <line x1={15} y1={4} x2={15} y2={17} strokeOpacity="0.45" />
+      <line x1={2.5} y1={10.5} x2={21.5} y2={10.5} strokeOpacity="0.45" />
+      <line x1={8} y1={20.5} x2={16} y2={20.5} />
+    </g>
+  ),
+  'dis.kiosk': (
+    <g>
+      <rect x={6} y={3.5} width={12} height={14} rx={1} />
+      <rect x={4} y={17.5} width={16} height={3} rx={0.6} />
+      <circle cx={12} cy={14.8} r={0.9} fill="currentColor" stroke="none" />
+    </g>
+  ),
+  'dis.signage': (
+    <g>
+      <rect x={3} y={6} width={18} height={10} rx={0.8} />
+      <line x1={6} y1={9.5} x2={15} y2={9.5} strokeOpacity="0.6" />
+      <line x1={6} y1={12.5} x2={18} y2={12.5} strokeOpacity="0.6" />
+      <line x1={11} y1={16} x2={11} y2={20} />
+      <line x1={9} y1={20} x2={13} y2={20} />
+    </g>
+  ),
+
+  // Power / electrical
+  'pwr.surge': (
+    <g>
+      <rect x={4} y={6} width={16} height={12} rx={1} />
+      <path d="M 12 8.5 L 10 12.5 L 12 12.5 L 10 15.5" />
+      <line x1={7} y1={11} x2={8.5} y2={11} />
+      <line x1={15.5} y1={11} x2={17} y2={11} />
+    </g>
+  ),
+  'pwr.solar': (
+    <g>
+      <rect x={4} y={11} width={16} height={9} rx={0.6} />
+      <line x1={9.3} y1={11} x2={9.3} y2={20} strokeOpacity="0.55" />
+      <line x1={14.7} y1={11} x2={14.7} y2={20} strokeOpacity="0.55" />
+      <line x1={4} y1={15.5} x2={20} y2={15.5} strokeOpacity="0.55" />
+      <circle cx={12} cy={6.5} r={2.6} />
+      <line x1={12} y1={2.5} x2={12} y2={3.8} />
+      <line x1={12} y1={9.2} x2={12} y2={10.5} />
+      <line x1={8.5} y1={6.5} x2={9.6} y2={6.5} />
+      <line x1={14.4} y1={6.5} x2={15.5} y2={6.5} />
+    </g>
+  ),
+
+  // Cyber (abstract — represented as plan-style appliances)
+  'cyb.endpoint': (
+    <g>
+      <rect x={4} y={5.5} width={16} height={10} rx={0.8} />
+      <rect x={2.5} y={17} width={19} height={2.2} rx={0.6} />
+    </g>
+  ),
+  'cyb.siem': (
+    <g>
+      <rect x={4} y={5} width={16} height={14} rx={1} />
+      <polyline points="6.5,15 9.5,11.5 12,13.5 14.5,9.5 17.5,12" />
+      <line x1={6.5} y1={15} x2={17.5} y2={15} strokeOpacity="0.55" />
+    </g>
+  ),
+  'cyb.firewall-ng': null as any, // alias of net.firewall (same plan symbol)
+  'cyb.vpn': (
+    <g>
+      <rect x={4} y={5} width={16} height={14} rx={1} />
+      <rect x={9.5} y={11.5} width={5} height={4} rx={0.4} />
+      <path d="M 10.5 11.5 v -1.5 a 1.5 1.5 0 0 1 3 0 v 1.5" fill="none" />
+    </g>
+  ),
+
+  // Fire / life safety
+  'fls.pull-station': null as any, // alias of fire.pull
+  'fls.fire-panel': (
+    <g>
+      <rect x={3.5} y={4} width={17} height={16} rx={1} />
+      <rect x={6} y={6.5} width={12} height={4} rx={0.5} />
+      <circle cx={7.5} cy={14} r={0.9} fill="currentColor" stroke="none" />
+      <circle cx={11} cy={14} r={0.9} />
+      <circle cx={14.5} cy={14} r={0.9} />
+      <circle cx={17} cy={14} r={0.9} />
+      <line x1={5.5} y1={17.5} x2={18.5} y2={17.5} strokeOpacity="0.55" />
+    </g>
+  ),
+  'fls.strobe': (
+    <g>
+      <rect x={6} y={7} width={12} height={9} rx={0.8} />
+      <path d="M 9.5 11.5 L 12 11.5 L 10.5 14.5 L 13 14.5 L 11 17.5" />
+      <line x1={4} y1={5} x2={6.5} y2={7.5} strokeOpacity="0.55" />
+      <line x1={20} y1={5} x2={17.5} y2={7.5} strokeOpacity="0.55" />
+      <line x1={4} y1={18} x2={6.5} y2={15.5} strokeOpacity="0.55" />
+      <line x1={20} y1={18} x2={17.5} y2={15.5} strokeOpacity="0.55" />
+    </g>
+  ),
+  'fls.sprinkler': (
+    <g>
+      <line x1={12} y1={3.5} x2={12} y2={9.5} />
+      <circle cx={12} cy={11.5} r={2.2} />
+      <line x1={12} y1={13.7} x2={12} y2={20} />
+      <line x1={9.5} y1={20} x2={14.5} y2={20} />
+      <line x1={6.5} y1={18.5} x2={9.5} y2={20} strokeOpacity="0.55" />
+      <line x1={17.5} y1={18.5} x2={14.5} y2={20} strokeOpacity="0.55" />
+    </g>
+  ),
+
+  // Building systems
+  'bld.hvac-controller': (
+    <g>
+      <rect x={3.5} y={4} width={17} height={16} rx={1} />
+      <circle cx={12} cy={12} r={4} />
+      <line x1={12} y1={8} x2={12} y2={16} strokeOpacity="0.55" />
+      <line x1={8} y1={12} x2={16} y2={12} strokeOpacity="0.55" />
+      <circle cx={12} cy={12} r={1.1} fill="currentColor" stroke="none" />
+    </g>
+  ),
+  'bld.lighting-panel': (
+    <g>
+      <rect x={3.5} y={4} width={17} height={16} rx={1} />
+      <path d="M 10 9.5 q 2 -3 4 0 q 0 2 -1.5 3 v 1.5 h -1 v -1.5 q -1.5 -1 -1.5 -3 z" />
+      <line x1={11.2} y1={15.5} x2={12.8} y2={15.5} />
+      <line x1={6} y1={18} x2={18} y2={18} strokeOpacity="0.55" />
+    </g>
+  ),
+  'bld.bms-gateway': (
+    <g>
+      <rect x={3.5} y={5} width={17} height={14} rx={1} />
+      <line x1={3.5} y1={9} x2={20.5} y2={9} strokeOpacity="0.55" />
+      <circle cx={6.5} cy={7} r={0.7} fill="currentColor" stroke="none" />
+      <line x1={6} y1={12.5} x2={18} y2={12.5} strokeOpacity="0.55" />
+      <line x1={6} y1={15.5} x2={18} y2={15.5} strokeOpacity="0.55" />
+    </g>
+  ),
+
+  // Access — additions for the gap types
+  'acc.turnstile': (
+    <g>
+      <circle cx={12} cy={12} r={1.8} />
+      <line x1={12} y1={10.2} x2={12} y2={4.5} />
+      <line x1={12} y1={13.8} x2={12} y2={19.5} />
+      <line x1={10.2} y1={12} x2={4.5} y2={12} />
+      <line x1={13.8} y1={12} x2={19.5} y2={12} />
+    </g>
+  ),
+  'acc.panic-bar': (
+    <g>
+      <rect x={4} y={8} width={16} height={8} rx={1} />
+      <rect x={5.5} y={10.8} width={13} height={2.4} rx={0.4} fill="currentColor" stroke="none" opacity={0.85} />
+    </g>
+  ),
+
+  // Network bridge — a wireless link box. Distinct from net.ap (point
+  // to point versus omnidirectional).
+  'net.bridge': (
+    <g>
+      <rect x={5} y={9} width={14} height={7} rx={0.6} />
+      <path d="M 3.5 8 q 1.5 -2 3 -2" />
+      <path d="M 20.5 8 q -1.5 -2 -3 -2" />
+      <circle cx={9} cy={12.5} r={0.7} fill="currentColor" stroke="none" />
+      <circle cx={15} cy={12.5} r={0.7} fill="currentColor" stroke="none" />
+    </g>
+  ),
+
+  // Infrastructure — alias for inf.wall-concrete (uses inf.wall body)
+  'inf.wall-concrete': null as any,
+
+  // Storage — additions
+  'sto.archive': (
+    <g>
+      <rect x={3.5} y={5} width={17} height={14} rx={0.5} />
+      <rect x={5.5} y={7} width={13} height={2.2} />
+      <rect x={5.5} y={10.5} width={13} height={2.2} />
+      <rect x={5.5} y={14} width={13} height={2.2} />
+    </g>
+  ),
+  'sto.cloud': (
+    <g>
+      <path d="M 7 15 A 3.4 3.4 0 0 1 7.8 8.5 A 4.2 4.2 0 0 1 15.5 8.5 A 2.8 2.8 0 0 1 17 14 A 2.6 2.6 0 0 1 15.5 15 L 7 15 Z" />
+    </g>
+  ),
 };
+
+// ─── Alias merge — same hardware, different ids ────────────────────
+// Plan symbols are shared between alias keys so the look is identical.
+SYMBOLS['int.motion']        = SYMBOLS['sen.motion'];
+SYMBOLS['int.glassbreak']    = SYMBOLS['sen.glass'];
+SYMBOLS['int.contact']       = SYMBOLS['acc.dps'];
+SYMBOLS['int.panic']         = SYMBOLS['acc.panic'];
+SYMBOLS['int.keypad']        = SYMBOLS['acc.keypad'];
+SYMBOLS['aud.horn']          = SYMBOLS['fire.horn'];
+SYMBOLS['aud.intercom']      = SYMBOLS['acc.intercom'];
+SYMBOLS['cyb.firewall-ng']   = SYMBOLS['net.firewall'];
+SYMBOLS['fls.pull-station']  = SYMBOLS['fire.pull'];
+SYMBOLS['inf.wall-concrete'] = SYMBOLS['inf.wall'];
 
 /** Render a single symbol scaled into a parent transform. The symbol's
  *  natural viewBox is 24×24; pass `size` to scale up/down (16/24/32). */
@@ -668,13 +975,22 @@ export function SurveyorSymbolBody({
   if (!body) return null;
   // Translate so the symbol's centre (12,12 in its 24-unit viewBox)
   // sits at the origin, then scale to the requested size.
+  //
+  // V3.6 stroke math fix: the SVG transform scales BOTH geometry and
+  // strokeWidth, so a `stroke=1.1` rendered through `transform="scale(0.72)"`
+  // produced a sub-pixel 0.79 px stroke that anti-aliased to a soft
+  // smudge on every display. Counter-scale the stroke here so the
+  // `stroke` prop reflects the rendered pixel width in the OUTER
+  // coordinate space. Canvas zoom still scales the stroke naturally
+  // with the rest of the drawing — CAD-style behavior preserved.
   const half = VB / 2;
+  const effectiveStroke = scale > 0 ? stroke / scale : stroke;
   return (
     <g
       transform={`scale(${scale}) translate(${-half}, ${-half})`}
       fill="none"
       stroke="currentColor"
-      strokeWidth={stroke}
+      strokeWidth={effectiveStroke}
       strokeLinejoin="round"
       strokeLinecap="round"
     >
