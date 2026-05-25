@@ -3948,6 +3948,7 @@ export function EngineeringCanvas() {
                 <div
                   className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none hidden md:flex items-center gap-1.5"
                   data-testid="scale-bar"
+                  data-canvas-chrome="scalebar"
                   style={{
                     background: 'var(--panel-background)',
                     backdropFilter: 'blur(12px)',
@@ -8391,10 +8392,24 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           </g>
         )}
 
-        {/* FOV cones — gated by the `fov` engineering layer. The selected
-            camera still shows its cone regardless, so direct manipulation
-            never goes blind. Opacity is further multiplied by the user's
-            coverage opacity setting so dense maps can be quieted. */}
+        {/* FOV cones — gated by the `fov` engineering layer. Item 8 —
+            cones now clip to the camera's enclosing Room polygon, or
+            (when there's no room) to the floor's plan bounds plus a
+            20 ft margin so coverage doesn't sprawl across empty
+            canvas. planBounds is computed once per render from the
+            uploaded background (transformed bbox) or the seeded
+            FloorPlan rectangle. Density math is unchanged. */}
+        {(() => {
+          const planBounds: { x: number; y: number; w: number; h: number } | null =
+            (floorBackground && floorBackground.naturalWidth && floorBackground.naturalHeight)
+              ? {
+                  x: floorBackground.x,
+                  y: floorBackground.y,
+                  w: floorBackground.naturalWidth * (floorBackground.scale ?? 1),
+                  h: floorBackground.naturalHeight * (floorBackground.scale ?? 1),
+                }
+              : { x: 80, y: 80, w: 640, h: 480 };
+          return (
         <g style={{ mixBlendMode: coverageMode === 'heatmap' ? 'screen' : 'normal' }}>
           {renderedDevices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
             const isSel = d.id === selId;
@@ -8407,9 +8422,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             // coverage entirely.
             const dim = (selId ? (isSel ? 1 : 0.55) : 1) * coverageAlpha;
             // Item 6 — find the room polygon that contains this
-            // camera (if any). Cameras inside a room get their cone
-            // clipped to that polygon downstream in FOV. Cameras
-            // outside any room render unclipped.
+            // camera (if any). Item 8 — when there's no enclosing
+            // room, fall back to the floor's plan bounds + margin so
+            // the cone doesn't sprawl across empty canvas. Both are
+            // computed at the call site and passed to FOV.
             let roomPolygon: { x: number; y: number }[] | null = null;
             if (rooms && rooms.length > 0) {
               for (const r of rooms) {
@@ -8421,9 +8437,11 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 }
               }
             }
-            return <FOV key={`fov-${d.id}`} d={d} pxToFt={currentFloorPxToFt} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} emphasizedDoriLevel={isSel ? selectedDoriLevel : null} roomPolygon={roomPolygon} />;
+            return <FOV key={`fov-${d.id}`} d={d} pxToFt={currentFloorPxToFt} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} emphasizedDoriLevel={isSel ? selectedDoriLevel : null} roomPolygon={roomPolygon} planBounds={planBounds} />;
           })}
         </g>
+          );
+        })()}
 
         {/* Canvas V2 Pass 2B.3 — coverage gap detection heat map.
             Pulls the pre computed grid from the parent so the same
@@ -9992,7 +10010,7 @@ function FovCone({
   );
 }
 
-function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null, emphasizedDoriLevel = null, roomPolygon = null }: { d: Device; pxToFt: number; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null; emphasizedDoriLevel?: DoriLevel | null; roomPolygon?: { x: number; y: number }[] | null }) {
+function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null, emphasizedDoriLevel = null, roomPolygon = null, planBounds = null }: { d: Device; pxToFt: number; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null; emphasizedDoriLevel?: DoriLevel | null; roomPolygon?: { x: number; y: number }[] | null; planBounds?: { x: number; y: number; w: number; h: number } | null }) {
   // Mode-driven render parameters. Tuned down for the ergonomics pass so
   // unselected coverage doesn't dominate the plan. Selected coverage
   // keeps a small 1.2× boost so it reads as clear without being loud —
@@ -10017,22 +10035,38 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
     // overlap regions without any extra UI. This is the multisensor's
     // signature visual moment.
     const useScreenBlend = selected && activeLens === 'all' && !wireframe;
-    // Item 6 — multisensor cones inherit the same room clip as the
-    // single-lens branch when the device sits inside a Room polygon.
-    const msRoomClipId = roomPolygon && roomPolygon.length >= 3 ? `cone-room-ms-${d.id}` : null;
-    const msRoomClipPath = msRoomClipId
+    // Item 6 + 8 — multisensor cones inherit the same clip priority as
+    // the single-lens branch: room polygon when inside one, plan bounds
+    // + 20 ft margin otherwise, unclipped if neither is available.
+    const msUseRoom = !!(roomPolygon && roomPolygon.length >= 3);
+    const msUsePlan = !msUseRoom && !!planBounds;
+    const msClipId = msUseRoom
+      ? `cone-room-ms-${d.id}`
+      : msUsePlan
+        ? `cone-plan-ms-${d.id}`
+        : null;
+    const msPlanMarginPx = pxToFt > 0 ? 20 / pxToFt : 200;
+    const msClipPathD = msUseRoom
       ? roomPolygon!.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
-      : null;
+      : msUsePlan && planBounds
+        ? (() => {
+            const x0 = planBounds.x - msPlanMarginPx;
+            const y0 = planBounds.y - msPlanMarginPx;
+            const x1 = planBounds.x + planBounds.w + msPlanMarginPx;
+            const y1 = planBounds.y + planBounds.h + msPlanMarginPx;
+            return `M ${x0} ${y0} L ${x1} ${y0} L ${x1} ${y1} L ${x0} ${y1} Z`;
+          })()
+        : null;
     return (
       <g style={useScreenBlend ? { mixBlendMode: 'screen' } : undefined}>
-        {msRoomClipId && msRoomClipPath && (
+        {msClipId && msClipPathD && (
           <defs>
-            <clipPath id={msRoomClipId} clipPathUnits="userSpaceOnUse">
-              <path d={msRoomClipPath} />
+            <clipPath id={msClipId} clipPathUnits="userSpaceOnUse">
+              <path d={msClipPathD} />
             </clipPath>
           </defs>
         )}
-        <g clipPath={msRoomClipId ? `url(#${msRoomClipId})` : undefined}>
+        <g clipPath={msClipId ? `url(#${msClipId})` : undefined}>
         {(['a', 'b', 'c', 'd'] as const).map((k) => {
           const L = lenses[k];
           if (!L.enabled) return null;
@@ -10136,30 +10170,52 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
     const yb2 = d.y + Math.sin(a2) * rIn;
     return `M ${xb1} ${yb1} L ${xa1} ${ya1} A ${rOut} ${rOut} 0 ${large} 1 ${xa2} ${ya2} L ${xb2} ${yb2} A ${rIn} ${rIn} 0 ${large} 0 ${xb1} ${yb1} Z`;
   };
-  // Item 6 — room-bound cone clip. When the camera sits inside a
-  // drawn Room polygon, build an SVG clipPath from that polygon and
-  // apply it to the cone group. Cameras outside any room (perimeter,
-  // exterior) render unclipped — their cones extend freely past the
-  // building outline, which is the honest behaviour for an outdoor
-  // PTZ pointed at a parking lot. Visual clip only; the band math
-  // (px/ft, reach, grade) is unchanged.
-  const roomClipId = roomPolygon && roomPolygon.length >= 3 ? `cone-room-${d.id}` : null;
-  const roomClipPath = roomClipId
+  // Item 6 / Item 8 — cone clip. Priority order:
+  //   1. roomPolygon (camera sits inside a drawn Room) → clip to that
+  //      polygon. The room's own walls bound the coverage.
+  //   2. planBounds (no room, but the floor has known plan bounds) →
+  //      clip to plan rect + ~20 ft margin so cones don't sprawl
+  //      across empty canvas. Exterior cameras still get visible
+  //      "edge" coverage — the explicit exterior zone polygon is the
+  //      long-term fix; this is the honest stopgap.
+  //   3. Neither → render unclipped (legacy behavior).
+  // Visual clip only. doriBandsFor + pxPerFtAt are untouched.
+  const useRoomClip = !!(roomPolygon && roomPolygon.length >= 3);
+  const usePlanClip = !useRoomClip && !!planBounds;
+  const clipId = useRoomClip
+    ? `cone-room-${d.id}`
+    : usePlanClip
+      ? `cone-plan-${d.id}`
+      : null;
+  // 20 ft margin around the plan rect for exterior coverage breathing
+  // room. With the canvas's ~12 px/ft default this is ~240 px; on a
+  // calibrated floor it scales with `pxToFt` so the margin stays a
+  // real 20 feet.
+  const planMarginPx = pxToFt > 0 ? 20 / pxToFt : 200;
+  const clipPathD = useRoomClip
     ? roomPolygon!.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
-    : null;
+    : usePlanClip && planBounds
+      ? (() => {
+          const x0 = planBounds.x - planMarginPx;
+          const y0 = planBounds.y - planMarginPx;
+          const x1 = planBounds.x + planBounds.w + planMarginPx;
+          const y1 = planBounds.y + planBounds.h + planMarginPx;
+          return `M ${x0} ${y0} L ${x1} ${y0} L ${x1} ${y1} L ${x0} ${y1} Z`;
+        })()
+      : null;
   return (
     <g opacity={opacity}>
-      {roomClipId && roomClipPath && (
+      {clipId && clipPathD && (
         <defs>
-          <clipPath id={roomClipId} clipPathUnits="userSpaceOnUse">
-            <path d={roomClipPath} />
+          <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
+            <path d={clipPathD} />
           </clipPath>
         </defs>
       )}
       {/* Cone payload — wrapped in a group with the room clipPath when
           present so the cone, bands, arcs, and labels all clip to the
           camera's enclosing room. */}
-      <g clipPath={roomClipId ? `url(#${roomClipId})` : undefined}>
+      <g clipPath={clipId ? `url(#${clipId})` : undefined}>
       {/* Single-pass fill — no more bloom doubling. Hairline edge stroke. */}
       {!wireframe && <path d={path} fill={`url(#${gradId})`} />}
       <path d={path} fill="none" stroke={edge} strokeWidth={wireframe ? 0.9 : 0.5} opacity={wireframe ? 0.85 : 0.32} />
@@ -11519,8 +11575,12 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
         if (kind === 'rail') {
           // Left rail occupies the left edge — push safeLeft to its right edge.
           safeLeft = Math.max(safeLeft, cr);
-        } else if (kind === 'tray') {
+        } else if (kind === 'tray' || kind === 'scalebar') {
           // Bottom tray (and any tray panel above the bar) — push safeBottom up.
+          // Item 5: the scale bar also counts as bottom chrome so the
+          // SelectionPill never overlaps it. The scale bar lives just
+          // above the bottom toolbar; the pill lifts above the higher
+          // of the two.
           safeBottom = Math.min(safeBottom, ct);
         } else if (kind === 'drawer') {
           // Right edit drawer — push safeRight to its left edge.
@@ -18596,8 +18656,9 @@ function MiniMapFloorStrip({ projectId, activeFloorId, onPickFloor }: {
   };
   return (
     <div
-      className="absolute right-[200px] bottom-3 z-20 hidden md:flex flex-col gap-1 p-1.5 rounded-lg bg-card/90 backdrop-blur-md border border-border shadow-md"
+      className="absolute right-3 bottom-[68px] z-20 hidden md:flex flex-col gap-1 p-1.5 rounded-lg bg-card/90 backdrop-blur-md border border-border shadow-md"
       data-testid="minimap-floor-strip"
+      data-canvas-chrome="floor-strip"
     >
       {projectFloors.map((f) => {
         const isActive = f.id === activeFloorId;
