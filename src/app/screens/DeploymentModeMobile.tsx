@@ -132,7 +132,7 @@ export function DeploymentModeMobile() {
       {selected ? (
         <WorkOrderDetailMobile wo={selected} online={online} onClose={() => setSelectedId(null)} />
       ) : (
-        <WorkOrderListMobile workOrders={workOrders} onOpen={(id) => setSelectedId(id)} />
+        <WorkOrderListMobile workOrders={workOrders} woGate={woGate} onOpen={(id) => setSelectedId(id)} />
       )}
     </div>
   );
@@ -154,7 +154,7 @@ function SyncChip({ online }: { online: boolean }) {
   );
 }
 
-function WorkOrderListMobile({ workOrders, onOpen }: { workOrders: WorkOrder[]; onOpen: (id: string) => void }) {
+function WorkOrderListMobile({ workOrders, woGate, onOpen }: { workOrders: WorkOrder[]; woGate: { ok: boolean; reason: 'ok' | 'no_approval' | 'design_only' | 'phase_too_early'; phase: string | null }; onOpen: (id: string) => void }) {
   // Group by status bucket: open first, then complete, then blocked.
   const open = workOrders.filter((w) => w.progress.status !== 'complete' && w.progress.status !== 'blocked');
   const complete = workOrders.filter((w) => w.progress.status === 'complete');

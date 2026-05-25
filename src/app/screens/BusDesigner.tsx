@@ -10,7 +10,7 @@ import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import {
   Bus as BusIcon, Plus, Trash2, AlertTriangle, CheckCircle2, FileDown,
-  Cable, Zap, Antenna, ChevronRight, ChevronLeft, MousePointer2,
+  Cable, Zap, Antenna, ChevronRight, ChevronLeft, MousePointer2, X,
 } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import type { Bus, BusCamera, BusCameraLocation, BusDVR, BusEventInput, BusCommissioningCheck } from '../store/types';

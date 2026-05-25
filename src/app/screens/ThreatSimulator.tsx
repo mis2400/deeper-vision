@@ -149,7 +149,7 @@ export function ThreatSimulator() {
             return (
               <button
                 key={s.id}
-                onClick={() => { setScenarioId(s.id); setHopCursor(0); setPlaying(false); }}
+                onClick={() => { setScenarioId(s.id); setPlaying(false); /* hopCursor state never landed; the setter ref crashed scenario picks until the type check caught it */ }}
                 className={`w-full text-left px-2.5 py-2 rounded transition-colors ${active ? 'bg-secondary' : 'hover:bg-secondary/50'}`}
                 data-testid={`threat-scenario-${s.id}`}
               >

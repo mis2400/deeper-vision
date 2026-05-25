@@ -2886,6 +2886,14 @@ export function EngineeringCanvas() {
       crumbs={[{ label: 'Projects', to: '/projects' }, { label: breadcrumbProjectName, to: `/project/${projectId}` }, { label: 'Canvas' }]}
       fullBleed
     >
+      {/* Item 2 — top-level error boundary. The prior CanvasErrorBoundary
+          only wrapped CanvasSurface and EditDrawer, so a throw in a
+          sibling (SelectionPill, drawing rail, dialogs, the docked
+          drawers, anything outside those two) blanked the whole page.
+          This boundary spans every child of AppShell so any single
+          component throw shows a contained message and the app stays
+          alive. */}
+      <CanvasErrorBoundary label="EngineeringCanvas">
       <div ref={rootRef} className="h-full flex flex-col bg-background text-foreground relative">
         {/* Motion keyframes — used by the selection pill, spotlight ring,
             and lens chips. The easing is the same throughout (cubic-bezier
@@ -4073,6 +4081,7 @@ export function EngineeringCanvas() {
             onClose={() => setReportOpen(false)}
             devices={devices}
             projectId={projectId}
+            pxToFt={currentFloorPxToFt}
           />
         )}
         {bundleInspectorId && (
@@ -4136,6 +4145,7 @@ export function EngineeringCanvas() {
           />
         )}
       </div>
+      </CanvasErrorBoundary>
     </AppShell>
   );
 }
@@ -5511,7 +5521,7 @@ function LeftNavRail({ section, setSection }: { section: string; setSection: (s:
    SECTION PANEL — content for non-Devices nav sections
    ═══════════════════════════════════════════════════════════════════════ */
 
-function MapsPanel({ onOpenScanBuild }: { onOpenScanBuild?: () => void }) {
+function MapsPanel({ onOpenScanBuild, onStartCalibrate }: { onOpenScanBuild?: () => void; onStartCalibrate?: () => void }) {
   // SITE_BUILDINGS is the seed. The user can add new buildings and floors
   // through this panel; both flows mutate local state so the additions show
   // up immediately. (When the full site/building/floor store is wired up,
@@ -5683,9 +5693,10 @@ function MapsPanel({ onOpenScanBuild }: { onOpenScanBuild?: () => void }) {
             // Hand the user straight into the in-canvas Calibrate tool
             // right after they save the upload. Closing the modal first
             // lets the tool-status banner read cleanly under TopBar.
+            // The parent passes the actual resetCalibrate + setTool
+            // handlers via `onStartCalibrate`; we just need to forward.
             setImportOpen(false);
-            resetCalibrate();
-            setTool('calibrate');
+            if (onStartCalibrate) onStartCalibrate();
           }}
         />
       )}
@@ -5710,8 +5721,8 @@ function MapsPanel({ onOpenScanBuild }: { onOpenScanBuild?: () => void }) {
  *  toggles → live page-count estimate → export PDF (uses the same
  *  drawReport helpers the existing rows do). */
 function ReportBuilderDialog({
-  onClose, devices, projectId,
-}: { onClose: () => void; devices: Device[]; projectId: string }) {
+  onClose, devices, projectId, pxToFt,
+}: { onClose: () => void; devices: Device[]; projectId: string; pxToFt: number }) {
   type ReportType = ReportKind | 'estimate';
   const TYPES: Array<{ id: ReportType; label: string; sub: string; icon: any; tone: string }> = [
     { id: 'customer',         label: 'Customer presentation', sub: 'Cover · overview · investment · timeline', icon: Sparkles,    tone: '#A371F7' },
@@ -5762,7 +5773,7 @@ function ReportBuilderDialog({
       // Estimate reuses BOM under the hood for now; the audience selector
       // gates the customer/internal label baked into the cover.
       const kind: ReportKind = (reportType === 'estimate' ? 'bom' : reportType) as ReportKind;
-      drawReport(doc, kind, devices, projectId, currentFloorPxToFt);
+      drawReport(doc, kind, devices, projectId, pxToFt);
       const label = `${projectId}-${reportType}-${audience}-${new Date().toISOString().slice(0, 10)}.pdf`;
       doc.save(label);
       toast.success(`Exported · ${TYPES.find((t) => t.id === reportType)?.label}`, {
@@ -6732,7 +6743,7 @@ function ImportFloorplanDialog({ onClose, onImported, onStartCalibrate }: { onCl
   );
 }
 
-function SectionPanel({ section, devices, projectId, pxToFt, onOpenScanBuild, onOpenReport }: { section: string; devices: Device[]; projectId: string; pxToFt: number; onOpenScanBuild?: () => void; onOpenReport?: () => void }) {
+function SectionPanel({ section, devices, projectId, pxToFt, onOpenScanBuild, onOpenReport, onStartCalibrate }: { section: string; devices: Device[]; projectId: string; pxToFt: number; onOpenScanBuild?: () => void; onOpenReport?: () => void; onStartCalibrate?: () => void }) {
   const counts = useMemo(() => {
     const c: Record<DeviceKind, number> = { camera: 0, access: 0, network: 0, intrusion: 0, audio: 0, storage: 0, display: 0, power: 0, sensor: 0 };
     devices.forEach((d) => { c[TYPE_KIND[d.type]]++; });
@@ -6852,7 +6863,7 @@ function SectionPanel({ section, devices, projectId, pxToFt, onOpenScanBuild, on
   }
 
   if (section === 'maps') {
-    return <MapsPanel onOpenScanBuild={onOpenScanBuild} />;
+    return <MapsPanel onOpenScanBuild={onOpenScanBuild} onStartCalibrate={onStartCalibrate} />;
   }
 
   if (section === 'reports') {
