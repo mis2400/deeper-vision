@@ -16563,6 +16563,17 @@ function BottomDeviceBar({
   // shifted from "always-on input" to "icon trigger + on-demand input".
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // Item 3 — bottom bar adopts the left-rail visual language. Icons
+  // only by default; on hover (desktop) or tap (touch) the bar
+  // reveals labels + group headers + count badges. Per-category
+  // counts stay derived from real placement data — never fabricated.
+  const [barHover, setBarHover] = useState(false);
+  const [barTapExpand, setBarTapExpand] = useState(false);
+  const barCoarsePointer = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(hover: none) and (pointer: coarse)').matches,
+    [],
+  );
+  const barExpanded = barCoarsePointer ? barTapExpand : barHover;
   // The Conduit sub-tab defaults to a 6-button "common sizes" set
   // (EMT 1/2 · EMT 3/4 · EMT 1 · PVC 3/4 · PVC 1 · raceway). Flip this
   // toggle to expose the full 30-cell type × size matrix.
@@ -16576,8 +16587,8 @@ function BottomDeviceBar({
   // other floating affordance.
   const searchPanelLive = searchQuery.trim().length >= 2;
   useEffect(() => {
-    if (!open && !searchPanelLive && !searchOpen) return;
-    const dismiss = () => { setOpen(null); setSearchQuery(''); setSearchOpen(false); };
+    if (!open && !searchPanelLive && !searchOpen && !barTapExpand) return;
+    const dismiss = () => { setOpen(null); setSearchQuery(''); setSearchOpen(false); setBarTapExpand(false); };
     const onDown = (e: MouseEvent) => {
       if (trayRef.current && !trayRef.current.contains(e.target as Node)) dismiss();
     };
@@ -16585,7 +16596,7 @@ function BottomDeviceBar({
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onEsc);
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onEsc); };
-  }, [open, searchPanelLive, searchOpen]);
+  }, [open, searchPanelLive, searchOpen, barTapExpand]);
   // Focus the input when the user clicks the search icon so they can
   // start typing immediately. Runs after the conditional render flips
   // the textbox into the DOM.
@@ -17403,13 +17414,17 @@ function BottomDeviceBar({
         </div>
       )}
 
-      {/* The bar itself — premium light surface, fixed item width, active
-          underline + tint so the click target reads as a real selection
-          rather than a generic toolbar button. V1 P0.6: tiles are
-          grouped by domain with a small label header and a thin
-          divider between groups so the dock reads as a hierarchy
-          rather than 13 flat icons. */}
+      {/* The bar itself — Item 3 adopts the left-rail visual language.
+          Icons-only by default with a compact ~44 px tile per category.
+          On hover (desktop) or tap (touch) the bar reveals the per-
+          category label, the per-group header, and the count badge
+          on any category that has placed devices. Counts always read
+          from countByCat (real placements) — no fabricated dots. */}
       <div
+        onMouseEnter={() => !barCoarsePointer && setBarHover(true)}
+        onMouseLeave={() => !barCoarsePointer && setBarHover(false)}
+        onTouchStart={() => barCoarsePointer && setBarTapExpand(true)}
+        data-bar-expanded={barExpanded ? 'true' : undefined}
         className="rounded-2xl border bg-[var(--card)] backdrop-blur-xl shadow-[var(--shadow-floating)] flex items-stretch overflow-hidden"
         style={{ borderColor: 'var(--border)' }}
       >
@@ -17420,9 +17435,13 @@ function BottomDeviceBar({
             <div key={g.id} className="flex items-stretch">
               {gi > 0 && <span aria-hidden className="self-stretch w-px bg-border/70 my-1.5" />}
               <div className="flex flex-col">
-                <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
-                  {g.label}
-                </div>
+                {/* Group header — visible only when the bar is expanded,
+                    keeping the collapsed state pure icons. */}
+                {barExpanded && (
+                  <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
+                    {g.label}
+                  </div>
+                )}
                 <div className="flex items-stretch">
                   {groupCats.map((c) => {
                     const Icon = c.icon;
@@ -17431,56 +17450,50 @@ function BottomDeviceBar({
                     const count = productsByCat[c.id]?.length ?? 0;
                     const isConduitCat = c.id === 'conduit';
                     const isCableCat   = c.id === 'cable';
-                    // Cable + Conduit have their own tray bodies (no PRODUCTS
-                    // catalog gating); never mark them disabled.
-                    // Canvas V2 Pass 1.0 — dead categories (no products,
-                    // no tool, no tray) used to render as disabled
-                    // buttons with "coming soon" tooltips. Hide them.
                     const dead = !isToolCat && !isConduitCat && !isCableCat && count === 0;
                     if (dead) return null;
+                    const placedCount = countByCat[c.id] ?? 0;
                     return (
                       <button
                         key={c.id}
                         onClick={() => {
-                          // Clicking a category dismisses the search panel
-                          // — search + tray are mutually exclusive at the
-                          // render level, so we enforce the same at the
-                          // input level to avoid a dead state where the
-                          // button silently flips `open` while the
-                          // search panel stays anchored above the bar.
                           if (searchQuery) setSearchQuery('');
                           if (isToolCat && c.tool) { onPickTool(c.tool); setOpen(null); return; }
                           setOpen(open === c.id ? null : c.id);
                         }}
-                        title={c.label}
+                        title={`${c.label}${placedCount > 0 ? ` · ${placedCount} placed` : ''}`}
                         data-track={`bottombar-cat-${c.id}`}
-                        className={`group relative flex flex-col items-center justify-center gap-1 w-[72px] pt-1.5 pb-2 transition-colors ${
-                          active
-                            ? 'text-primary'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
+                        className={`group relative flex flex-col items-center justify-center transition-[width,padding,color] ${
+                          barExpanded
+                            ? 'w-[72px] pt-1.5 pb-2 gap-1'
+                            : 'w-[44px] py-2 gap-0'
+                        } ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                        style={{ transitionDuration: '170ms', transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
                       >
                         <span className="absolute inset-x-1.5 top-1 bottom-1.5 rounded-md -z-10 transition-colors"
                           style={{ background: active ? 'rgba(45,111,184,0.10)' : 'transparent' }}
                         />
                         <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
-                        <span className="text-[10px] tracking-tight font-medium">{c.label}</span>
-                        {/* V1 P0.5 count badge — placed devices on the current floor.
-                            Hidden at zero so the dock stays calm on a fresh canvas. */}
-                        {(countByCat[c.id] ?? 0) > 0 && (
+                        {barExpanded && (
+                          <span className="text-[10px] tracking-tight font-medium">{c.label}</span>
+                        )}
+                        {/* Count badge — real placements only. When the bar
+                            is collapsed, the badge floats above the icon so
+                            it stays informative; when expanded it returns
+                            to the upper-right corner of the wider tile. */}
+                        {placedCount > 0 && (
                           <span
-                            className={`absolute top-0.5 right-2 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
+                            className={`absolute ${barExpanded ? 'top-0.5 right-2' : 'top-0.5 right-0.5'} min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
                               active
                                 ? 'bg-primary text-primary-foreground'
                                 : 'bg-secondary text-foreground/80 border border-border'
                             }`}
                           >
-                            {countByCat[c.id]! > 99 ? '99+' : countByCat[c.id]}
+                            {placedCount > 99 ? '99+' : placedCount}
                           </span>
                         )}
-                        {/* Active underline */}
                         <span
-                          className="absolute left-2.5 right-2.5 bottom-0 h-[2px] rounded-full transition-opacity"
+                          className="absolute left-2 right-2 bottom-0 h-[2px] rounded-full transition-opacity"
                           style={{ background: 'var(--primary)', opacity: active ? 1 : 0 }}
                         />
                       </button>
@@ -17500,10 +17513,12 @@ function BottomDeviceBar({
             above the bar is unchanged. */}
         <span aria-hidden className="self-stretch w-px bg-border/70 my-1.5" />
         <div className="flex flex-col">
-          <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
-            Search
-          </div>
-          <div className="flex items-center px-2 pb-1.5">
+          {barExpanded && (
+            <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
+              Search
+            </div>
+          )}
+          <div className={`flex items-center px-2 ${barExpanded ? 'pb-1.5' : 'py-1.5'}`}>
             {!searchOpen ? (
               <button
                 onClick={() => setSearchOpen(true)}
