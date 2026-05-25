@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { useProjectStore, selectors as storeSelectors, deriveBOM, deriveDoorAssemblyLines, deriveCanvasBomRows } from '../store/projectStore';
@@ -10725,12 +10726,21 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
 
         {/* V3 prep — the kebab Expand menu was reported dead in live use.
             Removed from the pill rather than left as a visible-but-broken
-            control. Its actions (duplicate / color / lock / stack / delete
-            / more details) remain reachable: keyboard shortcuts handle
-            Delete + Cmd+D + L, and the Edit button below routes to the
-            drawer where V3.4 will surface duplicate / color / lock /
-            stack inline. The ExpandMenu function definition stays in
-            the file as dead code in case we want to put it back. */}
+            control. Other actions reachable via shortcuts + drawer. */}
+
+        {/* V3.6 Part B follow-up — item color picker. Now the sole
+            entry point for per-device color. The popover is portaled
+            to document.body with viewport-aware flip/clamp so the
+            edge-clip bug that killed the original kebab can't recur
+            even when the selected device sits near a canvas edge. */}
+        <div className="px-2 inline-flex items-center border-l border-border/60">
+          <ColorPicker
+            currentColor={tone}
+            onPick={(hex) => onUpdate({ color: hex || undefined })}
+            title="Device color"
+            size={16}
+          />
+        </div>
 
         {/* Edit — primary drawer affordance */}
         <button
@@ -11000,21 +11010,33 @@ function ColorPickerButton({ currentHex, onPick, tone }: { currentHex?: string; 
 
 /** V3.6 Part B — shared color picker popover used by both the
  *  category-level picker in the dock and the item-level picker in
- *  the device drawer header. Renders the swatch button + a popover
+ *  the SelectionPill toolbar. Renders the swatch button + a popover
  *  containing the preset palette (DEVICE_COLOR_PALETTE) plus a
  *  custom hex input for full freedom.
  *
- *  `currentColor` is the resolved color this swatch represents (for
- *  visual feedback). `onPick(hex)` is called with either a valid
- *  hex string or an empty string (which the caller interprets as
- *  "reset to default" — for category pickers it removes the override;
- *  for item pickers it clears `device.color`). */
+ *  Popover positioning: rendered through ReactDOM.createPortal at
+ *  document.body with `position: fixed`. Avoids container clipping
+ *  bugs the kebab/ExpandMenu popover used to hit when the selected
+ *  device sat near a canvas edge. On open we measure the trigger's
+ *  viewport rect and pick a side (below preferred, above on
+ *  underflow) and a horizontal alignment (left of trigger preferred,
+ *  right-edge clamp on overflow), then clamp to a 6 px viewport
+ *  inset.
+ *
+ *  `currentColor` is the resolved color this swatch represents.
+ *  `onPick(hex)` is called with either a valid hex string or an
+ *  empty string ("reset to default"). */
 function ColorPicker({
   currentColor,
   onPick,
   title = 'Pick a color',
   size = 18,
-  align = 'left',
+  // `align` is retained for backwards compatibility with existing
+  // call sites but is no longer the primary positioning input.
+  // Positioning is computed from the trigger's viewport rect; the
+  // align hint biases the horizontal preference when there's room
+  // on either side.
+  align: _align = 'left',
 }: {
   currentColor: string;
   onPick: (hex: string) => void;
@@ -11022,13 +11044,80 @@ function ColorPicker({
   size?: number;
   align?: 'left' | 'right';
 }) {
+  void _align;
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(currentColor || '#5292DC');
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Popover dimensions (rough; measured against actual content after
+  // first paint). Used to compute flip/clamp before the menu has a
+  // rendered rect of its own. 200 px wide, ~180 px tall covers the
+  // 5-col preset grid + the custom-hex row.
+  const POPOVER_W = 200;
+  const POPOVER_H = 184;
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const computePosition = useCallback(() => {
+    const btn = triggerRef.current;
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const INSET = 6;
+    const GAP = 4;
+    // Use the menu's actual height once it's rendered; fall back to
+    // the rough constant during first paint.
+    const menuH = menuRef.current?.offsetHeight ?? POPOVER_H;
+    const menuW = menuRef.current?.offsetWidth ?? POPOVER_W;
+    // Vertical: prefer below; flip above on overflow; clamp to inset.
+    let top = r.bottom + GAP;
+    if (top + menuH > vh - INSET) {
+      const aboveTop = r.top - menuH - GAP;
+      if (aboveTop >= INSET) top = aboveTop;
+      else top = Math.max(INSET, vh - menuH - INSET);
+    }
+    // Horizontal: prefer aligning the menu's LEFT edge with the
+    // trigger's LEFT edge (so the picker reads as a dropdown under
+    // the button). Flip to right-align on overflow; clamp to inset
+    // on either side.
+    let left = r.left;
+    if (left + menuW > vw - INSET) {
+      left = Math.max(INSET, r.right - menuW);
+    }
+    if (left < INSET) left = INSET;
+    setPos({ top, left });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    computePosition();
+    const onResize = () => computePosition();
+    const onScroll = () => computePosition();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('scroll', onScroll, true); // capture so we get scroll events from any ancestor
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [open, computePosition]);
+
+  // Recompute once the menu DOM has a real height (the rough constant
+  // can be off by 10-20 px depending on font metrics; we measure and
+  // adjust on the next animation frame so the flip/clamp uses true
+  // dimensions).
+  useEffect(() => {
+    if (!open || !menuRef.current) return;
+    const rafId = requestAnimationFrame(() => computePosition());
+    return () => cancelAnimationFrame(rafId);
+  }, [open, computePosition]);
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     window.addEventListener('mousedown', onDown);
@@ -11038,14 +11127,101 @@ function ColorPicker({
       window.removeEventListener('keydown', onKey);
     };
   }, [open]);
-  // Reflect the resolved color in the custom field whenever the
-  // picker opens so the user starts from where they are, not from
-  // a stale value.
+
   useEffect(() => { if (open) setCustom(currentColor || '#5292DC'); }, [open, currentColor]);
 
+  const popover = open && pos ? (
+    <div
+      ref={menuRef}
+      role="menu"
+      data-testid="color-picker-menu"
+      className="fixed z-[60] w-[200px] rounded-md p-2 space-y-2"
+      style={{
+        top: pos.top,
+        left: pos.left,
+        background: 'var(--popover)',
+        border: '1px solid var(--border)',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.22)',
+      }}
+    >
+      <div className="grid grid-cols-5 gap-1.5">
+        {DEVICE_COLOR_PALETTE.map((c) => {
+          const isReset = c.id === 'reset';
+          const isCurrent = (currentColor || '') === c.hex;
+          if (isReset) {
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => { onPick(''); setOpen(false); }}
+                title="Use default color"
+                data-testid="color-picker-reset"
+                className={`h-7 rounded border text-[9px] tracking-tight transition-colors ${
+                  !currentColor
+                    ? 'border-primary/60 text-primary bg-primary/10'
+                    : 'border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
+                }`}
+              >
+                Default
+              </button>
+            );
+          }
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => { onPick(c.hex); setOpen(false); }}
+              title={c.name}
+              data-testid={`color-picker-preset-${c.id}`}
+              className="h-7 rounded border transition-colors flex items-center justify-center"
+              style={{
+                background: c.hex,
+                borderColor: isCurrent ? 'var(--foreground)' : 'var(--border)',
+              }}
+            >
+              {isCurrent && <Check className="w-3 h-3 text-white drop-shadow" />}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-1.5 pt-1 border-t border-border/40">
+        <input
+          type="color"
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          data-testid="color-picker-custom"
+          className="w-7 h-7 rounded cursor-pointer bg-transparent"
+          aria-label="Custom color"
+        />
+        <input
+          type="text"
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="#RRGGBB"
+          className="flex-1 text-[10.5px] font-mono bg-transparent border border-border/60 rounded px-1.5 py-1 text-foreground focus:outline-none focus:border-primary"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            const hex = custom.trim();
+            if (/^#([0-9a-fA-F]{6})$/.test(hex)) {
+              onPick(hex);
+              setOpen(false);
+            }
+          }}
+          data-testid="color-picker-custom-apply"
+          className="px-1.5 py-1 rounded text-[10px] font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <div ref={ref} className="relative inline-block">
+    <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         title={title}
@@ -11054,91 +11230,8 @@ function ColorPicker({
         className="rounded border border-border/60 hover:border-foreground transition-colors"
         style={{ width: size, height: size, background: currentColor }}
       />
-      {open && (
-        <div
-          role="menu"
-          data-testid="color-picker-menu"
-          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1 z-50 w-[200px] rounded-md p-2 space-y-2`}
-          style={{
-            background: 'var(--popover)',
-            border: '1px solid var(--border)',
-            boxShadow: '0 6px 18px rgba(0,0,0,0.22)',
-          }}
-        >
-          <div className="grid grid-cols-5 gap-1.5">
-            {DEVICE_COLOR_PALETTE.map((c) => {
-              const isReset = c.id === 'reset';
-              const isCurrent = (currentColor || '') === c.hex;
-              if (isReset) {
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => { onPick(''); setOpen(false); }}
-                    title="Use default color"
-                    data-testid="color-picker-reset"
-                    className={`h-7 rounded border text-[9px] tracking-tight transition-colors ${
-                      !currentColor
-                        ? 'border-primary/60 text-primary bg-primary/10'
-                        : 'border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
-                    }`}
-                  >
-                    Default
-                  </button>
-                );
-              }
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => { onPick(c.hex); setOpen(false); }}
-                  title={c.name}
-                  data-testid={`color-picker-preset-${c.id}`}
-                  className="h-7 rounded border transition-colors flex items-center justify-center"
-                  style={{
-                    background: c.hex,
-                    borderColor: isCurrent ? 'var(--foreground)' : 'var(--border)',
-                  }}
-                >
-                  {isCurrent && <Check className="w-3 h-3 text-white drop-shadow" />}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex items-center gap-1.5 pt-1 border-t border-border/40">
-            <input
-              type="color"
-              value={custom}
-              onChange={(e) => setCustom(e.target.value)}
-              data-testid="color-picker-custom"
-              className="w-7 h-7 rounded cursor-pointer bg-transparent"
-              aria-label="Custom color"
-            />
-            <input
-              type="text"
-              value={custom}
-              onChange={(e) => setCustom(e.target.value)}
-              placeholder="#RRGGBB"
-              className="flex-1 text-[10.5px] font-mono bg-transparent border border-border/60 rounded px-1.5 py-1 text-foreground focus:outline-none focus:border-primary"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const hex = custom.trim();
-                if (/^#([0-9a-fA-F]{6})$/.test(hex)) {
-                  onPick(hex);
-                  setOpen(false);
-                }
-              }}
-              data-testid="color-picker-custom-apply"
-              className="px-1.5 py-1 rounded text-[10px] font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+      {popover && createPortal(popover, document.body)}
+    </>
   );
 }
 
@@ -13110,17 +13203,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                 {statusBadge.label}
               </span>
             )}
-            {/* V3.6 Part B item color picker — overrides this single
-                device's color, regardless of its category. Empty hex
-                clears the override and the device returns to the
-                category resolved color. */}
-            <ColorPicker
-              currentColor={tone}
-              onPick={(hex) => onUpdate({ color: hex || undefined })}
-              title="Device color"
-              size={18}
-              align="right"
-            />
+            {/* V3.6 Part B follow-up: the item color picker moved out
+                of this drawer header onto the SelectionPill (next to
+                Edit). One obvious entry point for item color; the
+                drawer header no longer duplicates it. */}
             <button
               onClick={onClose}
               className="p-1.5 rounded-md hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
