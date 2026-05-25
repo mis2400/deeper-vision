@@ -12330,20 +12330,33 @@ function RequiredDensityRow({
   // render the density tiles (their face math doesn't depend on
   // scale) but we hide the reach annotation.
   const scaleOk = pxToFt > 0;
-  const rows: { level: DoriLevel; T: number; pxAcross: number; reachFt: number; inRange: boolean }[] = DORI_ORDER.map((level) => {
+  // Item 5 — every grade gets its REAL math-reach displayed (no
+  // "beyond range" suppression). The within / past-camera-range mark
+  // is a SEPARATE annotation so the looser grades (Detect ~388 ft on
+  // a 4K @ 70° camera) are no longer misread as unattainable when in
+  // reality they cover the entire cone. The fix:
+  //   - reach <  rangeFt → the grade's math boundary sits inside the
+  //     camera's cone. The grade is met 0 → reach, then drops below
+  //     grade for reach → rangeFt. Status: "ends {reachFt} ft from
+  //     lens" (sky, neutral honest read).
+  //   - reach >= rangeFt → the grade is met across the WHOLE cone.
+  //     The camera could theoretically reach `reach` ft if its range
+  //     were longer; in practice the cone caps at rangeFt and the
+  //     grade fills it. Status: "across full {rangeFt} ft range"
+  //     (emerald, positive read — never implies unattainable).
+  const rows: { level: DoriLevel; T: number; pxAcross: number; reachFt: number; coversFullRange: boolean }[] = DORI_ORDER.map((level) => {
     const T = DORI_PX_PER_FT[level];
     const reachFt = reachFor(T);
     return {
       level,
       T,
-      // pxAcross = px on a 0.6 ft face at exactly the threshold
-      // density. This IS the same value across cameras because the
-      // threshold defines the density at the band edge — what
-      // changes per-camera is the REACH distance (rendered as the
-      // second-line annotation).
       pxAcross: Math.max(3, Math.round(T * FACE_WIDTH_FT)),
       reachFt,
-      inRange: reachFt > 0 && reachFt <= rangeFt + 1,
+      // The grade covers the camera's full configured range when its
+      // math reach equals or exceeds rangeFt (the band fills the
+      // whole cone). The +1 fudge keeps grade reaches that round to
+      // rangeFt from flipping to "ends inside" by 0.4 ft of float.
+      coversFullRange: reachFt > 0 && reachFt >= rangeFt - 0.5,
     };
   });
   return (
@@ -12371,9 +12384,24 @@ function RequiredDensityRow({
                 {r.T.toFixed(1)} px/ft
               </div>
               {scaleOk && (
-                <div className={`text-[9.5px] tabular-nums leading-tight ${r.inRange ? 'text-emerald-400/90' : 'text-amber-300/80'}`}>
-                  {r.inRange ? `reach ${r.reachFt.toFixed(1)} ft` : 'beyond range'}
-                </div>
+                <>
+                  {/* Honest math reach — always shown, regardless of
+                      whether it falls inside or past the camera's
+                      configured range. Lower grades reach farther; that
+                      number was hidden by the old "beyond range" label. */}
+                  <div className="text-[9.5px] text-muted-foreground tabular-nums leading-tight">
+                    Reach {r.reachFt.toFixed(1)} ft
+                  </div>
+                  {/* Separate within / past mark. "Covers full range" is
+                      positive and explicit when the grade fills the cone;
+                      "Ends inside cone" is the honest framing when the
+                      grade's edge sits at reachFt < rangeFt. */}
+                  <div className={`text-[9.5px] tabular-nums leading-tight ${r.coversFullRange ? 'text-emerald-400/90' : 'text-sky-300/90'}`}>
+                    {r.coversFullRange
+                      ? `Covers full ${Math.round(rangeFt)} ft range`
+                      : `Ends ${r.reachFt.toFixed(1)} ft inside cone`}
+                  </div>
+                </>
               )}
             </button>
           );
