@@ -1454,7 +1454,13 @@ export function EngineeringCanvas() {
     const ftPerPx = ftPerPxForFloor(devFloor);
     if (!ftPerPx || ftPerPx <= 0) { setPersonProbePos(null); return; }
     const rangeFt = dev.range ?? (dev.type === 'cam.ptz' ? 44 : dev.type === 'cam.bullet' ? 50 : 30);
-    const reachPx = Math.round((rangeFt / ftPerPx) * 0.6);
+    // Item 4 — seed at 35% along the aim ray instead of the prior 60%.
+    // The marker now lives closer to the camera so it can't drop under
+    // the docked bottom toolbar or off the right edge of the canvas
+    // viewport when the inspector drawer opens. The camera itself is
+    // always on screen (the operator just selected it); a 35% radius
+    // outwards from it sits well inside the same viewport.
+    const reachPx = Math.round((rangeFt / ftPerPx) * 0.35);
     const rotRad = ((dev.rot ?? 0) * Math.PI) / 180;
     setPersonProbePos({
       x: dev.x + Math.cos(rotRad) * reachPx,
@@ -8202,6 +8208,15 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         <filter id="fov-bloom" x="-20%" y="-20%" width="140%" height="140%">
           <feGaussianBlur stdDeviation="2.5" />
         </filter>
+        {/* Item 5 — clip cone rendering to the canvas viewport. SVG's
+            default overflow already clips at the root, but we declare
+            an explicit clip in user-space (the SVG's screen coord
+            system) and apply it to the coverage-cones group below as
+            a visible guarantee. The density math is unchanged — this
+            is a paint-only clip. */}
+        <clipPath id="canvas-bounds-clip" clipPathUnits="userSpaceOnUse">
+          <rect x="0" y="0" width="100%" height="100%" />
+        </clipPath>
       </defs>
 
       {/* Canvas backdrop — grid lattice, soft vignette, and a high-
@@ -8213,6 +8228,12 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       <rect width="100%" height="100%" fill="url(#canvas-vignette)" />
       <rect width="100%" height="100%" filter="url(#canvas-grain)" opacity="0.55" pointerEvents="none" />
 
+      {/* Item 5 — every transformed canvas element (cones, walls, floor
+          image, devices) lives inside this clip wrapper. The clipPath
+          is referenced OUTSIDE the pan/zoom transform so the clip is
+          anchored to the SVG screen viewport, not the world coord
+          system. Cones can never paint past the visible canvas edge. */}
+      <g clipPath="url(#canvas-bounds-clip)">
       <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
         {/* The plan — clearly delineated as the building */}
         <FloorPlan source={planSource} siteAddress={siteAddress} />
@@ -9283,6 +9304,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           </g>
         ))}
       </g>
+      </g>
     </svg>
   );
 });
@@ -10342,7 +10364,6 @@ function PersonProbe({
   zoom: number;
   pan: { x: number; y: number };
 }) {
-  const draggingRef = useRef(false);
   const tone = deviceTone(d);
   const resolution = cameraResolution(d);
   // No resolution → no probe. The canvas already prints the "set
@@ -10361,25 +10382,51 @@ function PersonProbe({
   const live = probe.inCone
     ? pxPerFtAt({ fovDeg, resolution, distanceFt: probe.distanceFt })
     : null;
+  // Drag wiring — window-level pointer listeners attached while
+  // dragging. The previous version relied on React's pointercapture
+  // on an SVG `<g>`, which fired unreliably once the pointer left
+  // the marker's bounds and was the root cause of the drawer preview
+  // never updating: pointermove on the captured `<g>` never reached
+  // here, so `onMove` was never called, so `personProbePos` in the
+  // parent never changed, so the drawer's `PersonProbePreview` had
+  // nothing new to render. Window listeners always fire regardless of
+  // which element the pointer is over.
+  const [dragging, setDragging] = useState(false);
+  // Latch the latest scaling args so the move handler always reads
+  // the current zoom/pan even if the effect was started under a
+  // different snapshot. Refs sidestep effect re-subscriptions.
+  const svgRefRef = useRef(svgRef);
+  const panRef = useRef(pan);
+  const zoomRef = useRef(zoom);
+  const onMoveRef = useRef(onMove);
+  svgRefRef.current = svgRef;
+  panRef.current = pan;
+  zoomRef.current = zoom;
+  onMoveRef.current = onMove;
+  useEffect(() => {
+    if (!dragging) return;
+    const onPointerMove = (e: PointerEvent) => {
+      const svg = svgRefRef.current.current;
+      if (!svg) return;
+      const r = svg.getBoundingClientRect();
+      const x = ((e.clientX - r.left) - panRef.current.x) / zoomRef.current;
+      const y = ((e.clientY - r.top)  - panRef.current.y) / zoomRef.current;
+      onMoveRef.current({ x, y });
+    };
+    const onPointerUp = () => setDragging(false);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [dragging]);
   const onDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    draggingRef.current = true;
-    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* capture optional */ }
-  }, []);
-  const onMovePtr = useCallback((e: React.PointerEvent) => {
-    if (!draggingRef.current) return;
-    const svg = svgRef.current;
-    if (!svg) return;
-    const r = svg.getBoundingClientRect();
-    const x = ((e.clientX - r.left) - pan.x) / zoom;
-    const y = ((e.clientY - r.top)  - pan.y) / zoom;
-    onMove({ x, y });
-  }, [svgRef, pan.x, pan.y, zoom, onMove]);
-  const onUp = useCallback((e: React.PointerEvent) => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch { /* capture optional */ }
+    setDragging(true);
   }, []);
   // Marker geometry — a simple person silhouette (head + body) in
   // canvas world units. Slightly larger than the DORI label chips so
@@ -10398,9 +10445,14 @@ function PersonProbe({
           pointerEvents="none"
         />
       )}
-      {/* Marker — head + body silhouette in a circle frame. */}
+      {/* Marker — head + body silhouette in a circle frame.
+          Drag wiring lives in the useEffect above (window pointermove
+          + pointerup). Only `onPointerDown` is needed here to set the
+          dragging flag; the previous markup also wired `onPointerMove`
+          and `onPointerUp` to undeclared identifiers, which is why the
+          drawer preview stopped updating mid-drag in the prior pass. */}
       <g transform={`translate(${pos.x} ${pos.y})`} style={{ cursor: 'grab', touchAction: 'none' }}
-         onPointerDown={onDown} onPointerMove={onMovePtr} onPointerUp={onUp} onPointerCancel={onUp}>
+         onPointerDown={onDown}>
         <circle r={r * 1.6} fill="var(--canvas-background)" fillOpacity="0.85" stroke={probe.inCone ? tone : 'var(--muted-foreground)'} strokeWidth="0.8" />
         <circle cx={0} cy={-r * 0.55} r={r * 0.42} fill={probe.inCone ? tone : 'var(--muted-foreground)'} />
         <path
@@ -12467,43 +12519,194 @@ function FacePixelTile({
  *  vanish at observe, the head outline blurs at detect). The face is
  *  ours: no Axis sample, no celebrity, no third-party image. */
 function drawFace(ctx: CanvasRenderingContext2D, size: number) {
-  // Background — neutral plate so the face reads against the tile.
-  ctx.fillStyle = '#16202e';
-  ctx.fillRect(0, 0, size, size);
-  // Head — warm skin tone, slightly off-center for personality.
-  ctx.fillStyle = '#d4a577';
+  // High quality generic face — drawn entirely from canvas primitives,
+  // so the asset is ours and license clear. Not Axis's headshot, not
+  // any real person. Features render progressively based on the
+  // available pixel count so the pixelation stays honest at low
+  // density: at Detect-grade resolution (~5 px) you get only a head
+  // shape, eyes vanish, the face reads as a silhouette. At Identify
+  // (~46 px) the full set of features paint and the face looks like
+  // a clear synthetic person.
+
+  // ── Palette (single source of truth for skin, hair, sclera, etc.).
+  const SKIN_BASE   = '#D8B08C';
+  const SKIN_SHADE  = '#B58764';
+  const SKIN_HIGHLT = '#E7C7A2';
+  const HAIR_DARK   = '#2B1F1A';
+  const HAIR_MID    = '#3D2A22';
+  const BROW        = '#26201D';
+  const IRIS        = '#3E5C7E';
+  const PUPIL       = '#0E1117';
+  const LIP         = '#9C4A3F';
+  const LIP_SHADE   = '#7A3A32';
+  const CHEEK       = 'rgba(196, 92, 92, 0.18)';
+  const NOSE_SHADE  = 'rgba(96, 56, 38, 0.32)';
+  const NECK        = '#C39A78';
+  const NECK_SHADE  = '#9C7754';
+  const SHIRT       = '#27374D';
+  const SHIRT_SHADE = '#1A2536';
+
+  const s = size;
+  const px = (v: number) => Math.max(1, Math.round(v));
+
+  // Background plate — slight vignette so the face has weight on the
+  // tile. Two stops: brighter center, cooler edges.
+  const bg = ctx.createRadialGradient(s * 0.5, s * 0.45, s * 0.1, s * 0.5, s * 0.5, s * 0.7);
+  bg.addColorStop(0, '#1B2638');
+  bg.addColorStop(1, '#0E1626');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, s, s);
+
+  // ── Shoulders + neck — give the face mass at every density grade.
+  // The shirt anchors the silhouette so detect reads as a person and
+  // not a floating blob.
+  ctx.fillStyle = SHIRT_SHADE;
   ctx.beginPath();
-  ctx.ellipse(size * 0.5, size * 0.55, size * 0.38, size * 0.46, 0, 0, Math.PI * 2);
+  ctx.ellipse(s * 0.5, s * 1.10, s * 0.65, s * 0.45, 0, Math.PI, 0, true);
   ctx.fill();
-  // Hair — a darker cap at the top of the head, gives the silhouette
-  // shape at very low pixel counts.
-  ctx.fillStyle = '#3a2a22';
+  ctx.fillStyle = SHIRT;
   ctx.beginPath();
-  ctx.ellipse(size * 0.5, size * 0.30, size * 0.38, size * 0.25, 0, 0, Math.PI * 2);
+  ctx.ellipse(s * 0.5, s * 1.08, s * 0.58, s * 0.38, 0, Math.PI, 0, true);
   ctx.fill();
-  // Eyes — only contribute when the canvas can resolve them.
-  if (size >= 8) {
-    ctx.fillStyle = '#1a1410';
+  ctx.fillStyle = NECK_SHADE;
+  ctx.fillRect(s * 0.40, s * 0.78, s * 0.20, s * 0.20);
+  ctx.fillStyle = NECK;
+  ctx.fillRect(s * 0.42, s * 0.78, s * 0.16, s * 0.20);
+
+  // ── Hair (back layer) — under the head so the head outline cuts a
+  // clean jaw. This layer adds volume; the front bangs draw later.
+  ctx.fillStyle = HAIR_DARK;
+  ctx.beginPath();
+  ctx.ellipse(s * 0.5, s * 0.34, s * 0.44, s * 0.34, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Head — skin tone with a subtle warm gradient (highlight upper
+  // left, shadow lower right) for depth at full resolution. Falls
+  // back to a flat fill when the gradient pixel cost isn't worth it.
+  if (s >= 24) {
+    const skin = ctx.createLinearGradient(s * 0.3, s * 0.35, s * 0.7, s * 0.7);
+    skin.addColorStop(0, SKIN_HIGHLT);
+    skin.addColorStop(0.6, SKIN_BASE);
+    skin.addColorStop(1, SKIN_SHADE);
+    ctx.fillStyle = skin;
+  } else {
+    ctx.fillStyle = SKIN_BASE;
+  }
+  ctx.beginPath();
+  ctx.ellipse(s * 0.5, s * 0.56, s * 0.34, s * 0.44, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Subtle cheek blush — only at higher resolutions. Adds life without
+  // pushing the look toward cartoonish.
+  if (s >= 28) {
+    ctx.fillStyle = CHEEK;
     ctx.beginPath();
-    ctx.ellipse(size * 0.38, size * 0.52, Math.max(1, size * 0.045), Math.max(1, size * 0.055), 0, 0, Math.PI * 2);
+    ctx.ellipse(s * 0.34, s * 0.66, s * 0.07, s * 0.06, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(size * 0.62, size * 0.52, Math.max(1, size * 0.045), Math.max(1, size * 0.055), 0, 0, Math.PI * 2);
+    ctx.ellipse(s * 0.66, s * 0.66, s * 0.07, s * 0.06, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Nose shadow.
-  if (size >= 14) {
-    ctx.fillStyle = 'rgba(70,40,30,0.35)';
+
+  // ── Hair (front bangs) — softly cuts the forehead. Draws over the
+  // skin so the hairline reads naturally.
+  ctx.fillStyle = HAIR_MID;
+  ctx.beginPath();
+  ctx.moveTo(s * 0.17, s * 0.46);
+  ctx.bezierCurveTo(s * 0.20, s * 0.22, s * 0.60, s * 0.20, s * 0.85, s * 0.40);
+  ctx.bezierCurveTo(s * 0.80, s * 0.32, s * 0.62, s * 0.30, s * 0.52, s * 0.42);
+  ctx.bezierCurveTo(s * 0.42, s * 0.32, s * 0.30, s * 0.34, s * 0.17, s * 0.46);
+  ctx.closePath();
+  ctx.fill();
+
+  // ── Eyebrows — slim arches. Vanish below ~16 px so the math gate
+  // matches the eye gate (you can't see brows without eyes).
+  if (s >= 16) {
+    ctx.fillStyle = BROW;
+    const browH = Math.max(1, s * 0.025);
     ctx.beginPath();
-    ctx.ellipse(size * 0.5, size * 0.63, size * 0.04, size * 0.07, 0, 0, Math.PI * 2);
+    ctx.ellipse(s * 0.36, s * 0.48, s * 0.085, browH, -0.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(s * 0.64, s * 0.48, s * 0.085, browH, 0.05, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Mouth.
-  if (size >= 10) {
-    ctx.fillStyle = '#7a3a32';
+
+  // ── Eyes — sclera + iris + pupil + catchlight stack. Each layer is
+  // gated by enough pixels to be visible. At ~8 px only the dark pupil
+  // dots render (matches the original behaviour); at higher density
+  // the full eye structure paints in.
+  if (s >= 8) {
+    const eyeY = s * 0.54;
+    const eyeW = Math.max(1, s * 0.07);
+    const eyeH = Math.max(1, s * 0.05);
+    // Sclera (whites) — only when we have enough pixels for it not
+    // to read as noise.
+    if (s >= 16) {
+      ctx.fillStyle = '#F2EAD8';
+      ctx.beginPath(); ctx.ellipse(s * 0.36, eyeY, eyeW, eyeH, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(s * 0.64, eyeY, eyeW, eyeH, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // Iris (colour ring) — slightly smaller than the sclera.
+    if (s >= 14) {
+      ctx.fillStyle = IRIS;
+      const irisR = Math.max(1, s * 0.035);
+      ctx.beginPath(); ctx.ellipse(s * 0.36, eyeY, irisR, irisR, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(s * 0.64, eyeY, irisR, irisR, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // Pupil (deepest dark).
+    ctx.fillStyle = PUPIL;
+    const pupilR = Math.max(1, s * (s >= 14 ? 0.018 : 0.030));
+    ctx.beginPath(); ctx.ellipse(s * 0.36, eyeY, pupilR, pupilR, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.64, eyeY, pupilR, pupilR, 0, 0, Math.PI * 2); ctx.fill();
+    // Catchlight — single bright pixel for life. Only at high res.
+    if (s >= 28) {
+      ctx.fillStyle = '#FFFFFF';
+      const lightR = Math.max(1, s * 0.010);
+      ctx.beginPath(); ctx.ellipse(s * 0.355, eyeY - s * 0.012, lightR, lightR, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(s * 0.635, eyeY - s * 0.012, lightR, lightR, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // ── Nose — soft bridge shadow + a hint of nostrils at higher res.
+  if (s >= 18) {
+    ctx.fillStyle = NOSE_SHADE;
     ctx.beginPath();
-    ctx.ellipse(size * 0.5, size * 0.74, size * 0.12, size * 0.04, 0, 0, Math.PI * 2);
+    ctx.ellipse(s * 0.50, s * 0.65, s * 0.04, s * 0.08, 0, 0, Math.PI * 2);
     ctx.fill();
+    // Nostril hints.
+    if (s >= 24) {
+      ctx.beginPath();
+      ctx.ellipse(s * 0.475, s * 0.70, s * 0.012, s * 0.012, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(s * 0.525, s * 0.70, s * 0.012, s * 0.012, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ── Mouth — lower lip + upper lip with distinct tones, plus a thin
+  // central line so the lips read as two shapes at higher resolution.
+  if (s >= 10) {
+    ctx.fillStyle = LIP_SHADE;
+    ctx.beginPath();
+    ctx.ellipse(s * 0.5, s * 0.78, s * 0.13, s * 0.04, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (s >= 16) {
+      // Upper lip — a slimmer arch in the lighter lip colour.
+      ctx.fillStyle = LIP;
+      ctx.beginPath();
+      ctx.moveTo(s * 0.38, s * 0.77);
+      ctx.quadraticCurveTo(s * 0.5, s * 0.74, s * 0.62, s * 0.77);
+      ctx.quadraticCurveTo(s * 0.5, s * 0.79, s * 0.38, s * 0.77);
+      ctx.closePath();
+      ctx.fill();
+      // Lip parting — single dark line for definition.
+      if (s >= 22) {
+        ctx.fillStyle = LIP_SHADE;
+        ctx.fillRect(s * 0.39, s * 0.778, s * 0.22, px(1));
+      }
+    }
   }
 }
 
