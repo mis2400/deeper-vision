@@ -14108,12 +14108,17 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
   const [mode, setMode] = useState<'overview' | 'prosecution'>('overview');
   const rangeFt = d.range ?? (d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30);
   const fovDeg  = d.fov ?? (d.type === 'cam.ptz' ? 36 : d.type === 'cam.fisheye' ? 360 : 70);
-  // px/m at half range — a fair "general usefulness" metric.
-  const sensorPx = 1920;
+  // Item 8 — same density chain as the cone bands + probe + Target
+  // preview. Replaces the hardcoded `sensorPx = 1920` so this
+  // section's "general usefulness" px/m at half range now agrees
+  // with every other density readout in the drawer.
+  const aiResolution = cameraResolution(d);
+  const sensorPx = aiResolution?.widthPx ?? 1920;
   const halfFovRad = (fovDeg * Math.PI / 180) / 2;
-  const midDistM = (rangeFt * 0.5) * 0.3048;
-  const fovWidthM = Math.max(0.01, 2 * midDistM * Math.tan(halfFovRad));
-  const pxPerM = sensorPx / fovWidthM;
+  const tanHalfFov = Math.tan(halfFovRad);
+  const midDistFt = rangeFt * 0.5;
+  const pxPerFt = tanHalfFov > 0 ? sensorPx / (2 * midDistFt * tanHalfFov) : Infinity;
+  const pxPerM = pxPerFt * 3.28084;
 
   return (
     <>
@@ -14655,21 +14660,37 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   // not static placeholders.
   const overlapPct = 18 + (Math.abs(d.rot) % 30);
   const blindPct = 6 + (Math.abs(d.rot) % 12);
-  const pxPerFt = Math.round(180 - distance * 1.4);
+  // Telemetry pxPerFt — placeholder removed (Item 8). The real
+  // value is computed below from cameraResolution + FOV + distance
+  // and stored in `pxPerFt`; the telemetry chip reads that same
+  // number so the readout matches the cone bands and the probe.
 
   // Coverage sub-tab — Overview (engineering numbers) vs Prosecution
   // (evidence-quality readouts). Per the brief, both must change content.
   const [coverageSub, setCoverageSub] = useState<'overview' | 'prosecution'>('overview');
 
-  // Prosecution math — derived from the live lens config so the user
-  // sees a real change when they pan / zoom / refocus the camera.
-  // Standard subject assumptions per EN-50132-7: 1.7 m tall, 0.18 m
-  // face width, license plates 0.52 m × 0.11 m at 25 m read range.
-  const distM = distance * 0.3048;
-  const sensorPx = 1920; // assumed 1080p horizontal
+  // Item 8 — Target preview math now reads from the SAME density
+  // chain as the probe and the cone bands. Before this pass it
+  // hardcoded `sensorPx = 1920` (assumed 1080p) while the probe
+  // read horizontal pixels from cameraResolution(d) → for any non
+  // 1080p camera, the two surfaces disagreed on px/ft and the DORI
+  // grade chips could light up differently for the same target
+  // distance. Now both read `cameraResolution(d).widthPx` so the
+  // numbers always agree.
+  //
+  // Subject assumptions per EN 50132-7 keep their imperial / metric
+  // dual presentation: 1.7 m subject, 0.18 m face, 0.52 m plate.
+  // Internally we compute pxPerFt (the canvas's primary unit, same
+  // as the bands and the probe) and convert to pxPerM for the
+  // grade thresholds via the standard 3.28084 ft/m factor.
+  const targetResolution = cameraResolution(d);
+  const sensorPx = targetResolution?.widthPx ?? 1920;
   const halfFovRad = (Math.min(hfov, 179) * Math.PI / 180) / 2;
-  const fovWidthM = Math.max(0.01, 2 * distM * Math.tan(halfFovRad));
-  const pxPerM = sensorPx / fovWidthM;
+  const tanHalfFov = Math.tan(halfFovRad);
+  // Same formula `pxPerFtAt` uses, expressed inline here so the
+  // dependency graph stays simple for the AiOptimizeSection too.
+  const pxPerFt = tanHalfFov > 0 ? sensorPx / (2 * distance * tanHalfFov) : Infinity;
+  const pxPerM = pxPerFt * 3.28084;
   const facePx = Math.round(pxPerM * 0.18);
   const platePx = Math.round(pxPerM * 0.52);
   const bodyPx = Math.round(pxPerM * 0.5);
@@ -14898,13 +14919,36 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             </div>
             {coverageSub === 'prosecution' && (
               <>
+                {/* Item 8 — density basis line. Shows the single
+                    density value (px/ft and px/m, same number,
+                    different unit) so it's obvious that the chips
+                    below are derived from the same chain the cone
+                    bands and the person probe use. */}
+                <div
+                  className="mb-3 rounded-lg border px-3 py-2 text-[11px] tabular-nums"
+                  style={{ background: `${tone}10`, borderColor: `${tone}3a` }}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-muted-foreground">Density at {distance.toFixed(0)} ft</span>
+                    <span style={{ color: tone, fontWeight: 600 }}>
+                      {pxPerFt.toFixed(1)} px/ft
+                      <span className="text-muted-foreground"> · {pxPerM.toFixed(0)} px/m</span>
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/80 leading-snug mt-1">
+                    Same chain the cone bands and person probe use.{' '}
+                    {targetResolution
+                      ? `Sensor ${targetResolution.widthPx}×${targetResolution.heightPx}`
+                      : 'Resolution defaulted to 1920 wide — set it in the device drawer for honest math.'}
+                  </div>
+                </div>
                 <DrawerSection title="Evidence quality">
                   <div className="grid grid-cols-2 gap-2.5">
                     {([
-                      { k: 'Face pixels',     v: facePx,  ok: facePx >= 80,            sub: '≥ 80 px to identify' },
-                      { k: 'Plate pixels',    v: platePx, ok: plateReadable,           sub: '≥ 80 px to read' },
-                      { k: 'Body pixels',     v: bodyPx,  ok: bodyPx >= 60,            sub: 'Profile / gait' },
-                      { k: 'Subject height',  v: heightPx,ok: heightPx >= 250,         sub: '1.7 m tall' },
+                      { k: 'Face pixels',     v: facePx,  ok: facePx >= 80,            sub: 'Across 0.18 m face · ≥ 80 to identify' },
+                      { k: 'Plate pixels',    v: platePx, ok: plateReadable,           sub: 'Across 0.52 m plate · ≥ 80 to read' },
+                      { k: 'Body pixels',     v: bodyPx,  ok: bodyPx >= 60,            sub: 'Across 0.5 m torso · profile / gait' },
+                      { k: 'Subject height',  v: heightPx,ok: heightPx >= 250,         sub: 'Across 1.7 m subject height' },
                     ]).map((row) => (
                       <div
                         key={row.k}
