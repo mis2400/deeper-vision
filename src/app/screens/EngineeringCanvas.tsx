@@ -2987,7 +2987,14 @@ export function EngineeringCanvas() {
             />
           )}
 
-          <div className="flex-1 min-w-0 relative">
+          <div className="flex-1 min-w-0 flex flex-col">
+            {/* ITEM 1 — inner viewport. The CanvasSurface + all its
+                absolute overlays live here. The viewport is flex-1
+                inside a flex-col outer; the docked BottomDeviceBar
+                below is a shrink-0 sibling. Net effect: the bar takes
+                its own bottom slot and the canvas viewport ends right
+                above it — no overlay, no floating, no cover. */}
+            <div className="flex-1 min-h-0 relative">
             {/* Canvas V2 Pass 2A.7 — multi floor overview. When open,
                 replaces the canvas surface entirely with a tile grid
                 of every floor on this project. Click any tile to
@@ -3635,23 +3642,9 @@ export function EngineeringCanvas() {
               </button>
             )}
 
-            {/* Bottom Device Bar — horizontal strip with category icons
-                that open a tray of placeable items above. Replaces the
-                old bottom QuickTools capsule (cursor/hand/ruler/cable). */}
-            {viewMode !== 'canvas' && (
-              <BottomDeviceBar
-                onStartDrag={(p, e) => {
-                  setArmedProduct(null);
-                  dragStartRef.current = { x: e.clientX, y: e.clientY };
-                  setDrag({ product: p, x: e.clientX, y: e.clientY });
-                }}
-                onPickTool={(t) => setTool(t)}
-                onPickCableType={(id) => { drawModeRef.current = { kind: 'cable' }; setCableDraw((c) => ({ ...c, cableType: id })); setTool('cable'); toast.message('Cable tool armed', { description: `Click vertices on the plan. Double-click or Enter to finish.`, duration: 4000 }); }}
-                onPickConduit={(type, size) => { drawModeRef.current = { kind: 'conduit', pathwayKind: 'conduit', conduitType: type, conduitSize: size }; setTool('conduit'); toast.message('Conduit tool armed', { description: `${type} ${size ?? ''} · click vertices on the plan. Double-click or Enter to finish.`, duration: 4500 }); }}
-                onPickPathway={(kind, label) => { drawModeRef.current = { kind: 'pathway', pathwayKind: kind }; setTool('pathway'); toast.message('Pathway tool armed', { description: `${label} · click vertices on the plan. Double-click or Enter to finish.`, duration: 4500 }); }}
-                tool={tool}
-              />
-            )}
+            {/* BottomDeviceBar moved out of the absolute overlay set;
+                it now sits as a docked flex sibling beneath the inner
+                viewport (see end of this column). */}
             {viewMode === 'canvas' && (
               <button
                 onClick={() => setViewMode('default')}
@@ -3973,6 +3966,24 @@ export function EngineeringCanvas() {
                   Drop to place
                 </div>
               </div>
+            )}
+            </div>
+            {/* Docked bottom toolbar — sibling to the inner viewport.
+                Now claims its own slot at the bottom of the canvas
+                column so the plan ends just above it. */}
+            {viewMode !== 'canvas' && (
+              <BottomDeviceBar
+                onStartDrag={(p, e) => {
+                  setArmedProduct(null);
+                  dragStartRef.current = { x: e.clientX, y: e.clientY };
+                  setDrag({ product: p, x: e.clientX, y: e.clientY });
+                }}
+                onPickTool={(t) => setTool(t)}
+                onPickCableType={(id) => { drawModeRef.current = { kind: 'cable' }; setCableDraw((c) => ({ ...c, cableType: id })); setTool('cable'); toast.message('Cable tool armed', { description: `Click vertices on the plan. Double-click or Enter to finish.`, duration: 4000 }); }}
+                onPickConduit={(type, size) => { drawModeRef.current = { kind: 'conduit', pathwayKind: 'conduit', conduitType: type, conduitSize: size }; setTool('conduit'); toast.message('Conduit tool armed', { description: `${type} ${size ?? ''} · click vertices on the plan. Double-click or Enter to finish.`, duration: 4500 }); }}
+                onPickPathway={(kind, label) => { drawModeRef.current = { kind: 'pathway', pathwayKind: kind }; setTool('pathway'); toast.message('Pathway tool armed', { description: `${label} · click vertices on the plan. Double-click or Enter to finish.`, duration: 4500 }); }}
+                tool={tool}
+              />
             )}
           </div>
 
@@ -15568,7 +15579,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  *  The selected type drives the line stroke + appears in the pathway record. */
 function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t: CableTypeId) => void }) {
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-[68px] z-20 select-none hidden md:block">
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 select-none hidden md:block">
       <div className="bg-card/95 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)] px-1.5 py-1.5 flex items-center gap-1 max-w-[680px] overflow-x-auto">
         <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1.5 shrink-0">Cable</span>
         {CABLE_TYPES.map((c) => {
@@ -16787,14 +16798,14 @@ function BottomDeviceBar({
   }, [floorDevices, floorPathways]);
 
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-[68px] z-30 hidden md:block" ref={trayRef} data-canvas-chrome="tray">
+    <div className="hidden md:flex shrink-0 relative justify-center bg-[#0B0F19] border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }} ref={trayRef} data-canvas-chrome="tray">
       {/* Global product search results panel — wins over the category
           tray when a query is active so the operator always sees ONE
           source of truth above the bar. Same chrome as the tray for
           visual continuity. */}
       {searchActive && (
         <div
-          className="mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden z-30"
           style={{ borderColor: 'var(--border)' }}
           data-testid="bottombar-search-panel"
         >
@@ -16854,7 +16865,7 @@ function BottomDeviceBar({
           search panel isn't already active) */}
       {!searchActive && open && trayCat && (
         <div
-          className="mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden z-30"
           style={{ borderColor: 'var(--border)' }}
         >
           <div className="px-4 pt-3 pb-2.5 border-b border-border flex items-start gap-3">
@@ -17462,24 +17473,23 @@ function BottomDeviceBar({
         onMouseLeave={() => !barCoarsePointer && setBarHover(false)}
         onTouchStart={() => barCoarsePointer && setBarTapExpand(true)}
         data-bar-expanded={barExpanded ? 'true' : undefined}
-        className="rounded-2xl border bg-[var(--card)] backdrop-blur-xl shadow-[var(--shadow-floating)] flex items-stretch overflow-hidden"
-        style={{ borderColor: 'var(--border)' }}
+        className="flex items-center"
       >
         {GROUPS.map((g, gi) => {
           const groupCats = cats.filter((c) => c.group === g.id);
           if (groupCats.length === 0) return null;
           return (
             <div key={g.id} className="flex items-stretch">
-              {gi > 0 && <span aria-hidden className="self-stretch w-px bg-border/70 my-1.5" />}
-              <div className="flex flex-col">
+              {gi > 0 && <span aria-hidden className="self-stretch w-px bg-white/10 my-1.5" />}
+              <div className="flex flex-col justify-center">
                 {/* Group header — visible only when the bar is expanded,
                     keeping the collapsed state pure icons. */}
                 {barExpanded && (
-                  <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
+                  <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap">
                     {g.label}
                   </div>
                 )}
-                <div className="flex items-stretch">
+                <div className="flex items-center">
                   {groupCats.map((c) => {
                     const Icon = c.icon;
                     const isToolCat = !!c.tool;
@@ -17504,11 +17514,11 @@ function BottomDeviceBar({
                           barExpanded
                             ? 'w-[72px] pt-1.5 pb-2 gap-1'
                             : 'w-[44px] py-2 gap-0'
-                        } ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                        } ${active ? 'text-white' : 'text-white/65 hover:text-white'}`}
                         style={{ transitionDuration: '170ms', transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
                       >
                         <span className="absolute inset-x-1.5 top-1 bottom-1.5 rounded-md -z-10 transition-colors"
-                          style={{ background: active ? 'rgba(45,111,184,0.10)' : 'transparent' }}
+                          style={{ background: active ? 'rgba(255,255,255,0.12)' : 'transparent' }}
                         />
                         <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
                         {barExpanded && (
@@ -17523,7 +17533,7 @@ function BottomDeviceBar({
                             className={`absolute ${barExpanded ? 'top-0.5 right-2' : 'top-0.5 right-0.5'} min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
                               active
                                 ? 'bg-primary text-primary-foreground'
-                                : 'bg-secondary text-foreground/80 border border-border'
+                                : 'bg-white/15 text-white border border-white/15'
                             }`}
                           >
                             {placedCount > 99 ? '99+' : placedCount}
@@ -17548,10 +17558,10 @@ function BottomDeviceBar({
             (manufacturer, model, productLine, productName, cameraType,
             subcategory, resolution, sub). The floating results panel
             above the bar is unchanged. */}
-        <span aria-hidden className="self-stretch w-px bg-border/70 my-1.5" />
-        <div className="flex flex-col">
+        <span aria-hidden className="self-stretch w-px bg-white/10 my-1.5" />
+        <div className="flex flex-col justify-center">
           {barExpanded && (
-            <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
+            <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap">
               Search
             </div>
           )}
@@ -17564,15 +17574,15 @@ function BottomDeviceBar({
                 data-testid="bottombar-search-icon"
                 className={`w-[34px] h-[34px] flex items-center justify-center rounded-md border transition-colors ${
                   searchQuery
-                    ? 'border-primary/40 bg-primary/12 text-primary'
-                    : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                    ? 'border-primary/40 bg-primary/15 text-primary'
+                    : 'border-white/10 text-white/65 hover:text-white hover:bg-white/8'
                 }`}
               >
                 <Search className="w-4 h-4" />
               </button>
             ) : (
               <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/55" />
                 <input
                   ref={searchInputRef}
                   value={searchQuery}
@@ -17580,11 +17590,11 @@ function BottomDeviceBar({
                   placeholder="Search products"
                   data-testid="bottombar-search-input"
                   aria-label="Search products"
-                  className="w-[200px] h-[34px] pl-7 pr-7 text-[12px] rounded-md border border-border bg-card focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/15 placeholder:text-muted-foreground/50"
+                  className="w-[200px] h-[34px] pl-7 pr-7 text-[12px] rounded-md border border-white/10 bg-white/5 text-white focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 placeholder:text-white/40"
                 />
                 <button
                   onClick={() => { setSearchQuery(''); setSearchOpen(false); }}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-white/65 hover:text-white"
                   title="Collapse search"
                   aria-label="Collapse search"
                   data-testid="bottombar-search-collapse"
