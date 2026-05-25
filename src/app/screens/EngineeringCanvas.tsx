@@ -3562,31 +3562,13 @@ export function EngineeringCanvas() {
                 until the operator switches. */}
             <AssistantPanel projectId={projectId} />
 
-            {/* Right-side engineering inspector drawer */}
-            {sel && (
-              <CanvasErrorBoundary label="EditDrawer">
-                <EditDrawer
-                  d={sel}
-                  open={editOpen}
-                  tab={editTab}
-                  setTab={setEditTab}
-                  onClose={() => setEditOpen(false)}
-                  onUpdate={updateSel}
-                  activeLens={activeLens}
-                  setActiveLens={setActiveLens}
-                  lensMode={(sel.lensMode ?? 'linked') as LensMode}
-                  setLensMode={setLensModeForSel}
-                  selectedDoriLevel={selectedDoriLevel}
-                  setSelectedDoriLevel={setSelectedDoriLevel}
-                  pxToFtForFloor={currentFloorPxToFt}
-                />
-              </CanvasErrorBoundary>
-            )}
-            {/* PathwayDrawer — opens when a pathway (cable bundle run /
-                standalone conduit / J-hook / tray) is clicked on canvas.
-                Side panel, not a modal, so the user can edit cable type,
-                conduit assignment, terminations, ports, and accessories
-                in the standard right-side editing flow. */}
+            {/* ITEM 1 — right inspector drawer moved out of the canvas
+                region. It now mounts as a flex-row sibling next to the
+                canvas (see the dedicated drawer column after the canvas
+                region closes below), so opening the inspector SHRINKS
+                the canvas to the remaining width instead of covering
+                content. The hover icon rails (left + right) still
+                float over the canvas — Pass A behavior unchanged. */}
             {canvasBomOpen && (
               <ProjectBomDrawer
                 projectId={projectId}
@@ -3604,13 +3586,8 @@ export function EngineeringCanvas() {
                 }}
               />
             )}
-            {selPathwayId && (
-              <PathwayDrawer
-                pathwayId={selPathwayId}
-                onClose={() => setSelPathwayId(null)}
-                onOpenBundle={(bid) => { setSelPathwayId(null); setBundleInspectorId(bid); }}
-              />
-            )}
+            {/* PathwayDrawer also moved to the docked drawer column
+                below — same shrink-the-canvas behavior. */}
 
             {/* Target simulation overlay removed per DEFECT FIX
                 (2026-05-24). The DORI bands shipped in V3 Pass 2 Part 2
@@ -3998,6 +3975,41 @@ export function EngineeringCanvas() {
               </div>
             )}
           </div>
+
+          {/* ITEM 1 — docked right inspector column. Mounts as a flex
+              sibling so the canvas (`flex-1 min-w-0`) shrinks to the
+              remaining width when the drawer is open. The CanvasSurface
+              recenters automatically because its viewport / fit logic
+              already keys off the surface bounding rect.
+              EditDrawer and PathwayDrawer are mutually exclusive at
+              this point (selecting one clears the other in the canvas
+              handlers), so only one column ever renders. */}
+          {sel && editOpen && (
+            <CanvasErrorBoundary label="EditDrawer">
+              <EditDrawer
+                d={sel}
+                open={editOpen}
+                tab={editTab}
+                setTab={setEditTab}
+                onClose={() => setEditOpen(false)}
+                onUpdate={updateSel}
+                activeLens={activeLens}
+                setActiveLens={setActiveLens}
+                lensMode={(sel.lensMode ?? 'linked') as LensMode}
+                setLensMode={setLensModeForSel}
+                selectedDoriLevel={selectedDoriLevel}
+                setSelectedDoriLevel={setSelectedDoriLevel}
+                pxToFtForFloor={currentFloorPxToFt}
+              />
+            </CanvasErrorBoundary>
+          )}
+          {selPathwayId && (
+            <PathwayDrawer
+              pathwayId={selPathwayId}
+              onClose={() => setSelPathwayId(null)}
+              onOpenBundle={(bid) => { setSelPathwayId(null); setBundleInspectorId(bid); }}
+            />
+          )}
         </div>
 
         {!onboarded && (
@@ -13484,7 +13496,7 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
   const [sub, setSub] = useState<Sub>('general');
   if (!p) {
     return (
-      <div className="absolute top-0 right-0 bottom-0 z-40 w-[420px] bg-card border-l border-border p-4">
+      <div className="shrink-0 w-[420px] h-full bg-card border-l border-border p-4">
         <div className="text-[12px] text-muted-foreground">Pathway not found.</div>
         <button onClick={onClose} className="mt-3 text-[11px] px-3 h-7 rounded-md border border-border">Close</button>
       </div>
@@ -13536,15 +13548,12 @@ function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
 
   return (
     <div
-      className="absolute top-0 right-0 bottom-0 z-40 transition-transform duration-300 translate-x-0"
+      className="shrink-0 h-full flex flex-col"
       style={{
         width: 420,
         background: 'var(--drawer-background)',
         color: 'var(--drawer-foreground)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
         borderLeft: '1px solid var(--border)',
-        boxShadow: '-16px 0 40px -16px rgba(0,0,0,0.35)',
       }}
     >
       <div className="px-5 pt-5 pb-3 border-b border-white/[0.05] flex items-start gap-3">
@@ -13965,25 +13974,11 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   return (
     <div
       data-canvas-chrome={open ? 'drawer' : undefined}
-      className="absolute top-0 right-0 bottom-0 z-50 pointer-events-auto w-full md:w-[400px] flex flex-col"
+      className="shrink-0 w-full md:w-[400px] h-full flex flex-col"
       style={{
         background: 'var(--drawer-background)',
         color: 'var(--drawer-foreground)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
         borderLeft: '1px solid var(--border)',
-        boxShadow: '-16px 0 40px -16px rgba(0,0,0,0.35)',
-        // V3.3 Phase A iteration: Tailwind v4 maps `translate-x-0` /
-        // `translate-x-full` onto the standalone CSS `translate`
-        // property; `transition-transform` only animates `transform`,
-        // so the slide-in never honored the duration and the open
-        // class wasn't fully resetting the closed translate. Inline
-        // transform + `transition-property: transform` sidesteps the
-        // utility-vs-property mismatch entirely.
-        transform: open ? 'translateX(0)' : 'translateX(100%)',
-        transitionProperty: 'transform',
-        transitionDuration: '200ms',
-        transitionTimingFunction: 'cubic-bezier(0.2, 0, 0, 1)',
       }}
     >
       {/* Drawer header — V3.3 Phase A.
