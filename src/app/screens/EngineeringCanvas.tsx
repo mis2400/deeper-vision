@@ -11527,9 +11527,6 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
   // bar's top edge because the bar declares `data-canvas-chrome="tray"`
   // and is excluded from the safe rect).
   const topPx = Math.max(safeRect.top + PAD, safeRect.bottom - PAD - pillBox.h);
-  // Tether retired — the device ring provides the visual link.
-  const tetherDx = 0;
-  const wantsBelow = false;
 
   // Build toolbar actions per device kind. Each kind exposes at most 5
   // primary actions; the rest fall into the "More" overflow popover. The
@@ -11556,22 +11553,10 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
         animation: 'pill-in 180ms ease-out both',
       }}
     >
-      {/* Subtle tether — single hairline pencil from pill to device. Tether
-          follows the device horizontally so that clamping the pill at a
-          viewport edge still points back at the glyph. Hidden when the pill
-          flipped below the device (visual would be inverted). */}
-      {!wantsBelow && (
-        <div
-          className="absolute top-full w-px"
-          style={{
-            left: `calc(50% + ${tetherDx}px)`,
-            transform: 'translateX(-0.5px)',
-            height: GAP - 2,
-            background: 'var(--border)',
-            opacity: 0.55,
-          }}
-        />
-      )}
+      {/* Tether removed — pill now docks at the canvas bottom (Item 2);
+          the on-glyph selection ring is the device-side affordance. The
+          previous tether referenced a deleted `GAP` constant which
+          threw a ReferenceError during render and blanked the canvas. */}
 
       {/* Multisensor lens chips sit above the strip when applicable. */}
       {/* Canvas V3.2 — minimal selection pill. Per the V3 spec the
