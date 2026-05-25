@@ -8763,6 +8763,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                     pan={pan}
                     color={KIND_TONE.camera}
                     onUpdate={(p) => onUpdateDevice(s.id, p)}
+                    onRotate={(rotDeg) => onRotateDevice(s.id, rotDeg)}
                   />
                 );
               })()}
@@ -9586,12 +9587,31 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
   );
 }
 
-/** Direct-manipulation handles attached to the tip + edges of a cone. Tip
- *  handle mutates RANGE (in ft). Two edge handles mutate FOV (the half-angle).
- *  Used by both single-lens cameras and the active lens of a multisensor —
- *  the caller wires `onUpdate` to write to either d.fov/d.range OR
- *  d.lenses[activeLens].fov/.range. */
-function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pan, color, onUpdate }: {
+/** Direct-manipulation handles attached to the cone (V3 Pass 2 Part 1
+ *  — Axis-style three-handle adjustment).
+ *
+ *  Three handles, all on the fan:
+ *    1. ROTATE — small puck midway along the aim line. Drag angularly
+ *       around the camera center to spin the whole fan. Writes to
+ *       `rot`. Only shown when `onRotate` is passed (single-lens
+ *       cameras); multisensors keep their drawer-based per-lens
+ *       rotation editing for now.
+ *    2. FOV — two edge handles at the cone's outside arc. Drag either
+ *       to widen/narrow the aperture.
+ *    3. RANGE — tip handle at the apex. Drag radially to extend or
+ *       shorten reach.
+ *
+ *  A single consolidated readout chip below the marker shows
+ *  rot° · fov° · range ft · px/ft. The currently-dragged value is
+ *  rendered at full opacity; the others stay quieter so the eye lands
+ *  on the value the operator is changing.
+ *
+ *  Geometry honors the calibrated per-floor scale (`pxToFt`, units of
+ *  feet-per-pixel) end to end: handle positions, drag math, readout
+ *  numbers all derive from the real calibration. Each handle writes
+ *  through onUpdate which the caller wires to onUpdateDevice — values
+ *  persist via the Zustand store. */
+function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pan, color, onUpdate, onRotate }: {
   cx: number; cy: number;
   rotDeg: number; fovDeg: number; rangeFt: number;
   pxToFt: number;
@@ -9600,6 +9620,10 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pa
   pan: { x: number; y: number };
   color: string;
   onUpdate: (patch: { fov?: number; range?: number }) => void;
+  /** When provided, the rotation puck renders and drives rot writes.
+   *  Single-lens cameras pass this; multisensors leave it undefined so
+   *  the cone keeps its per-lens rotation editing in the drawer. */
+  onRotate?: (rotDeg: number) => void;
 }) {
   // SC.7.1: handle positions follow the calibrated cone — without the
   // fix, dragging the tip on a calibrated floor moved the handle to the
@@ -9616,10 +9640,22 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pa
   const e1Y = cy + Math.sin(a1) * r * 0.92;
   const e2X = cx + Math.cos(a2) * r * 0.92;
   const e2Y = cy + Math.sin(a2) * r * 0.92;
+  // Rotation puck — midway along the aim line. Far enough from the
+  // marker not to occlude it, close enough to the marker that the
+  // operator's intuition reads "rotate around the camera" rather than
+  // "extend the range."
+  const rotPuckR = Math.max(14, Math.min(r * 0.45, r - 10));
+  const rotPX = cx + Math.cos(aMid) * rotPuckR;
+  const rotPY = cy + Math.sin(aMid) * rotPuckR;
 
-  const startDrag = (apply: (cx: number, cy: number) => void) => (e: React.PointerEvent) => {
+  // Track which handle is being dragged so the live readout can
+  // emphasize the active value. Cleared on pointer-up.
+  const [dragMode, setDragMode] = useState<null | 'rot' | 'fov' | 'range'>(null);
+
+  const startDrag = (mode: 'rot' | 'fov' | 'range', apply: (cx: number, cy: number) => void) => (e: React.PointerEvent) => {
     e.stopPropagation();
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* capture optional */ }
+    setDragMode(mode);
     const onMove = (ev: PointerEvent) => {
       if (!svgRef.current) return;
       const rect = svgRef.current.getBoundingClientRect();
@@ -9632,42 +9668,52 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pa
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      setDragMode(null);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };
 
-  const onTipDown = startDrag((mx, my) => {
+  const onTipDown = startDrag('range', (mx, my) => {
     const dist = Math.hypot(mx - cx, my - cy);
     // SC.7.1: pixels → feet via the calibrated per-floor scale so the
     // tip drag yields the correct range. Was dividing by 3.83 px/ft.
     onUpdate({ range: Math.max(5, Math.min(150, Math.round(dist * pxToFt))) });
   });
-  const onEdgeDown = startDrag((mx, my) => {
+  const onEdgeDown = startDrag('fov', (mx, my) => {
     // FOV = 2 × shortest absolute angle between cursor heading and cone center
     const ang = (Math.atan2(my - cy, mx - cx) * 180) / Math.PI;
     let delta = Math.abs(((ang - rotDeg + 180) % 360) - 180);
     if (delta < 0) delta = -delta;
     onUpdate({ fov: Math.max(10, Math.min(360, Math.round(delta * 2))) });
   });
+  const onRotDown = startDrag('rot', (mx, my) => {
+    if (!onRotate) return;
+    // Convert cursor angle to degrees in the canvas convention (atan2
+    // returns radians from +X). Normalize to 0..360 so persisted rot
+    // stays in the expected range; rounding to whole degrees keeps the
+    // store from accumulating sub-degree noise on every move event.
+    const angDeg = (Math.atan2(my - cy, mx - cx) * 180) / Math.PI;
+    const norm = ((Math.round(angDeg) % 360) + 360) % 360;
+    onRotate(norm);
+  });
+
+  // Pixels-per-foot for the readout chip (more readable than ft/px
+  // for surveyors thinking in plan terms). pxToFt is ft/px upstream.
+  const ppf = pxToFt > 0 ? 1 / pxToFt : 0;
+  const showReadout = dragMode !== null;
+  // Vertical offset for the readout chip below the marker. Stays
+  // outside the cone bounding box even when rangeFt is small.
+  const chipY = cy + 26;
 
   return (
     <g pointerEvents="auto">
-      {/* Range (tip) handle — drag along cone axis to extend/shorten reach.
-          Slightly larger background "glow" for hit affordance; the solid
-          centre stays small for placement precision. */}
+      {/* Range (tip) handle — drag along cone axis to extend / shorten. */}
       <g onPointerDown={onTipDown} className="dv-cone-handle" style={{ cursor: 'ew-resize' }}>
         <circle cx={tipX} cy={tipY} r={8} fill={color} opacity="0.22" />
         <circle cx={tipX} cy={tipY} r={3.6} fill={color} stroke="var(--canvas-background)" strokeWidth="1.1" />
-        <g transform={`translate(${tipX}, ${tipY - 14})`} pointerEvents="none">
-          <rect x={-20} y={-7} width={40} height={13} rx={2} fill="var(--panel-background)" fillOpacity="0.92" stroke={color} strokeWidth="0.6" />
-          <text textAnchor="middle" y={2.5} fontSize="9" fontWeight="600" fill={color} fontFamily="ui-monospace, monospace">{Math.round(rangeFt)} ft</text>
-        </g>
       </g>
-      {/* Edge (FOV) handles — drag to widen/narrow the lens aperture.
-          Both handles share a single live "° fov" badge centred between
-          them so the surveyor always sees the current aperture while
-          adjusting — no need to peek at the inspector mid-drag. */}
+      {/* Edge (FOV) handles — drag to widen / narrow the aperture. */}
       <g onPointerDown={onEdgeDown} className="dv-cone-handle" style={{ cursor: 'crosshair' }}>
         <circle cx={e1X} cy={e1Y} r={7} fill={color} opacity="0.22" />
         <circle cx={e1X} cy={e1Y} r={3.1} fill={color} stroke="var(--canvas-background)" strokeWidth="0.85" />
@@ -9676,19 +9722,51 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pa
         <circle cx={e2X} cy={e2Y} r={7} fill={color} opacity="0.22" />
         <circle cx={e2X} cy={e2Y} r={3.1} fill={color} stroke="var(--canvas-background)" strokeWidth="0.85" />
       </g>
-      {/* Live FOV chip — midpoint between the two edge handles, offset
-          slightly outward along the cone axis so it never overlaps the
-          range badge at the tip. */}
-      {(() => {
-        const midX = (e1X + e2X) / 2;
-        const midY = (e1Y + e2Y) / 2;
-        return (
-          <g transform={`translate(${midX}, ${midY})`} pointerEvents="none">
-            <rect x={-20} y={-7} width={40} height={13} rx={2} fill="var(--panel-background)" fillOpacity="0.92" stroke={color} strokeWidth="0.6" />
-            <text textAnchor="middle" y={2.5} fontSize="9" fontWeight="600" fill={color} fontFamily="ui-monospace, monospace">{Math.round(fovDeg)}° fov</text>
-          </g>
-        );
-      })()}
+      {/* Rotation puck — only mounted when the caller has wired
+          onRotate. Drag angularly around the camera center to spin
+          the whole fan. Inverted treatment (hollow center, solid
+          ring) so it visually reads distinct from the FOV / range
+          handles. */}
+      {onRotate && (
+        <g onPointerDown={onRotDown} className="dv-cone-handle" style={{ cursor: 'move' }}>
+          <circle cx={rotPX} cy={rotPY} r={8} fill={color} opacity="0.22" />
+          <circle cx={rotPX} cy={rotPY} r={3.4} fill="var(--canvas-background)" stroke={color} strokeWidth="1.2" />
+          {/* Tiny tick at center showing the aim direction so the puck
+              reads as "this is the rotation control" even at small
+              zoom. */}
+          <line
+            x1={rotPX} y1={rotPY}
+            x2={rotPX + Math.cos(aMid) * 4.5}
+            y2={rotPY + Math.sin(aMid) * 4.5}
+            stroke={color} strokeWidth="0.8" strokeLinecap="round"
+          />
+        </g>
+      )}
+      {/* Consolidated live readout — single chip below the marker
+          showing rot · fov · range · px/ft. The currently-dragged
+          value is bright; the others stay quiet. Only visible during
+          a drag to avoid permanent chrome on a calm canvas. */}
+      {showReadout && (
+        <g transform={`translate(${cx}, ${chipY})`} pointerEvents="none">
+          <rect
+            x={-72} y={-9} width={144} height={16} rx={3}
+            fill="var(--panel-background)" fillOpacity="0.95"
+            stroke={color} strokeWidth="0.7"
+          />
+          <text
+            textAnchor="middle" y={2.5} fontSize="9" fontWeight="600"
+            fill={color} fontFamily="ui-monospace, monospace"
+          >
+            <tspan opacity={dragMode === 'rot' ? 1 : 0.5}>{Math.round(rotDeg)}°</tspan>
+            <tspan opacity={0.35}>{'  ·  '}</tspan>
+            <tspan opacity={dragMode === 'fov' ? 1 : 0.5}>{Math.round(fovDeg)}° fov</tspan>
+            <tspan opacity={0.35}>{'  ·  '}</tspan>
+            <tspan opacity={dragMode === 'range' ? 1 : 0.5}>{Math.round(rangeFt)} ft</tspan>
+            <tspan opacity={0.35}>{'  ·  '}</tspan>
+            <tspan opacity={0.5}>{ppf.toFixed(1)} px/ft</tspan>
+          </text>
+        </g>
+      )}
     </g>
   );
 }
