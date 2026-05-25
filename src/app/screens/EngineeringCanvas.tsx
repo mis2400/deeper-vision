@@ -10445,48 +10445,63 @@ function PersonProbe({
     e.preventDefault();
     setDragging(true);
   }, []);
-  // Marker geometry — a simple person silhouette (head + body) in
-  // canvas world units. Slightly larger than the DORI label chips so
-  // it reads as a draggable handle, not a label.
-  const r = 6;
+  // Item 4 — high contrast marker. Distinct magenta + white treatment
+  // so the probe stands out against blue/green camera tones, the warm
+  // floorplan background, and the cone wash. Bigger than before, with
+  // a white halo and a crosshair so it reads as an instrument, not a
+  // device. When outside the cone, drops to a muted gray ring so the
+  // "no coverage" state is also visually clear.
+  const r = 8;
+  const MARKER_ON  = '#FF3FA5';   // vivid magenta — pops against blue
+                                  // cones, warm floorplans, and gray
+                                  // chrome. Distinct from every device
+                                  // tone in KIND_TONE.
+  const MARKER_OFF = '#A0A8B8';   // muted gray for the out-of-cone state.
+  const mTone = probe.inCone ? MARKER_ON : MARKER_OFF;
   const distLabel = `${probe.distanceFt.toFixed(1)} ft`;
   const densityLabel = live != null ? `${live.toFixed(1)} px/ft` : 'no coverage';
   return (
     <g pointerEvents="all">
-      {/* Tether — dotted line from camera to probe, only when inside
-          the cone, so the operator sees what the marker is measuring. */}
+      {/* Tether — dotted line from camera to probe in the marker tone
+          so the link reads at a glance. Only drawn when inside the
+          cone. */}
       {probe.inCone && (
         <line
           x1={d.x} y1={d.y} x2={pos.x} y2={pos.y}
-          stroke={tone} strokeWidth="0.6" strokeDasharray="2 3" opacity="0.55"
+          stroke={mTone} strokeWidth="0.9" strokeDasharray="2 3" opacity="0.75"
           pointerEvents="none"
         />
       )}
-      {/* Marker — head + body silhouette in a circle frame.
-          Drag wiring lives in the useEffect above (window pointermove
-          + pointerup). Only `onPointerDown` is needed here to set the
-          dragging flag; the previous markup also wired `onPointerMove`
-          and `onPointerUp` to undeclared identifiers, which is why the
-          drawer preview stopped updating mid-drag in the prior pass. */}
+      {/* Marker — white halo, magenta ring, crosshair, person glyph. */}
       <g transform={`translate(${pos.x} ${pos.y})`} style={{ cursor: 'grab', touchAction: 'none' }}
          onPointerDown={onDown}>
-        <circle r={r * 1.6} fill="var(--canvas-background)" fillOpacity="0.85" stroke={probe.inCone ? tone : 'var(--muted-foreground)'} strokeWidth="0.8" />
-        <circle cx={0} cy={-r * 0.55} r={r * 0.42} fill={probe.inCone ? tone : 'var(--muted-foreground)'} />
+        {/* Outer white halo for separation from the cone wash. */}
+        <circle r={r * 1.7} fill="#FFFFFF" fillOpacity="0.95" stroke="rgba(0,0,0,0.18)" strokeWidth="0.4" />
+        {/* Magenta accent ring — the high-contrast signal. */}
+        <circle r={r * 1.7} fill="none" stroke={mTone} strokeWidth="1.5" />
+        {/* Crosshair lines extending past the ring so the marker reads
+            as an instrument (a probe), not a device. */}
+        <line x1={-r * 2.2} y1={0} x2={-r * 1.7} y2={0} stroke={mTone} strokeWidth="1.2" />
+        <line x1={r * 1.7} y1={0} x2={r * 2.2} y2={0} stroke={mTone} strokeWidth="1.2" />
+        <line x1={0} y1={-r * 2.2} x2={0} y2={-r * 1.7} stroke={mTone} strokeWidth="1.2" />
+        <line x1={0} y1={r * 1.7} x2={0} y2={r * 2.2} stroke={mTone} strokeWidth="1.2" />
+        {/* Person silhouette — head + body, drawn in the magenta tone
+            on the white halo so even at zoom-out the figure reads. */}
+        <circle cx={0} cy={-r * 0.55} r={r * 0.4} fill={mTone} />
         <path
           d={`M ${-r * 0.7} ${r * 0.55} Q 0 ${-r * 0.05} ${r * 0.7} ${r * 0.55} L ${r * 0.7} ${r * 0.95} L ${-r * 0.7} ${r * 0.95} Z`}
-          fill={probe.inCone ? tone : 'var(--muted-foreground)'}
+          fill={mTone}
         />
       </g>
       {/* Live callout — distance + px/ft, two lines so the operator
-          reads it at a glance while dragging. Anchored just below the
-          marker so it doesn't cover the camera. */}
-      <g transform={`translate(${pos.x} ${pos.y + r * 2.3})`} pointerEvents="none">
+          reads it at a glance while dragging. */}
+      <g transform={`translate(${pos.x} ${pos.y + r * 2.6})`} pointerEvents="none">
         <rect x={-32} y={-1.5} width={64} height={14} rx={3}
-          fill="var(--panel-background)" fillOpacity="0.92"
-          stroke={probe.inCone ? tone : 'var(--muted-foreground)'} strokeOpacity="0.6" strokeWidth="0.5"
+          fill="var(--panel-background)" fillOpacity="0.94"
+          stroke={mTone} strokeOpacity="0.8" strokeWidth="0.6"
         />
         <text x={0} y={5} textAnchor="middle" fontSize="6.5" fontWeight="600" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{distLabel}</text>
-        <text x={0} y={11} textAnchor="middle" fontSize="6" fill={probe.inCone ? tone : 'var(--muted-foreground)'} fontFamily="ui-monospace, monospace">{densityLabel}</text>
+        <text x={0} y={11} textAnchor="middle" fontSize="6" fontWeight="600" fill={mTone} fontFamily="ui-monospace, monospace">{densityLabel}</text>
       </g>
     </g>
   );
