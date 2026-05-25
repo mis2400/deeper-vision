@@ -16739,7 +16739,7 @@ function BottomDeviceBar({
   }, [floorDevices, floorPathways]);
 
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-30 hidden md:block" ref={trayRef} data-canvas-chrome="tray">
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-[68px] z-30 hidden md:block" ref={trayRef} data-canvas-chrome="tray">
       {/* Global product search results panel — wins over the category
           tray when a query is active so the operator always sees ONE
           source of truth above the bar. Same chrome as the tray for
