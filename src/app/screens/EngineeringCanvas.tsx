@@ -1362,6 +1362,13 @@ export function EngineeringCanvas() {
     });
   }, [addPathway, projectId]);
   const [selId, setSelId] = useState<string | null>(null);
+  // Pass C — required pixel density row in the camera drawer drives a
+  // shared emphasis state. When the user picks a DORI level tile, the
+  // cone on the canvas dims the other bands so the active grade reads
+  // clearly. Reset every time the selected camera changes so emphasis
+  // never bleeds across cameras.
+  const [selectedDoriLevel, setSelectedDoriLevel] = useState<DoriLevel | null>(null);
+  useEffect(() => { setSelectedDoriLevel(null); }, [selId]);
   // V1 2A.3 — honor ?focus=<deviceId> from the URL so an assistant
   // citation chip that links here actually selects the device. Only
   // applies on first arrival; clearing the param prevents re-firing.
@@ -3502,6 +3509,9 @@ export function EngineeringCanvas() {
                 setActiveLens={setActiveLens}
                 lensMode={(sel.lensMode ?? 'linked') as LensMode}
                 setLensMode={setLensModeForSel}
+                selectedDoriLevel={selectedDoriLevel}
+                setSelectedDoriLevel={setSelectedDoriLevel}
+                pxToFtForFloor={currentFloorPxToFt}
               />
             )}
             {/* PathwayDrawer — opens when a pathway (cable bundle run /
@@ -8209,7 +8219,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             const isSel = d.id === selId;
             if (!layers.fov && !isSel) return null;
             const dim = (selId ? (isSel ? 1 : 0.28) : 1) * coverageAlpha;
-            return <FOV key={`fov-${d.id}`} d={d} pxToFt={currentFloorPxToFt} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} />;
+            return <FOV key={`fov-${d.id}`} d={d} pxToFt={currentFloorPxToFt} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} emphasizedDoriLevel={isSel ? selectedDoriLevel : null} />;
           })}
         </g>
 
@@ -8713,51 +8723,81 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               {isMs && (
                 <RotationRing d={s} onRotate={handleRotate} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} pan={pan} overrideColor={ringColor} />
               )}
-              {/* Direct manipulation cone handles (FOV edges + range tip). For
-                  multisensors the handles attach to the active lens's cone; in
-                  'all' mode handles are hidden because there's no single cone
-                  to drag — the user edits per-lens via the chips. */}
+              {/* Direct manipulation cone handles (rotate puck, FOV edges,
+                  range tip). For single lens cameras one set attaches to
+                  the camera's cone. For multisensor cameras (PASS D) a
+                  set is mounted PER LENS — every enabled lens is
+                  adjustable on the plan, regardless of which lens chip
+                  is active in the drawer. */}
               {(() => {
                 if (s.type === 'cam.fisheye') return null;
                 if (isMs) {
-                  if (activeLens === 'all') return null;
+                  // PASS D — every enabled lens gets its own set of
+                  // handles directly on the plan: rotation puck on the
+                  // aim ray, two FOV edge handles on the outer arc, and
+                  // a range tip at the apex. The old code mounted
+                  // handles only for the single 'active' lens (and not
+                  // at all in 'all' mode); the spec is now "every lens
+                  // on a multisensor is adjustable on the plan", so we
+                  // map over all four slots and mount per-lens handles.
+                  //
+                  // The multisensor rotation ring (RotationRing above)
+                  // stays as-is for body rotation per the brief. Each
+                  // ConeHandles emits absolute world-space rotation;
+                  // lens rotations are stored RELATIVE to the body, so
+                  // we subtract `s.rot` before persisting to the lens
+                  // slot.
+                  //
+                  // Linked mode: FOV / range edits propagate to all
+                  // four lenses regardless of which lens's puck the
+                  // user grabbed (preserves each lens's per-quadrant
+                  // rotation while equalising aperture + reach).
+                  // Independent mode: writes only to the dragged
+                  // lens. Rotation is always per-lens (rotations are
+                  // what aim each lens at its quadrant).
                   const ls = getLenses(s);
-                  const k = activeLens as LensId;
-                  const L = ls[k];
                   return (
-                    <ConeHandles
-                      cx={s.x} cy={s.y}
-                      rotDeg={((L.rotation + s.rot) % 360 + 360) % 360}
-                      fovDeg={L.fov}
-                      rangeFt={L.range}
-                      pxToFt={currentFloorPxToFt}
-                      svgRef={ref as React.RefObject<SVGSVGElement>}
-                      zoom={zoom}
-                      pan={pan}
-                      color={LENS_TONE[k]}
-                      onUpdate={(p) => {
-                        // Linked mode: FOV / range edits on the active lens
-                        // propagate to all four lenses. Each lens keeps its
-                        // own rotation (because rotation is stored relative
-                        // to the body and serves to point each lens at its
-                        // quadrant). Without this branch, the "Linked"
-                        // toggle was decorative — only the active lens
-                        // actually moved.
-                        // Independent mode keeps the previous per-lens
-                        // write so each lens can be tuned alone.
-                        if (lensMode === 'linked') {
-                          const next: typeof ls = {
-                            a: { ...ls.a, ...p },
-                            b: { ...ls.b, ...p },
-                            c: { ...ls.c, ...p },
-                            d: { ...ls.d, ...p },
-                          };
-                          onUpdateDevice(s.id, { lenses: next });
-                        } else {
-                          onUpdateDevice(s.id, { lenses: { ...ls, [k]: { ...L, ...p } } });
-                        }
-                      }}
-                    />
+                    <>
+                      {(['a', 'b', 'c', 'd'] as const).map((k) => {
+                        const L = ls[k];
+                        if (!L.enabled) return null;
+                        return (
+                          <ConeHandles
+                            key={`ms-${s.id}-${k}`}
+                            cx={s.x} cy={s.y}
+                            rotDeg={((L.rotation + s.rot) % 360 + 360) % 360}
+                            fovDeg={L.fov}
+                            rangeFt={L.range}
+                            pxToFt={currentFloorPxToFt}
+                            svgRef={ref as React.RefObject<SVGSVGElement>}
+                            zoom={zoom}
+                            pan={pan}
+                            color={LENS_TONE[k]}
+                            onUpdate={(p) => {
+                              const latest = useProjectStore.getState().devices[s.id];
+                              const baseLenses = latest ? getLenses(latest) : ls;
+                              if (lensMode === 'linked') {
+                                const next: typeof baseLenses = {
+                                  a: { ...baseLenses.a, ...p },
+                                  b: { ...baseLenses.b, ...p },
+                                  c: { ...baseLenses.c, ...p },
+                                  d: { ...baseLenses.d, ...p },
+                                };
+                                onUpdateDevice(s.id, { lenses: next });
+                              } else {
+                                onUpdateDevice(s.id, { lenses: { ...baseLenses, [k]: { ...baseLenses[k], ...p } } });
+                              }
+                            }}
+                            onRotate={(rotDeg) => {
+                              const relative = ((rotDeg - s.rot) % 360 + 360) % 360;
+                              const latest = useProjectStore.getState().devices[s.id];
+                              const baseLenses = latest ? getLenses(latest) : ls;
+                              onUpdateDevice(s.id, { lenses: { ...baseLenses, [k]: { ...baseLenses[k], rotation: relative } } });
+                            }}
+                          />
+                        );
+                      })}
+                    </>
                   );
                 }
                 // Single-lens camera
@@ -9504,12 +9544,32 @@ function cameraResolution(d: Device): { widthPx: number; heightPx: number } | nu
  *  Observe 62, Detect 25 px/m); we divide by 3.28084 once so the rest of
  *  the math stays in feet (the SPA's calibration unit). */
 const DORI_PX_PER_FT = {
-  identify:  250 / 3.28084, // ≈ 76.20
-  recognize: 125 / 3.28084, // ≈ 38.10
-  observe:    62 / 3.28084, // ≈ 18.90
-  detect:     25 / 3.28084, // ≈  7.62
+  identify:  250 / 3.28084,  // ≈ 76.20 px/ft (250 px/m)
+  recognize: 125 / 3.28084,  // ≈ 38.10 px/ft (125 px/m)
+  observe:   62.5 / 3.28084, // ≈ 19.05 px/ft (62.5 px/m — the EN-50132-7
+                             //                  standard observe threshold;
+                             //                  the earlier 62 round-down
+                             //                  shaved 0.15 px/ft off the
+                             //                  boundary)
+  detect:     25 / 3.28084,  // ≈  7.62 px/ft (25 px/m)
 } as const;
 type DoriLevel = 'identify' | 'recognize' | 'observe' | 'detect';
+/** Standard subject width used to convert px/ft into px-on-face for the
+ *  required pixel density preview tiles. 0.6 ft ≈ 18.3 cm matches the
+ *  EN-50132 / IEC-62676 face width assumption used everywhere else in
+ *  the canvas. The number is a STANDARD, not a knob — engineers expect
+ *  identify @ 250 px/m to translate to roughly 46 px across a face. */
+const FACE_WIDTH_FT = 0.6;
+// Tile order: blurry → sharp, matching the Axis-style reference. The
+// cone band rendering uses a different inner-to-outer order via the
+// DORI_BASE_OPACITY map; the tile row is independent.
+const DORI_ORDER: DoriLevel[] = ['detect', 'observe', 'recognize', 'identify'];
+const DORI_TILE_LABEL: Record<DoriLevel, string> = {
+  identify:  'Identify',
+  recognize: 'Recognize',
+  observe:   'Observe',
+  detect:    'Detect',
+};
 /** Visual stepping: closest band (best grade) is most opaque, falling off
  *  toward the detect band. Multiplied by the cone's mode/selected opacity
  *  in the renderer so the bands fade with the rest of the cone wash. */
@@ -9646,7 +9706,7 @@ function FovCone({
   );
 }
 
-function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null }: { d: Device; pxToFt: number; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null }) {
+function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null, emphasizedDoriLevel = null }: { d: Device; pxToFt: number; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null; emphasizedDoriLevel?: DoriLevel | null }) {
   // Mode-driven render parameters. Tuned down for the ergonomics pass so
   // unselected coverage doesn't dominate the plan. Selected coverage
   // keeps a small 1.2× boost so it reads as clear without being loud —
@@ -9787,7 +9847,14 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
       {showBands && bands.map((b) => {
         const rIn = b.fromFt / pxToFt;
         const rOut = b.toFt / pxToFt;
-        const fillOp = DORI_BASE_OPACITY[b.level];
+        // Pass C: when the operator picks a DORI level from the
+        // drawer's required-pixel-density row, emphasize that band
+        // (1.5× opacity) and dim the others (0.25×). When no level
+        // is picked the base opacities stand as-is.
+        const baseOp = DORI_BASE_OPACITY[b.level];
+        const fillOp = emphasizedDoriLevel == null
+          ? baseOp
+          : (emphasizedDoriLevel === b.level ? Math.min(0.6, baseOp * 1.7) : baseOp * 0.25);
         if (wireframe) {
           return (
             <path key={b.level} d={sectorPath(rIn, rOut)}
@@ -12033,6 +12100,210 @@ function CameraResolutionSection({
  *  accessory + an Add-hardware menu seeded with the host's compatible
  *  hardware set. Reads from the host's `stack: DeviceId[]` array, which
  *  is written by canvas-to-canvas drag-stack and by drag-from-library. */
+/** PASS C — required pixel density preview tile.
+ *
+ *  Renders a generic face we own (built from a few SVG / canvas
+ *  primitives — no external image, no licensed photo) at the REAL
+ *  pixel density a camera produces on a 0.6 ft wide face at the
+ *  band's outer edge for a given DORI grade. The pixelation is
+ *  honest: we rasterize the face at `pxAcross` pixels wide on an
+ *  offscreen canvas, then upscale with `image-smoothing: false` so
+ *  the displayed tile shows the camera's actual sensor budget for
+ *  that grade. Not a decorative blur. */
+function FacePixelTile({
+  pxAcross,
+  displaySize = 64,
+}: { pxAcross: number; displaySize?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = displaySize * dpr;
+    canvas.height = displaySize * dpr;
+    canvas.style.width = `${displaySize}px`;
+    canvas.style.height = `${displaySize}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    // Source: render the face at pxAcross × pxAcross on an offscreen
+    // canvas. This is the camera's actual budget for a face at the
+    // DORI band's outer edge. Clamp pxAcross to >= 3 so the canvas
+    // can still exist for very low-density "detect" cases (5 px
+    // typical, but a tiny FOV camera might compute even smaller).
+    const N = Math.max(3, Math.round(pxAcross));
+    const off = document.createElement('canvas');
+    off.width = N;
+    off.height = N;
+    const oc = off.getContext('2d');
+    if (!oc) return;
+    drawFace(oc, N);
+    // Upscale to displaySize × dpr with nearest-neighbor so each
+    // source pixel renders as a sharp square — readable pixelation,
+    // not a decorative bokeh.
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+  }, [pxAcross, displaySize]);
+  return <canvas ref={canvasRef} aria-hidden className="block rounded-md bg-[#16202e]" />;
+}
+
+/** Generic face primitive — a few overlapping ellipses for the head,
+ *  eyes, and mouth. Vector-style but rendered at the target pixel
+ *  count so the lower DORI grades genuinely lose detail (the eyes
+ *  vanish at observe, the head outline blurs at detect). The face is
+ *  ours: no Axis sample, no celebrity, no third-party image. */
+function drawFace(ctx: CanvasRenderingContext2D, size: number) {
+  // Background — neutral plate so the face reads against the tile.
+  ctx.fillStyle = '#16202e';
+  ctx.fillRect(0, 0, size, size);
+  // Head — warm skin tone, slightly off-center for personality.
+  ctx.fillStyle = '#d4a577';
+  ctx.beginPath();
+  ctx.ellipse(size * 0.5, size * 0.55, size * 0.38, size * 0.46, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Hair — a darker cap at the top of the head, gives the silhouette
+  // shape at very low pixel counts.
+  ctx.fillStyle = '#3a2a22';
+  ctx.beginPath();
+  ctx.ellipse(size * 0.5, size * 0.30, size * 0.38, size * 0.25, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Eyes — only contribute when the canvas can resolve them.
+  if (size >= 8) {
+    ctx.fillStyle = '#1a1410';
+    ctx.beginPath();
+    ctx.ellipse(size * 0.38, size * 0.52, Math.max(1, size * 0.045), Math.max(1, size * 0.055), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(size * 0.62, size * 0.52, Math.max(1, size * 0.045), Math.max(1, size * 0.055), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Nose shadow.
+  if (size >= 14) {
+    ctx.fillStyle = 'rgba(70,40,30,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(size * 0.5, size * 0.63, size * 0.04, size * 0.07, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Mouth.
+  if (size >= 10) {
+    ctx.fillStyle = '#7a3a32';
+    ctx.beginPath();
+    ctx.ellipse(size * 0.5, size * 0.74, size * 0.12, size * 0.04, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** Required pixel density row — four tiles (Identify / Recognize /
+ *  Observe / Detect) with the face pixelated at the actual density
+ *  the camera produces at each band's outer edge, plus the px/ft
+ *  threshold and the band's reach distance in feet. Clicking a tile
+ *  emphasizes that band on the canvas via setSelectedDoriLevel.
+ *
+ *  Honesty gates:
+ *   - Missing resolution: no tiles, render the same "set resolution"
+ *     hint the DORI band code uses on the cone.
+ *   - FOV / range / scale degenerate: skip the row entirely (no
+ *     theatrical tiles).
+ *   - A grade the camera can't reach inside its range surfaces a
+ *     "Beyond range" annotation; the tile still shows the face at the
+ *     correct density (because the DENSITY at the threshold is by
+ *     definition the threshold itself — knowing the camera could
+ *     never reach there is the honest add-on). */
+function RequiredDensityRow({
+  d, pxToFt, selectedLevel, setSelectedLevel,
+}: {
+  d: Device;
+  pxToFt: number;
+  selectedLevel: DoriLevel | null;
+  setSelectedLevel: (l: DoriLevel | null) => void;
+}) {
+  // Honesty gate: the row mirrors the cone's DORI requirements. Skip
+  // for multisensor / fisheye and for missing resolution.
+  if (d.type === 'cam.multisensor' || d.type === 'cam.fisheye') return null;
+  const resolution = cameraResolution(d);
+  const defaultRangeFt = d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30;
+  const defaultFovDeg  = d.type === 'cam.ptz' ? 36 : 70;
+  const rangeFt = d.range ?? defaultRangeFt;
+  const fovDeg  = d.fov  ?? defaultFovDeg;
+  if (!resolution) {
+    return (
+      <DrawerSection title="Required pixel density">
+        <div className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+          Set the camera's resolution above to preview pixel density at each DORI grade.
+        </div>
+      </DrawerSection>
+    );
+  }
+  // Compute distance-to-grade for the actual camera; this is the
+  // honest "reach" annotation. d_T = horizontalPx / (2 · T · tan(fov/2))
+  const half = (Math.max(1, Math.min(179, fovDeg)) / 2) * (Math.PI / 180);
+  const tanHalf = Math.tan(half);
+  const horiz = resolution.widthPx;
+  const reachFor = (T: number) => (tanHalf > 0 ? horiz / (2 * T * tanHalf) : 0);
+  // pxToFt sanity — if zero (degenerate floor calibration) we still
+  // render the density tiles (their face math doesn't depend on
+  // scale) but we hide the reach annotation.
+  const scaleOk = pxToFt > 0;
+  const rows: { level: DoriLevel; T: number; pxAcross: number; reachFt: number; inRange: boolean }[] = DORI_ORDER.map((level) => {
+    const T = DORI_PX_PER_FT[level];
+    const reachFt = reachFor(T);
+    return {
+      level,
+      T,
+      // pxAcross = px on a 0.6 ft face at exactly the threshold
+      // density. This IS the same value across cameras because the
+      // threshold defines the density at the band edge — what
+      // changes per-camera is the REACH distance (rendered as the
+      // second-line annotation).
+      pxAcross: Math.max(3, Math.round(T * FACE_WIDTH_FT)),
+      reachFt,
+      inRange: reachFt > 0 && reachFt <= rangeFt + 1,
+    };
+  });
+  return (
+    <DrawerSection title="Required pixel density">
+      <div className="grid grid-cols-4 gap-2">
+        {rows.map((r) => {
+          const active = selectedLevel === r.level;
+          return (
+            <button
+              key={r.level}
+              onClick={() => setSelectedLevel(active ? null : r.level)}
+              data-testid={`dori-density-tile-${r.level}`}
+              className={`group flex flex-col items-stretch gap-1 p-2 rounded-lg border text-left transition-colors ${
+                active
+                  ? 'border-primary/50 bg-primary/10'
+                  : 'border-border bg-card hover:border-primary/30 hover:bg-secondary/30'
+              }`}
+              title={`${DORI_TILE_LABEL[r.level]} — ${r.pxAcross} px across a 0.6 ft face at ${r.T.toFixed(1)} px/ft`}
+            >
+              <FacePixelTile pxAcross={r.pxAcross} displaySize={56} />
+              <div className="text-[10px] font-medium tracking-tight text-foreground leading-tight">
+                {DORI_TILE_LABEL[r.level]}
+              </div>
+              <div className="text-[9.5px] text-muted-foreground tabular-nums leading-tight">
+                {r.T.toFixed(1)} px/ft
+              </div>
+              {scaleOk && (
+                <div className={`text-[9.5px] tabular-nums leading-tight ${r.inRange ? 'text-emerald-400/90' : 'text-amber-300/80'}`}>
+                  {r.inRange ? `reach ${r.reachFt.toFixed(1)} ft` : 'beyond range'}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-[10px] text-muted-foreground leading-snug">
+        Tiles show a generic face pixelated to the real density at each grade,
+        computed from resolution {resolution.widthPx}×{resolution.heightPx},
+        FOV {Math.round(fovDeg)}°, and the active floor calibration. Selecting
+        a tile dims the other DORI bands on the cone so the picked grade
+        reads clearly.
+      </div>
+    </DrawerSection>
+  );
+}
+
 /** DoorAssemblySection — checklist editor for the door hardware "assembly"
  *  persisted on the Device record itself (one model, not a stack of ghost
  *  accessory devices). Renders only for opening-type devices; otherwise
@@ -13488,11 +13759,14 @@ function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: numbe
   return inside;
 }
 
-function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode }: {
+function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode, selectedDoriLevel, setSelectedDoriLevel, pxToFtForFloor }: {
   d: Device; open: boolean; tab: EditTab; setTab: (t: EditTab) => void; onClose: () => void;
   onUpdate: (p: Partial<Device>) => void;
   activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void;
   lensMode: LensMode; setLensMode: (m: LensMode) => void;
+  selectedDoriLevel: DoriLevel | null;
+  setSelectedDoriLevel: (l: DoriLevel | null) => void;
+  pxToFtForFloor: number;
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
   const kind = TYPE_KIND[d.type];
@@ -13764,6 +14038,18 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         {bodyShows(tab, 'overview') && (
           <>
             <ProductOverviewSection d={d} />
+            {/* PASS C — required pixel density preview tiles. Renders
+                only for single lens cameras; the section itself gates
+                multisensor and fisheye and prints an honest hint when
+                resolution is missing. */}
+            {TYPE_KIND[d.type] === 'camera' && d.type !== 'cam.multisensor' && d.type !== 'cam.fisheye' && (
+              <RequiredDensityRow
+                d={d}
+                pxToFt={pxToFtForFloor}
+                selectedLevel={selectedDoriLevel}
+                setSelectedLevel={setSelectedDoriLevel}
+              />
+            )}
             <ImpactPreviewSection device={d} />
           </>
         )}
