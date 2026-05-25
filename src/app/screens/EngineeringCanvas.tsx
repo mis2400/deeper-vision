@@ -1639,54 +1639,14 @@ export function EngineeringCanvas() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
-  const [targetSim, setTargetSim] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
-  // Stick-figure target placement. v3 (Surveyor UX hard reset): the target
-  // and FOV overlay no longer auto-pop on plain selection — the user spec
-  // calls clicking-an-object a "compact pill only" moment. The target only
-  // appears once the engineer opens the drawer's Coverage tab (or hits the
-  // Coverage chip in the SelectionPill's Expand menu), so the canvas stays
-  // calm by default. Selection alone never paints the stick figure.
-  const lastAutoSelRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!selId) {
-      setTargetSim((t) => t.open ? { open: false, x: 0, y: 0 } : t);
-      lastAutoSelRef.current = null;
-      return;
-    }
-    const coverageActive = editOpen && tabGroupOf(editTab) === 'lens';
-    if (!coverageActive) {
-      // Switched selection or left Coverage — drop the figure so the canvas
-      // is clean again.
-      setTargetSim((t) => t.open ? { open: false, x: 0, y: 0 } : t);
-      if (!coverageActive) lastAutoSelRef.current = null;
-      return;
-    }
-    if (lastAutoSelRef.current === selId) return;
-    lastAutoSelRef.current = selId;
-    const dev = (Object.values(useProjectStore.getState().devices) as any[]).find((x) => x.id === selId) as Device | undefined;
-    if (!dev) return;
-    const isSingleLensCamera = TYPE_KIND[dev.type] === 'camera' && dev.type !== 'cam.multisensor' && dev.type !== 'cam.fisheye';
-    if (!isSingleLensCamera) {
-      // Multisensor / fisheye / non-cameras don't auto-place a stick figure.
-      setTargetSim((t) => t.open ? { open: false, x: 0, y: 0 } : t);
-      return;
-    }
-    // Place the figure at the *useful* cone distance — by default the cone
-    // extends to the device's DORI range; we drop the subject at the
-    // observe-band sweet spot (~60% out) so the readout starts in a
-    // meaningful regime instead of right at the camera.
-    // SC.7.1: per-floor calibrated scale instead of the legacy 3.83 px/ft
-    // hardcode. ftPerPxForFloor falls back to the canvas default when the
-    // floor has no calibratedAt set.
-    const rotRad = (dev.rot * Math.PI) / 180;
-    const rangeFt = dev.range ?? (dev.type === 'cam.ptz' ? 44 : dev.type === 'cam.bullet' ? 50 : 30);
-    const devFloor = useProjectStore.getState().floors[dev.floorId];
-    const ftPerPx = ftPerPxForFloor(devFloor);
-    const reachPx = Math.round((rangeFt / ftPerPx) * 0.65);
-    const tx = dev.x + Math.cos(rotRad) * reachPx;
-    const ty = dev.y + Math.sin(rotRad) * reachPx;
-    setTargetSim({ open: true, x: tx, y: ty });
-  }, [selId, editOpen, editTab]);
+  // DEFECT FIX (2026-05-24): the stick-figure / TargetSimOverlay was a
+  // dead control — it auto-placed itself when the Coverage tab opened
+  // but didn't drive anything the user could action, and the honest
+  // DORI bands shipped in V3 Pass 2 Part 2 cover the same coverage
+  // intent properly. Removed the state, the auto-placement effect, and
+  // the render. TargetSimOverlay's component definition stays in the
+  // file for the next iteration (a real subject preview) but no code
+  // path invokes it.
   /** Which lens (or 'all') the user is currently editing on the selected
    *  multisensor. Persisted as UI state per session — not on the device, so
    *  switching cameras keeps the user's last-used lens focus. */
@@ -3243,7 +3203,7 @@ export function EngineeringCanvas() {
                 onDelete={deleteSel}
                 onUpdate={updateSel}
                 onEdit={() => openTab('overview')}
-                onTargetSim={() => setTargetSim({ open: true, x: sel.x + 120, y: sel.y })}
+                onTargetSim={() => { /* no-op: TargetSimOverlay removed 2026-05-24, no replacement yet */ }}
                 onDuplicate={duplicateSel}
                 onOpenTab={openTab}
                 activeLens={activeLens}
@@ -3550,21 +3510,12 @@ export function EngineeringCanvas() {
               />
             )}
 
-            {/* Target simulation overlay */}
-            {/* When a camera is selected, the stick-figure target is the
-                signature affordance. We auto-position it at the end of the
-                cone the first time a camera is focused (handled via the
-                useEffect below). The DORI overlay updates live as the user
-                drags the figure. */}
-            {sel && targetSim.open && (
-              <TargetSimOverlay
-                d={sel}
-                zoom={zoom}
-                pos={targetSim}
-                setPos={(p) => setTargetSim({ open: true, ...p })}
-                onClose={() => setTargetSim({ open: false, x: 0, y: 0 })}
-              />
-            )}
+            {/* Target simulation overlay removed per DEFECT FIX
+                (2026-05-24). The DORI bands shipped in V3 Pass 2 Part 2
+                already render honest coverage grades on the cone; the
+                draggable stick figure was a vestigial control that
+                couldn't drive anything actionable. A real subject preview
+                ships as a separate honest feature in a later pass. */}
 
             {/* Floating status indicator (top-center) */}
             <StatusBar tool={tool} zoom={zoom} counts={counts} units={units} />
@@ -8700,7 +8651,18 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           };
           return (
             <>
-              <RotationRing d={s} onRotate={handleRotate} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} pan={pan} overrideColor={ringColor} />
+              {/* RotationRing renders for multisensors only — single-lens cameras
+                  now drive rotation entirely through the mid-cone puck on
+                  ConeHandles (Axis-style). DEFECT FIX (2026-05-24): the near-
+                  marker ring + the cone puck both wrote to `d.rot`, which the
+                  operator read as a duplicate control. For multisensors we
+                  keep the ring because the cone-puck path is intentionally
+                  disabled there (no single cone to grab when activeLens
+                  === 'all', and per-lens rotation only happens via the ring
+                  in independent mode). */}
+              {isMs && (
+                <RotationRing d={s} onRotate={handleRotate} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} pan={pan} overrideColor={ringColor} />
+              )}
               {/* Direct manipulation cone handles (FOV edges + range tip). For
                   multisensors the handles attach to the active lens's cone; in
                   'all' mode handles are hidden because there's no single cone
@@ -13605,7 +13567,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   return (
     <div
       data-canvas-chrome={open ? 'drawer' : undefined}
-      className="absolute top-0 right-0 bottom-0 z-50 pointer-events-auto w-full md:w-[400px]"
+      className="absolute top-0 right-0 bottom-0 z-50 pointer-events-auto w-full md:w-[400px] flex flex-col"
       style={{
         background: 'var(--drawer-background)',
         color: 'var(--drawer-foreground)',
@@ -13740,8 +13702,15 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           so Coverage shows Lens + AI + Telemetry together, Power & Network
           shows Power + Network together, Compatibility shows Compliance +
           Linked together. More generous padding so the editorial typography
-          gets the breathing room it needs. */}
-      <div className="px-5 py-5 overflow-y-auto" style={{ maxHeight: 'calc(100% - 150px)' }}>
+          gets the breathing room it needs.
+          DEFECT FIX (2026-05-24): the previous `maxHeight: calc(100% - 150px)`
+          undercounted the header + tab strip when a long camera name or a
+          status pill expanded them past 150 px, which clipped the bottom
+          of the body (the new Sensor resolution section was unreachable on
+          short viewports). The outer drawer is now `flex flex-col`, so
+          using `flex-1 min-h-0` here gives the body exactly the remaining
+          space regardless of header height. */}
+      <div className="px-5 py-5 overflow-y-auto flex-1 min-h-0">
         {bodyShows(tab, 'overview') && (
           <>
             <ProductOverviewSection d={d} />
