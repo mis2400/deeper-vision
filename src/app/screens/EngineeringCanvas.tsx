@@ -16389,7 +16389,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  *  The selected type drives the line stroke + appears in the pathway record. */
 function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t: CableTypeId) => void }) {
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 select-none hidden md:block">
+    // Item 4 — bottom bar is now at bottom-3; picker stacks above it
+    // at bottom-[80px] so the cable type chips don't overlap the
+    // category icons.
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-[80px] z-20 select-none hidden md:block">
       <div className="bg-card/95 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)] px-1.5 py-1.5 flex items-center gap-1 max-w-[680px] overflow-x-auto">
         <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1.5 shrink-0">Cable</span>
         {CABLE_TYPES.map((c) => {
@@ -17608,7 +17611,7 @@ function BottomDeviceBar({
   }, [floorDevices, floorPathways]);
 
   return (
-    <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 bottom-[68px] z-30 justify-center" ref={trayRef} data-canvas-chrome="tray">
+    <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 bottom-3 z-30 justify-center" ref={trayRef} data-canvas-chrome="tray">
       {/* Global product search results panel — wins over the category
           tray when a query is active so the operator always sees ONE
           source of truth above the bar. Same chrome as the tray for
