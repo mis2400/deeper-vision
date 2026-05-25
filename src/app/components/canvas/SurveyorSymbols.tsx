@@ -183,91 +183,124 @@ const SYMBOLS: Record<string, React.ReactNode> = {
     </g>
   ),
 
-  // ── Access — keypad / reader / strike etc. — rectangular plan glyphs
+  // ── Access — pictorial silhouettes of the actual wall-mount device
+  //    (V3.6 recognizability pass). Each is drawn as a tall wall plate
+  //    with the distinguishing physical feature so a glance reads as
+  //    "card reader" / "keypad" / "biometric" etc.
   'acc.reader': (
+    // Vertical wall plate, top-edge LED indicator dot, and a small
+    // credit-card-shaped slot. Matches the explicitly approved spec.
     <g>
-      <rect x={8.5} y={4} width={7} height={16} rx={1} />
-      <circle cx={12} cy={8} r={1.3} />
-      <rect x={9.5} y={11} width={5} height={7} rx={0.6} />
+      <rect x={8} y={3} width={8} height={18} rx={1} />
+      <circle cx={12} cy={6} r={0.9} fill="currentColor" stroke="none" />
+      <rect x={9.5} y={10} width={5} height={7} rx={0.5} />
+      <rect x={10.5} y={11.5} width={3} height={2.4} rx={0.25} strokeOpacity={0.7} />
+      <line x1={10.5} y1={15.5} x2={13.5} y2={15.5} strokeOpacity={0.55} />
     </g>
   ),
   'acc.keypad': (
+    // Vertical wall plate with 4x3 push-button grid + indicator LED.
     <g>
-      <rect x={7} y={4} width={10} height={16} rx={1} />
+      <rect x={7} y={3} width={10} height={18} rx={1} />
+      <circle cx={12} cy={5.5} r={0.7} fill="currentColor" stroke="none" />
       {[0,1,2].map((c) => [0,1,2,3].map((r) => (
-        <circle key={`${c}-${r}`} cx={8.5 + c * 3.5} cy={7 + r * 3.2} r={0.7} fill="currentColor" stroke="none" />
+        <circle key={`${c}-${r}`} cx={9 + c * 3} cy={9 + r * 3.2} r={1} />
       )))}
     </g>
   ),
   'acc.biometric': (
+    // Vertical wall plate with a fingerprint scan window + indicator.
     <g>
-      <rect x={8.5} y={4} width={7} height={16} rx={1} />
-      <path d="M 10 11 A 2.5 2.5 0 0 1 14 11" />
-      <path d="M 10 13.5 A 4 4 0 0 1 14 13.5" />
-      <path d="M 10 16 A 5.5 5.5 0 0 1 14 16" />
+      <rect x={8} y={3} width={8} height={18} rx={1} />
+      <circle cx={12} cy={6} r={0.9} fill="currentColor" stroke="none" />
+      <ellipse cx={12} cy={13} rx={3} ry={3.5} />
+      <path d="M 9.8 11.5 a 2.5 2.5 0 0 1 4.4 0" strokeOpacity={0.8} />
+      <path d="M 9.5 14 a 3 3 0 0 0 5 0" strokeOpacity={0.7} />
+      <path d="M 9.8 16 a 2.5 3 0 0 0 4.4 0" strokeOpacity={0.55} />
     </g>
   ),
   'acc.strike': (
+    // Electric strike on the door frame: tall narrow body with a
+    // keeper notch on the side. Side elevation.
     <g>
-      <rect x={3} y={9} width={18} height={6} rx={1} />
-      <rect x={10} y={11} width={4} height={2} />
+      <rect x={9.5} y={4} width={5} height={16} rx={0.4} />
+      <rect x={9.5} y={10} width={5} height={4} fill="currentColor" stroke="none" opacity={0.55} />
+      <path d="M 14.5 9 L 17 9 L 17 15 L 14.5 15" />
     </g>
   ),
   'acc.maglock': (
+    // Maglock bar mounted on the door header (horizontal slab) with
+    // bolt heads visible at each end.
     <g>
-      <rect x={2} y={10} width={20} height={4} rx={0.6} />
-      <rect x={3} y={11} width={3} height={2} />
-      <rect x={18} y={11} width={3} height={2} />
+      <rect x={2} y={9} width={20} height={5} rx={0.5} />
+      <circle cx={5.5} cy={11.5} r={0.9} fill="currentColor" stroke="none" />
+      <circle cx={18.5} cy={11.5} r={0.9} fill="currentColor" stroke="none" />
+      <line x1={2} y1={14} x2={22} y2={14} strokeOpacity={0.5} />
+      <rect x={9} y={14.5} width={6} height={1.6} fill="currentColor" stroke="none" opacity={0.5} />
     </g>
   ),
   'acc.exit': (
-    // REX (request-to-exit) device: rounded oblong with an outward-
-    // pointing arrow, the conventional plan symbol for an egress
-    // device. Replaces the "EX" text label.
+    // Wall-mount push-to-exit button: round plate with a clear button
+    // in the middle. Reads as "press here to leave."
     <g>
-      <rect x={3} y={9} width={18} height={6} rx={2.5} />
-      <line x1={8} y1={12} x2={16} y2={12} />
-      <path d="M 13 9.5 L 16 12 L 13 14.5" />
+      <rect x={5} y={5} width={14} height={14} rx={1.4} />
+      <circle cx={12} cy={12} r={3.5} />
+      <circle cx={12} cy={12} r={1.8} fill="currentColor" stroke="none" opacity={0.65} />
     </g>
   ),
   'acc.dps': (
+    // Door position sensor (recessed reed switch + magnet): two small
+    // cylindrical pucks side-by-side, the conventional pair shape.
     <g>
-      <rect x={6} y={6} width={5} height={12} rx={0.6} />
-      <rect x={13} y={6} width={5} height={12} rx={0.6} />
-      <line x1={11} y1={12} x2={13} y2={12} />
+      <rect x={3.5} y={9} width={7} height={6} rx={3} />
+      <rect x={13.5} y={9} width={7} height={6} rx={3} />
+      <circle cx={7} cy={12} r={0.8} fill="currentColor" stroke="none" />
+      <circle cx={17} cy={12} r={0.8} fill="currentColor" stroke="none" />
+      <line x1={10.5} y1={12} x2={13.5} y2={12} strokeOpacity={0.4} strokeDasharray="0.6 0.6" />
     </g>
   ),
   'acc.panic': (
+    // Panic / duress button: round red-button style on a small plate.
     <g>
-      <rect x={3} y={11} width={18} height={3} rx={1.5} />
-      <line x1={5} y1={12.5} x2={19} y2={12.5} />
+      <rect x={5} y={5} width={14} height={14} rx={2} />
+      <circle cx={12} cy={12} r={4.5} />
+      <circle cx={12} cy={12} r={2.5} fill="currentColor" stroke="none" opacity={0.85} />
     </g>
   ),
   'acc.controller': (
+    // Access control panel enclosure (typically wall-mount in a closet).
+    // Rectangle with terminal-strip rows and a status LED.
     <g>
-      <rect x={4} y={5} width={16} height={14} rx={1.2} />
-      <line x1={6} y1={9}  x2={18} y2={9} />
-      <line x1={6} y1={12} x2={18} y2={12} />
-      <line x1={6} y1={15} x2={18} y2={15} />
-      <circle cx={18.5} cy={6.5} r={0.8} fill="currentColor" stroke="none" />
+      <rect x={3} y={5} width={18} height={14} rx={1} />
+      <line x1={3} y1={8.5} x2={21} y2={8.5} strokeOpacity={0.55} />
+      <circle cx={6} cy={7} r={0.7} fill="currentColor" stroke="none" />
+      <circle cx={8.5} cy={7} r={0.7} fill="currentColor" stroke="none" />
+      <line x1={5} y1={11.5} x2={19} y2={11.5} strokeOpacity={0.4} />
+      <line x1={5} y1={14} x2={19} y2={14} strokeOpacity={0.4} />
+      <line x1={5} y1={16.5} x2={19} y2={16.5} strokeOpacity={0.4} />
     </g>
   ),
   'acc.psu': (
-    // Power supply unit: enclosure with a battery cell motif inside.
-    // Two short bars (positive/negative terminals) replace the "+−"
-    // text — reads as a power-source plan symbol.
+    // Wall-mount power supply enclosure: rectangular box with a battery
+    // bar inside (back-up battery) and a lightning bolt for power input.
     <g>
-      <rect x={5} y={7} width={14} height={10} rx={1} />
-      <rect x={8} y={10} width={8} height={4} rx={0.4} />
-      <line x1={17} y1={11} x2={17} y2={13} />
+      <rect x={4} y={6} width={16} height={12} rx={0.8} />
+      <rect x={6.5} y={12} width={11} height={3.5} rx={0.4} strokeOpacity={0.8} />
+      <rect x={17.5} y={13} width={1.2} height={1.5} fill="currentColor" stroke="none" />
+      <path d="M 11 8 L 9 11 L 12 11 L 10 14" strokeOpacity={0.7} />
     </g>
   ),
   'acc.intercom': (
+    // Door / station intercom: vertical wall plate with speaker grille,
+    // camera lens, and call button.
     <g>
-      <rect x={6} y={4} width={12} height={16} rx={1.5} />
-      <rect x={8} y={6}  width={8} height={5} rx={0.8} />
-      <circle cx={12} cy={15} r={1.3} />
-      <line x1={9} y1={18} x2={15} y2={18} strokeWidth="0.9" />
+      <rect x={7} y={3} width={10} height={18} rx={1} />
+      <circle cx={12} cy={7} r={1.6} />
+      <circle cx={12} cy={7} r={0.6} fill="currentColor" stroke="none" />
+      <line x1={9} y1={11.5} x2={15} y2={11.5} strokeOpacity={0.55} />
+      <line x1={9} y1={13} x2={15} y2={13} strokeOpacity={0.55} />
+      <line x1={9} y1={14.5} x2={15} y2={14.5} strokeOpacity={0.55} />
+      <rect x={9.5} y={17} width={5} height={2.5} rx={0.4} fill="currentColor" stroke="none" opacity={0.55} />
     </g>
   ),
 
@@ -363,80 +396,133 @@ const SYMBOLS: Record<string, React.ReactNode> = {
     </g>
   ),
 
-  // ── Network — rack outline + switch / patch panel rows
+  // ── Network gear — pictorial silhouettes of the actual rack/wall
+  //    hardware. Switches and patch panels show rack-mount ears + a
+  //    clear port row; IDFs / MDFs / racks are cabinet silhouettes;
+  //    APs are ceiling-mount discs.
   'net.idf': (
+    // Wall-mount network cabinet (IDF closet): tall enclosure with a
+    // hinged door, hinge marks, ventilation slots at the top.
     <g>
-      <rect x={5} y={3} width={14} height={18} rx={0.8} />
-      {[6,9,12,15].map((y) => <rect key={y} x={7} y={y} width={10} height={2} />)}
-      <line x1={5} y1={5} x2={5} y2={5.6} strokeWidth="1.6" />
-      <line x1={19} y1={5} x2={19} y2={5.6} strokeWidth="1.6" />
+      <rect x={5} y={3} width={14} height={18} rx={0.6} />
+      <line x1={11.5} y1={3} x2={11.5} y2={21} strokeOpacity={0.55} />
+      <circle cx={9.5} cy={12} r={0.4} fill="currentColor" stroke="none" />
+      <circle cx={9.5} cy={15} r={0.4} fill="currentColor" stroke="none" />
+      <line x1={7} y1={5.5} x2={10} y2={5.5} strokeOpacity={0.55} />
+      <line x1={13} y1={5.5} x2={17} y2={5.5} strokeOpacity={0.55} />
+      <line x1={7} y1={7} x2={10} y2={7} strokeOpacity={0.45} />
+      <line x1={13} y1={7} x2={17} y2={7} strokeOpacity={0.45} />
     </g>
   ),
   'net.mdf': (
+    // Larger enclosure (MDF main distribution frame). Two-door cabinet.
     <g>
-      <rect x={4} y={3} width={16} height={18} rx={0.8} />
-      {[6,9,12,15,18].map((y) => <rect key={y} x={6} y={y} width={12} height={1.5} />)}
-      <text x={12} y={4.5} textAnchor="middle" fontSize="2.6" fontWeight="700" fill="currentColor" stroke="none">MDF</text>
+      <rect x={3.5} y={3} width={17} height={18} rx={0.6} />
+      <line x1={12} y1={3} x2={12} y2={21} strokeOpacity={0.6} />
+      <circle cx={10} cy={12} r={0.4} fill="currentColor" stroke="none" />
+      <circle cx={14} cy={12} r={0.4} fill="currentColor" stroke="none" />
+      <line x1={5.5} y1={5.5} x2={11} y2={5.5} strokeOpacity={0.55} />
+      <line x1={13} y1={5.5} x2={18.5} y2={5.5} strokeOpacity={0.55} />
+      <line x1={5.5} y1={7} x2={11} y2={7} strokeOpacity={0.45} />
+      <line x1={13} y1={7} x2={18.5} y2={7} strokeOpacity={0.45} />
     </g>
   ),
   'inf.rack': (
+    // Standalone 42U-ish floor rack: tall frame with rails + a stack
+    // of 1U device bars visible.
     <g>
-      <rect x={5} y={3} width={14} height={18} rx={0.6} />
-      {[5.5,7,8.5,10,11.5,13,14.5,16,17.5,19].map((y) => <line key={y} x1={6.5} y1={y} x2={17.5} y2={y} strokeWidth="0.6" />)}
+      <rect x={5} y={3} width={14} height={18} rx={0.4} />
+      <line x1={7} y1={3} x2={7} y2={21} strokeOpacity={0.55} />
+      <line x1={17} y1={3} x2={17} y2={21} strokeOpacity={0.55} />
+      {[5,7,9,11,13,15,17,19].map((y) => (
+        <line key={y} x1={7} y1={y} x2={17} y2={y} strokeOpacity={0.45} />
+      ))}
     </g>
   ),
   'inf.mdf': (
+    // MDF cabinet — same shell as net.mdf but slightly smaller, fewer
+    // gear hints (used as the canvas-placeable "closet").
     <g>
-      <rect x={4} y={3} width={16} height={18} rx={0.8} />
-      {[6,9,12,15,18].map((y) => <rect key={y} x={6} y={y} width={12} height={1.5} />)}
+      <rect x={4} y={3} width={16} height={18} rx={0.6} />
+      <line x1={12} y1={3} x2={12} y2={21} strokeOpacity={0.55} />
+      <circle cx={10} cy={12} r={0.4} fill="currentColor" stroke="none" />
+      <circle cx={14} cy={12} r={0.4} fill="currentColor" stroke="none" />
     </g>
   ),
   'net.switch': (
+    // 1U managed switch: rack-mount ears outside the chassis + a row
+    // of RJ45 ports in pairs across the front.
     <g>
-      <rect x={3} y={9} width={18} height={6} rx={0.6} />
-      {[5,7,9,11,13,15,17,19].map((x) => <line key={x} x1={x} y1={11} x2={x} y2={13} strokeWidth="0.9" />)}
-      <circle cx={20} cy={10.5} r={0.6} fill="currentColor" stroke="none" />
+      <rect x={3.5} y={9.5} width={17} height={5} rx={0.4} />
+      <rect x={2.5} y={10} width={1} height={4} fill="currentColor" stroke="none" />
+      <rect x={20.5} y={10} width={1} height={4} fill="currentColor" stroke="none" />
+      {[0,1,2,3,4,5,6,7].map((i) => (
+        <rect key={i} x={4.4 + i * 1.9} y={11} width={1.1} height={2} rx={0.15} strokeOpacity={0.85} />
+      ))}
+      <circle cx={20} cy={11} r={0.45} fill="currentColor" stroke="none" />
     </g>
   ),
   'net.patch': (
+    // 1U patch panel: rack-mount with a dense row of RJ45 jacks and
+    // a label-strip notch above each port group.
     <g>
-      <rect x={2} y={9} width={20} height={6} rx={0.6} />
+      <rect x={2.5} y={9.5} width={19} height={5} rx={0.4} />
+      <rect x={1.5} y={10} width={1} height={4} fill="currentColor" stroke="none" />
+      <rect x={21.5} y={10} width={1} height={4} fill="currentColor" stroke="none" />
       {Array.from({ length: 12 }).map((_, i) => (
-        <rect key={i} x={3 + i * 1.6} y={10.5} width={1.1} height={3} />
+        <rect key={i} x={3.2 + i * 1.5} y={11} width={1} height={2.5} rx={0.1} strokeOpacity={0.85} />
       ))}
     </g>
   ),
   'net.ap': (
+    // Ceiling-mount wireless access point: round disc with concentric
+    // ring suggesting omni-directional propagation.
     <g>
-      <circle cx={12} cy={14} r={2} />
-      <path d="M 7 14 A 5 5 0 0 1 17 14" />
-      <path d="M 4 14 A 8 8 0 0 1 20 14" />
+      <circle cx={12} cy={12} r={7.5} />
+      <circle cx={12} cy={12} r={3.5} strokeOpacity={0.55} />
+      <circle cx={12} cy={12} r={1} fill="currentColor" stroke="none" />
+      <line x1={12} y1={20} x2={12} y2={21.5} strokeOpacity={0.45} />
     </g>
   ),
   'net.firewall': (
+    // 1U firewall appliance: rack-mount with mounting ears, a shield
+    // motif in the center to differentiate from net.switch.
     <g>
-      <rect x={3} y={7} width={18} height={10} rx={0.6} />
-      <line x1={9} y1={7}  x2={9} y2={17} />
-      <line x1={15} y1={7} x2={15} y2={17} />
-      <line x1={3} y1={12} x2={21} y2={12} />
+      <rect x={3.5} y={8.5} width={17} height={7} rx={0.5} />
+      <rect x={2.5} y={9} width={1} height={6} fill="currentColor" stroke="none" />
+      <rect x={20.5} y={9} width={1} height={6} fill="currentColor" stroke="none" />
+      <path d="M 12 9.5 L 14.5 11 L 14.5 13 L 12 14.5 L 9.5 13 L 9.5 11 Z" />
+      <line x1={4.5} y1={12} x2={9} y2={12} strokeOpacity={0.4} />
+      <line x1={15} y1={12} x2={19.5} y2={12} strokeOpacity={0.4} />
     </g>
   ),
   'sto.nvr': (
+    // Rack-mount NVR with visible drive bays. 4-6 bays, lock + status LED.
     <g>
-      <rect x={3} y={7} width={18} height={10} rx={0.6} />
-      <rect x={5} y={9} width={3} height={2} />
-      <rect x={10} y={9} width={3} height={2} />
-      <line x1={5} y1={14} x2={19} y2={14} />
-      <circle cx={18.5} cy={9.5} r={0.5} fill="currentColor" stroke="none" />
+      <rect x={3} y={7} width={18} height={10} rx={0.4} />
+      <rect x={2} y={7.5} width={1} height={9} fill="currentColor" stroke="none" />
+      <rect x={21} y={7.5} width={1} height={9} fill="currentColor" stroke="none" />
+      {[0,1,2,3,4].map((i) => (
+        <rect key={i} x={4.5 + i * 3} y={8.5} width={2.4} height={7} rx={0.2} strokeOpacity={0.75} />
+      ))}
+      <circle cx={20} cy={9} r={0.45} fill="currentColor" stroke="none" />
+      <circle cx={20} cy={10.5} r={0.45} fill="currentColor" stroke="none" />
     </g>
   ),
   'sto.server': (
+    // Rack-mount 2U server: chassis with bezel, power button, drive
+    // bay grid. Reads as a server box, not a generic rack stack.
     <g>
-      <rect x={3} y={5} width={18} height={5} rx={0.4} />
-      <rect x={3} y={11} width={18} height={5} rx={0.4} />
-      <rect x={3} y={17} width={18} height={3} rx={0.4} />
-      <circle cx={18} cy={7.5} r={0.5} fill="currentColor" stroke="none" />
-      <circle cx={18} cy={13.5} r={0.5} fill="currentColor" stroke="none" />
+      <rect x={3} y={7} width={18} height={10} rx={0.5} />
+      <rect x={2} y={7.5} width={1} height={9} fill="currentColor" stroke="none" />
+      <rect x={21} y={7.5} width={1} height={9} fill="currentColor" stroke="none" />
+      <rect x={4.5} y={8.5} width={11} height={7} rx={0.25} strokeOpacity={0.55} />
+      {[0,1,2].map((c) => [0,1].map((r) => (
+        <rect key={`${c}-${r}`} x={5 + c * 3.6} y={9 + r * 3.2} width={3.2} height={2.6} rx={0.15} strokeOpacity={0.55} />
+      )))}
+      <circle cx={18.5} cy={10} r={0.6} fill="currentColor" stroke="none" />
+      <circle cx={18.5} cy={12.5} r={0.6} />
+      <circle cx={18.5} cy={15} r={0.4} fill="currentColor" stroke="none" />
     </g>
   ),
 
@@ -598,73 +684,134 @@ const SYMBOLS: Record<string, React.ReactNode> = {
     </g>
   ),
 
-  // ── Power
+  // ── Power — pictorial silhouettes of the actual hardware.
   'pwr.psu': (
+    // Wall / rack power supply: rectangular box with a clear AC inlet
+    // socket on one side and an output terminal block on the other.
     <g>
-      <rect x={5} y={7} width={14} height={10} rx={0.8} />
-      <text x={12} y={14} textAnchor="middle" fontSize="6" fontWeight="700" fill="currentColor" stroke="none">⏻</text>
+      <rect x={4} y={6.5} width={16} height={11} rx={0.6} />
+      <rect x={5.5} y={9} width={3.2} height={3.2} rx={0.3} />
+      <line x1={5.8} y1={10.5} x2={8.4} y2={10.5} strokeOpacity={0.55} />
+      <path d="M 12 8.5 L 10.5 12 L 12.5 12 L 11 15.5" />
+      <rect x={15} y={10} width={3.5} height={1} fill="currentColor" stroke="none" />
+      <rect x={15} y={12} width={3.5} height={1} fill="currentColor" stroke="none" />
     </g>
   ),
   'pwr.transformer': (
+    // Cylindrical transformer with primary + secondary coil windings.
+    // Side elevation: two cylinders coupled magnetically.
     <g>
-      <circle cx={9} cy={12} r={4.5} />
-      <circle cx={15} cy={12} r={4.5} />
+      <ellipse cx={8} cy={12} rx={3} ry={6} />
+      <ellipse cx={16} cy={12} rx={3} ry={6} />
+      <line x1={8} y1={6} x2={8} y2={6} strokeOpacity={0.55} />
+      <line x1={11} y1={9} x2={13} y2={9} />
+      <line x1={11} y1={12} x2={13} y2={12} />
+      <line x1={11} y1={15} x2={13} y2={15} />
     </g>
   ),
   'pwr.battery': (
+    // Standalone battery / backup unit: rectangular cell with a
+    // positive-terminal nub on the right and 3 charge bars inside.
     <g>
-      <rect x={4} y={8} width={16} height={8} rx={1} />
-      <rect x={20} y={10} width={1.5} height={4} />
-      <line x1={8}  y1={11} x2={8}  y2={13} />
-      <line x1={12} y1={11} x2={12} y2={13} />
-      <line x1={16} y1={11} x2={16} y2={13} />
+      <rect x={3.5} y={8} width={16.5} height={8} rx={0.6} />
+      <rect x={20} y={10} width={1.6} height={4} rx={0.2} fill="currentColor" stroke="none" />
+      <rect x={5} y={9.5} width={3.5} height={5} fill="currentColor" stroke="none" opacity={0.85} />
+      <rect x={9} y={9.5} width={3.5} height={5} fill="currentColor" stroke="none" opacity={0.65} />
+      <rect x={13} y={9.5} width={3.5} height={5} fill="currentColor" stroke="none" opacity={0.4} />
     </g>
   ),
   'pwr.poe': (
+    // Inline PoE injector: small mid-cable box with two RJ45 ports
+    // (data-in / data-out + power) and a lightning bolt for power.
     <g>
-      <rect x={3} y={9} width={18} height={6} rx={0.6} />
-      <text x={12} y={13.5} textAnchor="middle" fontSize="4.5" fontWeight="700" fill="currentColor" stroke="none">PoE</text>
+      <rect x={4} y={9} width={16} height={6} rx={0.6} />
+      <line x1={2} y1={12} x2={4} y2={12} strokeOpacity={0.55} />
+      <line x1={20} y1={12} x2={22} y2={12} strokeOpacity={0.55} />
+      <rect x={5} y={10.5} width={2.4} height={3} rx={0.2} strokeOpacity={0.75} />
+      <rect x={16.6} y={10.5} width={2.4} height={3} rx={0.2} strokeOpacity={0.75} />
+      <path d="M 11.5 10.2 L 9.5 13 L 12 13 L 10 15.5" />
     </g>
   ),
   'pwr.ups': (
+    // Rack-mount UPS: chassis with a clear front LCD, lightning input
+    // hint, and a battery cell row inside. Reads as "uninterruptible
+    // power supply," not just a generic box.
     <g>
-      <rect x={5} y={5} width={14} height={14} rx={1} />
-      <path d="M 11 8 L 9 13 L 13 13 L 11 18" />
+      <rect x={3.5} y={7} width={17} height={10} rx={0.5} />
+      <rect x={2.5} y={7.5} width={1} height={9} fill="currentColor" stroke="none" />
+      <rect x={20.5} y={7.5} width={1} height={9} fill="currentColor" stroke="none" />
+      <rect x={5} y={9} width={7} height={6} rx={0.4} strokeOpacity={0.55} />
+      <path d="M 8.5 10 L 7 12.4 L 9 12.4 L 7.5 14.5" strokeOpacity={0.8} />
+      <rect x={13.5} y={9.5} width={2} height={5} fill="currentColor" stroke="none" opacity={0.75} />
+      <rect x={16} y={9.5} width={2} height={5} fill="currentColor" stroke="none" opacity={0.55} />
+      <rect x={18.5} y={11} width={1.5} height={2} fill="currentColor" stroke="none" />
     </g>
   ),
 
-  // ── Sensors / fire — minimal coverage
+  // ── Sensors + fire — pictorial physical-device silhouettes.
   'sen.motion': (
+    // Wall-corner PIR sensor: trapezoid body with a fresnel-lens
+    // hemisphere window, mounting tab at the top.
     <g>
-      <path d="M 5 18 L 12 5 L 19 18 Z" />
-      <line x1={9} y1={14} x2={15} y2={14} />
+      <rect x={9} y={3.5} width={6} height={1.6} rx={0.3} />
+      <path d="M 7 5 L 17 5 L 18.5 15 L 5.5 15 Z" />
+      <path d="M 6.5 11 a 5.5 4 0 0 0 11 0" />
+      <line x1={9} y1={11} x2={9} y2={15} strokeOpacity={0.4} />
+      <line x1={12} y1={11} x2={12} y2={15} strokeOpacity={0.4} />
+      <line x1={15} y1={11} x2={15} y2={15} strokeOpacity={0.4} />
     </g>
   ),
   'sen.glass': (
+    // Glass break detector: small ceiling/wall puck with a
+    // microphone aperture + a "shatter" indicator.
     <g>
-      <rect x={5} y={5} width={14} height={14} />
-      <line x1={5} y1={5} x2={19} y2={19} />
-      <line x1={19} y1={5} x2={5} y2={19} />
+      <rect x={6} y={6} width={12} height={12} rx={1.5} />
+      <circle cx={12} cy={10.5} r={1.6} />
+      <circle cx={12} cy={10.5} r={0.5} fill="currentColor" stroke="none" />
+      <path d="M 8.5 16 L 12 13.5 L 15.5 16" strokeOpacity={0.7} />
+      <line x1={12} y1={13.5} x2={12} y2={17} strokeOpacity={0.55} />
     </g>
   ),
   'sen.smoke': (
+    // Ceiling-mount smoke detector: round disc with vent slots
+    // around the perimeter, central LED, alarm sounder ring.
     <g>
-      <circle cx={12} cy={12} r={7.5} />
-      <circle cx={12} cy={12} r={3.5} />
-      <circle cx={12} cy={12} r={1.2} fill="currentColor" stroke="none" />
+      <circle cx={12} cy={12} r={8} />
+      <circle cx={12} cy={12} r={5} strokeOpacity={0.6} />
+      <circle cx={12} cy={12} r={1.1} fill="currentColor" stroke="none" />
+      {[0,45,90,135,180,225,270,315].map((deg) => {
+        const rad = (deg * Math.PI) / 180;
+        const x1 = 12 + Math.cos(rad) * 6.5;
+        const y1 = 12 + Math.sin(rad) * 6.5;
+        const x2 = 12 + Math.cos(rad) * 7.6;
+        const y2 = 12 + Math.sin(rad) * 7.6;
+        return <line key={deg} x1={x1} y1={y1} x2={x2} y2={y2} strokeOpacity={0.5} />;
+      })}
     </g>
   ),
   'fire.pull': (
+    // Manual pull station: tall housing with a clear pull-down lever
+    // and "PULL" label area. The conventional red-rectangle silhouette.
     <g>
-      <rect x={6} y={4} width={12} height={16} rx={1} />
-      <rect x={9} y={10} width={6} height={4} />
-      <line x1={9}  y1={7} x2={15} y2={7} strokeWidth="0.7" />
+      <rect x={5.5} y={3.5} width={13} height={17} rx={0.8} />
+      <rect x={7} y={6} width={10} height={3.5} rx={0.3} strokeOpacity={0.65} />
+      <rect x={7.5} y={11} width={9} height={4.5} rx={0.5} fill="currentColor" stroke="none" opacity={0.75} />
+      <path d="M 9 13 L 15 13" />
+      <path d="M 9 13 L 8 14.5 M 15 13 L 16 14.5" strokeOpacity={0.6} />
     </g>
   ),
   'fire.horn': (
+    // Wall-mount fire horn / sounder + strobe combo: rounded square
+    // body with a circular sounder grille and a star-burst strobe.
     <g>
-      <rect x={5} y={9} width={10} height={6} rx={0.8} />
-      <path d="M 15 9 L 20 5 L 20 19 L 15 15 Z" />
+      <rect x={5} y={6} width={14} height={12} rx={1} />
+      <circle cx={8.5} cy={12} r={3} />
+      <circle cx={8.5} cy={12} r={1.3} strokeOpacity={0.6} />
+      <line x1={15} y1={9} x2={15} y2={15} strokeOpacity={0.6} />
+      <line x1={13} y1={10.5} x2={17} y2={10.5} strokeOpacity={0.55} />
+      <line x1={13} y1={13.5} x2={17} y2={13.5} strokeOpacity={0.55} />
+      <line x1={13.5} y1={11.5} x2={16.5} y2={12.5} strokeOpacity={0.4} />
+      <line x1={13.5} y1={12.5} x2={16.5} y2={11.5} strokeOpacity={0.4} />
     </g>
   ),
 
