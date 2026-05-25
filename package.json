@@ -8,7 +8,8 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "typecheck:gate": "node scripts/typecheck-gate.mjs",
-    "verify": "npm run typecheck:gate && npm run build"
+    "audit:layout": "node scripts/audit-layout.mjs",
+    "verify": "npm run typecheck:gate && npm run audit:layout && npm run build"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

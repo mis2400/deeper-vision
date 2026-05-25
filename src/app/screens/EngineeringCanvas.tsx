@@ -624,6 +624,102 @@ const PRODUCTS: Product[] = CATALOG
  *  scan. */
 const PRODUCTS_BY_ID: Map<string, Product> = new Map(PRODUCTS.map((p) => [p.id, p]));
 
+/** Audit Group A.4 — render a manufacturer + model pair from a catalog
+ *  Product or CATALOG row without ever emitting the JS literal "undefined".
+ *  If both pieces are missing we fall back to whatever caller-side label
+ *  the device or product carries. Used by toasts, on-canvas captions,
+ *  drawer rows, and the Impact-preview fallback so a single helper owns
+ *  the rule "never render 'undefined'/'null'/'NaN' as visible text". */
+function productLabel(
+  source: { mfr?: string | null; manufacturer?: string | null; model?: string | null; name?: string | null; id?: string | null } | null | undefined,
+  fallback?: string,
+): string {
+  if (!source) return fallback ?? '';
+  const mfr = source.mfr ?? source.manufacturer ?? null;
+  const parts = [mfr, source.model].filter((s): s is string => typeof s === 'string' && s.length > 0);
+  if (parts.length > 0) return parts.join(' ');
+  if (typeof source.name === 'string' && source.name.length > 0) return source.name;
+  return fallback ?? (typeof source.id === 'string' ? source.id : '');
+}
+
+/** Audit Group A.5 — granular device-type label, single source of truth for
+ *  the SelectionPill kind chip. Granular enough to be honest (a `net.ap` is
+ *  an "access point", not a "pathway"; a door is a "door", not an "opening"),
+ *  while still short enough to sit next to the device id in the pill.
+ *  Falls back to a humanised type slug for any future device type that
+ *  forgets to register here. */
+const TYPE_PILL_LABEL: Partial<Record<DeviceType, string>> = {
+  // cameras
+  'cam.bullet': 'camera', 'cam.dome': 'camera', 'cam.ptz': 'camera',
+  'cam.multisensor': 'multisensor camera', 'cam.fisheye': 'fisheye camera',
+  'cam.thermal': 'thermal camera', 'cam.lpr': 'LPR camera', 'cam.body': 'body camera',
+  // access control
+  'acc.reader': 'reader', 'acc.strike': 'strike', 'acc.maglock': 'maglock',
+  'acc.exit': 'exit device', 'acc.turnstile': 'turnstile', 'acc.intercom': 'intercom',
+  'acc.biometric': 'biometric reader', 'acc.panic-bar': 'panic bar', 'acc.dps': 'door sensor',
+  // network
+  'net.switch': 'switch', 'net.idf': 'IDF', 'net.ap': 'access point',
+  'net.firewall': 'firewall', 'net.bridge': 'bridge',
+  // intrusion
+  'int.motion': 'motion sensor', 'int.glassbreak': 'glass-break',
+  'int.contact': 'contact', 'int.panic': 'panic button',
+  'int.vibration': 'vibration sensor', 'int.keypad': 'keypad',
+  // audio
+  'aud.speaker': 'speaker', 'aud.mic': 'microphone', 'aud.horn': 'horn',
+  'aud.amp': 'amplifier', 'aud.intercom': 'intercom',
+  // storage
+  'sto.nvr': 'NVR', 'sto.server': 'server', 'sto.archive': 'archive', 'sto.cloud': 'cloud',
+  // display
+  'dis.monitor': 'monitor', 'dis.wall': 'video wall', 'dis.kiosk': 'kiosk', 'dis.signage': 'signage',
+  // power
+  'pwr.ups': 'UPS', 'pwr.poe': 'PoE injector', 'pwr.surge': 'surge protector', 'pwr.solar': 'solar',
+  // environmental sensors
+  'sen.temp': 'temp sensor', 'sen.smoke': 'smoke detector',
+  'sen.water': 'water sensor', 'sen.occupancy': 'occupancy sensor',
+  'sen.gas': 'gas sensor', 'sen.gunshot': 'gunshot sensor',
+  // infrastructure
+  'inf.door-single': 'door', 'inf.door-double': 'door',
+  'inf.door-storefront': 'door', 'inf.door-sliding': 'door',
+  'inf.window': 'window', 'inf.wall-brick': 'wall',
+  'inf.wall-fire': 'fire wall', 'inf.wall-concrete': 'wall',
+  'inf.gate-swing': 'gate', 'inf.gate-slide': 'gate', 'inf.elevator': 'elevator',
+  'inf.mdf': 'MDF', 'inf.rack': 'rack',
+  // cyber
+  'cyb.endpoint': 'endpoint', 'cyb.siem': 'SIEM',
+  'cyb.firewall-ng': 'firewall', 'cyb.vpn': 'VPN',
+  // fire / life-safety
+  'fls.pull-station': 'pull station', 'fls.fire-panel': 'fire panel',
+  'fls.strobe': 'strobe', 'fls.sprinkler': 'sprinkler',
+  // building
+  'bld.hvac-controller': 'HVAC controller',
+  'bld.lighting-panel': 'lighting panel',
+  'bld.bms-gateway': 'BMS gateway',
+};
+
+function deviceTypeLabel(type: DeviceType): string {
+  const explicit = TYPE_PILL_LABEL[type];
+  if (explicit) return explicit;
+  // Fallback: humanise the raw type slug so a new device type still
+  // reads honestly until it earns its own pill label.
+  const tail = type.split('.').pop() ?? type;
+  return tail.replace(/-/g, ' ');
+}
+
+/** Audit Group B.2 — read the current theme's coverage-band multiplier
+ *  from the CSS variable set in theme.css. Dark Command keeps the
+ *  DORI_BASE_OPACITY values as authored (1.0); Light Drafting pushes
+ *  them up so the bands punch through a white floor (1.55); Slate
+ *  Engineering lands in between (1.18). The function is intentionally
+ *  callable from a JSX render path; the underlying CSS var resolves
+ *  in O(1) and only changes when the operator switches theme in
+ *  Settings, so over-reads are cheap. */
+function getCoverageBandMultiplier(): number {
+  if (typeof window === 'undefined' || !document?.documentElement) return 1;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--coverage-band-multiplier').trim();
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
 const TYPE_KIND: Record<DeviceType, DeviceKind> = {
   'cam.bullet': 'camera', 'cam.dome': 'camera', 'cam.ptz': 'camera', 'cam.multisensor': 'camera', 'cam.fisheye': 'camera', 'cam.thermal': 'camera', 'cam.lpr': 'camera', 'cam.body': 'camera',
   'acc.reader': 'access', 'acc.strike': 'access', 'acc.maglock': 'access', 'acc.exit': 'access', 'acc.turnstile': 'access', 'acc.intercom': 'access', 'acc.biometric': 'access', 'acc.panic-bar': 'access', 'acc.dps': 'access',
@@ -1454,13 +1550,17 @@ export function EngineeringCanvas() {
     const ftPerPx = ftPerPxForFloor(devFloor);
     if (!ftPerPx || ftPerPx <= 0) { setPersonProbePos(null); return; }
     const rangeFt = dev.range ?? (dev.type === 'cam.ptz' ? 44 : dev.type === 'cam.bullet' ? 50 : 30);
-    // Item 4 — seed at 35% along the aim ray instead of the prior 60%.
-    // The marker now lives closer to the camera so it can't drop under
-    // the docked bottom toolbar or off the right edge of the canvas
-    // viewport when the inspector drawer opens. The camera itself is
-    // always on screen (the operator just selected it); a 35% radius
-    // outwards from it sits well inside the same viewport.
-    const reachPx = Math.round((rangeFt / ftPerPx) * 0.35);
+    // Audit Group A.3 — seed at 60% along the aim ray. The earlier
+    // 35% seed (Item 4) tried to keep the marker on-screen when the
+    // drawer opens, but it parked the avatar inside the device's own
+    // label pill — the magenta avatar pill (1.7r halo + crosshair)
+    // visually overlapped the device id and mfr / model caption. 60%
+    // pushes the default position clearly into the middle of the
+    // cone so the operator sees the probe is at a real, measurable
+    // distance from the device — and the drawer auto-clamps the
+    // canvas viewport on open, so off-screen risk is handled there
+    // instead of by parking the marker close.
+    const reachPx = Math.round((rangeFt / ftPerPx) * 0.60);
     const rotRad = ((dev.rot ?? 0) * Math.PI) / 180;
     setPersonProbePos({
       x: dev.x + Math.cos(rotRad) * reachPx,
@@ -2145,7 +2245,7 @@ export function EngineeringCanvas() {
     setDevices((ds) => [...ds, newDevice]);
     setSelId(id);
     setSelPathwayId(null);
-    toast.success(`Placed ${product.mfr} ${product.model}`, { description: `New device ${id}`, duration: 3500 });
+    toast.success(`Placed ${productLabel(product, product.id)}`, { description: `New device ${id}`, duration: 3500 });
     return id;
   }, [setDevices]);
 
@@ -2424,7 +2524,7 @@ export function EngineeringCanvas() {
       if (movedPx < 8 || !inside) {
         setArmedProduct(drag.product);
         setDrag(null); setHoverHost(null); dragStartRef.current = null;
-        toast.message(`Click canvas to place ${drag.product.mfr} ${drag.product.model}`, {
+        toast.message(`Click canvas to place ${productLabel(drag.product, drag.product.id)}`, {
           description: 'Esc to cancel.',
           duration: 4500,
         });
@@ -3376,6 +3476,7 @@ export function EngineeringCanvas() {
                   else next.add(sel.id);
                   setLockedIds(next);
                 }}
+                drawerOpen={editOpen}
               />
             )}
 
@@ -3923,7 +4024,7 @@ export function EngineeringCanvas() {
                   {/* Tick at the top of the dial */}
                   <line x1="0" y1="-11" x2="0" y2="-9" stroke="var(--muted-foreground)" strokeWidth="0.8" />
                   {/* North label sits above the tick */}
-                  <text y="-13" textAnchor="middle" fill="var(--muted-foreground)" fontSize="5.5" fontWeight="600" fontFamily="ui-sans-serif" letterSpacing="0.3">N</text>
+                  <text y="-13" textAnchor="middle" fill="var(--muted-foreground)" fontSize="5.5" fontWeight="600" fontFamily="ui-sans-serif" letterSpacing="0.3" /* audit:icon-glyph compass-N */>N</text>
                   {/* Two-tone arrow head: dark north half, hairline south half */}
                   <path d="M 0 -8 L 3 6 L 0 3 Z" fill="var(--foreground)" />
                   <path d="M 0 -8 L -3 6 L 0 3 Z" fill="none" stroke="var(--foreground)" strokeWidth="0.6" />
@@ -4004,7 +4105,7 @@ export function EngineeringCanvas() {
                 never competes with controls but verifiable so the user can
                 confirm the live deployment matches the latest commit. */}
             <div
-              className="absolute bottom-1 left-1 z-20 pointer-events-none select-none text-[8.5px] tabular-nums text-muted-foreground/40 font-mono tracking-tight"
+              className="absolute bottom-1 left-1 z-20 pointer-events-none select-none text-[9px] tabular-nums text-muted-foreground/40 font-mono tracking-tight"
               title={`Build ${buildLabel()}`}
             >
               {COMMIT_HASH} · {buildLabel().split('·').slice(-1)[0].trim()}
@@ -5416,7 +5517,7 @@ function TopBar(props: {
             >
               <Sparkles className="w-3.5 h-3.5 text-muted-foreground" />
               <span className="text-[12px]">Demo scan</span>
-              <span className="ml-auto text-[8.5px] uppercase tracking-[0.14em] px-1 py-px rounded bg-amber-400/15 text-amber-300 border border-amber-400/25">
+              <span className="ml-auto text-[9px] uppercase tracking-[0.14em] px-1 py-px rounded bg-amber-400/15 text-amber-300 border border-amber-400/25">
                 Demo only
               </span>
             </button>
@@ -8392,13 +8493,11 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           </g>
         )}
 
-        {/* FOV cones — gated by the `fov` engineering layer. Item 8 —
-            cones now clip to the camera's enclosing Room polygon, or
-            (when there's no room) to the floor's plan bounds plus a
-            20 ft margin so coverage doesn't sprawl across empty
-            canvas. planBounds is computed once per render from the
-            uploaded background (transformed bbox) or the seeded
-            FloorPlan rectangle. Density math is unchanged. */}
+        {/* Audit Group B.1 — planBounds is shared by the camera-cone
+            block (existing) AND the non-camera coverage block below
+            (AP RF circles, sector wedges). Both blocks read the same
+            constant so a single edit to the bounding-rect computation
+            covers every coverage surface on the canvas. */}
         {(() => {
           const planBounds: { x: number; y: number; w: number; h: number } | null =
             (floorBackground && floorBackground.naturalWidth && floorBackground.naturalHeight)
@@ -8460,14 +8559,24 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           </g>
         )}
 
-        {/* Canvas V2 Pass 2B.2 — non camera coverage. One overlay per
-            device whose CoverageProfile shape is not 'none'. Radius
-            shapes draw as filled translucent circles; cone shapes as
-            sector wedges anchored at the device origin and rotated by
-            the device's body rotation. Cameras intentionally excluded
-            (their cones are handled by FOV above and live on the
-            lenses[] data, which is richer than CoverageProfile). */}
-        {(layers.coverage || selId) && (
+        {/* Canvas V2 Pass 2B.2 — non camera coverage. Audit Group B.1
+            extends Item 8 containment to these shapes: AP RF radius
+            circles and sector wedges now clip to the floor's plan
+            bounds + 20 ft margin (or the device's enclosing room
+            polygon when available) instead of sprawling across empty
+            canvas. Mathematics for the coverage profile are unchanged
+            — only the visible footprint is constrained. */}
+        {(layers.coverage || selId) && (() => {
+          const planBounds = (floorBackground && floorBackground.naturalWidth && floorBackground.naturalHeight)
+            ? {
+                x: floorBackground.x,
+                y: floorBackground.y,
+                w: floorBackground.naturalWidth * (floorBackground.scale ?? 1),
+                h: floorBackground.naturalHeight * (floorBackground.scale ?? 1),
+              }
+            : { x: 80, y: 80, w: 640, h: 480 };
+          const planMarginPx = currentFloorPxToFt > 0 ? 20 / currentFloorPxToFt : 200;
+          return (
           <g pointerEvents="none">
             {renderedDevices.map((d) => {
               if (TYPE_KIND[d.type] === 'camera') return null;
@@ -8478,16 +8587,50 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               if (currentFloorPxToFt <= 0) return null;
               const alpha = ((selId ? (isSel ? 1 : 0.28) : 1) * coverageAlpha) * 0.32;
               const tone = profile.tint ?? deviceTone(d);
+              // Per-device clip path. Prefer the room polygon the
+              // device sits inside; fall back to plan bounds + 20 ft
+              // margin so the shape always stops at the floor edge.
+              let roomPolygon: { x: number; y: number }[] | null = null;
+              if (rooms && rooms.length > 0) {
+                for (const r of rooms) {
+                  if (r.floorId !== currentFloorId) continue;
+                  if (!r.polygon || r.polygon.length < 3) continue;
+                  if (pointInPolygon({ x: d.x, y: d.y }, r.polygon)) {
+                    roomPolygon = r.polygon;
+                    break;
+                  }
+                }
+              }
+              const useRoomClip = !!(roomPolygon && roomPolygon.length >= 3);
+              const clipId = useRoomClip ? `cov-room-${d.id}` : `cov-plan-${d.id}`;
+              const clipDefs = (
+                <defs>
+                  <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
+                    {useRoomClip
+                      ? <path d={`M ${roomPolygon!.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`} />
+                      : <rect
+                          x={planBounds.x - planMarginPx}
+                          y={planBounds.y - planMarginPx}
+                          width={planBounds.w + planMarginPx * 2}
+                          height={planBounds.h + planMarginPx * 2}
+                        />
+                    }
+                  </clipPath>
+                </defs>
+              );
               if (profile.shape === 'radius' && profile.rangeFt) {
                 const rPx = profile.rangeFt / currentFloorPxToFt;
                 if (rPx < 1) return null;
                 return (
-                  <circle
-                    key={`cov-${d.id}`}
-                    cx={d.x} cy={d.y} r={rPx}
-                    fill={tone} fillOpacity={alpha * 0.55}
-                    stroke={tone} strokeOpacity={alpha} strokeWidth={1}
-                  />
+                  <g key={`cov-${d.id}`}>
+                    {clipDefs}
+                    <circle
+                      cx={d.x} cy={d.y} r={rPx}
+                      fill={tone} fillOpacity={alpha * 0.55}
+                      stroke={tone} strokeOpacity={alpha} strokeWidth={1}
+                      clipPath={`url(#${clipId})`}
+                    />
+                  </g>
                 );
               }
               if (profile.shape === 'cone' && profile.rangeFt && profile.fovDeg) {
@@ -8502,18 +8645,22 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 const by = d.y + rPx * Math.sin(rotRad + half);
                 const path = `M ${d.x} ${d.y} L ${ax} ${ay} A ${rPx} ${rPx} 0 ${profile.fovDeg > 180 ? 1 : 0} 1 ${bx} ${by} Z`;
                 return (
-                  <path
-                    key={`cov-${d.id}`}
-                    d={path}
-                    fill={tone} fillOpacity={alpha * 0.55}
-                    stroke={tone} strokeOpacity={alpha} strokeWidth={1}
-                  />
+                  <g key={`cov-${d.id}`}>
+                    {clipDefs}
+                    <path
+                      d={path}
+                      fill={tone} fillOpacity={alpha * 0.55}
+                      stroke={tone} strokeOpacity={alpha} strokeWidth={1}
+                      clipPath={`url(#${clipId})`}
+                    />
+                  </g>
                 );
               }
               return null;
             })}
           </g>
-        )}
+          );
+        })()}
 
         {/* PathwaysOverlay paints BEFORE devices so device hit-targets sit on
             top in SVG paint order. A pathway's 12-px-wide transparent
@@ -8560,7 +8707,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           // SVG <title> element so it costs nothing, works in every
           // theme, and doesn't pull in a custom positioning layer.
           const hoverProduct = d.product ? PRODUCTS_BY_ID.get(d.product) : undefined;
-          const hoverProductLabel = hoverProduct ? `${hoverProduct.mfr} ${hoverProduct.model}` : d.type;
+          const hoverProductLabel = hoverProduct ? productLabel(hoverProduct, d.type) : d.type;
           const hoverTitle = [d.label, hoverProductLabel, d.id].filter(Boolean).join(' · ');
           return (
             <g
@@ -8826,7 +8973,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                         width={31} height={13} rx={3}
                         fill="var(--card)" stroke={tone} strokeWidth="0.7" fillOpacity="0.96"
                       />
-                      <text x={chipX - 10} y={chipY + 3.2} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={tone}>
+                      <text x={chipX - 10} y={chipY + 3.2} textAnchor="middle" fontSize="9" fontWeight="700" fill={tone}>
                         {asm.length}
                       </text>
                       {/* dots — one per class, filled when present */}
@@ -8849,7 +8996,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 return (
                   <g pointerEvents="none">
                     <circle cx={d.x + 10 * iconScale} cy={d.y - 10 * iconScale} r={6} fill={tone} stroke="var(--canvas-background)" strokeWidth="1.2" />
-                    <text x={d.x + 10 * iconScale} y={d.y - 7.5 * iconScale} textAnchor="middle" fill="var(--canvas-background)" fontSize="8.5" fontWeight="700">
+                    <text x={d.x + 10 * iconScale} y={d.y - 7.5 * iconScale} textAnchor="middle" fill="var(--canvas-background)" fontSize="9" fontWeight="700">
                       {count}
                     </text>
                   </g>
@@ -8888,7 +9035,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 // ran the full catalog scan per camera per render which
                 // showed up in pan/zoom/drag profiles.
                 const product = isCameraKind && d.product ? PRODUCTS_BY_ID.get(d.product) : undefined;
-                const rawCaption = product ? `${product.mfr} ${product.model}` : '';
+                const rawCaption = product ? productLabel(product) : '';
                 const captionText = rawCaption.length > 26 ? rawCaption.slice(0, 25) + '…' : rawCaption;
                 const captionW = captionText ? Math.min(170, captionText.length * 5.5 + 12) : 0;
                 return (
@@ -8906,7 +9053,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                     {captionText && (
                       <g transform="translate(0, 16)">
                         <rect x={-captionW / 2} y={-6} width={captionW} height={11} rx={2} fill="var(--panel-background)" fillOpacity="0.88" stroke="var(--border)" strokeWidth="0.4" />
-                        <text x={0} y={2} textAnchor="middle" fill={tone} fontSize="8" fontWeight="500" fontFamily="ui-monospace, monospace">{captionText}</text>
+                        <text x={0} y={2} textAnchor="middle" fill={tone} fontSize="9" fontWeight="500" fontFamily="ui-monospace, monospace">{captionText}</text>
                       </g>
                     )}
                   </g>
@@ -9122,7 +9269,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         {movingDev && (
           <g pointerEvents="none" transform={`translate(${movingDev.x + 18}, ${movingDev.y - 32})`}>
             <rect x={0} y={-12} width={108} height={36} rx={4} fill="var(--panel-background)" fillOpacity="0.92" stroke="rgba(124,194,255,0.45)" strokeWidth="0.7" />
-            <text x={6} y={0} fontSize="8" fontFamily="ui-monospace, monospace" fill="#94A3B8" letterSpacing="0.6">X · Y · NEAR</text>
+            <text x={6} y={0} fontSize="9" fontFamily="ui-monospace, monospace" fill="#94A3B8" letterSpacing="0.6">X · Y · NEAR</text>
             <text x={6} y={11} fontSize="10" fontFamily="ui-monospace, monospace" fill="var(--foreground)" fontWeight="700">
               {(movingDev.x * currentFloorPxToFt).toFixed(1)} · {(movingDev.y * currentFloorPxToFt).toFixed(1)} ft
             </text>
@@ -9147,7 +9294,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               <g key={`dim-${i}`} pointerEvents="none" opacity="0.65">
                 <line x1={p.a.x} y1={p.a.y} x2={p.b.x} y2={p.b.y} stroke="#94A3B8" strokeWidth="0.4" strokeDasharray="1 3" />
                 <rect x={mx - 18} y={my - 7} width={36} height={12} rx={2} fill="var(--panel-background)" fillOpacity="0.85" stroke="rgba(148,163,184,0.45)" strokeWidth="0.4" />
-                <text x={mx} y={my + 3} textAnchor="middle" fontSize="8" fontFamily="ui-monospace, monospace" fill="#CBD5E1">
+                <text x={mx} y={my + 3} textAnchor="middle" fontSize="9" fontFamily="ui-monospace, monospace" fill="#CBD5E1">
                   {(dist * currentFloorPxToFt).toFixed(1)}′
                 </text>
               </g>
@@ -9942,8 +10089,8 @@ function doriBandsFor(opts: {
  *  in feet. Used by both the single-lens FOV branch and the multisensor 4-lens
  *  branch so the visuals stay identical. */
 function FovCone({
-  cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, color, opacity, wireframe, label, telemetry,
-}: { cx: number; cy: number; rotDeg: number; fovDeg: number; rangeFt: number; pxToFt: number; color: string; opacity: number; wireframe: boolean; label?: string; telemetry?: string }) {
+  cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, color, opacity, wireframe, label, telemetry, planBounds,
+}: { cx: number; cy: number; rotDeg: number; fovDeg: number; rangeFt: number; pxToFt: number; color: string; opacity: number; wireframe: boolean; label?: string; telemetry?: string; planBounds?: { x: number; y: number; w: number; h: number } | null }) {
   // SC.7.1: convert range from feet to pixels using the per-floor
   // calibrated scale (ftPerPxForFloor falls back to 0.05 ft/px when
   // the floor has no calibratedAt). Was a hardcoded 3.83 px/ft.
@@ -9957,9 +10104,42 @@ function FovCone({
   const y2 = cy + Math.sin(a2) * r;
   const large = half > 90 ? 1 : 0;
   const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-  // tip of the cone (used to anchor the small telemetry chip)
-  const tipX = cx + Math.cos((rotDeg * Math.PI) / 180) * r;
-  const tipY = cy + Math.sin((rotDeg * Math.PI) / 180) * r;
+  // tip of the cone (used to anchor the small telemetry chip).
+  // Audit Group B.1 — when a planBounds rect is supplied AND the
+  // natural tip falls outside (plan + 20 ft margin), project the tip
+  // back along the aim ray to the boundary. Without this clamp,
+  // multisensor lens-letter chips (A/B/C/D) drifted onto the bare
+  // canvas outside the floorplan for any lens whose range exceeded
+  // the room. Math and density chain stay identical.
+  const rawTipX = cx + Math.cos((rotDeg * Math.PI) / 180) * r;
+  const rawTipY = cy + Math.sin((rotDeg * Math.PI) / 180) * r;
+  const tipClamped = (() => {
+    if (!planBounds) return { x: rawTipX, y: rawTipY, clamped: false };
+    const marginPx = pxToFt > 0 ? 20 / pxToFt : 200;
+    const minX = planBounds.x - marginPx;
+    const minY = planBounds.y - marginPx;
+    const maxX = planBounds.x + planBounds.w + marginPx;
+    const maxY = planBounds.y + planBounds.h + marginPx;
+    if (rawTipX >= minX && rawTipX <= maxX && rawTipY >= minY && rawTipY <= maxY) {
+      return { x: rawTipX, y: rawTipY, clamped: false };
+    }
+    // Walk back from rawTip along the aim ray (toward cx, cy) until
+    // we're inside the bounds. Step by 1% of r each iteration; small
+    // enough to land precisely on the boundary, fast enough to never
+    // hit a perf wall (max 100 iterations).
+    let t = 0.99;
+    while (t > 0) {
+      const px = cx + Math.cos((rotDeg * Math.PI) / 180) * r * t;
+      const py = cy + Math.sin((rotDeg * Math.PI) / 180) * r * t;
+      if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
+        return { x: px, y: py, clamped: true };
+      }
+      t -= 0.01;
+    }
+    return { x: cx, y: cy, clamped: true };
+  })();
+  const tipX = tipClamped.x;
+  const tipY = tipClamped.y;
   // Per-cone radial gradient — saturated at the lens (cx, cy) and fading to
   // zero at the cone's outer arc. Gives the cinematic "vapor at the edge"
   // depth instead of the flat SVG-ish fill that read as decorative. The id
@@ -9995,13 +10175,19 @@ function FovCone({
         );
       })}
       {label && (
-        <g transform={`translate(${tipX}, ${tipY})`} pointerEvents="none">
+        <g
+          transform={`translate(${tipX}, ${tipY})`}
+          pointerEvents="none"
+          data-canvas-element="lens-marker"
+          data-lens-label={label}
+          data-lens-clamped={tipClamped.clamped ? 'true' : 'false'}
+        >
           <circle r={9} fill="var(--panel-background)" fillOpacity="0.88" stroke={color} strokeWidth="0.8" />
           <text textAnchor="middle" y={3} fontSize="9" fontWeight="700" fill={color} fontFamily="ui-monospace, monospace">{label}</text>
           {telemetry && (
             <g transform="translate(0, 16)">
               <rect x={-26} y={-6} width={52} height={12} rx={2} fill="var(--panel-background)" fillOpacity="0.85" stroke={color} strokeWidth="0.5" opacity="0.85" />
-              <text textAnchor="middle" y={2.5} fontSize="8" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{telemetry}</text>
+              <text textAnchor="middle" y={2.5} fontSize="9" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{telemetry}</text>
             </g>
           )}
         </g>
@@ -10098,6 +10284,7 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
               wireframe={wireframe}
               label={isActive && selected ? LENS_LABEL[k] : undefined}
               telemetry={isActive && selected && activeLens === k ? `${Math.round(L.fov)}° · ${Math.round(L.range)}ft` : undefined}
+              planBounds={planBounds}
             />
           );
         })}
@@ -10230,10 +10417,16 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
         // drawer's required-pixel-density row, emphasize that band
         // (1.5× opacity) and dim the others (0.25×). When no level
         // is picked the base opacities stand as-is.
-        const baseOp = DORI_BASE_OPACITY[b.level];
+        // Audit Group B.2 — the per-theme multiplier scales every
+        // band's effective alpha so coverage punches through the
+        // active canvas background (white in light / slate, near-
+        // black in dark). Cap at 0.95 so even the brightest band
+        // never goes fully opaque.
+        const themeBoost = getCoverageBandMultiplier();
+        const baseOp = Math.min(0.95, DORI_BASE_OPACITY[b.level] * themeBoost);
         const fillOp = emphasizedDoriLevel == null
           ? baseOp
-          : (emphasizedDoriLevel === b.level ? Math.min(0.6, baseOp * 1.7) : baseOp * 0.25);
+          : (emphasizedDoriLevel === b.level ? Math.min(0.95, baseOp * 1.7) : baseOp * 0.25);
         if (wireframe) {
           return (
             <path key={b.level} d={sectorPath(rIn, rOut)}
@@ -10262,7 +10455,7 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
         return (
           <g key={`${b.level}-lbl`} transform={`translate(${lx} ${ly})`} pointerEvents="none">
             <circle r={5.5} fill="var(--panel-background)" fillOpacity="0.9" stroke={tone} strokeWidth="0.55" opacity="0.92" />
-            <text textAnchor="middle" y={2.2} fontSize="6.5" fontWeight="700" fill={tone} fontFamily="ui-monospace, monospace">
+            <text textAnchor="middle" y={2.2} fontSize="6.5" fontWeight="700" fill={tone} fontFamily="ui-monospace, monospace" /* audit:icon-glyph dori-band-letter */>
               {DORI_LABEL[b.level]}
             </text>
           </g>
@@ -10292,7 +10485,7 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
       {selected && !resolution && d.type !== 'cam.multisensor' && d.type !== 'cam.fisheye' && fovDeg < 180 && (
         <g transform={`translate(${d.x + Math.cos((rot * Math.PI) / 180) * (r * 0.7)} ${d.y + Math.sin((rot * Math.PI) / 180) * (r * 0.7)})`} pointerEvents="none">
           <rect x={-42} y={-7} width={84} height={14} rx={3} fill="var(--panel-background)" fillOpacity="0.92" stroke={edge} strokeOpacity="0.7" strokeWidth="0.5" />
-          <text textAnchor="middle" y={3} fontSize="7" fill="var(--muted-foreground)" fontFamily="ui-monospace, monospace">
+          <text textAnchor="middle" y={3} fontSize="9" fill="var(--muted-foreground)" fontFamily="ui-monospace, monospace">
             set resolution for bands
           </text>
         </g>
@@ -10635,7 +10828,13 @@ function PersonProbe({
   const distLabel = `${probe.distanceFt.toFixed(1)} ft`;
   const densityLabel = live != null ? `${live.toFixed(1)} px/ft` : 'no coverage';
   return (
-    <g pointerEvents="all">
+    <g
+      pointerEvents="all"
+      data-canvas-element="person-probe"
+      data-probe-in-cone={probe.inCone ? 'true' : 'false'}
+      data-probe-distance-ft={probe.distanceFt.toFixed(1)}
+      aria-label={probe.inCone ? `Person probe ${distLabel}, ${densityLabel}` : 'Person probe, no coverage'}
+    >
       {/* Tether — dotted line from camera to probe in the marker tone
           so the link reads at a glance. Only drawn when inside the
           cone. */}
@@ -10680,7 +10879,7 @@ function PersonProbe({
             stroke={mTone} strokeOpacity="0.85" strokeWidth="0.8"
           />
           <text x={0} y={6.5} textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{distLabel}</text>
-          <text x={0} y={15.5} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={mTone} fontFamily="ui-monospace, monospace">{densityLabel}</text>
+          <text x={0} y={15.5} textAnchor="middle" fontSize="9" fontWeight="700" fill={mTone} fontFamily="ui-monospace, monospace">{densityLabel}</text>
         </g>
       ) : (
         <g transform={`translate(${pos.x} ${pos.y + r * 2.8})`} pointerEvents="none">
@@ -10847,7 +11046,7 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
             <g>
               <rect x={-11} y={-4} width={22} height={8} rx={1.2} />
               {[-8.5,-6,-3.5,-1,1.5,4,6.5,9].map((x) => <line key={x} x1={x} y1={-2.5} x2={x} y2={2.5} strokeWidth={0.9} />)}
-              <text x={0} y={6.5} textAnchor="middle" fontSize="3.4" fill={ink} stroke="none">{accKind === 'pp48' ? '48' : accKind === 'pp-fiber' ? 'FO' : '24'}</text>
+              <text x={0} y={6.5} textAnchor="middle" fontSize="3.4" fill={ink} stroke="none" /* audit:icon-glyph patch-panel-port-count */>{accKind === 'pp48' ? '48' : accKind === 'pp-fiber' ? 'FO' : '24'}</text>
             </g>
           )}
           {accKind === 'pullbox' && (
@@ -11371,7 +11570,7 @@ function DeviceGlyphPaths({ type, tone }: { type: DeviceType; tone: string }) {
         <g transform={`scale(${s})`}>
           <rect x="-10" y="-6" width="20" height="12" rx="2" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
           <rect x="-7" y="-3" width="14" height="6" fill="var(--canvas-background)" />
-          <text x="0" y="2" textAnchor="middle" fill={tone} fontSize="6" fontWeight="700">TH</text>
+          <text x="0" y="2" textAnchor="middle" fill={tone} fontSize="6" fontWeight="700" /* audit:icon-glyph thermostat-TH */>TH</text>
         </g>
       );
     case 'acc.reader':
@@ -11508,7 +11707,7 @@ function ToolbarButton({ a, tone }: { a: ToolbarAction; tone: string }) {
 // under the V2 "selection HUD" pattern; the V3 spec keeps the pill
 // at status dot / id / type / Expand / Edit and nothing else.
 
-function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode, onLensHover, isLocked, onToggleLock }: {
+function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onTargetSim, onDuplicate, onOpenTab, activeLens, setActiveLens, lensMode, setLensMode, onLensHover, isLocked, onToggleLock, drawerOpen }: {
   d: Device; zoom: number; pan: { x: number; y: number };
   onRotate: (r: number) => void;
   onDelete: () => void;
@@ -11531,6 +11730,10 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
    *  duplicate) as disabled-looking when isLocked is true. */
   isLocked?: boolean;
   onToggleLock?: () => void;
+  /** Audit Group C — drawer open state. When the inspector drawer is
+   *  already open, the pill's Edit button is redundant (it routes to
+   *  the same drawer); suppressing it removes a stale affordance. */
+  drawerOpen?: boolean;
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
   const kind = TYPE_KIND[d.type];
@@ -11647,12 +11850,19 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
   // body only needs the kind label for the identity strip and the
   // ExpandMenu reads d.color / d.type itself. Deleted ~80 lines of
   // dead action wiring + helper computations.
-  const kindLabel = isCam ? 'Camera' : isDoor ? 'Opening' : isIDF ? 'Network Node' : isPathway ? 'Pathway' : 'Device';
+  // Audit Group A.5 — pill kind label comes from the single TYPE_PILL_LABEL
+  // map so the pill, drawer header, and on-canvas callout never disagree.
+  // The previous isCam/isDoor/isIDF/isPathway ladder labelled `net.ap` as
+  // "Pathway" and `inf.door-*` as "Opening" — both technically wrong.
+  const kindLabel = deviceTypeLabel(d.type);
 
   return (
     <div
       ref={pillRef}
       className="absolute z-30 pointer-events-auto select-none"
+      data-canvas-chrome="selection-pill"
+      data-device-id={d.id}
+      data-device-type={d.type}
       style={{
         left: leftPx,
         top: topPx,
@@ -11732,17 +11942,21 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
           />
         </div>
 
-        {/* Edit — primary drawer affordance */}
-        <button
-          onClick={() => onOpenTab('overview')}
-          title="Edit details"
-          data-track="pill-edit"
-          data-testid="pill-edit"
-          className="px-3 inline-flex items-center gap-1.5 text-[12px] font-medium border-l border-border/60 text-foreground hover:bg-secondary/30 transition-colors"
-        >
-          <Settings2 className="w-3.5 h-3.5" style={{ color: tone }} />
-          Edit
-        </button>
+        {/* Edit — primary drawer affordance. Audit Group C: suppressed
+            when the drawer is already open (drawerOpen=true), since
+            it would route to the same panel already in view. */}
+        {!drawerOpen && (
+          <button
+            onClick={() => onOpenTab('overview')}
+            title="Edit details"
+            data-track="pill-edit"
+            data-testid="pill-edit"
+            className="px-3 inline-flex items-center gap-1.5 text-[12px] font-medium border-l border-border/60 text-foreground hover:bg-secondary/30 transition-colors"
+          >
+            <Settings2 className="w-3.5 h-3.5" style={{ color: tone }} />
+            Edit
+          </button>
+        )}
       </div>
     </div>
   );
@@ -12436,7 +12650,7 @@ function ProductOverviewSection({ d }: { d: Device }) {
     const patch: any = { product: newId };
     updateDevice(d.id, patch);
     toast.message('Camera model changed', {
-      description: `${nextCat.manufacturer} ${nextCat.model} — BOM, resolution, IR, NDAA flags now read from this catalog entry.`,
+      description: `${productLabel(nextCat, nextCat.id)} — BOM, resolution, IR, NDAA flags now read from this catalog entry.`,
       duration: 4500,
     });
   };
@@ -12483,7 +12697,7 @@ function ProductOverviewSection({ d }: { d: Device }) {
                 <option value="" disabled>Choose a model…</option>
                 {compatibleModels.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.manufacturer} {p.model}{p.resolution ? ` · ${p.resolution}` : ''}
+                    {productLabel(p, p.id)}{p.resolution ? ` · ${p.resolution}` : ''}
                   </option>
                 ))}
               </select>
@@ -12516,7 +12730,18 @@ function ProductOverviewSection({ d }: { d: Device }) {
         <DrawerSection title="Product details">
           <Row2 label="Category" value={cat.category} />
           {cat.subcategory && <Row2 label="Subcategory" value={cat.subcategory} />}
-          <Row2 label="Tech model" value={cat.techModels.length === 3 ? 'Cloud / On-prem / Hybrid' : cat.techModels.join(' · ')} />
+          {/* Audit Group C per-device-type rules — the Tech model row
+              ("Cloud / On-prem / Hybrid") describes a software-stack
+              concept that doesn't apply to passive infrastructure
+              hardware (doors, gates, walls, fire devices). Suppress
+              the row for those kinds instead of stamping "Cloud /
+              On-prem / Hybrid" on every door. */}
+          {(() => {
+            const k = TYPE_KIND[d.type];
+            const techApplies = k === 'camera' || k === 'network' || k === 'access' || k === 'audio' || k === 'storage' || k === 'display' || k === 'cyber';
+            if (!techApplies) return null;
+            return <Row2 label="Tech model" value={cat.techModels.length === 3 ? 'Cloud / On-prem / Hybrid' : cat.techModels.join(' · ')} />;
+          })()}
           {cat.resolution && <Row2 label="Resolution" value={cat.resolution} />}
           {cat.cameraType && <Row2 label="Form factor" value={cat.cameraType} />}
           {cat.lensType && <Row2 label="Lens" value={cat.lensType + (cat.focalRange ? ` · ${cat.focalRange}` : '')} />}
@@ -12540,7 +12765,10 @@ function ProductOverviewSection({ d }: { d: Device }) {
 
       {cat && (
         <DrawerSection title="Investment">
-          <Row2 label="MSRP" value={cat.msrp != null ? `$${cat.msrp.toLocaleString()}` : '—'} />
+          {/* Audit Group C numeric formatting — show "Not priced" for
+              a zero MSRP instead of "$0", which read like a real price
+              point. Null catalog price still uses the em-dash. */}
+          <Row2 label="MSRP" value={cat.msrp == null ? '—' : cat.msrp === 0 ? 'Not priced' : `$${cat.msrp.toLocaleString()}`} />
           {cat.dealerCost && <Row2 label="Dealer cost" value={`$${cat.dealerCost.toLocaleString()}`} />}
           {cat.laborUnits && <Row2 label="Labor units" value={`${cat.laborUnits} hr`} />}
           <div className="text-[10px] text-muted-foreground mt-1">Sample MSRP — verify with distributor.</div>
@@ -12558,7 +12786,10 @@ function ProductOverviewSection({ d }: { d: Device }) {
       )}
 
       <DrawerSection title="Location">
-        <Row2 label="Position" value={`${(d.x * pxToFt).toFixed(1)}, ${(d.y * pxToFt).toFixed(1)} ft`} />
+        {/* Audit Group C numeric formatting — round position to the
+            nearest 0.5 ft. Surveyors think in whole-or-half feet on a
+            plan, never in tenth-of-a-foot precision. */}
+        <Row2 label="Position" value={`${(Math.round(d.x * pxToFt * 2) / 2).toFixed(1)}, ${(Math.round(d.y * pxToFt * 2) / 2).toFixed(1)} ft`} />
         {d.mountFt != null && <Row2 label="Mount AFF" value={`${d.mountFt} ft`} />}
       </DrawerSection>
     </>
@@ -13170,10 +13401,13 @@ function PersonProbePreview({
     pointX: pos.x, pointY: pos.y,
   });
   if (!probe.inCone) {
+    // Audit Group A.2 — header used to read "Person probe · 99.8 ft" while
+    // the body said "no coverage", which implied a distance number was
+    // meaningful. Out-of-cone, the title now matches the body.
     return (
-      <DrawerSection title={`Person probe · ${probe.distanceFt.toFixed(1)} ft`}>
+      <DrawerSection title="Person probe · no coverage">
         <div className="rounded-md border border-border bg-card px-3 py-3 text-[11px] text-muted-foreground">
-          No coverage here. The probe is outside the camera's cone (off axis by {probe.deltaDeg.toFixed(0)}° or past its {Math.round(rangeFt)} ft range). Drag the marker back into the cone for a live density readout.
+          The probe is outside the camera's cone (off axis by {probe.deltaDeg.toFixed(0)}° or past its {Math.round(rangeFt)} ft range). Drag the marker back into the cone for a live density readout.
         </div>
       </DrawerSection>
     );
@@ -13802,8 +14036,13 @@ function ImpactPreviewSection({ device }: { device: Device }) {
     ? (() => {
         const p = CATALOG.find((c) => c.id === device.product);
         if (!p) return null;
+        // Audit Group A.4 — never emit the literal string "undefined" when
+        // a catalog entry is missing manufacturer/model. Build the label
+        // from whichever pieces are real and skip the rest.
+        const parts = [p.mfr, p.model].filter((s): s is string => typeof s === 'string' && s.length > 0);
+        const label = parts.length > 0 ? parts.join(' ') : (device.label || device.id);
         return {
-          label: `${p.mfr} ${p.model}`,
+          label,
           qty: '1 ea',
           ext: p.msrp ?? 0,
           hrs: p.laborUnits ?? 0,
@@ -14200,17 +14439,22 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
   const [mode, setMode] = useState<'overview' | 'prosecution'>('overview');
   const rangeFt = d.range ?? (d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30);
   const fovDeg  = d.fov ?? (d.type === 'cam.ptz' ? 36 : d.type === 'cam.fisheye' ? 360 : 70);
-  // Item 8 — same density chain as the cone bands + probe + Target
-  // preview. Replaces the hardcoded `sensorPx = 1920` so this
-  // section's "general usefulness" px/m at half range now agrees
-  // with every other density readout in the drawer.
+  // Item 8 + Audit Group A.1 — same density chain as the cone bands +
+  // probe + Target preview. Replaces the hardcoded `sensorPx = 1920`
+  // so this section's "general usefulness" density at half range now
+  // agrees with every other density readout in the drawer. Display
+  // unit is px/ft (single canvas-wide unit per the audit) and the
+  // pass/fail thresholds come from DORI_PX_PER_FT so a future tweak
+  // to the IEC table can't drift this surface out of sync.
   const aiResolution = cameraResolution(d);
   const sensorPx = aiResolution?.widthPx ?? 1920;
   const halfFovRad = (fovDeg * Math.PI / 180) / 2;
   const tanHalfFov = Math.tan(halfFovRad);
   const midDistFt = rangeFt * 0.5;
   const pxPerFt = tanHalfFov > 0 ? sensorPx / (2 * midDistFt * tanHalfFov) : Infinity;
-  const pxPerM = pxPerFt * 3.28084;
+  // Threshold for license plate at ~4 m / 13 ft (320 px/m ≈ 97.54 px/ft);
+  // not in DORI_PX_PER_FT because LPR isn't a DORI grade — kept local.
+  const LPR_PX_PER_FT = 320 / 3.28084;
 
   return (
     <>
@@ -14246,12 +14490,12 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
           </>
         ) : (
           <>
-            <Row label="px/m @ midrange" value={pxPerM.toFixed(0)} />
-            <Row label="Identification"  value={pxPerM >= 250 ? 'Yes' : pxPerM >= 125 ? 'Marginal' : 'No'} tone={pxPerM >= 250 ? '#34D399' : pxPerM >= 125 ? '#FACC15' : '#F87171'} />
-            <Row label="Recognition"     value={pxPerM >= 125 ? 'Yes' : 'No'} tone={pxPerM >= 125 ? '#34D399' : '#F87171'} />
-            <Row label="License plate"   value={d.type === 'cam.lpr' ? 'LPR sensor · yes' : (pxPerM >= 320 ? 'Yes (≤4m)' : 'Marginal')} tone={d.type === 'cam.lpr' ? '#34D399' : (pxPerM >= 320 ? '#34D399' : '#FACC15')} />
-            <Row label="Forensic export" value={pxPerM >= 250 ? 'Court-ready' : 'Best-effort'} tone={pxPerM >= 250 ? '#34D399' : '#FACC15'} />
-            <Row label="Distance @ ID grade" value={`${Math.round((sensorPx / (250 / 0.3048 * 2 * Math.tan(halfFovRad))) * 3.28)} ft`} />
+            <Row label="px/ft @ midrange" value={pxPerFt.toFixed(1)} />
+            <Row label="Identification"  value={pxPerFt >= DORI_PX_PER_FT.identify ? 'Yes' : pxPerFt >= DORI_PX_PER_FT.recognize ? 'Marginal' : 'No'} tone={pxPerFt >= DORI_PX_PER_FT.identify ? '#34D399' : pxPerFt >= DORI_PX_PER_FT.recognize ? '#FACC15' : '#F87171'} />
+            <Row label="Recognition"     value={pxPerFt >= DORI_PX_PER_FT.recognize ? 'Yes' : 'No'} tone={pxPerFt >= DORI_PX_PER_FT.recognize ? '#34D399' : '#F87171'} />
+            <Row label="License plate"   value={d.type === 'cam.lpr' ? 'LPR sensor · yes' : (pxPerFt >= LPR_PX_PER_FT ? 'Yes (≤13 ft)' : 'Marginal')} tone={d.type === 'cam.lpr' ? '#34D399' : (pxPerFt >= LPR_PX_PER_FT ? '#34D399' : '#FACC15')} />
+            <Row label="Forensic export" value={pxPerFt >= DORI_PX_PER_FT.identify ? 'Court-ready' : 'Best-effort'} tone={pxPerFt >= DORI_PX_PER_FT.identify ? '#34D399' : '#FACC15'} />
+            <Row label="Distance @ ID grade" value={tanHalfFov > 0 ? `${Math.round(sensorPx / (2 * DORI_PX_PER_FT.identify * tanHalfFov))} ft` : '—'} />
           </>
         )}
       </DrawerSection>
@@ -14908,49 +15152,51 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         </div>
       </div>
 
-      {/* Item 4 — compact icon row replaces the old 3 col tab grid.
-          One section visible at a time (accordion semantics already
-          enforced by the `tab` state below). The active section's
-          label sits to the right of the row so the operator sees
-          which section is currently expanded without losing the
-          chrome to a label-per-tile grid. */}
-      <div className="px-3 py-2 border-b border-border/40 flex items-center gap-1 overflow-x-auto">
-        {tilesForDevice(d).map((t) => {
-          const active = tabGroupOf(tab) === t.id;
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              data-track={`drawer-tab-${t.id}`}
-              data-testid={`drawer-tab-${t.id}`}
-              data-active={active ? 'true' : undefined}
-              title={t.label}
-              aria-label={t.label}
-              className={`shrink-0 w-9 h-9 rounded-md inline-flex items-center justify-center transition-colors ${
-                active
-                  ? ''
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30'
-              }`}
-              style={active ? {
-                background: tone,
-                color: '#ffffff',
-                boxShadow: `0 1px 2px ${tone}40`,
-              } : undefined}
-            >
-              <Icon className="w-4 h-4" style={{ color: active ? '#ffffff' : undefined }} />
-            </button>
-          );
-        })}
-        {/* Active label — shows which accordion section is currently
-            open. Reads inline next to the icon row so the operator
-            doesn't have to memorise the icon-to-section mapping. */}
-        <span className="ml-2 text-[11px] font-medium text-foreground tracking-tight truncate">
+      {/* Item 4 + Audit Group B.3 — compact icon row replaces the old
+          3 col tab grid. One section visible at a time (accordion
+          semantics already enforced by the `tab` state below). The
+          active section's label was previously laid out INSIDE the
+          horizontal-scroll row, where its `truncate` clipped to "G..."
+          once the row filled with icons. The label now lives on its
+          own line above the icon strip, full width, no competition
+          for horizontal space; the strip beneath scrolls when the
+          per-device tab count exceeds the drawer width. */}
+      <div className="px-3 pt-2 pb-1 border-b border-border/40">
+        <div className="text-[11px] font-medium text-foreground tracking-tight mb-1.5">
           {(() => {
             const activeTile = tilesForDevice(d).find((t) => tabGroupOf(tab) === t.id);
             return activeTile?.label ?? '';
           })()}
-        </span>
+        </div>
+        <div className="flex items-center gap-1 overflow-x-auto pb-1" data-testid="drawer-tab-strip">
+          {tilesForDevice(d).map((t) => {
+            const active = tabGroupOf(tab) === t.id;
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                data-track={`drawer-tab-${t.id}`}
+                data-testid={`drawer-tab-${t.id}`}
+                data-active={active ? 'true' : undefined}
+                title={t.label}
+                aria-label={t.label}
+                className={`shrink-0 w-9 h-9 rounded-md inline-flex items-center justify-center transition-colors ${
+                  active
+                    ? ''
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30'
+                }`}
+                style={active ? {
+                  background: tone,
+                  color: '#ffffff',
+                  boxShadow: `0 1px 2px ${tone}40`,
+                } : undefined}
+              >
+                <Icon className="w-4 h-4" style={{ color: active ? '#ffffff' : undefined }} />
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Tab body. Each section renders when its tab group is active —
@@ -15011,11 +15257,11 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             </div>
             {coverageSub === 'prosecution' && (
               <>
-                {/* Item 8 — density basis line. Shows the single
-                    density value (px/ft and px/m, same number,
-                    different unit) so it's obvious that the chips
-                    below are derived from the same chain the cone
-                    bands and the person probe use. */}
+                {/* Item 8 + Audit Group A.1 — density basis line.
+                    Single canvas-wide unit (px/ft) so this surface,
+                    the cone bands, the probe, and the per-grade
+                    Target preview can never disagree on which number
+                    is "the" density. */}
                 <div
                   className="mb-3 rounded-lg border px-3 py-2 text-[11px] tabular-nums"
                   style={{ background: `${tone}10`, borderColor: `${tone}3a` }}
@@ -15024,7 +15270,6 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                     <span className="text-muted-foreground">Density at {distance.toFixed(0)} ft</span>
                     <span style={{ color: tone, fontWeight: 600 }}>
                       {pxPerFt.toFixed(1)} px/ft
-                      <span className="text-muted-foreground"> · {pxPerM.toFixed(0)} px/m</span>
                     </span>
                   </div>
                   <div className="text-[10px] text-muted-foreground/80 leading-snug mt-1">
@@ -15149,22 +15394,22 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                 )}
                 {/* DORI / Target preview — plain-language verdict at the
                     current subject distance + a per-grade pass/fail bar.
-                    Uses IEC 62676-4 / EN 50132-7 px/m thresholds against
-                    the existing live `pxPerM` derivation:
-                      Identify  ≥ 250 px/m   (1.7 m subject ≥ 425 px tall)
-                      Recognize ≥ 125 px/m
-                      Observe   ≥  62 px/m
-                      Detect    ≥  25 px/m
-                    The verdict line picks the strongest grade still met
-                    and explains it without jargon. */}
+                    Audit Group A.1 — thresholds now expressed in px/ft,
+                    pulled directly from DORI_PX_PER_FT so the cone bands,
+                    the per-grade tiles, the on-canvas probe readout, and
+                    this preview can never disagree on units.
+                    Source thresholds remain IEC 62676-4 / EN 50132-7
+                    (Identify 250 px/m, Recognize 125 px/m, Observe 62.5,
+                    Detect 25); the conversion to px/ft happens once in
+                    DORI_PX_PER_FT and every surface reads from it. */}
                 {(() => {
                   const grades = [
-                    { id: 'Identify',  thresh: 250, color: '#4FB87E', plain: 'Face is clear enough for an ID-grade match.' },
-                    { id: 'Recognize', thresh: 125, color: '#7CC2FF', plain: 'You can tell a known face apart from strangers, but not enough for a court ID.' },
-                    { id: 'Observe',   thresh: 62,  color: '#FACC15', plain: 'You can read activity (gait, clothing, gesture) but faces are limited.' },
-                    { id: 'Detect',    thresh: 25,  color: '#FB923C', plain: 'You can see something is there, not who or what.' },
+                    { id: 'Identify',  thresh: DORI_PX_PER_FT.identify,  color: '#4FB87E', plain: 'Face is clear enough for an ID-grade match.' },
+                    { id: 'Recognize', thresh: DORI_PX_PER_FT.recognize, color: '#7CC2FF', plain: 'You can tell a known face apart from strangers, but not enough for a court ID.' },
+                    { id: 'Observe',   thresh: DORI_PX_PER_FT.observe,   color: '#FACC15', plain: 'You can read activity (gait, clothing, gesture) but faces are limited.' },
+                    { id: 'Detect',    thresh: DORI_PX_PER_FT.detect,    color: '#FB923C', plain: 'You can see something is there, not who or what.' },
                   ];
-                  const met = grades.find((g) => pxPerM >= g.thresh);
+                  const met = grades.find((g) => pxPerFt >= g.thresh);
                   const verdict = met
                     ? { id: met.id, color: met.color, plain: met.plain }
                     : { id: 'Below detect', color: '#E55B5B', plain: 'Subject is too small to register reliably. Move the camera closer or step up the focal length.' };
@@ -15184,16 +15429,18 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                             <div className="text-[14px] font-medium tracking-tight" style={{ color: verdict.color }}>{verdict.id} quality</div>
                           </div>
                           <div className="text-right">
-                            <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">Subject</div>
-                            <div className="text-[12px] tabular-nums text-foreground">{Math.round(pxPerM)} px / m</div>
+                            <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">Density</div>
+                            <div className="text-[12px] tabular-nums text-foreground">{pxPerFt.toFixed(1)} px/ft</div>
                           </div>
                         </div>
                         <div className="text-[11px] text-muted-foreground leading-snug mt-1.5">{verdict.plain}</div>
                       </div>
-                      {/* Per-grade pass/fail strip */}
+                      {/* Per-grade pass/fail strip — px/ft thresholds shown
+                          with one decimal so the values agree with the
+                          on-canvas probe readout to the same precision. */}
                       <div className="space-y-1" data-testid="dori-grade-list">
                         {grades.map((g) => {
-                          const ok = pxPerM >= g.thresh;
+                          const ok = pxPerFt >= g.thresh;
                           return (
                             <div key={g.id} className="flex items-center gap-2 text-[11px]">
                               <span
@@ -15205,8 +15452,14 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                                   outlineOffset: '-1px',
                                 }}
                               />
+                              {/* Group C — pass/fail also gets a glyph
+                                  (✓ / —) so colour-blind users can read
+                                  the strip without the green/grey hue. */}
+                              <span className="w-3 text-center text-[10px] tabular-nums" style={{ color: ok ? g.color : '#94A3B8' }} aria-hidden>
+                                {ok ? '✓' : '—'}
+                              </span>
                               <span className="flex-1 text-foreground">{g.id}</span>
-                              <span className="text-muted-foreground tabular-nums">≥ {g.thresh} px/m</span>
+                              <span className="text-muted-foreground tabular-nums">≥ {g.thresh.toFixed(1)} px/ft</span>
                               <span className="w-12 text-right uppercase tracking-[0.10em] text-[10px]" style={{ color: ok ? g.color : '#94A3B8' }}>
                                 {ok ? 'Pass' : 'Fail'}
                               </span>
@@ -15214,9 +15467,8 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                           );
                         })}
                       </div>
-                      <div className="text-[10px] text-muted-foreground mt-2 leading-snug">
-                        Thresholds: IEC 62676-4 / EN 50132-7. Subject is the 1.7 m EN-spec figure standing at the full camera range.
-                        Sensor assumed 1080p horizontal; updates live as you drag Distance / HFOV.
+                      <div className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                        Thresholds: IEC 62676-4 / EN 50132-7 px/m converted to px/ft (÷ 3.28084) so every density readout on the canvas reads in the same unit. Sensor reads horizontal pixels from the camera resolution; updates live as you drag Distance / HFOV.
                       </div>
                     </DrawerSection>
                   );
@@ -15631,14 +15883,16 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
   const inHalfFov = aimDelta < (fovDeg / 2) + 4;
   const inRange = distFt < (d.range ?? 80);
   const inFOV = inHalfFov && inRange;
-  // DORI bands (px / m). EN-50132-7 / IEC 62676.
+  // Audit Group A.1 — DORI bands now read from DORI_PX_PER_FT so this
+  // legacy card uses the same px/ft thresholds as the rest of the canvas.
+  // EN-50132-7 / IEC 62676 still the underlying source.
   const DORI = [
-    { id: 'identify',  label: 'Identify',  min: 250, tone: '#34D399' },
-    { id: 'recognize', label: 'Recognize', min: 125, tone: '#7CC2FF' },
-    { id: 'observe',   label: 'Observe',   min:  63, tone: '#FACC15' },
-    { id: 'detect',    label: 'Detect',    min:  25, tone: '#FB923C' },
+    { id: 'identify',  label: 'Identify',  min: DORI_PX_PER_FT.identify,  tone: '#34D399' },
+    { id: 'recognize', label: 'Recognize', min: DORI_PX_PER_FT.recognize, tone: '#7CC2FF' },
+    { id: 'observe',   label: 'Observe',   min: DORI_PX_PER_FT.observe,   tone: '#FACC15' },
+    { id: 'detect',    label: 'Detect',    min: DORI_PX_PER_FT.detect,    tone: '#FB923C' },
   ];
-  const achieved = DORI.find((b) => pxPerM >= b.min);
+  const achieved = DORI.find((b) => pxPerFt >= b.min);
   // Person assumed 1.7m tall, face 0.18m wide → expected pixels on subject.
   const facePx = Math.round(pxPerM * 0.18);
   const bodyPx = Math.round(pxPerM * 0.5);   // shoulder width
@@ -15722,19 +15976,19 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
 
           {/* DORI ladder — which band is achieved at the current distance */}
           <div className="px-3 py-2.5 border-b border-white/5">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground mb-2 flex items-center gap-2">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-2 flex items-center gap-2">
               <span>DORI band</span>
               <span className="flex-1 h-px bg-white/5" />
-              <span className="tabular-nums text-muted-foreground">{pxPerM.toFixed(0)} px/m</span>
+              <span className="tabular-nums text-muted-foreground">{pxPerFt.toFixed(1)} px/ft</span>
             </div>
             {DORI.map((b) => {
-              const hit = pxPerM >= b.min;
+              const hit = pxPerFt >= b.min;
               const isTop = achieved?.id === b.id;
               return (
                 <div key={b.id} className={`flex items-center gap-2 py-1 ${hit ? '' : 'opacity-40'}`}>
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: b.tone, boxShadow: hit ? `0 0 6px ${b.tone}` : 'none' }} />
                   <span className={`flex-1 text-[11px] ${isTop ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{b.label}</span>
-                  <span className="text-[10px] tabular-nums text-muted-foreground">≥{b.min} px/m</span>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">≥ {b.min.toFixed(1)} px/ft</span>
                   {hit && <Check className="w-3 h-3 ml-1" style={{ color: b.tone }} />}
                 </div>
               );
@@ -15772,16 +16026,25 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
             <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Forensic quality</div>
             {(() => {
               // Plate detection wants ~80 px on a 520mm plate (US standard).
-              const platePx = Math.round(pxPerM * 0.52);
+              // Audit Group A.1 — keep the subject-pixel math in feet so
+              // the whole card reads in one unit: 0.52 m ≈ 1.706 ft.
+              const platePx = Math.round(pxPerFt * 1.706);
               const plateReady = platePx >= 80;
               const isLPR = d.type === 'cam.lpr';
-              // Identification grade (per IEC) needs ~250 px/m on the face.
-              const idGrade = pxPerM >= 250 ? 'Excellent' : pxPerM >= 125 ? 'Adequate' : pxPerM >= 63 ? 'Marginal' : 'Insufficient';
+              // Identification grade reads from the same DORI_PX_PER_FT
+              // chain the cone bands and probe use.
+              const idGrade =
+                pxPerFt >= DORI_PX_PER_FT.identify  ? 'Excellent'
+                : pxPerFt >= DORI_PX_PER_FT.recognize ? 'Adequate'
+                : pxPerFt >= DORI_PX_PER_FT.observe   ? 'Marginal'
+                : 'Insufficient';
               // IR / low-light usefulness scaled by distance vs IR range
-              // (assume 30m typical IR LED). Drops linearly past that.
+              // (assume 30 m typical IR LED ≈ 98 ft). Drops linearly past
+              // that. distM kept local for this conversion only.
               const irRange = d.ir ? 30 : 0;
+              const distMLocal = distFt * 0.3048;
               const irPct = irRange > 0
-                ? Math.max(0, Math.min(100, Math.round((1 - distM / irRange) * 100)))
+                ? Math.max(0, Math.min(100, Math.round((1 - distMLocal / irRange) * 100)))
                 : 0;
               const lowLightTone = idGrade === 'Excellent' ? '#34D399' : idGrade === 'Adequate' ? '#7CC2FF' : idGrade === 'Marginal' ? '#FACC15' : '#F87171';
               return (
@@ -15804,8 +16067,8 @@ function TargetSimOverlay({ d, zoom, pos, setPos, onClose }: {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Prosecution-ready</span>
-                    <span className="tabular-nums" style={{ color: pxPerM >= 250 && plateReady ? '#34D399' : pxPerM >= 125 ? '#FACC15' : '#F87171' }}>
-                      {pxPerM >= 250 && plateReady ? 'Yes' : pxPerM >= 125 ? 'Partial' : 'No'}
+                    <span className="tabular-nums" style={{ color: pxPerFt >= DORI_PX_PER_FT.identify && plateReady ? '#34D399' : pxPerFt >= DORI_PX_PER_FT.recognize ? '#FACC15' : '#F87171' }}>
+                      {pxPerFt >= DORI_PX_PER_FT.identify && plateReady ? 'Yes' : pxPerFt >= DORI_PX_PER_FT.recognize ? 'Partial' : 'No'}
                     </span>
                   </div>
                 </div>
@@ -16938,7 +17201,7 @@ function PathwayVertexEditor({
             {isDragging && (
               <g transform={`translate(${p.x}, ${p.y - 16})`} pointerEvents="none" data-testid={`pathway-vertex-hud-${pathwayId}-${i}`}>
                 <rect x={-26} y={-7} width={52} height={13} rx={2} fill="var(--panel-background)" fillOpacity="0.94" stroke={handleTone} strokeWidth="0.6" />
-                <text textAnchor="middle" y={2.5} fontSize="8.5" fontWeight="600" fill={handleTone} fontFamily="ui-monospace, monospace">
+                <text textAnchor="middle" y={2.5} fontSize="9" fontWeight="600" fill={handleTone} fontFamily="ui-monospace, monospace">
                   {(p.x * pxToFt).toFixed(1)} · {(p.y * pxToFt).toFixed(1)} ft
                 </text>
               </g>
@@ -18670,10 +18933,15 @@ function MiniMapFloorStrip({ projectId, activeFloorId, onPickFloor }: {
   };
   return (
     <div
-      className="absolute right-3 bottom-[68px] z-20 hidden md:flex flex-col gap-1 p-1.5 rounded-lg bg-card/90 backdrop-blur-md border border-border shadow-md"
+      className="absolute right-3 bottom-[68px] z-20 hidden md:flex flex-col gap-1 p-1.5 rounded-lg bg-card border border-border shadow-md"
       data-testid="minimap-floor-strip"
       data-canvas-chrome="floor-strip"
     >
+      {/* Audit Group C contrast — was `bg-card/90` which mixed in the
+          underlying canvas; in light themes that diluted the card and
+          dropped the white "G" letter on the active pill to a 3.2:1
+          ratio. Fully opaque card; foreground stays AA in all three
+          themes. */}
       {projectFloors.map((f) => {
         const isActive = f.id === activeFloorId;
         return (
@@ -18681,8 +18949,9 @@ function MiniMapFloorStrip({ projectId, activeFloorId, onPickFloor }: {
             key={f.id}
             onClick={() => onPickFloor(f.id)}
             title={f.name}
-            className={`inline-flex items-center justify-center w-9 h-7 rounded text-[10px] tabular-nums transition-colors ${
-              isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
+            aria-label={`Switch to ${f.name}`}
+            className={`inline-flex items-center justify-center w-9 h-7 rounded text-[11px] font-medium tabular-nums transition-colors ${
+              isActive ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-secondary/40'
             }`}
             data-track="minimap-floor-pick"
           >
@@ -18783,13 +19052,39 @@ function MiniMap({ devices, walls, background }: {
 
 function StatusBar({ tool, zoom, counts, units }: { tool: Tool; zoom: number; counts: Record<DeviceKind, number>; units: 'ft' | 'm' }) {
   const toolLabel = tool === 'select' ? 'Select' : tool === 'pan' ? 'Pan' : tool === 'measure' ? 'Measure' : tool === 'wall' ? 'Wall' : tool === 'cable' ? 'Cable' : 'Tool';
+  // Audit Group C contrast — was `bg-card/80` + Unicode `●` glyphs in
+  // chrome tone hex codes; under light theme the translucent card let
+  // canvas bg bleed through and the chrome glyphs missed AA (4.45 /
+  // 3.86). Now fully opaque card and real <span> shape dots styled
+  // through KIND_TONE so they share the rest of the canvas's category
+  // palette (and the audit harness can read them via the count chip
+  // selectors).
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 top-4 z-20 inline-flex items-center gap-2 px-3 h-7 rounded-full bg-card/80 backdrop-blur-md border border-border/70 text-[11px] text-muted-foreground shadow-[0_6px_18px_-10px_rgba(0,0,0,0.5)]">
-      <span className="inline-flex items-center gap-1.5 text-primary"><span className="w-1.5 h-1.5 rounded-full bg-primary" />{toolLabel}</span>
-      <span className="w-px h-3 bg-border/70" />
+    <div
+      className="absolute left-1/2 -translate-x-1/2 top-4 z-20 inline-flex items-center gap-2 px-3 h-7 rounded-full bg-card border border-border text-[11px] text-foreground shadow-[0_6px_18px_-10px_rgba(0,0,0,0.5)]"
+      data-canvas-chrome="topbar-status"
+    >
+      <span className="inline-flex items-center gap-1.5 text-primary">
+        <span className="w-2 h-2 rounded-full bg-primary" aria-hidden />
+        {toolLabel}
+      </span>
+      <span className="w-px h-3 bg-border" />
       <span>1 in = 10 {units}</span>
-      <span className="w-px h-3 bg-border/70" />
-      <span className="tabular-nums">{counts.camera} <span style={{ color: '#2F81F7' }}>●</span> &nbsp;{counts.access} <span style={{ color: '#3FB950' }}>●</span> &nbsp;{counts.network} <span style={{ color: '#D29922' }}>●</span></span>
+      <span className="w-px h-3 bg-border" />
+      <span className="inline-flex items-center gap-2 tabular-nums" data-testid="status-counts">
+        <span className="inline-flex items-center gap-1" title="Cameras">
+          <span className="w-2 h-2 rounded-full" style={{ background: KIND_TONE.camera }} aria-hidden />
+          {counts.camera}
+        </span>
+        <span className="inline-flex items-center gap-1" title="Access">
+          <span className="w-2 h-2 rounded-full" style={{ background: KIND_TONE.access }} aria-hidden />
+          {counts.access}
+        </span>
+        <span className="inline-flex items-center gap-1" title="Network">
+          <span className="w-2 h-2 rounded-full" style={{ background: KIND_TONE.network }} aria-hidden />
+          {counts.network}
+        </span>
+      </span>
     </div>
   );
 }

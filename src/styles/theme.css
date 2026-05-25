@@ -163,6 +163,14 @@
   --cable-audio:    #22D3EE;
   --cable-fire:     #E55B5B;
   --cable-conduit:  #9CA3AF;
+
+  /* Coverage band visibility multiplier per theme. Audit Group B.2 —
+     the cone fill opacities are tuned in JS (DORI_BASE_OPACITY) for
+     the dark Command theme. Light themes need a stronger fill to
+     punch through the bright floor plan; slate sits between dark and
+     light. The renderer reads this var via getComputedStyle so a
+     single token controls cone readability across themes. */
+  --coverage-band-multiplier: 1.18;
 }
 
 /* ── LIGHT DRAFTING — architectural drafting paper. V1 default. ──
@@ -268,6 +276,12 @@
   --cable-audio:    #2D8FB8;
   --cable-fire:     #C8423D;
   --cable-conduit:  #5B6B89;
+
+  /* Light theme needs a stronger cone fill to punch through the
+     drafting-paper canvas (~ #F6F8FB). 1.55 brings the brightest
+     "identify" band to ~0.85 alpha, the same readability the dark
+     theme delivers at 0.55 alpha against #131B2D. Audit Group B.2. */
+  --coverage-band-multiplier: 1.55;
 }
 
 /* ── DARK COMMAND — the previous deep palette, retained for
@@ -368,6 +382,10 @@
   --cable-audio:    #22D3EE;
   --cable-fire:     #E5484D;
   --cable-conduit:  #9CA3AF;
+
+  /* Dark Command — base values in DORI_BASE_OPACITY are already tuned
+     against #131B2D, so no boost needed. Audit Group B.2. */
+  --coverage-band-multiplier: 1.0;
 }
 
 .light { /* legacy alias retained */ }
