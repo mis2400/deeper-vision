@@ -3905,9 +3905,11 @@ export function EngineeringCanvas() {
 
             {/* Static North indicator — drafting-style: a needle inside a
                 thin circle with a single "N" tick. It is not interactive;
-                site orientation is not editable yet. We keep it small and
-                quiet so it reads as a plan annotation, not a HUD widget. */}
-            <div className="absolute top-16 right-3 z-20 pointer-events-none select-none">
+                site orientation is not editable yet. Lives at the BOTTOM
+                LEFT of the canvas now (just inside-right of the floating
+                left tool rail, above the floating bottom toolbar) so it
+                doesn't overlap the right rail's zoom-percent tile. */}
+            <div className="absolute bottom-[68px] left-[76px] z-10 pointer-events-none select-none">
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center"
                 style={{
@@ -8397,7 +8399,13 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           {renderedDevices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
             const isSel = d.id === selId;
             if (!layers.fov && !isSel) return null;
-            const dim = (selId ? (isSel ? 1 : 0.28) : 1) * coverageAlpha;
+            // Item 7 — unselected dim raised from 0.28 to 0.55. The
+            // prior value plus the per-mode opacity multiplier stacked
+            // to ~0.08 final, which read as "barely visible" against
+            // the floor plan. 0.55 keeps unselected cameras quieter
+            // than the selected one (1.2) without erasing their
+            // coverage entirely.
+            const dim = (selId ? (isSel ? 1 : 0.55) : 1) * coverageAlpha;
             // Item 6 — find the room polygon that contains this
             // camera (if any). Cameras inside a room get their cone
             // clipped to that polygon downstream in FOV. Cameras
@@ -9800,12 +9808,16 @@ const DORI_TILE_LABEL: Record<DoriLevel, string> = {
 };
 /** Visual stepping: closest band (best grade) is most opaque, falling off
  *  toward the detect band. Multiplied by the cone's mode/selected opacity
- *  in the renderer so the bands fade with the rest of the cone wash. */
+ *  in the renderer so the bands fade with the rest of the cone wash.
+ *  Item 7 — opacities ~2x the prior values; coverage previously read as
+ *  faint dark teal, almost invisible on light floor plans. The doubled
+ *  ramp keeps the relative grade ordering while making the coverage
+ *  band visible at a glance. */
 const DORI_BASE_OPACITY: Record<DoriLevel, number> = {
-  identify:  0.32,
-  recognize: 0.22,
-  observe:   0.13,
-  detect:    0.07,
+  identify:  0.55,
+  recognize: 0.42,
+  observe:   0.28,
+  detect:    0.18,
 };
 const DORI_LABEL: Record<DoriLevel, string> = {
   identify: 'I', recognize: 'R', observe: 'O', detect: 'D',
@@ -16087,8 +16099,17 @@ function IntelligenceRail({
       title: 'Click to fit plan to viewport',
       active: false,
       onClick: () => onFit(),
+      // Item 6 — the zoom percent gets its OWN visible tile chrome
+      // (border + filled background) so it reads as a labeled control
+      // rather than floating text. % sign is always present.
       customGlyph: (
-        <span className="text-[10px] font-semibold tabular-nums text-white">
+        <span
+          className="text-[11px] font-semibold tabular-nums text-white inline-flex items-center justify-center min-w-[28px] h-[20px] px-1 rounded border whitespace-nowrap"
+          style={{
+            background: 'var(--canvas-rail-active-bg)',
+            borderColor: 'var(--canvas-rail-divider)',
+          }}
+        >
           {zoomPct}%
         </span>
       ),
@@ -16167,7 +16188,7 @@ function IntelligenceRail({
               style={{ transitionDuration: '170ms', transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
             >
               {it.customGlyph
-                ? <span className="shrink-0 w-4 h-4 inline-flex items-center justify-center">{it.customGlyph}</span>
+                ? <span className="shrink-0 inline-flex items-center justify-center">{it.customGlyph}</span>
                 : <Icon className="w-4 h-4 shrink-0" strokeWidth={1.7} />
               }
               {expanded && (
