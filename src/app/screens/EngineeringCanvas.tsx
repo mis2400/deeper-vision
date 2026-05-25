@@ -10667,16 +10667,30 @@ function PersonProbe({
           fill={mTone}
         />
       </g>
-      {/* Live callout — distance + px/ft, two lines so the operator
-          reads it at a glance while dragging. */}
-      <g transform={`translate(${pos.x} ${pos.y + r * 2.6})`} pointerEvents="none">
-        <rect x={-32} y={-1.5} width={64} height={14} rx={3}
-          fill="var(--panel-background)" fillOpacity="0.94"
-          stroke={mTone} strokeOpacity="0.8" strokeWidth="0.6"
-        />
-        <text x={0} y={5} textAnchor="middle" fontSize="6.5" fontWeight="600" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{distLabel}</text>
-        <text x={0} y={11} textAnchor="middle" fontSize="6" fontWeight="600" fill={mTone} fontFamily="ui-monospace, monospace">{densityLabel}</text>
-      </g>
+      {/* Live callout — Item 9.
+          Inside cone: two-line readout (distance + px/ft).
+          Outside cone: single line "no coverage" — no density number,
+          no distance number per the brief ("no coverage with no number").
+          Both at scaled-up font sizes (was 6/6.5, now 9/7.5) so the
+          callout is legible at 100% zoom. */}
+      {probe.inCone ? (
+        <g transform={`translate(${pos.x} ${pos.y + r * 2.8})`} pointerEvents="none">
+          <rect x={-46} y={-3} width={92} height={22} rx={4}
+            fill="var(--panel-background)" fillOpacity="0.96"
+            stroke={mTone} strokeOpacity="0.85" strokeWidth="0.8"
+          />
+          <text x={0} y={6.5} textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{distLabel}</text>
+          <text x={0} y={15.5} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={mTone} fontFamily="ui-monospace, monospace">{densityLabel}</text>
+        </g>
+      ) : (
+        <g transform={`translate(${pos.x} ${pos.y + r * 2.8})`} pointerEvents="none">
+          <rect x={-46} y={-3} width={92} height={15} rx={4}
+            fill="var(--panel-background)" fillOpacity="0.96"
+            stroke={mTone} strokeOpacity="0.85" strokeWidth="0.8"
+          />
+          <text x={0} y={8} textAnchor="middle" fontSize="9" fontWeight="700" fill={mTone} fontFamily="ui-monospace, monospace">no coverage</text>
+        </g>
+      )}
     </g>
   );
 }
