@@ -9386,6 +9386,182 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
   );
 }
 
+// ─────────────────────────── DORI detection bands ──────────────────────
+// V3 Pass 2 Part 2 — DORI (Detect / Observe / Recognize / Identify) is the
+// IEC EN 50132-7 family of detection-grade thresholds expressed in pixels
+// on target. The bands here show, for a given camera at a given calibrated
+// scale and FOV / range, how far away the lens still resolves enough pixels
+// to satisfy each grade — straight engineering math, no theatrical lies.
+//
+// Math:
+//   At distance d (ft) from the camera the horizontal field width is
+//     w(d) = 2 · d · tan(FOV / 2)        [feet]
+//   The camera's horizontal sensor pixels are then spread evenly across
+//   that width, so pixels per foot at distance d is
+//     px_per_ft(d) = horizontalPx / w(d)
+//   For a target grade with threshold T (px/ft), the maximum distance
+//   that still hits that threshold is
+//     d_T = horizontalPx / (2 · T · tan(FOV / 2))
+//
+// The bands are concentric annular sectors inside the cone:
+//   identify  : 0     → d_I  (closest, brightest band)
+//   recognize : d_I   → d_R
+//   observe   : d_R   → d_O
+//   detect    : d_O   → d_D  (or rangeFt, whichever is smaller)
+// Anything past d_D — the camera produces an image but it's below detect
+// grade. We deliberately do NOT colour that region.
+//
+// Honesty gate: a camera without a known resolution renders NO bands and
+// surfaces a small "set camera resolution" hint inside its cone instead of
+// silently faking a band. Multi sensor and fisheye cones don't get bands
+// either (the simple single-cone geometry doesn't apply) — they keep the
+// legacy decorative arcs.
+
+/** Map of catalog `Product.resolution` labels → horizontal × vertical
+ *  pixels. Numbers reflect the typical sensor for each label as quoted in
+ *  the Axis / Hikvision / Hanwha / Bosch spec sheets we've sampled; close
+ *  enough to do honest range math even when a SKU spec varies by ±10%.
+ *
+ *  Includes every label the catalog actually writes today (720p, 1080p,
+ *  2MP, 4MP, 5MP, 6MP, 8MP, 4K, 12MP, 8K). 2MP is the marketing alias for
+ *  1080p; 4K and 8MP both resolve to 3840×2160 (the dual labelling is a
+ *  vendor habit). The drawer's PRESETS list is derived from this map so
+ *  adding a new label here automatically surfaces a chip in the UI.
+ *  `multi-sensor` is intentionally absent — each lens of a multi sensor
+ *  carries its own resolution and is rendered per-lens, not via the
+ *  single-cone DORI path. */
+const RESOLUTION_LABEL_TO_PX: Record<string, { widthPx: number; heightPx: number }> = {
+  '720p':  { widthPx: 1280, heightPx:  720 },
+  '1080p': { widthPx: 1920, heightPx: 1080 },
+  '2MP':   { widthPx: 1920, heightPx: 1080 },
+  '4MP':   { widthPx: 2592, heightPx: 1520 },
+  '5MP':   { widthPx: 2880, heightPx: 1620 },
+  '6MP':   { widthPx: 3072, heightPx: 1728 },
+  '8MP':   { widthPx: 3840, heightPx: 2160 },
+  '4K':    { widthPx: 3840, heightPx: 2160 },
+  '12MP':  { widthPx: 4000, heightPx: 3000 },
+  '8K':    { widthPx: 7680, heightPx: 4320 },
+};
+
+/** Unique resolution presets surfaced in the drawer, derived from the
+ *  RESOLUTION_LABEL_TO_PX map. Labels sharing the same pixel signature
+ *  (1080p / 2MP and 4K / 8MP) collapse into one chip with the merged
+ *  label so picking 4K can't visually highlight 8MP (or vice versa). The
+ *  preferred label drives the chip text; aliases are appended after a
+ *  bullet. Single source of truth — when the map gains a label, the UI
+ *  gains a chip. Pixel order preserved from the map. */
+const RESOLUTION_PRESETS: { label: string; widthPx: number; heightPx: number }[] = (() => {
+  // The preferred label per unique pixel signature, in display order.
+  // Anything else with the same pixels becomes an alias on that chip.
+  const preferred = ['720p', '1080p', '4MP', '5MP', '6MP', '4K', '12MP', '8K'];
+  return preferred.map((label) => {
+    const px = RESOLUTION_LABEL_TO_PX[label];
+    const aliases = Object.entries(RESOLUTION_LABEL_TO_PX)
+      .filter(([l, p]) => l !== label && p.widthPx === px.widthPx && p.heightPx === px.heightPx)
+      .map(([l]) => l);
+    return {
+      label: aliases.length ? `${label} · ${aliases.join(' · ')}` : label,
+      widthPx: px.widthPx,
+      heightPx: px.heightPx,
+    };
+  });
+})();
+
+/** Effective resolution for a single-lens camera. Precedence:
+ *   1. Per-device override (`d.resolution`) — set from the drawer.
+ *   2. Catalog product's `resolution` label, mapped via
+ *      RESOLUTION_LABEL_TO_PX.
+ *   3. null — no honest source; caller skips DORI bands and shows a hint.
+ *  Returns null for multisensor / fisheye intentionally (they don't use
+ *  single-cone DORI math). */
+function cameraResolution(d: Device): { widthPx: number; heightPx: number } | null {
+  if (d.type === 'cam.multisensor' || d.type === 'cam.fisheye') return null;
+  if (d.resolution && d.resolution.widthPx > 0 && d.resolution.heightPx > 0) {
+    return d.resolution;
+  }
+  const cat = CATALOG.find((p) => p.id === d.product);
+  if (cat?.resolution) {
+    const mapped = RESOLUTION_LABEL_TO_PX[cat.resolution];
+    if (mapped) return mapped;
+  }
+  return null;
+}
+
+/** DORI thresholds — pixels per foot needed at the target. Source: EN
+ *  50132-7. Standard quotes them per metre (Identify 250, Recognize 125,
+ *  Observe 62, Detect 25 px/m); we divide by 3.28084 once so the rest of
+ *  the math stays in feet (the SPA's calibration unit). */
+const DORI_PX_PER_FT = {
+  identify:  250 / 3.28084, // ≈ 76.20
+  recognize: 125 / 3.28084, // ≈ 38.10
+  observe:    62 / 3.28084, // ≈ 18.90
+  detect:     25 / 3.28084, // ≈  7.62
+} as const;
+type DoriLevel = 'identify' | 'recognize' | 'observe' | 'detect';
+/** Visual stepping: closest band (best grade) is most opaque, falling off
+ *  toward the detect band. Multiplied by the cone's mode/selected opacity
+ *  in the renderer so the bands fade with the rest of the cone wash. */
+const DORI_BASE_OPACITY: Record<DoriLevel, number> = {
+  identify:  0.32,
+  recognize: 0.22,
+  observe:   0.13,
+  detect:    0.07,
+};
+const DORI_LABEL: Record<DoriLevel, string> = {
+  identify: 'I', recognize: 'R', observe: 'O', detect: 'D',
+};
+
+interface DoriBand {
+  level: DoriLevel;
+  /** Inner radius in feet (distance from camera). */
+  fromFt: number;
+  /** Outer radius in feet, clipped to rangeFt. */
+  toFt: number;
+  /** Midpoint distance — used to place the band's letter label. */
+  midFt: number;
+}
+
+/** Compute the four DORI bands for a single-lens camera at the given fov +
+ *  resolution + range. Returns only bands with non-empty extent (band is
+ *  skipped when its outer threshold sits inside its inner threshold or
+ *  beyond rangeFt). When rangeFt cuts a band in half the outer radius is
+ *  clamped — the band still renders, just shorter. */
+function doriBandsFor(opts: {
+  fovDeg: number;
+  rangeFt: number;
+  resolution: { widthPx: number; heightPx: number };
+}): DoriBand[] {
+  const { fovDeg, rangeFt, resolution } = opts;
+  // Tan blows up near 0° — guard against degenerate input. The call site
+  // already gates on fovDeg < 180 so we don't redo the upper clamp here;
+  // the lower bound is the only one that actually protects this math.
+  const half = (Math.max(1, fovDeg) / 2) * (Math.PI / 180);
+  const tanHalf = Math.tan(half);
+  if (tanHalf <= 0) return [];
+  const horiz = resolution.widthPx;
+  // d_T = horizontalPx / (2 · T · tan(FOV/2))
+  const dFor = (T: number) => horiz / (2 * T * tanHalf);
+  const dI = dFor(DORI_PX_PER_FT.identify);
+  const dR = dFor(DORI_PX_PER_FT.recognize);
+  const dO = dFor(DORI_PX_PER_FT.observe);
+  const dD = dFor(DORI_PX_PER_FT.detect);
+  // Bands as [inner, outer] pairs.
+  const raw: [DoriLevel, number, number][] = [
+    ['identify',  0,  dI],
+    ['recognize', dI, dR],
+    ['observe',   dR, dO],
+    ['detect',    dO, dD],
+  ];
+  const out: DoriBand[] = [];
+  for (const [level, fromFt, outerFt] of raw) {
+    if (fromFt >= rangeFt) continue;       // band starts past the lens reach
+    const toFt = Math.min(outerFt, rangeFt);
+    if (toFt - fromFt < 0.5) continue;     // sliver too thin to matter
+    out.push({ level, fromFt, toFt, midFt: (fromFt + toFt) / 2 });
+  }
+  return out;
+}
+
 /** Render one wedge-shaped FOV cone given absolute world rotation + fov + range
  *  in feet. Used by both the single-lens FOV branch and the multisensor 4-lens
  *  branch so the visuals stay identical. */
@@ -9557,12 +9733,87 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
   const edge = d.color || themeCone;
   // Rotate gradient so its origin aligns with the lens and decays outward
   const path = `M ${d.x} ${d.y} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+  // ── DORI band geometry (V3 Pass 2 Part 2). Honest engineering bands
+  //    computed from the camera's resolution + the current fov/range/scale.
+  //    If `resolution` is null (e.g. multi sensor or a camera without a
+  //    catalog product) we render the legacy decorative arcs instead and
+  //    surface a "set resolution" hint when the camera is selected, so the
+  //    user knows the bands are skipped on purpose, not silently faked. */
+  const resolution = cameraResolution(d);
+  const bands = resolution && fovDeg < 180
+    ? doriBandsFor({ fovDeg, rangeFt, resolution })
+    : [];
+  const tone = deviceTone(d);
+  const showBands = bands.length > 0 && mode !== 'minimal';
+  // Annular sector path — same angular span as the cone, between rIn and
+  // rOut. When rIn collapses to 0 it degenerates to a plain wedge (the
+  // identify band always starts at the lens). Geometry honors `large` so
+  // wide-FOV cones still close correctly.
+  const sectorPath = (rIn: number, rOut: number): string => {
+    const xa1 = d.x + Math.cos(a1) * rOut;
+    const ya1 = d.y + Math.sin(a1) * rOut;
+    const xa2 = d.x + Math.cos(a2) * rOut;
+    const ya2 = d.y + Math.sin(a2) * rOut;
+    if (rIn <= 0.05) {
+      return `M ${d.x} ${d.y} L ${xa1} ${ya1} A ${rOut} ${rOut} 0 ${large} 1 ${xa2} ${ya2} Z`;
+    }
+    const xb1 = d.x + Math.cos(a1) * rIn;
+    const yb1 = d.y + Math.sin(a1) * rIn;
+    const xb2 = d.x + Math.cos(a2) * rIn;
+    const yb2 = d.y + Math.sin(a2) * rIn;
+    return `M ${xb1} ${yb1} L ${xa1} ${ya1} A ${rOut} ${rOut} 0 ${large} 1 ${xa2} ${ya2} L ${xb2} ${yb2} A ${rIn} ${rIn} 0 ${large} 0 ${xb1} ${yb1} Z`;
+  };
   return (
     <g opacity={opacity}>
       {/* Single-pass fill — no more bloom doubling. Hairline edge stroke. */}
       {!wireframe && <path d={path} fill={`url(#${gradId})`} />}
       <path d={path} fill="none" stroke={edge} strokeWidth={wireframe ? 0.9 : 0.5} opacity={wireframe ? 0.85 : 0.32} />
-      {showArcs && [0.35, 0.6, 0.8].map((f, i) => {
+      {/* DORI bands — render only when the camera has an honest resolution.
+          Each band paints an annular sector in the device's tone at a
+          graduated opacity (identify brightest, detect faintest). Decorative
+          only; pointer events stay on the device marker. */}
+      {showBands && bands.map((b) => {
+        const rIn = b.fromFt / pxToFt;
+        const rOut = b.toFt / pxToFt;
+        const fillOp = DORI_BASE_OPACITY[b.level];
+        if (wireframe) {
+          return (
+            <path key={b.level} d={sectorPath(rIn, rOut)}
+              fill="none" stroke={tone} strokeWidth="0.5"
+              opacity={Math.min(1, fillOp * 2.5)} strokeDasharray="1.5 2"
+              pointerEvents="none"
+            />
+          );
+        }
+        return (
+          <path key={b.level} d={sectorPath(rIn, rOut)}
+            fill={tone} fillOpacity={fillOp} stroke="none"
+            pointerEvents="none"
+          />
+        );
+      })}
+      {/* DORI band letter chips — selected cones only, placed along the aim
+          ray at each band's midpoint so the operator can read which band is
+          which at a glance. Skipped for tiny bands and for the identify
+          band when it sits inside the lens-chip footprint (< 5 ft). */}
+      {showBands && selected && bands.map((b) => {
+        if (b.midFt < 5) return null;
+        const midPx = b.midFt / pxToFt;
+        const lx = d.x + Math.cos((rot * Math.PI) / 180) * midPx;
+        const ly = d.y + Math.sin((rot * Math.PI) / 180) * midPx;
+        return (
+          <g key={`${b.level}-lbl`} transform={`translate(${lx} ${ly})`} pointerEvents="none">
+            <circle r={5.5} fill="var(--panel-background)" fillOpacity="0.9" stroke={tone} strokeWidth="0.55" opacity="0.92" />
+            <text textAnchor="middle" y={2.2} fontSize="6.5" fontWeight="700" fill={tone} fontFamily="ui-monospace, monospace">
+              {DORI_LABEL[b.level]}
+            </text>
+          </g>
+        );
+      })}
+      {/* Legacy decorative arcs — render only when no DORI bands (the camera
+          has no resolution to drive honest bands). Keeps unresolved cones
+          visually anchored without faking precision they don't have. */}
+      {!showBands && showArcs && [0.35, 0.6, 0.8].map((f, i) => {
         const rr = r * f;
         const xa = d.x + Math.cos(a1) * rr;
         const ya = d.y + Math.sin(a1) * rr;
@@ -9575,6 +9826,19 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
           />
         );
       })}
+      {/* "Set camera resolution" hint — selected single-lens camera that
+          can't render bands because the resolution is unknown. Placed at
+          r * 0.7 down the aim ray so it sits past the Pass 2 Part 1
+          rotation puck (which lives at ~r * 0.45) instead of stacking on
+          top of it. */}
+      {selected && !resolution && d.type !== 'cam.multisensor' && d.type !== 'cam.fisheye' && fovDeg < 180 && (
+        <g transform={`translate(${d.x + Math.cos((rot * Math.PI) / 180) * (r * 0.7)} ${d.y + Math.sin((rot * Math.PI) / 180) * (r * 0.7)})`} pointerEvents="none">
+          <rect x={-42} y={-7} width={84} height={14} rx={3} fill="var(--panel-background)" fillOpacity="0.92" stroke={edge} strokeOpacity="0.7" strokeWidth="0.5" />
+          <text textAnchor="middle" y={3} fontSize="7" fill="var(--muted-foreground)" fontFamily="ui-monospace, monospace">
+            set resolution for bands
+          </text>
+        </g>
+      )}
       {showAim && (
         <line
           x1={d.x} y1={d.y}
@@ -11591,6 +11855,10 @@ function ProductOverviewSection({ d }: { d: Device }) {
         </DrawerSection>
       )}
 
+      {isCam && d.type !== 'cam.multisensor' && d.type !== 'cam.fisheye' && (
+        <CameraResolutionSection d={d} cat={cat ?? null} updateDevice={updateDevice} />
+      )}
+
       {cat && (
         <DrawerSection title="Product details">
           <Row2 label="Category" value={cat.category} />
@@ -11641,6 +11909,111 @@ function ProductOverviewSection({ d }: { d: Device }) {
         {d.mountFt != null && <Row2 label="Mount AFF" value={`${d.mountFt} ft`} />}
       </DrawerSection>
     </>
+  );
+}
+
+/** Per camera sensor resolution control — drives the V3 Pass 2 Part 2
+ *  DORI bands on the canvas. Reads the catalog's resolution label as the
+ *  default and lets the operator override per camera (e.g. when a SKU's
+ *  spec sheet quotes different pixel counts than the canonical label).
+ *  Writes `d.resolution = { widthPx, heightPx }` directly; clearing the
+ *  override falls back to the catalog mapping at render time.
+ *
+ *  Honest data only: when the catalog label is unmapped (multi sensor,
+ *  legacy SKU with no resolution at all) we say so plainly and offer a
+ *  preset picker so the user can give the cone the data it needs. */
+function CameraResolutionSection({
+  d, cat, updateDevice,
+}: {
+  d: Device;
+  cat: CatalogProduct | null;
+  updateDevice: (id: string, patch: Partial<Device>) => void;
+}) {
+  // Same resolution lookup chain the cone uses, so the drawer agrees with
+  // what's on screen pixel for pixel.
+  const effective = cameraResolution(d);
+  const catalogLabel = cat?.resolution ?? null;
+  const catalogMapped = catalogLabel ? RESOLUTION_LABEL_TO_PX[catalogLabel] ?? null : null;
+  const isOverride = !!d.resolution;
+  // Preset chips derived from the single source of truth
+  // (RESOLUTION_LABEL_TO_PX). Aliases (8MP/4K, 1080p/2MP) collapse into
+  // one chip so picking a duplicate can't visually highlight the wrong
+  // row, and so the cone math and the drawer stay synced by construction.
+  const presets = RESOLUTION_PRESETS;
+  // Match the current effective resolution against a preset so the picker
+  // can highlight it. Exact pixel match — duplicates are already collapsed
+  // upstream so findIndex always returns the right chip.
+  const matchedIdx = effective
+    ? presets.findIndex((p) => p.widthPx === effective.widthPx && p.heightPx === effective.heightPx)
+    : -1;
+  const applyPreset = (p: { widthPx: number; heightPx: number }) => {
+    updateDevice(d.id, { resolution: { widthPx: p.widthPx, heightPx: p.heightPx } });
+  };
+  const clearOverride = () => {
+    updateDevice(d.id, { resolution: undefined });
+  };
+  return (
+    <DrawerSection title="Sensor resolution">
+      {/* Effective summary — what the cone is actually using right now. */}
+      <div className="flex items-center justify-between text-[12px] py-1 border-b border-white/5">
+        <span className="text-muted-foreground">Effective</span>
+        {effective ? (
+          <span className="tabular-nums text-foreground">
+            {effective.widthPx.toLocaleString()} × {effective.heightPx.toLocaleString()}
+            <span className="text-muted-foreground ml-2 text-[10px]">
+              {isOverride ? '(override)' : catalogLabel ? `(from catalog · ${catalogLabel})` : '(default)'}
+            </span>
+          </span>
+        ) : (
+          <span className="text-amber-300 text-[11px]">not set — DORI bands hidden</span>
+        )}
+      </div>
+      {/* Catalog default, when present, so the user can see what they'll
+          fall back to if they clear an override. */}
+      {catalogMapped && (
+        <div className="flex items-center justify-between text-[11px] py-1 border-b border-white/5">
+          <span className="text-muted-foreground">Catalog default</span>
+          <span className="tabular-nums text-muted-foreground">
+            {catalogMapped.widthPx.toLocaleString()} × {catalogMapped.heightPx.toLocaleString()}
+            <span className="ml-2 text-[10px]">{catalogLabel}</span>
+          </span>
+        </div>
+      )}
+      {/* Preset grid — pick once, applied immediately. */}
+      <div className="mt-2 grid grid-cols-3 gap-1">
+        {presets.map((p, i) => {
+          const active = i === matchedIdx;
+          return (
+            <button
+              key={`${p.label}-${i}`}
+              onClick={() => applyPreset(p)}
+              className={
+                'text-[10px] px-2 py-1.5 rounded border transition-colors ' +
+                (active
+                  ? 'border-primary/60 bg-primary/15 text-primary'
+                  : 'border-white/10 bg-white/5 text-foreground hover:bg-white/10')
+              }
+              title={`${p.widthPx.toLocaleString()} × ${p.heightPx.toLocaleString()}`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        {isOverride && (
+          <button
+            onClick={clearOverride}
+            className="text-[10px] px-2 py-1 rounded border border-white/10 bg-white/5 text-muted-foreground hover:text-foreground hover:bg-white/10"
+          >
+            Reset to catalog
+          </button>
+        )}
+        <span className="text-[10px] text-muted-foreground leading-snug">
+          Drives the on canvas DORI bands. Bands recompute live as FOV, range, and floor scale change.
+        </span>
+      </div>
+    </DrawerSection>
   );
 }
 

@@ -1070,6 +1070,15 @@ export interface Device {
   mountFt?: number;
   ir?: boolean;
   ndaa?: boolean;
+  /** Sensor resolution in pixels — drives the honest DORI detection band
+   *  math (px-on-target = horizontal_px / (2 * distance * tan(fov/2))).
+   *  Optional: a camera with no known resolution renders no DORI bands and
+   *  shows a "set resolution" hint inside its cone. Defaulted on placement
+   *  from the catalog product's `resolution` label via
+   *  RESOLUTION_LABEL_TO_PX; the operator can override per camera from the
+   *  device drawer.  Multi sensor cameras intentionally do not use this
+   *  field (each lens carries its own coverage geometry). */
+  resolution?: { widthPx: number; heightPx: number };
   // Multisensor only:
   lenses?: { a: LensCfg; b: LensCfg; c: LensCfg; d: LensCfg };
   lensMode?: LensMode;
