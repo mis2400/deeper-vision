@@ -8632,13 +8632,29 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             >
               {/* Native browser tooltip on hover — label · mfr model · id. */}
               <title>{hoverTitle}</title>
+              {/* Item 2 — selection ring is the on-canvas counterpart
+                  to the bottom-docked SelectionPill. With the popup
+                  anchored at the canvas bottom, the device itself
+                  needs a stronger visual mark so the operator's eye
+                  links the menu to the glyph. Inner ring is solid,
+                  outer ring is dashed and slightly larger for the
+                  "you are here" emphasis Bluebeam / Verkada use. */}
               {isSel && (
-                <circle
-                  cx={d.x} cy={d.y} r={13 * iconScale} fill="none"
-                  stroke={tone} strokeWidth="0.75"
-                  opacity="0.85"
-                  style={{ animation: 'soft-fade-in 200ms ease-out both' }}
-                />
+                <>
+                  <circle
+                    cx={d.x} cy={d.y} r={13 * iconScale} fill="none"
+                    stroke={tone} strokeWidth="1.4"
+                    opacity="0.95"
+                    style={{ animation: 'soft-fade-in 200ms ease-out both' }}
+                  />
+                  <circle
+                    cx={d.x} cy={d.y} r={18 * iconScale} fill="none"
+                    stroke={tone} strokeWidth="0.8"
+                    strokeDasharray="3 3"
+                    opacity="0.55"
+                    style={{ animation: 'soft-fade-in 220ms ease-out both' }}
+                  />
+                </>
               )}
               {/* Canvas V3.9 — multisensor "breathing ring" removed. Was
                   a 3.2s ease-in-out infinite opacity loop on the selected
@@ -11398,30 +11414,22 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
     raf = requestAnimationFrame(tick);
     return () => { ro.disconnect(); window.removeEventListener('resize', measure); cancelAnimationFrame(raf); };
   }, [d.id, d.type]);
-  // Screen-space anchor of the device (top-center of the pill points at the device).
-  const anchorX = d.x * zoom + pan.x;
-  const anchorY = d.y * zoom + pan.y;
-  const PAD = 10;
-  const GAP = 22; // distance from device glyph to pill body
-  // Try placing pill ABOVE the device first; flip below if it would crash
-  // into the top of the safe rect (top bar / above-canvas chrome).
-  const wantsBelow = anchorY - pillBox.h - GAP < safeRect.top + PAD;
-  let topPx = wantsBelow ? anchorY + GAP : anchorY - pillBox.h - GAP;
-  // If the below placement also crashes into the bottom tray, push the
-  // pill up just inside the safe-bottom and accept overlap with the glyph.
-  if (topPx + pillBox.h > safeRect.bottom - PAD) {
-    topPx = Math.max(safeRect.top + PAD, safeRect.bottom - PAD - pillBox.h);
-  }
-  // Clamp left so the pill body stays fully inside the safe rect, never
-  // behind the left rail.
-  const halfW = pillBox.w / 2;
-  const minLeft = safeRect.left + PAD + halfW;
-  const maxLeft = Math.max(minLeft, safeRect.right - PAD - halfW);
-  const leftPx = Math.min(Math.max(anchorX, minLeft), maxLeft);
-  // Tether offset (signed) — where the device sits horizontally relative to
-  // the pill's center. We move the tether to follow the device so it still
-  // points at the glyph after a clamp.
-  const tetherDx = anchorX - leftPx;
+  // Item 2 — pill anchors at the BOTTOM of the canvas (above the
+  // floating BottomDeviceBar), not next to the device. Consistent
+  // location means the operator's eye doesn't chase the menu around
+  // the plan. The device-side affordance is the colored selection
+  // ring drawn around the glyph in the SVG; the pill no longer needs
+  // a tether back to it.
+  const PAD = 12;
+  // Horizontal center of the visible canvas region.
+  const leftPx = (safeRect.left + safeRect.right) / 2;
+  // Sit just above the bottom bar (safeRect.bottom is already the
+  // bar's top edge because the bar declares `data-canvas-chrome="tray"`
+  // and is excluded from the safe rect).
+  const topPx = Math.max(safeRect.top + PAD, safeRect.bottom - PAD - pillBox.h);
+  // Tether retired — the device ring provides the visual link.
+  const tetherDx = 0;
+  const wantsBelow = false;
 
   // Build toolbar actions per device kind. Each kind exposes at most 5
   // primary actions; the rest fall into the "More" overflow popover. The
@@ -11486,23 +11494,30 @@ function SelectionPill({ d, zoom, pan, onRotate, onDelete, onUpdate, onEdit, onT
           background: 'var(--panel-background)',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
-          border: '1px solid var(--border)',
-          boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+          // Item 2 — border + identity strip carry the device tone so
+          // the popup is visually tied to the device it controls.
+          border: `1px solid ${tone}`,
+          boxShadow: `0 2px 6px rgba(0,0,0,0.18), 0 0 0 1px ${tone}22`,
         }}
       >
-        {/* Identity: status dot + editable ID + object type */}
-        <div className="flex items-center gap-2 pl-2.5 pr-3 border-r border-border/60">
+        {/* Identity: status dot + editable ID + object type. Title
+            chip is tinted with the device tone to match the border. */}
+        <div
+          className="flex items-center gap-2 pl-2.5 pr-3"
+          style={{ background: `${tone}1f`, borderRight: `1px solid ${tone}55` }}
+        >
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ background: tone }}
+            style={{ background: tone, boxShadow: `0 0 6px ${tone}` }}
             title="Online"
           />
           <CommitInput
             value={d.id}
             onCommit={(v) => onUpdate({ id: v })}
-            className="bg-transparent w-[64px] focus:outline-none text-[11px] font-medium tracking-tight text-foreground"
+            className="bg-transparent w-[64px] focus:outline-none text-[11px] font-medium tracking-tight"
+            style={{ color: tone }}
           />
-          <span className="text-[10px] text-muted-foreground tracking-tight whitespace-nowrap">
+          <span className="text-[10px] tracking-tight whitespace-nowrap" style={{ color: tone, opacity: 0.85 }}>
             {kindLabel.toLowerCase()}
           </span>
         </div>
@@ -16075,7 +16090,7 @@ function HudChip({ children, onClick, active, title }: { children: any; onClick:
   );
 }
 
-function CommitInput({ value, onCommit, className }: { value: string; onCommit: (v: string) => void; className?: string }) {
+function CommitInput({ value, onCommit, className, style }: { value: string; onCommit: (v: string) => void; className?: string; style?: React.CSSProperties }) {
   const [local, setLocal] = useState(value);
   useEffect(() => { setLocal(value); }, [value]);
   return (
@@ -16088,6 +16103,7 @@ function CommitInput({ value, onCommit, className }: { value: string; onCommit: 
         if (e.key === 'Escape') { setLocal(value); (e.target as HTMLInputElement).blur(); }
       }}
       className={className}
+      style={style}
     />
   );
 }
