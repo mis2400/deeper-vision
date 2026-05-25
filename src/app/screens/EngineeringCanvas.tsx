@@ -12518,7 +12518,7 @@ function FacePixelTile({
     off.height = N;
     const oc = off.getContext('2d');
     if (!oc) return;
-    drawFace(oc, N);
+    drawPersonWithPlate(oc, N);
     // Upscale to displaySize × dpr with nearest-neighbor so each
     // source pixel renders as a sharp square — readable pixelation,
     // not a decorative bokeh.
@@ -12534,17 +12534,31 @@ function FacePixelTile({
  *  count so the lower DORI grades genuinely lose detail (the eyes
  *  vanish at observe, the head outline blurs at detect). The face is
  *  ours: no Axis sample, no celebrity, no third-party image. */
-function drawFace(ctx: CanvasRenderingContext2D, size: number) {
-  // High quality generic face — drawn entirely from canvas primitives,
-  // so the asset is ours and license clear. Not Axis's headshot, not
-  // any real person. Features render progressively based on the
-  // available pixel count so the pixelation stays honest at low
-  // density: at Detect-grade resolution (~5 px) you get only a head
-  // shape, eyes vanish, the face reads as a silhouette. At Identify
-  // (~46 px) the full set of features paint and the face looks like
-  // a clear synthetic person.
+/** Item 3 — high quality generic person holding a license plate.
+ *
+ *  Drawn entirely from canvas primitives (no image files, no AI photo,
+ *  no Axis sample). Two procedural assets in one frame:
+ *
+ *    1. Stylized person — head, torso, shoulders, neck, arms holding
+ *       the plate. Skin gradient at higher resolutions, simplified
+ *       silhouette at low. Synthetic. NOT a real identifiable person.
+ *    2. License plate — generic shape with our own glyph block. The
+ *       plate text is a 7 character marker "DV-2026" rendered as
+ *       block characters that degrade with density: the letters read
+ *       clearly at identify, soften at recognize, blur at observe,
+ *       and become an unreadable bar at detect. The plate is OURS,
+ *       not a real registration, not a copyrighted state design.
+ *
+ *  Honest pixelation: this function paints at the offscreen N x N
+ *  canvas, the caller upscales nearest neighbor. No internal smoothing,
+ *  no "fix at low density" overrides. Low density genuinely loses
+ *  detail. */
+function drawPersonWithPlate(ctx: CanvasRenderingContext2D, size: number) {
+  // Generic person holding a generic license plate. Both painted from
+  // canvas primitives — no image files, no real person, no licensed
+  // plate design.
 
-  // ── Palette (single source of truth for skin, hair, sclera, etc.).
+  // ── Palette
   const SKIN_BASE   = '#D8B08C';
   const SKIN_SHADE  = '#B58764';
   const SKIN_HIGHLT = '#E7C7A2';
@@ -12554,53 +12568,65 @@ function drawFace(ctx: CanvasRenderingContext2D, size: number) {
   const IRIS        = '#3E5C7E';
   const PUPIL       = '#0E1117';
   const LIP         = '#9C4A3F';
-  const LIP_SHADE   = '#7A3A32';
-  const CHEEK       = 'rgba(196, 92, 92, 0.18)';
-  const NOSE_SHADE  = 'rgba(96, 56, 38, 0.32)';
   const NECK        = '#C39A78';
   const NECK_SHADE  = '#9C7754';
   const SHIRT       = '#27374D';
   const SHIRT_SHADE = '#1A2536';
+  // License plate — generic creamy white with a thin dark frame; the
+  // text uses a dark navy block letter. Resembles a North American
+  // plate generically, copies NO state's design.
+  const PLATE_BG    = '#F0E7CE';
+  const PLATE_FRAME = '#1F2630';
+  const PLATE_TEXT  = '#1B2C56';
+  // The plate marker text. Six glyphs is the sweet spot for the
+  // honest pixelation: at Identify (~46 px) each glyph is ~5 px tall
+  // and the string reads clearly; at Detect (~5 px) the text merges
+  // into a single bar.
+  const PLATE_TEXT_STR = 'DV-2026';
 
   const s = size;
-  const px = (v: number) => Math.max(1, Math.round(v));
 
-  // Background plate — slight vignette so the face has weight on the
-  // tile. Two stops: brighter center, cooler edges.
+  // Background plate — slight vignette so the figure has weight on
+  // the tile.
   const bg = ctx.createRadialGradient(s * 0.5, s * 0.45, s * 0.1, s * 0.5, s * 0.5, s * 0.7);
   bg.addColorStop(0, '#1B2638');
   bg.addColorStop(1, '#0E1626');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, s, s);
 
-  // ── Shoulders + neck — give the face mass at every density grade.
-  // The shirt anchors the silhouette so detect reads as a person and
-  // not a floating blob.
+  // ── Composition (top to bottom):
+  //   hair + head           0.00 → 0.30
+  //   neck                  0.30 → 0.40
+  //   shoulders / shirt     0.40 → 1.00 (extends below canvas)
+  //   arms gripping plate   0.55 → 0.85 (over the shirt)
+  //   license plate         0.55 → 0.84 (centered horizontally)
+  //   plate text            inside plate
+
+  // ── Shoulders + shirt
   ctx.fillStyle = SHIRT_SHADE;
   ctx.beginPath();
-  ctx.ellipse(s * 0.5, s * 1.10, s * 0.65, s * 0.45, 0, Math.PI, 0, true);
+  ctx.ellipse(s * 0.5, s * 1.05, s * 0.70, s * 0.55, 0, Math.PI, 0, true);
   ctx.fill();
   ctx.fillStyle = SHIRT;
   ctx.beginPath();
-  ctx.ellipse(s * 0.5, s * 1.08, s * 0.58, s * 0.38, 0, Math.PI, 0, true);
+  ctx.ellipse(s * 0.5, s * 1.02, s * 0.62, s * 0.48, 0, Math.PI, 0, true);
   ctx.fill();
-  ctx.fillStyle = NECK_SHADE;
-  ctx.fillRect(s * 0.40, s * 0.78, s * 0.20, s * 0.20);
-  ctx.fillStyle = NECK;
-  ctx.fillRect(s * 0.42, s * 0.78, s * 0.16, s * 0.20);
 
-  // ── Hair (back layer) — under the head so the head outline cuts a
-  // clean jaw. This layer adds volume; the front bangs draw later.
+  // ── Neck
+  ctx.fillStyle = NECK_SHADE;
+  ctx.fillRect(s * 0.43, s * 0.30, s * 0.14, s * 0.14);
+  ctx.fillStyle = NECK;
+  ctx.fillRect(s * 0.44, s * 0.30, s * 0.12, s * 0.14);
+
+  // ── Hair (back) — under the head so the jaw cuts clean.
   ctx.fillStyle = HAIR_DARK;
   ctx.beginPath();
-  ctx.ellipse(s * 0.5, s * 0.34, s * 0.44, s * 0.34, 0, 0, Math.PI * 2);
+  ctx.ellipse(s * 0.5, s * 0.12, s * 0.30, s * 0.20, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // ── Head — skin tone with a subtle warm gradient (highlight upper
-  // left, shadow lower right) for depth at full resolution. Falls
-  // back to a flat fill when the gradient pixel cost isn't worth it.
+  // ── Head
   if (s >= 24) {
-    const skin = ctx.createLinearGradient(s * 0.3, s * 0.35, s * 0.7, s * 0.7);
+    const skin = ctx.createLinearGradient(s * 0.35, s * 0.05, s * 0.65, s * 0.34);
     skin.addColorStop(0, SKIN_HIGHLT);
     skin.addColorStop(0.6, SKIN_BASE);
     skin.addColorStop(1, SKIN_SHADE);
@@ -12609,122 +12635,157 @@ function drawFace(ctx: CanvasRenderingContext2D, size: number) {
     ctx.fillStyle = SKIN_BASE;
   }
   ctx.beginPath();
-  ctx.ellipse(s * 0.5, s * 0.56, s * 0.34, s * 0.44, 0, 0, Math.PI * 2);
+  ctx.ellipse(s * 0.5, s * 0.18, s * 0.22, s * 0.20, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Subtle cheek blush — only at higher resolutions. Adds life without
-  // pushing the look toward cartoonish.
-  if (s >= 28) {
-    ctx.fillStyle = CHEEK;
+  // ── Hair (front bangs)
+  if (s >= 14) {
+    ctx.fillStyle = HAIR_MID;
     ctx.beginPath();
-    ctx.ellipse(s * 0.34, s * 0.66, s * 0.07, s * 0.06, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(s * 0.66, s * 0.66, s * 0.07, s * 0.06, 0, 0, Math.PI * 2);
+    ctx.moveTo(s * 0.30, s * 0.20);
+    ctx.bezierCurveTo(s * 0.32, s * 0.02, s * 0.62, s * 0.00, s * 0.74, s * 0.16);
+    ctx.bezierCurveTo(s * 0.68, s * 0.10, s * 0.54, s * 0.10, s * 0.50, s * 0.18);
+    ctx.bezierCurveTo(s * 0.44, s * 0.10, s * 0.36, s * 0.12, s * 0.30, s * 0.20);
+    ctx.closePath();
     ctx.fill();
   }
 
-  // ── Hair (front bangs) — softly cuts the forehead. Draws over the
-  // skin so the hairline reads naturally.
-  ctx.fillStyle = HAIR_MID;
+  // ── Eyebrows
+  if (s >= 18) {
+    ctx.fillStyle = BROW;
+    const browH = Math.max(1, s * 0.015);
+    ctx.beginPath();
+    ctx.ellipse(s * 0.42, s * 0.16, s * 0.05, browH, -0.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(s * 0.58, s * 0.16, s * 0.05, browH, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ── Eyes — pupil dot at any size that can hold one; iris + sclera
+  // layer at higher resolutions only.
+  if (s >= 12) {
+    const eyeY = s * 0.19;
+    if (s >= 20) {
+      ctx.fillStyle = '#F2EAD8';
+      ctx.beginPath(); ctx.ellipse(s * 0.42, eyeY, s * 0.038, s * 0.024, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(s * 0.58, eyeY, s * 0.038, s * 0.024, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    if (s >= 16) {
+      ctx.fillStyle = IRIS;
+      const irisR = Math.max(1, s * 0.022);
+      ctx.beginPath(); ctx.ellipse(s * 0.42, eyeY, irisR, irisR, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(s * 0.58, eyeY, irisR, irisR, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = PUPIL;
+    const pupilR = Math.max(1, s * (s >= 16 ? 0.011 : 0.018));
+    ctx.beginPath(); ctx.ellipse(s * 0.42, eyeY, pupilR, pupilR, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.58, eyeY, pupilR, pupilR, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ── Mouth
+  if (s >= 14) {
+    ctx.fillStyle = LIP;
+    ctx.beginPath();
+    ctx.ellipse(s * 0.5, s * 0.26, s * 0.06, s * 0.018, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ── Arms — two trapezoids running from the shoulders down to the
+  // plate top corners. Painted in shirt color so they read as part of
+  // the body, with skin-toned hands gripping the plate edges.
+  ctx.fillStyle = SHIRT;
+  // Left arm (viewer's left)
   ctx.beginPath();
-  ctx.moveTo(s * 0.17, s * 0.46);
-  ctx.bezierCurveTo(s * 0.20, s * 0.22, s * 0.60, s * 0.20, s * 0.85, s * 0.40);
-  ctx.bezierCurveTo(s * 0.80, s * 0.32, s * 0.62, s * 0.30, s * 0.52, s * 0.42);
-  ctx.bezierCurveTo(s * 0.42, s * 0.32, s * 0.30, s * 0.34, s * 0.17, s * 0.46);
+  ctx.moveTo(s * 0.15, s * 0.50);
+  ctx.lineTo(s * 0.25, s * 0.85);
+  ctx.lineTo(s * 0.32, s * 0.85);
+  ctx.lineTo(s * 0.30, s * 0.50);
+  ctx.closePath();
+  ctx.fill();
+  // Right arm
+  ctx.beginPath();
+  ctx.moveTo(s * 0.85, s * 0.50);
+  ctx.lineTo(s * 0.75, s * 0.85);
+  ctx.lineTo(s * 0.68, s * 0.85);
+  ctx.lineTo(s * 0.70, s * 0.50);
   ctx.closePath();
   ctx.fill();
 
-  // ── Eyebrows — slim arches. Vanish below ~16 px so the math gate
-  // matches the eye gate (you can't see brows without eyes).
-  if (s >= 16) {
-    ctx.fillStyle = BROW;
-    const browH = Math.max(1, s * 0.025);
-    ctx.beginPath();
-    ctx.ellipse(s * 0.36, s * 0.48, s * 0.085, browH, -0.05, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(s * 0.64, s * 0.48, s * 0.085, browH, 0.05, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  // ── License plate — drawn from back (frame) to front (text) so
+  // each glyph reads cleanly when there's enough resolution to render.
+  const plateX = s * 0.19;
+  const plateY = s * 0.58;
+  const plateW = s * 0.62;
+  const plateH = s * 0.26;
+  // Frame
+  ctx.fillStyle = PLATE_FRAME;
+  ctx.fillRect(plateX - s * 0.012, plateY - s * 0.012, plateW + s * 0.024, plateH + s * 0.024);
+  // Plate face
+  ctx.fillStyle = PLATE_BG;
+  ctx.fillRect(plateX, plateY, plateW, plateH);
+  // Hands gripping the plate
+  ctx.fillStyle = SKIN_BASE;
+  ctx.beginPath();
+  ctx.ellipse(plateX, plateY + plateH * 0.5, s * 0.06, s * 0.07, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(plateX + plateW, plateY + plateH * 0.5, s * 0.06, s * 0.07, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-  // ── Eyes — sclera + iris + pupil + catchlight stack. Each layer is
-  // gated by enough pixels to be visible. At ~8 px only the dark pupil
-  // dots render (matches the original behaviour); at higher density
-  // the full eye structure paints in.
-  if (s >= 8) {
-    const eyeY = s * 0.54;
-    const eyeW = Math.max(1, s * 0.07);
-    const eyeH = Math.max(1, s * 0.05);
-    // Sclera (whites) — only when we have enough pixels for it not
-    // to read as noise.
-    if (s >= 16) {
-      ctx.fillStyle = '#F2EAD8';
-      ctx.beginPath(); ctx.ellipse(s * 0.36, eyeY, eyeW, eyeH, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(s * 0.64, eyeY, eyeW, eyeH, 0, 0, Math.PI * 2); ctx.fill();
-    }
-    // Iris (colour ring) — slightly smaller than the sclera.
-    if (s >= 14) {
-      ctx.fillStyle = IRIS;
-      const irisR = Math.max(1, s * 0.035);
-      ctx.beginPath(); ctx.ellipse(s * 0.36, eyeY, irisR, irisR, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(s * 0.64, eyeY, irisR, irisR, 0, 0, Math.PI * 2); ctx.fill();
-    }
-    // Pupil (deepest dark).
-    ctx.fillStyle = PUPIL;
-    const pupilR = Math.max(1, s * (s >= 14 ? 0.018 : 0.030));
-    ctx.beginPath(); ctx.ellipse(s * 0.36, eyeY, pupilR, pupilR, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(s * 0.64, eyeY, pupilR, pupilR, 0, 0, Math.PI * 2); ctx.fill();
-    // Catchlight — single bright pixel for life. Only at high res.
-    if (s >= 28) {
-      ctx.fillStyle = '#FFFFFF';
-      const lightR = Math.max(1, s * 0.010);
-      ctx.beginPath(); ctx.ellipse(s * 0.355, eyeY - s * 0.012, lightR, lightR, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(s * 0.635, eyeY - s * 0.012, lightR, lightR, 0, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
-  // ── Nose — soft bridge shadow + a hint of nostrils at higher res.
-  if (s >= 18) {
-    ctx.fillStyle = NOSE_SHADE;
-    ctx.beginPath();
-    ctx.ellipse(s * 0.50, s * 0.65, s * 0.04, s * 0.08, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // Nostril hints.
-    if (s >= 24) {
-      ctx.beginPath();
-      ctx.ellipse(s * 0.475, s * 0.70, s * 0.012, s * 0.012, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(s * 0.525, s * 0.70, s * 0.012, s * 0.012, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // ── Mouth — lower lip + upper lip with distinct tones, plus a thin
-  // central line so the lips read as two shapes at higher resolution.
-  if (s >= 10) {
-    ctx.fillStyle = LIP_SHADE;
-    ctx.beginPath();
-    ctx.ellipse(s * 0.5, s * 0.78, s * 0.13, s * 0.04, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (s >= 16) {
-      // Upper lip — a slimmer arch in the lighter lip colour.
-      ctx.fillStyle = LIP;
-      ctx.beginPath();
-      ctx.moveTo(s * 0.38, s * 0.77);
-      ctx.quadraticCurveTo(s * 0.5, s * 0.74, s * 0.62, s * 0.77);
-      ctx.quadraticCurveTo(s * 0.5, s * 0.79, s * 0.38, s * 0.77);
-      ctx.closePath();
-      ctx.fill();
-      // Lip parting — single dark line for definition.
-      if (s >= 22) {
-        ctx.fillStyle = LIP_SHADE;
-        ctx.fillRect(s * 0.39, s * 0.778, s * 0.22, px(1));
+  // Plate text — block letters drawn as filled rects per glyph. Each
+  // glyph is a small bitmap (5 px wide, 7 px tall at the design size),
+  // scaled to the plate dimensions. Below ~22 px overall canvas size
+  // the glyphs collapse into a single bar (honest pixelation).
+  if (s >= 12) {
+    const charCount = PLATE_TEXT_STR.length;
+    const innerX = plateX + plateW * 0.06;
+    const innerY = plateY + plateH * 0.22;
+    const innerW = plateW * 0.88;
+    const innerH = plateH * 0.60;
+    const gapPx = innerW / charCount * 0.18;
+    const cellW = (innerW + gapPx) / charCount - gapPx;
+    if (s >= 22) {
+      // High res: paint each glyph as a 5x7 pixel font
+      ctx.fillStyle = PLATE_TEXT;
+      for (let i = 0; i < charCount; i++) {
+        const ch = PLATE_TEXT_STR.charAt(i);
+        const bitmap = PLATE_GLYPHS[ch] ?? PLATE_GLYPHS['?'];
+        const gx = innerX + i * (cellW + gapPx);
+        const cellH = innerH;
+        const pxW = cellW / 5;
+        const pxH = cellH / 7;
+        for (let row = 0; row < 7; row++) {
+          const bits = bitmap[row];
+          for (let col = 0; col < 5; col++) {
+            if (bits & (1 << (4 - col))) {
+              ctx.fillRect(gx + col * pxW, innerY + row * pxH, Math.max(1, pxW), Math.max(1, pxH));
+            }
+          }
+        }
       }
+    } else {
+      // Low res: text degrades into a single horizontal bar so the
+      // operator sees "plate present, text unreadable" — honest at
+      // detect grade.
+      ctx.fillStyle = PLATE_TEXT;
+      ctx.fillRect(innerX, innerY + innerH * 0.35, innerW, Math.max(1, innerH * 0.30));
     }
   }
 }
+
+// 5x7 bitmap font for the procedural license plate. Each row is 5 bits
+// MSB-first. Covers digits 0-9, the letters D and V, and the hyphen
+// used by the PLATE_TEXT_STR marker. Anything else falls back to '?'.
+const PLATE_GLYPHS: Record<string, number[]> = {
+  '0': [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
+  '2': [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
+  '6': [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
+  'D': [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+  'V': [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+  '-': [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+  '?': [0b01110, 0b10001, 0b00010, 0b00100, 0b00000, 0b00100, 0b00000],
+};
 
 /** Required pixel density row — four tiles (Identify / Recognize /
  *  Observe / Detect) with the face pixelated at the actual density
