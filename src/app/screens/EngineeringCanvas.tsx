@@ -1432,6 +1432,35 @@ export function EngineeringCanvas() {
   // never bleeds across cameras.
   const [selectedDoriLevel, setSelectedDoriLevel] = useState<DoriLevel | null>(null);
   useEffect(() => { setSelectedDoriLevel(null); }, [selId]);
+  // Person probe — canvas-world position of the draggable face marker
+  // tied to the selected camera. Drives both the on-canvas marker and
+  // the drawer's live density preview. Cleared when the selected
+  // camera changes; the seed effect below re-anchors it at ~60% along
+  // the new camera's aim ray (sensible spot inside the cone).
+  const [personProbePos, setPersonProbePos] = useState<{ x: number; y: number } | null>(null);
+  // Seed the probe at ~60% along the new selection's aim ray when a
+  // single-lens camera becomes selected. Honesty gates (resolution
+  // missing / pxToFt 0 / multi sensor / fisheye) are handled in the
+  // probe components themselves; here we always seed a position so
+  // the marker has a sensible home when the operator opens Coverage.
+  useEffect(() => {
+    if (!selId) { setPersonProbePos(null); return; }
+    const dev = (Object.values(useProjectStore.getState().devices) as Device[]).find((x) => x.id === selId);
+    if (!dev) { setPersonProbePos(null); return; }
+    const kind = TYPE_KIND[dev.type];
+    const isProbeCam = kind === 'camera' && dev.type !== 'cam.multisensor' && dev.type !== 'cam.fisheye';
+    if (!isProbeCam) { setPersonProbePos(null); return; }
+    const devFloor = useProjectStore.getState().floors[dev.floorId];
+    const ftPerPx = ftPerPxForFloor(devFloor);
+    if (!ftPerPx || ftPerPx <= 0) { setPersonProbePos(null); return; }
+    const rangeFt = dev.range ?? (dev.type === 'cam.ptz' ? 44 : dev.type === 'cam.bullet' ? 50 : 30);
+    const reachPx = Math.round((rangeFt / ftPerPx) * 0.6);
+    const rotRad = ((dev.rot ?? 0) * Math.PI) / 180;
+    setPersonProbePos({
+      x: dev.x + Math.cos(rotRad) * reachPx,
+      y: dev.y + Math.sin(rotRad) * reachPx,
+    });
+  }, [selId]);
   // V1 2A.3 — honor ?focus=<deviceId> from the URL so an assistant
   // citation chip that links here actually selects the device. Only
   // applies on first arrival; clearing the param prevents re-firing.
@@ -3072,6 +3101,8 @@ export function EngineeringCanvas() {
               snap={snap}
               dragging={!!drag}
               selectedDoriLevel={selectedDoriLevel}
+              personProbePos={personProbePos}
+              setPersonProbePos={setPersonProbePos}
               onSurfaceClick={(x, y) => {
                 if (tool === 'wall') {
                   const sx = snap ? Math.round(x / 20) * 20 : x;
@@ -4011,6 +4042,7 @@ export function EngineeringCanvas() {
                 selectedDoriLevel={selectedDoriLevel}
                 setSelectedDoriLevel={setSelectedDoriLevel}
                 pxToFtForFloor={currentFloorPxToFt}
+                personProbePos={personProbePos}
               />
             </CanvasErrorBoundary>
           )}
@@ -7871,6 +7903,13 @@ interface SurfaceProps {
    *  means no emphasis. Lives in the parent because the drawer (also
    *  in the parent) writes it. */
   selectedDoriLevel: DoriLevel | null;
+  /** Person probe — canvas-world position of the draggable face
+   *  marker tied to the selected camera. Null when no probe should
+   *  render (no selection, multisensor / fisheye, calibration
+   *  missing). Mutated by both the canvas marker drag and the
+   *  drawer's preview controls so the two stay in sync. */
+  personProbePos: { x: number; y: number } | null;
+  setPersonProbePos: (pos: { x: number; y: number }) => void;
 }
 
 const ICON_SCALE: Record<IconSize, number> = { compact: 0.75, standard: 1, large: 1.35 };
@@ -7889,7 +7928,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid, rooms, roomDraw, onPickRoom, annotations, onPatchAnnotation, onRemoveAnnotation, selectedDoriLevel }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid, rooms, roomDraw, onPickRoom, annotations, onPatchAnnotation, onRemoveAnnotation, selectedDoriLevel, personProbePos, setPersonProbePos }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -8916,6 +8955,23 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                   />
                 );
               })()}
+              {/* Person probe — draggable marker tied to this camera.
+                  Reads the SAME density chain as the cone DORI bands
+                  (pxPerFtAt is the inverse of doriBandsFor's d_T).
+                  Renders only for single-lens cameras with a known
+                  resolution; the marker drops out of mount for
+                  multisensor / fisheye / unresolved cameras. */}
+              {!isMs && s.type !== 'cam.fisheye' && personProbePos && currentFloorPxToFt > 0 && (
+                <PersonProbe
+                  d={s}
+                  pos={personProbePos}
+                  onMove={setPersonProbePos}
+                  pxToFt={currentFloorPxToFt}
+                  svgRef={ref as React.RefObject<SVGSVGElement>}
+                  zoom={zoom}
+                  pan={pan}
+                />
+              )}
             </>
           );
         })()}
@@ -9690,6 +9746,52 @@ interface DoriBand {
   midFt: number;
 }
 
+/** Pixels per foot at a given ground distance. The exact inverse of
+ *  `d_T = horizPx / (2 · T · tan(FOV/2))` used by doriBandsFor — same
+ *  horizontal pixel budget and tan(FOV/2), so the probe reading at
+ *  distance d always agrees with whichever DORI band the marker is
+ *  sitting in. Single source of truth for the canvas density chain. */
+function pxPerFtAt(opts: {
+  fovDeg: number;
+  resolution: { widthPx: number; heightPx: number };
+  distanceFt: number;
+}): number {
+  const { fovDeg, resolution, distanceFt } = opts;
+  if (distanceFt <= 0) return Infinity;
+  const half = (Math.max(1, fovDeg) / 2) * (Math.PI / 180);
+  const tanHalf = Math.tan(half);
+  if (tanHalf <= 0) return Infinity;
+  return resolution.widthPx / (2 * distanceFt * tanHalf);
+}
+
+/** Is a point inside the camera's single-lens cone? Used by the
+ *  person probe to gate the live density readout — outside the cone,
+ *  the camera produces no image at that ground location and the probe
+ *  honestly reports "no coverage here". Angle math wraps so an aim of
+ *  350° + a target at 10° correctly registers as inside a 30° cone. */
+function pointInCone(opts: {
+  cameraX: number; cameraY: number;
+  cameraRotDeg: number;
+  fovDeg: number;
+  rangeFt: number;
+  pxToFt: number;
+  pointX: number; pointY: number;
+}): { inCone: boolean; distanceFt: number; bearingDeg: number; deltaDeg: number } {
+  const { cameraX, cameraY, cameraRotDeg, fovDeg, rangeFt, pxToFt, pointX, pointY } = opts;
+  const dxPx = pointX - cameraX;
+  const dyPx = pointY - cameraY;
+  const distFt = Math.hypot(dxPx, dyPx) * pxToFt;
+  if (distFt <= 0) {
+    return { inCone: true, distanceFt: 0, bearingDeg: cameraRotDeg, deltaDeg: 0 };
+  }
+  const bearingDeg = ((Math.atan2(dyPx, dxPx) * 180 / Math.PI) + 360) % 360;
+  const aim = ((cameraRotDeg % 360) + 360) % 360;
+  const raw = Math.abs(bearingDeg - aim);
+  const deltaDeg = Math.min(raw, 360 - raw);
+  const inCone = deltaDeg <= fovDeg / 2 && distFt <= rangeFt;
+  return { inCone, distanceFt: distFt, bearingDeg, deltaDeg };
+}
+
 /** Compute the four DORI bands for a single-lens camera at the given fov +
  *  resolution + range. Returns only bands with non-empty extent (band is
  *  skipped when its outer threshold sits inside its inner threshold or
@@ -10207,6 +10309,116 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pa
           </text>
         </g>
       )}
+    </g>
+  );
+}
+
+/** Draggable person probe — V4 person probe pass.
+ *
+ *  Reads the SAME density chain as the cone DORI bands and the drawer
+ *  density tiles. The marker has no density model of its own; it asks
+ *  `pxPerFtAt` for the live density at its current ground distance,
+ *  which is the inverse of the function that determines where each
+ *  DORI band starts and ends. By construction the readout agrees with
+ *  the band the marker sits in.
+ *
+ *  Scope: 2D ground distance only. No height / tilt slant model in
+ *  this pass per the brief. A 3D refinement (mount height + tilt
+ *  giving an effective slant distance to the subject's face) is a
+ *  worthwhile follow up but kept separate.
+ *
+ *  Honesty: outside the cone, no faked number — the marker still
+ *  drags but the canvas callout and the drawer preview both flip to
+ *  "No coverage here". When resolution or per floor calibration is
+ *  missing, the probe doesn't mount at all (caller gates). */
+function PersonProbe({
+  d, pos, onMove, pxToFt, svgRef, zoom, pan,
+}: {
+  d: Device;
+  pos: { x: number; y: number };
+  onMove: (p: { x: number; y: number }) => void;
+  pxToFt: number;
+  svgRef: React.RefObject<SVGSVGElement>;
+  zoom: number;
+  pan: { x: number; y: number };
+}) {
+  const draggingRef = useRef(false);
+  const tone = deviceTone(d);
+  const resolution = cameraResolution(d);
+  // No resolution → no probe. The canvas already prints the "set
+  // resolution" hint inside the cone via FOV()'s honesty gate; we
+  // simply don't render the marker to avoid duplicate hints.
+  if (!resolution) return null;
+  const defaultRangeFt = d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30;
+  const defaultFovDeg  = d.type === 'cam.ptz' ? 36 : 70;
+  const fovDeg  = d.fov  ?? defaultFovDeg;
+  const rangeFt = d.range ?? defaultRangeFt;
+  const probe = pointInCone({
+    cameraX: d.x, cameraY: d.y, cameraRotDeg: d.rot ?? 0,
+    fovDeg, rangeFt, pxToFt,
+    pointX: pos.x, pointY: pos.y,
+  });
+  const live = probe.inCone
+    ? pxPerFtAt({ fovDeg, resolution, distanceFt: probe.distanceFt })
+    : null;
+  const onDown = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    draggingRef.current = true;
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* capture optional */ }
+  }, []);
+  const onMovePtr = useCallback((e: React.PointerEvent) => {
+    if (!draggingRef.current) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    const x = ((e.clientX - r.left) - pan.x) / zoom;
+    const y = ((e.clientY - r.top)  - pan.y) / zoom;
+    onMove({ x, y });
+  }, [svgRef, pan.x, pan.y, zoom, onMove]);
+  const onUp = useCallback((e: React.PointerEvent) => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch { /* capture optional */ }
+  }, []);
+  // Marker geometry — a simple person silhouette (head + body) in
+  // canvas world units. Slightly larger than the DORI label chips so
+  // it reads as a draggable handle, not a label.
+  const r = 6;
+  const distLabel = `${probe.distanceFt.toFixed(1)} ft`;
+  const densityLabel = live != null ? `${live.toFixed(1)} px/ft` : 'no coverage';
+  return (
+    <g pointerEvents="all">
+      {/* Tether — dotted line from camera to probe, only when inside
+          the cone, so the operator sees what the marker is measuring. */}
+      {probe.inCone && (
+        <line
+          x1={d.x} y1={d.y} x2={pos.x} y2={pos.y}
+          stroke={tone} strokeWidth="0.6" strokeDasharray="2 3" opacity="0.55"
+          pointerEvents="none"
+        />
+      )}
+      {/* Marker — head + body silhouette in a circle frame. */}
+      <g transform={`translate(${pos.x} ${pos.y})`} style={{ cursor: 'grab', touchAction: 'none' }}
+         onPointerDown={onDown} onPointerMove={onMovePtr} onPointerUp={onUp} onPointerCancel={onUp}>
+        <circle r={r * 1.6} fill="var(--canvas-background)" fillOpacity="0.85" stroke={probe.inCone ? tone : 'var(--muted-foreground)'} strokeWidth="0.8" />
+        <circle cx={0} cy={-r * 0.55} r={r * 0.42} fill={probe.inCone ? tone : 'var(--muted-foreground)'} />
+        <path
+          d={`M ${-r * 0.7} ${r * 0.55} Q 0 ${-r * 0.05} ${r * 0.7} ${r * 0.55} L ${r * 0.7} ${r * 0.95} L ${-r * 0.7} ${r * 0.95} Z`}
+          fill={probe.inCone ? tone : 'var(--muted-foreground)'}
+        />
+      </g>
+      {/* Live callout — distance + px/ft, two lines so the operator
+          reads it at a glance while dragging. Anchored just below the
+          marker so it doesn't cover the camera. */}
+      <g transform={`translate(${pos.x} ${pos.y + r * 2.3})`} pointerEvents="none">
+        <rect x={-32} y={-1.5} width={64} height={14} rx={3}
+          fill="var(--panel-background)" fillOpacity="0.92"
+          stroke={probe.inCone ? tone : 'var(--muted-foreground)'} strokeOpacity="0.6" strokeWidth="0.5"
+        />
+        <text x={0} y={5} textAnchor="middle" fontSize="6.5" fontWeight="600" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{distLabel}</text>
+        <text x={0} y={11} textAnchor="middle" fontSize="6" fill={probe.inCone ? tone : 'var(--muted-foreground)'} fontFamily="ui-monospace, monospace">{densityLabel}</text>
+      </g>
     </g>
   );
 }
@@ -12434,6 +12646,109 @@ function RequiredDensityRow({
   );
 }
 
+/** Person probe live preview — reads the same density at the marker's
+ *  current ground distance and renders the generic face (FacePixelTile)
+ *  pixelated to that density. The on-canvas marker IS the input, the
+ *  preview IS the output: drag the marker, the face updates here.
+ *
+ *  Honesty:
+ *   - Hidden for multisensor / fisheye (cone math doesn't apply).
+ *   - Missing resolution OR missing per-floor calibration → no preview,
+ *     prints the same hint used by the DORI band code.
+ *   - Marker outside the cone → no face preview, plain "no coverage
+ *     here" copy.
+ *   - Math reach uses the SAME `pxPerFtAt` helper the cone bands use,
+ *     so the readout agrees with whichever band the marker sits in
+ *     pixel for pixel. */
+function PersonProbePreview({
+  d, pos, pxToFt,
+}: {
+  d: Device;
+  pos: { x: number; y: number } | null;
+  pxToFt: number;
+}) {
+  if (d.type === 'cam.multisensor' || d.type === 'cam.fisheye') return null;
+  const resolution = cameraResolution(d);
+  if (!resolution) {
+    return (
+      <DrawerSection title="Person probe">
+        <div className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+          Set the camera's resolution above to drop the draggable probe and preview image quality.
+        </div>
+      </DrawerSection>
+    );
+  }
+  if (!pxToFt || pxToFt <= 0) {
+    return (
+      <DrawerSection title="Person probe">
+        <div className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+          Calibrate the floor scale to enable the probe — its distance reading needs feet-per-pixel.
+        </div>
+      </DrawerSection>
+    );
+  }
+  if (!pos) return null;
+  const defaultRangeFt = d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30;
+  const defaultFovDeg  = d.type === 'cam.ptz' ? 36 : 70;
+  const fovDeg  = d.fov  ?? defaultFovDeg;
+  const rangeFt = d.range ?? defaultRangeFt;
+  const probe = pointInCone({
+    cameraX: d.x, cameraY: d.y, cameraRotDeg: d.rot ?? 0,
+    fovDeg, rangeFt, pxToFt,
+    pointX: pos.x, pointY: pos.y,
+  });
+  if (!probe.inCone) {
+    return (
+      <DrawerSection title={`Person probe · ${probe.distanceFt.toFixed(1)} ft`}>
+        <div className="rounded-md border border-border bg-card px-3 py-3 text-[11px] text-muted-foreground">
+          No coverage here. The probe is outside the camera's cone (off axis by {probe.deltaDeg.toFixed(0)}° or past its {Math.round(rangeFt)} ft range). Drag the marker back into the cone for a live density readout.
+        </div>
+      </DrawerSection>
+    );
+  }
+  const pxPerFt = pxPerFtAt({ fovDeg, resolution, distanceFt: probe.distanceFt });
+  const pxAcross = Math.max(3, Math.round(pxPerFt * FACE_WIDTH_FT));
+  // Grade the marker is sitting in — matches the cone band the marker
+  // is visually inside. Same px/ft thresholds the DORI tiles use.
+  const grade: DoriLevel | null = (() => {
+    if (pxPerFt >= DORI_PX_PER_FT.identify) return 'identify';
+    if (pxPerFt >= DORI_PX_PER_FT.recognize) return 'recognize';
+    if (pxPerFt >= DORI_PX_PER_FT.observe) return 'observe';
+    if (pxPerFt >= DORI_PX_PER_FT.detect) return 'detect';
+    return null;
+  })();
+  return (
+    <DrawerSection title={`Person probe · ${probe.distanceFt.toFixed(1)} ft`}>
+      <div className="flex items-start gap-3">
+        <FacePixelTile pxAcross={pxAcross} displaySize={84} />
+        <div className="flex-1 min-w-0 text-[11px] space-y-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-muted-foreground">Distance</span>
+            <span className="tabular-nums text-foreground">{probe.distanceFt.toFixed(1)} ft</span>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-muted-foreground">Density</span>
+            <span className="tabular-nums text-foreground">{pxPerFt.toFixed(1)} px/ft</span>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-muted-foreground">px across face</span>
+            <span className="tabular-nums text-foreground">{pxAcross}</span>
+          </div>
+          <div className="flex items-baseline justify-between gap-2 pt-1 border-t border-border/40">
+            <span className="text-muted-foreground">Grade</span>
+            <span className={`tabular-nums ${grade ? 'text-emerald-400/90' : 'text-amber-300/90'}`}>
+              {grade ? DORI_TILE_LABEL[grade] : 'Below detect'}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 text-[10px] text-muted-foreground leading-snug">
+        Drag the marker on the plan to move the probe. Density at the marker reads from the same resolution + FOV + calibration chain the DORI bands use, so the number always agrees with the band the marker sits in.
+      </div>
+    </DrawerSection>
+  );
+}
+
 /** DoorAssemblySection — checklist editor for the door hardware "assembly"
  *  persisted on the Device record itself (one model, not a stack of ghost
  *  accessory devices). Renders only for opening-type devices; otherwise
@@ -13886,7 +14201,7 @@ function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: numbe
   return inside;
 }
 
-function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode, selectedDoriLevel, setSelectedDoriLevel, pxToFtForFloor }: {
+function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode, selectedDoriLevel, setSelectedDoriLevel, pxToFtForFloor, personProbePos }: {
   d: Device; open: boolean; tab: EditTab; setTab: (t: EditTab) => void; onClose: () => void;
   onUpdate: (p: Partial<Device>) => void;
   activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void;
@@ -13894,6 +14209,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   selectedDoriLevel: DoriLevel | null;
   setSelectedDoriLevel: (l: DoriLevel | null) => void;
   pxToFtForFloor: number;
+  personProbePos: { x: number; y: number } | null;
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
   const kind = TYPE_KIND[d.type];
@@ -14309,6 +14625,12 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                   <Slider label="Horizontal FOV" value={hfov} min={20} max={360} unit="°" tone={tone} onChange={setHfov} />
                   <Slider label="Distance" value={distance} min={5} max={150} unit="ft" tone={tone} onChange={setDistance} />
                 </DrawerSection>
+                {/* Person probe preview — only for single-lens cameras
+                    (multisensor / fisheye gated inside the component).
+                    Reads the same density chain as the cone DORI bands. */}
+                {!isMultisensor && d.type !== 'cam.fisheye' && (
+                  <PersonProbePreview d={d} pos={personProbePos} pxToFt={pxToFtForFloor} />
+                )}
                 {/* DORI / Target preview — plain-language verdict at the
                     current subject distance + a per-grade pass/fail bar.
                     Uses IEC 62676-4 / EN 50132-7 px/m thresholds against
