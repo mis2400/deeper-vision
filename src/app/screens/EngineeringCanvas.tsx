@@ -4037,15 +4037,20 @@ export function EngineeringCanvas() {
               />
             )}
             </div>
+          </div>
 
-          {/* ITEM 1 — docked right inspector column. Mounts as a flex
-              sibling so the canvas (`flex-1 min-w-0`) shrinks to the
-              remaining width when the drawer is open. The CanvasSurface
-              recenters automatically because its viewport / fit logic
-              already keys off the surface bounding rect.
-              EditDrawer and PathwayDrawer are mutually exclusive at
-              this point (selecting one clears the other in the canvas
-              handlers), so only one column ever renders. */}
+          {/* Item 1 (refixed) — drawer column lives in the FLEX ROW as
+              a sibling to the canvas column, not inside it. The prior
+              refactor put the drawer inside `<div flex-1 min-w-0 flex
+              flex-col>` (the canvas column), which is flex-direction:
+              column. With `h-full` on the drawer that collapsed the
+              viewport and the drawer rendered at the LEFT edge stacked
+              on top of the canvas. Moved to be a sibling of the canvas
+              column so the row layout actually pushes the canvas left
+              when the drawer is open.
+              EditDrawer and PathwayDrawer are mutually exclusive (the
+              canvas handlers clear one when the other is set), so only
+              one column ever renders. */}
           {sel && editOpen && (
             <CanvasErrorBoundary label="EditDrawer">
               <EditDrawer
@@ -4073,7 +4078,6 @@ export function EngineeringCanvas() {
               onOpenBundle={(bid) => { setSelPathwayId(null); setBundleInspectorId(bid); }}
             />
           )}
-          </div>
         </div>
 
         {!onboarded && (
