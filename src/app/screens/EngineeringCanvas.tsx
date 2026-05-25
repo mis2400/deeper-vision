@@ -17125,7 +17125,7 @@ function BottomDeviceBar({
   }, [floorDevices, floorPathways]);
 
   return (
-    <div className="hidden md:flex shrink-0 relative justify-center border-t" style={{ background: 'var(--canvas-rail)', borderColor: 'var(--canvas-rail-border)' }} ref={trayRef} data-canvas-chrome="tray">
+    <div className="hidden md:flex shrink-0 relative justify-center pt-2.5 pb-3 px-4" ref={trayRef} data-canvas-chrome="tray">
       {/* Global product search results panel — wins over the category
           tray when a query is active so the operator always sees ONE
           source of truth above the bar. Same chrome as the tray for
@@ -17800,7 +17800,20 @@ function BottomDeviceBar({
         onMouseLeave={() => !barCoarsePointer && setBarHover(false)}
         onTouchStart={() => barCoarsePointer && setBarTapExpand(true)}
         data-bar-expanded={barExpanded ? 'true' : undefined}
-        className="flex items-center"
+        className="flex items-center rounded-xl border shadow-[0_18px_36px_-18px_rgba(0,0,0,0.55)]"
+        style={{
+          background: 'var(--canvas-rail)',
+          borderColor: 'var(--canvas-rail-border)',
+          // Item 1 — smooth hover expand. The previous transition
+          // animated `width,padding,color` per-button which fought the
+          // bar's flex layout and produced layout jank. The bar grows
+          // upward in one pass via a single max-height on the labels
+          // (see button + group header below), one motion token, one
+          // ease curve — no width transition.
+          transitionProperty: 'background-color, border-color',
+          transitionDuration: 'var(--motion-standard)',
+          transitionTimingFunction: 'var(--ease-out)',
+        }}
       >
         {GROUPS.map((g, gi) => {
           const groupCats = cats.filter((c) => c.group === g.id);
@@ -17809,13 +17822,23 @@ function BottomDeviceBar({
             <div key={g.id} className="flex items-stretch">
               {gi > 0 && <span aria-hidden className="self-stretch w-px bg-white/10 my-1.5" />}
               <div className="flex flex-col justify-center">
-                {/* Group header — visible only when the bar is expanded,
-                    keeping the collapsed state pure icons. */}
-                {barExpanded && (
-                  <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap">
-                    {g.label}
-                  </div>
-                )}
+                {/* Group header — always rendered to keep the bar's
+                    geometry settled. Visible only when expanded via
+                    opacity + max-height transitions tied to the single
+                    --motion-standard / --ease-out pair. */}
+                <div
+                  className="px-2 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap overflow-hidden"
+                  style={{
+                    maxHeight: barExpanded ? 14 : 0,
+                    paddingTop: barExpanded ? 4 : 0,
+                    opacity: barExpanded ? 1 : 0,
+                    transitionProperty: 'max-height, padding-top, opacity',
+                    transitionDuration: 'var(--motion-standard)',
+                    transitionTimingFunction: 'var(--ease-out)',
+                  }}
+                >
+                  {g.label}
+                </div>
                 <div className="flex items-center">
                   {groupCats.map((c) => {
                     const Icon = c.icon;
@@ -17837,27 +17860,39 @@ function BottomDeviceBar({
                         }}
                         title={`${c.label}${placedCount > 0 ? ` · ${placedCount} placed` : ''}`}
                         data-track={`bottombar-cat-${c.id}`}
-                        className={`group relative flex flex-col items-center justify-center transition-[width,padding,color] ${
-                          barExpanded
-                            ? 'w-[72px] pt-1.5 pb-2 gap-1'
-                            : 'w-[44px] py-2 gap-0'
-                        } ${active ? 'text-white' : 'text-white/65 hover:text-white'}`}
-                        style={{ transitionDuration: '170ms', transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
+                        className={`group relative flex flex-col items-center justify-center w-[56px] pt-1.5 pb-2 ${active ? 'text-white' : 'text-white/65 hover:text-white'}`}
+                        style={{
+                          transitionProperty: 'color',
+                          transitionDuration: 'var(--motion-standard)',
+                          transitionTimingFunction: 'var(--ease-out)',
+                        }}
                       >
-                        <span className="absolute inset-x-1.5 top-1 bottom-1.5 rounded-md -z-10 transition-colors"
-                          style={{ background: active ? 'rgba(255,255,255,0.12)' : 'transparent' }}
+                        <span className="absolute inset-x-1.5 top-1 bottom-1.5 rounded-md -z-10"
+                          style={{
+                            background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
+                            transitionProperty: 'background-color',
+                            transitionDuration: 'var(--motion-standard)',
+                            transitionTimingFunction: 'var(--ease-out)',
+                          }}
                         />
                         <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
-                        {barExpanded && (
-                          <span className="text-[10px] tracking-tight font-medium">{c.label}</span>
-                        )}
-                        {/* Count badge — real placements only. When the bar
-                            is collapsed, the badge floats above the icon so
-                            it stays informative; when expanded it returns
-                            to the upper-right corner of the wider tile. */}
+                        {/* Label — always in DOM at fixed width; opacity +
+                            max-height drive visibility so the bar grows
+                            and shrinks smoothly with no layout fights. */}
+                        <span
+                          className="text-[10px] tracking-tight font-medium whitespace-nowrap overflow-hidden"
+                          style={{
+                            maxHeight: barExpanded ? 14 : 0,
+                            opacity: barExpanded ? 1 : 0,
+                            marginTop: barExpanded ? 2 : 0,
+                            transitionProperty: 'max-height, opacity, margin-top',
+                            transitionDuration: 'var(--motion-standard)',
+                            transitionTimingFunction: 'var(--ease-out)',
+                          }}
+                        >{c.label}</span>
                         {placedCount > 0 && (
                           <span
-                            className={`absolute ${barExpanded ? 'top-0.5 right-2' : 'top-0.5 right-0.5'} min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
+                            className={`absolute top-0.5 right-1 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] leading-[15px] text-center font-medium tabular-nums ${
                               active
                                 ? 'bg-primary text-primary-foreground'
                                 : 'bg-white/15 text-white border border-white/15'
@@ -17887,12 +17922,20 @@ function BottomDeviceBar({
             above the bar is unchanged. */}
         <span aria-hidden className="self-stretch w-px bg-white/10 my-1.5" />
         <div className="flex flex-col justify-center">
-          {barExpanded && (
-            <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap">
-              Search
-            </div>
-          )}
-          <div className={`flex items-center px-2 ${barExpanded ? 'pb-1.5' : 'py-1.5'}`}>
+          <div
+            className="px-2 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap overflow-hidden"
+            style={{
+              maxHeight: barExpanded ? 14 : 0,
+              paddingTop: barExpanded ? 4 : 0,
+              opacity: barExpanded ? 1 : 0,
+              transitionProperty: 'max-height, padding-top, opacity',
+              transitionDuration: 'var(--motion-standard)',
+              transitionTimingFunction: 'var(--ease-out)',
+            }}
+          >
+            Search
+          </div>
+          <div className="flex items-center px-2 py-1.5">
             {!searchOpen ? (
               <button
                 onClick={() => setSearchOpen(true)}
