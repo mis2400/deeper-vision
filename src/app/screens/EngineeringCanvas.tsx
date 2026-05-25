@@ -3340,7 +3340,16 @@ export function EngineeringCanvas() {
                 blueprint can dominate the eye. Intelligence chips remain
                 as the single contextual overlay (top-right) and default
                 to off. */}
-            <IntelligenceLayer devices={devices.filter((d) => !hiddenIds.has(d.id))} pxToFt={currentFloorPxToFt} zoom={zoom} open={intelOpen} setOpen={setIntelOpen} />
+            <IntelligenceLayer
+              devices={devices.filter((d) => !hiddenIds.has(d.id))}
+              pxToFt={currentFloorPxToFt}
+              zoom={zoom}
+              open={intelOpen}
+              setOpen={setIntelOpen}
+              setZoom={(z) => { setZoom(z); userTouchedViewRef.current = true; }}
+              onFit={() => { applyFit(); userTouchedViewRef.current = false; }}
+              onActual={() => { applyActualScale(); userTouchedViewRef.current = true; }}
+            />
 
             {/* Floating selection toolbar */}
             {sel && surfaceRef.current && (
@@ -3873,14 +3882,11 @@ export function EngineeringCanvas() {
               />
             )}
 
-            {/* Zoom dock (bottom-left) */}
-            <ZoomDock
-              zoom={zoom}
-              setZoom={(z) => { setZoom(z); userTouchedViewRef.current = true; }}
-              onFit={() => { applyFit(); userTouchedViewRef.current = false; }}
-              onCenter={() => { applyCenter(); userTouchedViewRef.current = true; }}
-              onActual={() => { applyActualScale(); userTouchedViewRef.current = true; }}
-            />
+            {/* Item 3 — bottom-left ZoomDock removed; zoom controls
+                now live in the right rail with the current % stamped on
+                the center tile. ZoomDock component definition kept in
+                this file in case a future surface (e.g. PresentMode)
+                wants the floating capsule back. */}
 
             {/* Minimap (bottom-right) — V1 1A.4 now shows real plan
                 extents (background + walls + devices) instead of the
@@ -16013,10 +16019,12 @@ function computeIntelIssues(devices: Device[], pxToFt: number): IntelIssue[] {
  *  the canvas has no findings at all. */
 function IntelligenceRail({
   open, setOpen, panelOpen, setPanelOpen, highCount, warnCount, issuesEmpty,
+  zoom, setZoom, onFit, onActual,
 }: {
   open: boolean; setOpen: (b: boolean) => void;
   panelOpen: boolean; setPanelOpen: (b: boolean) => void;
   highCount: number; warnCount: number; issuesEmpty: boolean;
+  zoom: number; setZoom: (z: number) => void; onFit: () => void; onActual: () => void;
 }) {
   const [hoverExpand, setHoverExpand] = useState(false);
   const [touchExpand, setTouchExpand] = useState(false);
@@ -16047,8 +16055,56 @@ function IntelligenceRail({
     active: boolean;
     onClick: () => void;
     badge?: React.ReactNode;
+    /** When set, replaces the rendered Icon glyph with this custom
+     *  node — used by the Zoom item to show "60%" instead of the
+     *  default ZoomIn icon so the rail's affordance reads as
+     *  "current zoom level". */
+    customGlyph?: React.ReactNode;
   };
+  const zoomPct = Math.round(zoom * 100);
   const items: RailItem[] = [
+    // Item 3 — Zoom controls live in the right rail. The zoom out
+    // and zoom in pucks bracket a center tile whose "icon" is the
+    // current zoom percentage so the rail communicates the current
+    // view at a glance. Clicking the percentage runs Fit so the
+    // most common reset is one click from anywhere.
+    {
+      id: 'zoom-out',
+      icon: ZoomOut,
+      label: 'Zoom out',
+      title: 'Zoom out (one step)',
+      active: false,
+      onClick: () => setZoom(Math.max(0.25, zoom / 1.2)),
+    },
+    {
+      id: 'zoom-percent',
+      icon: ZoomIn, // fallback if customGlyph were ever undefined
+      label: `Zoom · ${zoomPct}%`,
+      title: 'Click to fit plan to viewport',
+      active: false,
+      onClick: () => onFit(),
+      customGlyph: (
+        <span className="text-[10px] font-semibold tabular-nums text-white">
+          {zoomPct}%
+        </span>
+      ),
+    },
+    {
+      id: 'zoom-in',
+      icon: ZoomIn,
+      label: 'Zoom in',
+      title: 'Zoom in (one step)',
+      active: false,
+      onClick: () => setZoom(Math.min(4, zoom * 1.2)),
+    },
+    {
+      id: 'zoom-actual',
+      icon: Maximize2,
+      label: 'Actual scale (1:1)',
+      title: 'Reset to actual scale',
+      active: false,
+      onClick: () => onActual(),
+    },
     {
       id: 'chips',
       icon: open ? Eye : EyeOff,
@@ -16106,7 +16162,10 @@ function IntelligenceRail({
               } ${it.active ? 'bg-white/15 text-white' : 'text-white/70 hover:text-white hover:bg-white/8'}`}
               style={{ transitionDuration: '170ms', transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
             >
-              <Icon className="w-4 h-4 shrink-0" strokeWidth={1.7} />
+              {it.customGlyph
+                ? <span className="shrink-0 w-4 h-4 inline-flex items-center justify-center">{it.customGlyph}</span>
+                : <Icon className="w-4 h-4 shrink-0" strokeWidth={1.7} />
+              }
               {expanded && (
                 <span className="flex-1 text-right inline-flex items-center justify-end gap-2 text-[12px] tracking-tight whitespace-nowrap">
                   <span>{it.label}</span>
@@ -16122,7 +16181,7 @@ function IntelligenceRail({
   );
 }
 
-function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: Device[]; pxToFt: number; zoom: number; open: boolean; setOpen: (b: boolean) => void }) {
+function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen, setZoom, onFit, onActual }: { devices: Device[]; pxToFt: number; zoom: number; open: boolean; setOpen: (b: boolean) => void; setZoom: (z: number) => void; onFit: () => void; onActual: () => void }) {
   const issues = useMemo(() => computeIntelIssues(devices, pxToFt), [devices, pxToFt]);
   const summary = useMemo(() => {
     const by: Record<string, number> = {};
@@ -16133,11 +16192,10 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: 
    *  toggles inline canvas chips (compact mode, default) and opens the
    *  full assistant panel for an expanded engineering review. */
   const [panelOpen, setPanelOpen] = useState(false);
-  // Surveyor UX hard reset: the Chips + Assistant pills are no longer
-  // permanently visible — the default canvas state must be calm. The
-  // top-bar overflow exposes an "Intelligence" toggle which flips `open`
-  // to true; only then do the pills (and on-canvas chips) appear.
-  if (!open) return null;
+  // Item 3 — the right rail is now always visible because it carries
+  // the zoom controls (previously bottom-left ZoomDock). The
+  // on-canvas intelligence chips + the assistant panel still gate
+  // on `open`; only the rail itself renders unconditionally.
   const toneFor = (k: IntelIssue['kind']) =>
     k === 'overlap' ? '#F59E0B'
     : k === 'blindspot' ? '#FB7185'
@@ -16193,6 +16251,10 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: 
         highCount={summary.high ?? 0}
         warnCount={summary.warn ?? 0}
         issuesEmpty={!issues.length}
+        zoom={zoom}
+        setZoom={setZoom}
+        onFit={onFit}
+        onActual={onActual}
       />
 
       {/* AI Assistant side panel — embedded on the right of the canvas.
