@@ -130,6 +130,19 @@
   --canvas-grid:       rgba(200, 210, 230, 0.07);
   --canvas-axis:       rgba(200, 210, 230, 0.18);
 
+  /* Chrome rails — left tool rail, right intelligence rail, docked
+     bottom device bar. Intentionally a black slab regardless of
+     theme so chrome reads as one consistent surface across Light
+     Drafting / Slate / Dark Command. */
+  --canvas-rail:           #0B0F19;
+  --canvas-rail-border:    rgba(255, 255, 255, 0.08);
+  --canvas-rail-divider:   rgba(255, 255, 255, 0.10);
+  --canvas-rail-foreground:        rgba(255, 255, 255, 0.95);
+  --canvas-rail-foreground-muted:  rgba(255, 255, 255, 0.65);
+  --canvas-rail-foreground-faint:  rgba(255, 255, 255, 0.45);
+  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.12);
+  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.08);
+
   --panel-background: #34405A;
   --panel-border:     #51607D;
 
@@ -228,6 +241,17 @@
   --canvas-grid:       rgba(80, 96, 130, 0.07);
   --canvas-axis:       rgba(80, 96, 130, 0.20);
 
+  /* Chrome rails — identical across all themes per the rail's
+     "black slab regardless of theme" design rule. */
+  --canvas-rail:           #0B0F19;
+  --canvas-rail-border:    rgba(255, 255, 255, 0.08);
+  --canvas-rail-divider:   rgba(255, 255, 255, 0.10);
+  --canvas-rail-foreground:        rgba(255, 255, 255, 0.95);
+  --canvas-rail-foreground-muted:  rgba(255, 255, 255, 0.65);
+  --canvas-rail-foreground-faint:  rgba(255, 255, 255, 0.45);
+  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.12);
+  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.08);
+
   --panel-background: #FFFFFF;
   --panel-border:     #C5CCDB;
 
@@ -316,6 +340,17 @@
   --canvas-background: #131B2D;
   --canvas-grid:       rgba(168, 178, 200, 0.05);
   --canvas-axis:       rgba(168, 178, 200, 0.15);
+
+  /* Chrome rails — identical across all themes per the rail's
+     "black slab regardless of theme" design rule. */
+  --canvas-rail:           #0B0F19;
+  --canvas-rail-border:    rgba(255, 255, 255, 0.08);
+  --canvas-rail-divider:   rgba(255, 255, 255, 0.10);
+  --canvas-rail-foreground:        rgba(255, 255, 255, 0.95);
+  --canvas-rail-foreground-muted:  rgba(255, 255, 255, 0.65);
+  --canvas-rail-foreground-faint:  rgba(255, 255, 255, 0.45);
+  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.12);
+  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.08);
 
   --panel-background: #1F2738;
   --panel-border:     #41506B;

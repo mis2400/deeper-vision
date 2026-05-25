@@ -7260,9 +7260,9 @@ function InsertDock(props: {
                           <DeviceGlyph type={p.type} size={22} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[12px] truncate leading-tight flex items-center gap-2">
-                            <span className="font-medium text-foreground">{p.mfr}</span>
-                            <span className="text-muted-foreground">{p.model}</span>
+                          <div className="text-[12px] leading-tight flex items-center gap-2">
+                            <span className="font-medium text-foreground shrink-0">{p.mfr}</span>
+                            <span className="text-muted-foreground truncate min-w-0 flex-1">{p.model}</span>
                             {badge && (
                               <span
                                 className="ml-auto text-[9.5px] uppercase tracking-[0.06em] px-1.5 py-[1px] rounded font-medium"
@@ -11910,10 +11910,15 @@ function labelForKind(k: DeviceKind): string {
 // breathing room. The drawer body should read like a configuration page,
 // not a debug panel.
 function Row({ label, value, tone }: { label: string; value: any; tone?: string }) {
+  // Theme-aware contrast — the old code hardcoded value to #E7EDF6
+  // and the divider to white/[0.04], which read as near-invisible on
+  // the light drafting theme's white drawer surface. Both now route
+  // through theme tokens so Mount values, PoE numbers, etc. stay
+  // readable across all three themes.
   return (
-    <div className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-b-0">
+    <div className="flex items-center justify-between py-2 border-b border-border/40 last:border-b-0">
       <span className="text-[11px] text-muted-foreground">{label}</span>
-      <span className="text-[12px] tabular-nums font-medium" style={{ color: tone || '#E7EDF6' }}>{value}</span>
+      <span className="text-[12px] tabular-nums font-medium text-foreground" style={tone ? { color: tone } : undefined}>{value}</span>
     </div>
   );
 }
@@ -15341,8 +15346,8 @@ function IntelligenceRail({
         onMouseLeave={() => !isCoarsePointer && setHoverExpand(false)}
         onTouchStart={() => isCoarsePointer && setTouchExpand(true)}
         data-rail-expanded={expanded ? 'true' : undefined}
-        className="flex flex-col items-stretch gap-0.5 rounded-2xl border bg-[#0B0F19]/85 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)]"
-        style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+        className="flex flex-col items-stretch gap-0.5 rounded-2xl border backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)]"
+        style={{ background: 'var(--canvas-rail)', borderColor: 'var(--canvas-rail-border)' }}
       >
         {items.map((it) => {
           const Icon = it.icon;
@@ -16258,8 +16263,8 @@ function DrawingToolRail({
         onMouseEnter={() => !isCoarsePointer && setHoverExpand(true)}
         onMouseLeave={() => !isCoarsePointer && setHoverExpand(false)}
         onTouchStart={() => isCoarsePointer && setTouchExpand(true)}
-        className="flex flex-col items-stretch gap-0.5 rounded-2xl border bg-[#0B0F19]/95 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)] select-none"
-        style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+        className="flex flex-col items-stretch gap-0.5 rounded-2xl border backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)] select-none"
+        style={{ background: 'var(--canvas-rail)', borderColor: 'var(--canvas-rail-border)' }}
         data-rail-expanded={railExpanded ? 'true' : undefined}
       >
         {items.map((it) => <Tile key={it.label} it={it} />)}
@@ -16798,7 +16803,7 @@ function BottomDeviceBar({
   }, [floorDevices, floorPathways]);
 
   return (
-    <div className="hidden md:flex shrink-0 relative justify-center bg-[#0B0F19] border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }} ref={trayRef} data-canvas-chrome="tray">
+    <div className="hidden md:flex shrink-0 relative justify-center border-t" style={{ background: 'var(--canvas-rail)', borderColor: 'var(--canvas-rail-border)' }} ref={trayRef} data-canvas-chrome="tray">
       {/* Global product search results panel — wins over the category
           tray when a query is active so the operator always sees ONE
           source of truth above the bar. Same chrome as the tray for
