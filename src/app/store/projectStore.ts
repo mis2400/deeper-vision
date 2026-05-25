@@ -123,6 +123,13 @@ export interface ProjectState {
    *  panel never auto starts in a proactive mode the operator
    *  didn't choose. */
   assistantPanelMode: AssistantPanelMode;
+  /** V3.6 Part B — per-category color overrides. Keyed by DeviceKind.
+   *  An entry overrides the hardcoded KIND_TONE default for every
+   *  device of that category that does NOT have a per-object color
+   *  override (`device.color`). Precedence is item > category > default.
+   *  Persisted across reloads so a workspace's category palette
+   *  survives session. */
+  categoryColors: Partial<Record<import('./types').DeviceKind, string>>;
   /** Operator preferences — Phase 3A. Density, accent, language,
    *  time zone, plus profile headline. Persisted. */
   userPrefs: UserPrefs;
@@ -618,6 +625,10 @@ export interface ProjectState {
    *  Action does not auto run any side effects — the panel reads
    *  the new mode and renders the appropriate content. */
   setAssistantPanelMode: (mode: AssistantPanelMode) => void;
+  /** Set or clear a per-category color override. Passing null /
+   *  undefined for `color` removes the override and the category
+   *  returns to its hardcoded KIND_TONE default. */
+  setCategoryColor: (kind: import('./types').DeviceKind, color: string | null) => void;
   /** Patch operator preferences. Only the fields included in the
    *  patch change; the rest keep their current values. */
   setUserPrefs: (patch: Partial<UserPrefs>) => void;
@@ -819,6 +830,7 @@ export const useProjectStore = create<ProjectState>()(
       attachments:       {},
       aiConversations:   {},
       assistantPanelMode: 'passive',
+      categoryColors:    {},
       assistantContext:  null,
       userPrefs:         { ...DEFAULT_USER_PREFS },
       billing:           { ...DEFAULT_BILLING },
@@ -2619,6 +2631,16 @@ export const useProjectStore = create<ProjectState>()(
 
       setAssistantPanelMode: (mode) => set({ assistantPanelMode: mode }),
 
+      setCategoryColor: (kind, color) => set((s) => {
+        const next = { ...s.categoryColors };
+        if (color === null || color === undefined || color === '') {
+          delete next[kind];
+        } else {
+          next[kind] = color;
+        }
+        return { categoryColors: next };
+      }),
+
       resetDemoData: () => set((s) => {
         // Pass 2A.1 — initialise currentFloorIdByProject from the
         // seed so a fresh reset opens the canvas on each project's
@@ -3218,6 +3240,7 @@ export const useProjectStore = create<ProjectState>()(
         projectPricebooks: s.projectPricebooks,
         attachments:       s.attachments,
         aiConversations:   s.aiConversations,
+        categoryColors:    s.categoryColors,
         userPrefs:         s.userPrefs,
         billing:           s.billing,
         integrations:      s.integrations,

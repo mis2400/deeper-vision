@@ -288,11 +288,20 @@ export const DEVICE_COLOR_PALETTE: { id: string; name: string; hex: string }[] =
   { id: 'magenta', name: 'Custom',    hex: '#D946EF' },
 ];
 
-/** Returns the effective tone for a device: per-object color override if
- *  set, otherwise the category default. Used everywhere the canvas needs
- *  a single color for a single device (glyph, cone, label, badge). */
+/** V3.6 Part B — three level precedence:
+ *    1. per-object override (`device.color`)
+ *    2. per-category override (`store.categoryColors[kind]`)
+ *    3. hardcoded `KIND_TONE` default
+ *  Reads `categoryColors` via getState(); the canvas top level
+ *  subscribes to the slice so renderers re-run when the user picks
+ *  a new category color, and getState() then reflects it.
+ *  Used everywhere the canvas needs a single color for a single
+ *  device (glyph, cone, label, badge). */
 function deviceTone(d: Device): string {
-  return d.color || KIND_TONE[TYPE_KIND[d.type]];
+  if (d.color) return d.color;
+  const kind = TYPE_KIND[d.type];
+  const override = useProjectStore.getState().categoryColors?.[kind];
+  return override ?? KIND_TONE[kind];
 }
 
 /** Cardinal default lens layout — A=E, B=S, C=W, D=N (clockwise). 90° FOV per
@@ -546,17 +555,27 @@ const TYPE_KIND: Record<DeviceType, DeviceKind> = {
   'bld.hvac-controller': 'building', 'bld.lighting-panel': 'building', 'bld.bms-gateway': 'building',
 };
 
+// V3.6 Part B — restrained professional palette of CATEGORY DEFAULTS.
+// Distinct enough that a plan reads by system at a glance; muted
+// enough that nothing reads loud or clashing against the floorplan.
+// These are the hardcoded BASE; a user-changeable per-category
+// override layers on top (see `setCategoryColor` in the store), and a
+// per-object override (`device.color`) layers above that.
+// Precedence resolved by `deviceTone(d)`: item > category > default.
 const KIND_TONE: Record<DeviceKind, string> = {
-  // V3 prep: camera was '#F08F3C' (orange). Mohammad called it out as
-  // the wrong accent for the canvas / dock. Pulled to neutral gray
-  // (#9CA3AF, same neutral as infrastructure) until the replacement
-  // accent is confirmed. Other kind tones stay as the existing
-  // category colors for now — narrow change, no aesthetic drift.
-  camera: '#9CA3AF', access: '#3FB950', network: '#E5B23A',
-  intrusion: '#E5484D', audio: '#A371F7', storage: '#1F6FEB',
-  display: '#00B5D8', power: '#8B5CF6', sensor: '#14B8A6',
-  infrastructure: '#9CA3AF',
-  cyber: '#22D3EE', fire: '#F87171', building: '#94A3B8',
+  camera:         '#4A8FCC', // steel blue — see / observe
+  access:         '#C89464', // warm bronze — control / locks
+  network:        '#5A9AA8', // teal — data
+  intrusion:      '#C26464', // muted alarm red
+  audio:          '#9B7AB8', // signal purple
+  storage:        '#6E7CB8', // data indigo
+  display:        '#4FA8B8', // visual cyan
+  power:          '#B8784A', // electrical rust
+  sensor:         '#8FA864', // environmental sage
+  infrastructure: '#7E8590', // structural cool gray
+  cyber:          '#3FA48F', // digital teal
+  fire:           '#C25A4A', // life safety red
+  building:       '#889078', // mechanical sage gray
 };
 
 /** Hosts that can host a hardware stack (reader/strike/REX/DPS/panic-bar).
@@ -705,6 +724,17 @@ export function EngineeringCanvas() {
   const storeAddDevice    = useProjectStore((s) => s.addDevice);
   const storeUpdateDevice = useProjectStore((s) => s.updateDevice);
   const storeRemoveDevice = useProjectStore((s) => s.removeDevice);
+
+  // V3.6 Part B — subscribe to per-category color overrides at the
+  // canvas top level so every descendant render path (HardwareGlyph,
+  // cones, badges) picks up new colors when the user changes them
+  // via the dock category picker. `deviceTone(d)` reads the same
+  // slice via getState() inside helper functions; this subscription
+  // is what triggers the re-render that makes getState() see the
+  // new value.
+  const categoryColors = useProjectStore((s) => s.categoryColors);
+  const setCategoryColor = useProjectStore((s) => s.setCategoryColor);
+  void categoryColors;
 
   // Which floor are we editing? Canvas V2 Pass 2A.2 — read from the
   // currentFloorIdByProject sticky state. Falls back to the project's
@@ -6791,6 +6821,12 @@ function InsertDock(props: {
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   onOpenScanBuild?: () => void;
+  /** V3.6 Part B — current per-category color overrides + setter.
+   *  The dock category list shows a swatch picker per row that
+   *  invokes setCategoryColor; the row icon + chip reflect the
+   *  resolved override-or-default value. */
+  categoryColors?: Partial<Record<DeviceKind, string>>;
+  setCategoryColor: (kind: DeviceKind, color: string | null) => void;
 }) {
   const cat = CATEGORIES.find((c) => c.id === props.openCat);
   /** Two-pass filter:
@@ -7061,31 +7097,46 @@ function InsertDock(props: {
             }).map((c) => {
               const inStack = PRODUCTS.filter((p) => TYPE_KIND[p.type] === c.id && productMatchesTechModel(p, props.techModel)).length;
               const productCount = PRODUCTS.filter((p) => TYPE_KIND[p.type] === c.id).length;
+              // V3.6 Part B — resolve the live category color from the
+              // store (override > static CATEGORIES tone). The dock
+              // row icon + chip + the color-picker swatch all reflect
+              // the same resolved value so changes are immediate.
+              const resolvedTone = props.categoryColors?.[c.id] ?? KIND_TONE[c.id];
               return (
-                <button
-                  key={c.id}
-                  onClick={() => { props.setOpenCat(c.id); props.setOpenType(null); }}
-                  className="w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-secondary/30 transition-colors duration-150 group"
-                >
-                  <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-150 group-hover:scale-[1.03]"
-                    style={{
-                      background: `${c.tone}12`,
-                      color: c.tone,
-                      transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
-                    }}
+                <div key={c.id} className="w-full flex items-stretch hover:bg-secondary/30 transition-colors duration-150 group">
+                  <button
+                    onClick={() => { props.setOpenCat(c.id); props.setOpenType(null); }}
+                    className="flex-1 text-left px-4 py-2.5 flex items-center gap-3"
                   >
-                    <CategoryGlyph kind={c.id} active />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13.5px] font-medium tracking-tight leading-tight text-foreground">{c.label}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      {c.types.length} types · <span className={inStack === 0 ? 'text-amber-400/80' : ''}>{inStack} in stack</span>
-                      {inStack !== productCount && <span className="opacity-50"> · {productCount} total</span>}
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-150 group-hover:scale-[1.03]"
+                      style={{
+                        background: `${resolvedTone}12`,
+                        color: resolvedTone,
+                        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                      }}
+                    >
+                      <CategoryGlyph kind={c.id} active />
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13.5px] font-medium tracking-tight leading-tight text-foreground">{c.label}</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {c.types.length} types · <span className={inStack === 0 ? 'text-amber-400/80' : ''}>{inStack} in stack</span>
+                        {inStack !== productCount && <span className="opacity-50"> · {productCount} total</span>}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+                  </button>
+                  <div className="flex items-center pr-3 pl-1">
+                    <ColorPicker
+                      currentColor={resolvedTone}
+                      onPick={(hex) => props.setCategoryColor(c.id, hex || null)}
+                      title={`${c.label} color`}
+                      size={18}
+                      align="right"
+                    />
                   </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
-                </button>
+                </div>
               );
             })}
           </div>
@@ -9748,12 +9799,12 @@ const DEVICE_ICON: Record<DeviceType, any> = {
 function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: string; selected: boolean; scale?: number }) {
   const kind = TYPE_KIND[d.type];
   const rot = d.rot;
-  // V3.6 marker color rule: plotted markers render in a quiet neutral
-  // by default. Per-object color overrides (set via the color picker)
-  // still apply so operators can group / tag devices visually. The
-  // resting state on the plan is monochrome; the selection ring carries
-  // the only accent color (cool primary).
-  const ink = d.color || 'var(--foreground)';
+  // V3.6 Part B color rule: plotted marker uses the resolved
+  // device tone (item override > category override > KIND_TONE
+  // default). The selection ring stays its own cool var(--primary)
+  // signal so a selected device is always distinguishable from its
+  // assigned color regardless of where on the palette that color sits.
+  const ink = deviceTone(d);
   const sw = 1.4;
   const accKind = (d as any).accessoryKind as string | undefined;
 
@@ -10219,12 +10270,14 @@ function IsoDeviceBadge({ d }: { d: Device }) {
 }
 
 function DeviceGlyph({ type, size, tone }: { type: DeviceType; size: number; tone?: string }) {
-  // V3.6 unification: dock / palette / drag-ghost / layer rows render
-  // the SAME schematic plan symbols the canvas plots, not lucide
-  // SaaS icons. Default color is the neutral foreground (monochrome
-  // marker rule); callers that genuinely need a category color (e.g.,
-  // the category nav header) can still pass `tone` and override.
-  const ink = tone ?? 'var(--foreground)';
+  // V3.6 Part B: dock / palette / drag-ghost / layer rows render the
+  // SAME schematic plan symbols the canvas plots, in the category's
+  // resolved color (category override > KIND_TONE default). Callers
+  // can override per call site by passing `tone` explicitly (e.g.,
+  // when previewing an item-color override choice in the picker).
+  const overrideMap = useProjectStore((s) => s.categoryColors);
+  const kind = TYPE_KIND[type];
+  const ink = tone ?? overrideMap?.[kind] ?? KIND_TONE[kind];
   if (SURVEYOR_SYMBOL_HAS(type)) {
     // Stroke widens slightly for smaller chrome sizes so the symbol
     // still reads crisp at 14-16px. At 24+ the default holds.
@@ -10938,6 +10991,150 @@ function ColorPickerButton({ currentHex, onPick, tone }: { currentHex?: string; 
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** V3.6 Part B — shared color picker popover used by both the
+ *  category-level picker in the dock and the item-level picker in
+ *  the device drawer header. Renders the swatch button + a popover
+ *  containing the preset palette (DEVICE_COLOR_PALETTE) plus a
+ *  custom hex input for full freedom.
+ *
+ *  `currentColor` is the resolved color this swatch represents (for
+ *  visual feedback). `onPick(hex)` is called with either a valid
+ *  hex string or an empty string (which the caller interprets as
+ *  "reset to default" — for category pickers it removes the override;
+ *  for item pickers it clears `device.color`). */
+function ColorPicker({
+  currentColor,
+  onPick,
+  title = 'Pick a color',
+  size = 18,
+  align = 'left',
+}: {
+  currentColor: string;
+  onPick: (hex: string) => void;
+  title?: string;
+  size?: number;
+  align?: 'left' | 'right';
+}) {
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState(currentColor || '#5292DC');
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  // Reflect the resolved color in the custom field whenever the
+  // picker opens so the user starts from where they are, not from
+  // a stale value.
+  useEffect(() => { if (open) setCustom(currentColor || '#5292DC'); }, [open, currentColor]);
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        title={title}
+        aria-label={title}
+        data-testid="color-picker-swatch"
+        className="rounded border border-border/60 hover:border-foreground transition-colors"
+        style={{ width: size, height: size, background: currentColor }}
+      />
+      {open && (
+        <div
+          role="menu"
+          data-testid="color-picker-menu"
+          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1 z-50 w-[200px] rounded-md p-2 space-y-2`}
+          style={{
+            background: 'var(--popover)',
+            border: '1px solid var(--border)',
+            boxShadow: '0 6px 18px rgba(0,0,0,0.22)',
+          }}
+        >
+          <div className="grid grid-cols-5 gap-1.5">
+            {DEVICE_COLOR_PALETTE.map((c) => {
+              const isReset = c.id === 'reset';
+              const isCurrent = (currentColor || '') === c.hex;
+              if (isReset) {
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => { onPick(''); setOpen(false); }}
+                    title="Use default color"
+                    data-testid="color-picker-reset"
+                    className={`h-7 rounded border text-[9px] tracking-tight transition-colors ${
+                      !currentColor
+                        ? 'border-primary/60 text-primary bg-primary/10'
+                        : 'border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
+                    }`}
+                  >
+                    Default
+                  </button>
+                );
+              }
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => { onPick(c.hex); setOpen(false); }}
+                  title={c.name}
+                  data-testid={`color-picker-preset-${c.id}`}
+                  className="h-7 rounded border transition-colors flex items-center justify-center"
+                  style={{
+                    background: c.hex,
+                    borderColor: isCurrent ? 'var(--foreground)' : 'var(--border)',
+                  }}
+                >
+                  {isCurrent && <Check className="w-3 h-3 text-white drop-shadow" />}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-1.5 pt-1 border-t border-border/40">
+            <input
+              type="color"
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              data-testid="color-picker-custom"
+              className="w-7 h-7 rounded cursor-pointer bg-transparent"
+              aria-label="Custom color"
+            />
+            <input
+              type="text"
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              placeholder="#RRGGBB"
+              className="flex-1 text-[10.5px] font-mono bg-transparent border border-border/60 rounded px-1.5 py-1 text-foreground focus:outline-none focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const hex = custom.trim();
+                if (/^#([0-9a-fA-F]{6})$/.test(hex)) {
+                  onPick(hex);
+                  setOpen(false);
+                }
+              }}
+              data-testid="color-picker-custom-apply"
+              className="px-1.5 py-1 rounded text-[10px] font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+            >
+              OK
+            </button>
           </div>
         </div>
       )}
@@ -12913,6 +13110,17 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                 {statusBadge.label}
               </span>
             )}
+            {/* V3.6 Part B item color picker — overrides this single
+                device's color, regardless of its category. Empty hex
+                clears the override and the device returns to the
+                category resolved color. */}
+            <ColorPicker
+              currentColor={tone}
+              onPick={(hex) => onUpdate({ color: hex || undefined })}
+              title="Device color"
+              size={18}
+              align="right"
+            />
             <button
               onClick={onClose}
               className="p-1.5 rounded-md hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
@@ -15197,6 +15405,12 @@ function BottomDeviceBar({
   onPickPathway: (kind: 'tray' | 'jhook' | 'sleeve' | 'raceway' | 'duct', label: string) => void;
   tool: Tool;
 }) {
+  // V3.6 Part B — direct store access for the category color picker in
+  // the open tray header. The picker resolves the dock cat to its
+  // representative DeviceKind via TYPE_KIND on the first DEVICE-typed
+  // entry in `cat.types` (skipping dock-only category placeholders).
+  const categoryColors = useProjectStore((s) => s.categoryColors);
+  const setCategoryColor = useProjectStore((s) => s.setCategoryColor);
   // V1 P0.6 — dock is grouped by domain. A small uppercase label sits
   // above each group inside the bar, and the order follows a real
   // survey workflow: surveillance first, then access, then detect &
@@ -15383,6 +15597,29 @@ function BottomDeviceBar({
               <div className="text-[13.5px] font-semibold tracking-tight text-foreground">{trayCat.label}</div>
               <div className="text-[11px] text-muted-foreground mt-0.5">{TRAY_DESCRIPTION[trayCat.id] ?? `Place ${trayCat.label.toLowerCase()} on the floorplan.`}</div>
             </div>
+            {/* V3.6 Part B category picker — resolve this tray's
+                representative DeviceKind from its first real device
+                type, then bind the swatch to setCategoryColor. Tool
+                categories (cable / conduit / pathway) have no kind
+                so they get no picker. */}
+            {(() => {
+              const firstType = (trayCat.types ?? []).find((t) => !!TYPE_KIND[t as DeviceType]) as DeviceType | undefined;
+              if (!firstType) return null;
+              const kind = TYPE_KIND[firstType];
+              const resolved = categoryColors?.[kind] ?? KIND_TONE[kind];
+              return (
+                <div className="shrink-0 flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">Color</span>
+                  <ColorPicker
+                    currentColor={resolved}
+                    onPick={(hex) => setCategoryColor(kind, hex || null)}
+                    title={`${trayCat.label} color`}
+                    size={18}
+                    align="right"
+                  />
+                </div>
+              );
+            })()}
             <button onClick={() => setOpen(null)} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40">
               <X className="w-4 h-4" />
             </button>
