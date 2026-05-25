@@ -100,8 +100,11 @@ export interface Product {
   ndaa?: boolean;
   /** ONVIF profile — used for cross-vendor VMS / VMS-side analytics. */
   onvifProfile?: 'S' | 'T' | 'G' | 'M' | 'A' | 'C' | 'Q';
-  /** Native resolution. */
-  resolution?: '720p' | '1080p' | '4MP' | '5MP' | '6MP' | '8MP' | '4K' | '8K' | '12MP' | 'multi-sensor';
+  /** Native resolution. 2MP is the vendor alias the catalog uses on a few
+   *  legacy entries (a Uniview PTZ, for example); it maps to the same
+   *  pixel signature as 1080p in the canvas DORI mapping table. Listed
+   *  here so the union matches the data the catalog actually ships. */
+  resolution?: '720p' | '1080p' | '2MP' | '4MP' | '5MP' | '6MP' | '8MP' | '4K' | '8K' | '12MP' | 'multi-sensor';
   /** Lens / focal range summary (cameras). */
   lensType?: 'fixed' | 'varifocal' | 'motorized' | 'zoom';
   lensMm?: string;      // legacy compat

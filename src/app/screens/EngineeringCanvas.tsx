@@ -131,6 +131,19 @@ interface Product {
   /** Estimated bitrate per stream in Mbps at H.265 / 1080p / 15fps. Used
    *  by the bandwidth/storage planner. */
   bitrateMbps?: number;
+  /** Marketing product line (e.g. "P14", "M30"). Surfaced in the product
+   *  search haystack so a partial model number still matches. */
+  productLine?: string;
+  /** Marketing product name (e.g. "P1468-LE Bullet 4MP"). Search haystack. */
+  productName?: string;
+  /** Camera form factor — 'ptz' | 'fisheye' | 'dome' | 'bullet' | 'multisensor'
+   *  | 'turret' | 'thermal' | 'lpr' | 'body'. Drives the dock's camera
+   *  sub type tabs + the search haystack. Mirrors the catalog's
+   *  Product.cameraType so we don't have to round trip to the catalog on
+   *  every render. */
+  cameraType?: string;
+  /** Catalog sub category (e.g. 'core-switch', 'turret'). Search haystack. */
+  subcategory?: string;
 }
 
 /** Mount / accessory catalog — populated for the camera SKUs that have a
@@ -534,8 +547,19 @@ const PRODUCTS: Product[] = CATALOG
       poe: p.poeClass ? `Class ${p.poeClass}` : undefined,
       powerW: p.powerDrawWatts,
       bitrateMbps: p.bandwidthMbps,
+      productLine: p.productLine,
+      productName: p.productName,
+      cameraType: p.cameraType,
+      subcategory: p.subcategory,
     };
   });
+/** Index of PRODUCTS by id for O(1) lookup. Used in the hot canvas
+ *  rendering loop (the per-camera label caption resolves catalog
+ *  product on every render — at 50+ cameras × pan/zoom/drag frames,
+ *  a linear `PRODUCTS.find` becomes a measurable cost). Built once at
+ *  module load alongside PRODUCTS so the canvas never pays for the
+ *  scan. */
+const PRODUCTS_BY_ID: Map<string, Product> = new Map(PRODUCTS.map((p) => [p.id, p]));
 
 const TYPE_KIND: Record<DeviceType, DeviceKind> = {
   'cam.bullet': 'camera', 'cam.dome': 'camera', 'cam.ptz': 'camera', 'cam.multisensor': 'camera', 'cam.fisheye': 'camera', 'cam.thermal': 'camera', 'cam.lpr': 'camera', 'cam.body': 'camera',
@@ -8305,7 +8329,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           // label, manufacturer + model, and the device id. Uses an
           // SVG <title> element so it costs nothing, works in every
           // theme, and doesn't pull in a custom positioning layer.
-          const hoverProduct = d.product ? PRODUCTS.find((p) => p.id === d.product) : undefined;
+          const hoverProduct = d.product ? PRODUCTS_BY_ID.get(d.product) : undefined;
           const hoverProductLabel = hoverProduct ? `${hoverProduct.mfr} ${hoverProduct.model}` : d.type;
           const hoverTitle = [d.label, hoverProductLabel, d.id].filter(Boolean).join(' · ');
           return (
@@ -8585,37 +8609,63 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                   </g>
                 );
               })()}
-              {/* Label pill — id + manufacturer model below. Gated by BOTH
-                  the `labels` engineering layer AND the user's label
-                  density preference (hidden / selected / important / all).
-                  Selected device's label always wins so identity is never
-                  ambiguous. */}
-              {layers.labels && labelVisibleFor(d, display.labelDensity, isSel) && (
-                <g transform={`translate(${d.x}, ${d.y + 7 + 15 * iconScale})`} pointerEvents="none">
-                  {/* Architectural callout: hairline frame, no tone stroke.
-                      The device's color identity is already carried by the
-                      glyph; the label's job is just to name it quietly. */}
-                  <rect
-                    x={-(d.id.length * 3.4 + 6)} y={-7}
-                    width={d.id.length * 6.8 + 12} height={14} rx={3}
-                    fill="var(--panel-background)" stroke="var(--border)" strokeWidth="0.5"
-                    fillOpacity="0.92"
-                  />
-                  <text x={0} y={3} textAnchor="middle" fill="var(--foreground)" fontSize="10" fontWeight="500" letterSpacing="0.02em">{d.id}</text>
-                  {isSel && (() => {
-                    const product = PRODUCTS.find((p) => p.id === d.product);
-                    if (!product) return null;
-                    const label = `${product.mfr} · ${product.model}`;
-                    const w = label.length * 5.5 + 12;
-                    return (
+              {/* Label pill — primary line + a small make/model caption.
+                  Gated by BOTH the `labels` engineering layer AND the
+                  user's label density preference (hidden / selected /
+                  important / all). Selected device's label always wins
+                  so identity is never ambiguous.
+
+                  Primary text: V3 catalog browsing pass made the
+                  user's room name (d.label) win over the technical tag
+                  (d.id) when present, matching the drawer headline.
+                  Falls back to d.id when no label has been set yet.
+
+                  Secondary caption: for plotted cameras with a
+                  resolved catalog product, show `${mfr} ${model}`
+                  beneath the room name (e.g. "Axis P3267"). Always
+                  shown — not just on selection — so the engineering
+                  identity reads at a glance. Never invented: a device
+                  without a catalog product gets no caption. */}
+              {layers.labels && labelVisibleFor(d, display.labelDensity, isSel) && (() => {
+                // Cap the primary text to keep the pill width bounded
+                // when the operator types a long room name. The map
+                // already truncates the visible text via the <text>
+                // measurement when it overflows; we just don't want the
+                // background rect to grow past ~140 px regardless of
+                // how many code points are in d.label.
+                const rawPrimary = d.label || d.id;
+                const primary = rawPrimary.length > 22 ? rawPrimary.slice(0, 21) + '…' : rawPrimary;
+                const pillW = Math.min(160, primary.length * 6.8 + 12);
+                const pillX = -pillW / 2;
+                const isCameraKind = TYPE_KIND[d.type] === 'camera';
+                // PRODUCTS_BY_ID lookup is O(1); the old PRODUCTS.find
+                // ran the full catalog scan per camera per render which
+                // showed up in pan/zoom/drag profiles.
+                const product = isCameraKind && d.product ? PRODUCTS_BY_ID.get(d.product) : undefined;
+                const rawCaption = product ? `${product.mfr} ${product.model}` : '';
+                const captionText = rawCaption.length > 26 ? rawCaption.slice(0, 25) + '…' : rawCaption;
+                const captionW = captionText ? Math.min(170, captionText.length * 5.5 + 12) : 0;
+                return (
+                  <g transform={`translate(${d.x}, ${d.y + 7 + 15 * iconScale})`} pointerEvents="none">
+                    {/* Architectural callout: hairline frame, no tone stroke.
+                        The device's color identity is already carried by the
+                        glyph; the label's job is just to name it quietly. */}
+                    <rect
+                      x={pillX} y={-7}
+                      width={pillW} height={14} rx={3}
+                      fill="var(--panel-background)" stroke="var(--border)" strokeWidth="0.5"
+                      fillOpacity="0.92"
+                    />
+                    <text x={0} y={3} textAnchor="middle" fill="var(--foreground)" fontSize="10" fontWeight="500" letterSpacing="0.02em">{primary}</text>
+                    {captionText && (
                       <g transform="translate(0, 16)">
-                        <rect x={-w / 2} y={-6} width={w} height={11} rx={2} fill="var(--panel-background)" fillOpacity="0.88" stroke="var(--border)" strokeWidth="0.4" />
-                        <text x={0} y={2} textAnchor="middle" fill={tone} fontSize="8" fontWeight="500" fontFamily="ui-monospace, monospace">{label}</text>
+                        <rect x={-captionW / 2} y={-6} width={captionW} height={11} rx={2} fill="var(--panel-background)" fillOpacity="0.88" stroke="var(--border)" strokeWidth="0.4" />
+                        <text x={0} y={2} textAnchor="middle" fill={tone} fontSize="8" fontWeight="500" fontFamily="ui-monospace, monospace">{captionText}</text>
                       </g>
-                    );
-                  })()}
-                </g>
-              )}
+                    )}
+                  </g>
+                );
+              })()}
             </g>
           );
         })}
@@ -15999,21 +16049,45 @@ function BottomDeviceBar({
   // by these sub-tabs, so the user sees a focused subset (≤12 buttons).
   const [cableSub, setCableSub] = useState<'cable'|'term'|'coupler'|'rack'|'conduit'|'pathway'|'box'|'firestop'>('cable');
   const [conduitSub, setConduitSub] = useState<'conduit'|'pathway'|'box'|'firestop'>('conduit');
+  // Camera tray filters. Sub type tabs (PTZ / Fisheye / Dome / Bullet /
+  // Multisensor) gate the visible cameras to one form factor; the
+  // remaining types (turret, thermal, lpr, body) stay reachable via
+  // 'all' + the product search box on the bar.
+  type CamSub = 'all' | 'ptz' | 'fisheye' | 'dome' | 'bullet' | 'multisensor';
+  const [camSub, setCamSub] = useState<CamSub>('all');
+  const [camMfr, setCamMfr] = useState<string | null>(null);
+  type CamTech = 'all' | 'cloud' | 'on_prem' | 'hybrid';
+  const [camTech, setCamTech] = useState<CamTech>('all');
+  // Global product search — driven by the search input docked on the
+  // bottom toolbar (right of the category browser). Matches across
+  // manufacturer, model, productLine, productName, cameraType,
+  // subcategory, resolution — the haystack from the catalog audit. When
+  // a query is active, the tray flips into a search-results mode
+  // regardless of which category is open.
+  const [searchQuery, setSearchQuery] = useState('');
   // The Conduit sub-tab defaults to a 6-button "common sizes" set
   // (EMT 1/2 · EMT 3/4 · EMT 1 · PVC 3/4 · PVC 1 · raceway). Flip this
   // toggle to expose the full 30-cell type × size matrix.
   const [conduitShowAll, setConduitShowAll] = useState(false);
   const trayRef = useRef<HTMLDivElement>(null);
+  // Dismiss the tray OR the search panel on outside-click / Escape. Both
+  // panels live inside trayRef so a click outside their bounds clears
+  // whichever one is currently rendering. Without this branch the
+  // search panel anchored a 760×420 zone above the bar and refused to
+  // leave until the user hit the X button — out of step with every
+  // other floating affordance.
+  const searchPanelLive = searchQuery.trim().length >= 2;
   useEffect(() => {
-    if (!open) return;
+    if (!open && !searchPanelLive) return;
+    const dismiss = () => { setOpen(null); setSearchQuery(''); };
     const onDown = (e: MouseEvent) => {
-      if (trayRef.current && !trayRef.current.contains(e.target as Node)) setOpen(null);
+      if (trayRef.current && !trayRef.current.contains(e.target as Node)) dismiss();
     };
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(null); };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); };
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onEsc);
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onEsc); };
-  }, [open]);
+  }, [open, searchPanelLive]);
 
   // Resolve products per category. We only show items whose DeviceType is
   // present in the PRODUCTS catalog AND has at least one product — that
@@ -16039,6 +16113,77 @@ function BottomDeviceBar({
   }, []);
   const trayCat = cats.find((c) => c.id === open) ?? null;
   const trayProducts = open ? (productsByCat[open] ?? []) : [];
+
+  // ── Camera tray — full pool + sub-type + manufacturer + tech filters ──
+  // productsByCat['cam'] is sliced to 24 for the legacy unfiltered grid;
+  // the sub-tab work needs the full 60 camera SKUs so a filter never
+  // shows fewer than it should. Compute it once.
+  const camFullPool = useMemo(
+    () => PRODUCTS.filter((p) => TYPE_KIND[p.type] === 'camera'),
+    [],
+  );
+  // Manufacturer dropdown options — only mfrs that actually have at
+  // least one camera in the catalog.
+  const camMfrOptions = useMemo(
+    () => Array.from(new Set(camFullPool.map((p) => p.mfr))).sort(),
+    [camFullPool],
+  );
+  // Pool narrowed by manufacturer + tech, sub-type independent. Drives
+  // both the visible grid (further filtered by the active sub tab) and
+  // the live tab counts so neither has to redo the same scan twice.
+  const camMfrTechPool = useMemo(() => camFullPool.filter((p) => {
+    if (camMfr && p.mfr !== camMfr) return false;
+    if (camTech !== 'all' && !productMatchesTechModel(p, camTech)) return false;
+    return true;
+  }), [camFullPool, camMfr, camTech]);
+  // Sub-tab counts keyed by CamSub. Memoized once per
+  // (mfr, tech) change instead of recomputed inline inside the map of
+  // tab buttons (which used to scan camFullPool six times per render).
+  const camSubCounts = useMemo(() => ({
+    all:         camMfrTechPool.length,
+    ptz:         camMfrTechPool.filter((p) => p.type === 'cam.ptz').length,
+    fisheye:     camMfrTechPool.filter((p) => p.type === 'cam.fisheye').length,
+    dome:        camMfrTechPool.filter((p) => p.type === 'cam.dome').length,
+    bullet:      camMfrTechPool.filter((p) => p.type === 'cam.bullet').length,
+    multisensor: camMfrTechPool.filter((p) => p.type === 'cam.multisensor').length,
+  }), [camMfrTechPool]);
+  // Filtered cameras driving the cam tray grid.
+  const camFiltered = useMemo(() => {
+    const subType = (() => {
+      switch (camSub) {
+        case 'all':         return null;
+        case 'ptz':         return 'cam.ptz';
+        case 'fisheye':     return 'cam.fisheye';
+        case 'dome':        return 'cam.dome';
+        case 'bullet':      return 'cam.bullet';
+        case 'multisensor': return 'cam.multisensor';
+      }
+    })();
+    return subType ? camMfrTechPool.filter((p) => p.type === subType) : camMfrTechPool;
+  }, [camMfrTechPool, camSub]);
+
+  // ── Product search — global, matches across the audit haystack:
+  //   manufacturer, model, productLine, productName, cameraType,
+  //   subcategory, resolution. Hooked to the search box on the bar.
+  const trimmedQuery = searchQuery.trim();
+  const searchActive = trimmedQuery.length >= 2;
+  const searchResults = useMemo(() => {
+    if (!searchActive) return [];
+    const q = trimmedQuery.toLowerCase();
+    return PRODUCTS.filter((p) => {
+      // Haystack: every field a surveyor might type. `p.sub` is the
+      // pre-built subtitle the catalog adapter derives from notes +
+      // resolution + cameraType, so feature keywords like "outdoor",
+      // "NDAA", "varifocal" still match even when they're not in the
+      // strict tagged fields.
+      const hay = [
+        p.mfr, p.model, p.productLine ?? '', p.productName ?? '',
+        p.cameraType ?? '', p.subcategory ?? '', p.resolution ?? '',
+        p.sub ?? '',
+      ].join(' ').toLowerCase();
+      return hay.includes(q);
+    }).slice(0, 60);
+  }, [searchActive, trimmedQuery]);
 
   // V1 P0.5 — count badges. The dock subscribes directly to devices +
   // pathways for the active floor so the parent's prop surface stays
@@ -16089,8 +16234,71 @@ function BottomDeviceBar({
 
   return (
     <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-30 hidden md:block" ref={trayRef} data-canvas-chrome="tray">
-      {/* Tray (renders above the bar when a category is open) */}
-      {open && trayCat && (
+      {/* Global product search results panel — wins over the category
+          tray when a query is active so the operator always sees ONE
+          source of truth above the bar. Same chrome as the tray for
+          visual continuity. */}
+      {searchActive && (
+        <div
+          className="mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden"
+          style={{ borderColor: 'var(--border)' }}
+          data-testid="bottombar-search-panel"
+        >
+          <div className="px-4 pt-3 pb-2.5 border-b border-border flex items-center gap-3">
+            <Search className="w-4 h-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-semibold tracking-tight text-foreground truncate">
+                Search results for "{trimmedQuery}"
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">
+                {searchResults.length === 0
+                  ? 'No catalog matches. Try a manufacturer, model number, or form factor.'
+                  : `${searchResults.length} product${searchResults.length === 1 ? '' : 's'} matched across manufacturer, model, line, name, form factor, subcategory, resolution.`}
+              </div>
+            </div>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+              title="Clear search"
+              data-testid="bottombar-search-clear"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {searchResults.length > 0 && (
+            <div className="p-3 max-h-[420px] overflow-auto">
+              <div className="grid grid-cols-4 gap-2">
+                {searchResults.map((p) => {
+                  const tone = KIND_TONE[TYPE_KIND[p.type]] ?? 'var(--primary)';
+                  return (
+                    <button
+                      key={p.id}
+                      onPointerDown={(e) => { onStartDrag(p, e); setSearchQuery(''); setOpen(null); }}
+                      data-track={`bottombar-search-${p.id}`}
+                      className="group text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-[var(--shadow-low)] hover:-translate-y-[1px] transition-all p-3 flex flex-col gap-2"
+                      style={{ transitionDuration: 'var(--motion-fast)' }}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-md flex items-center justify-center shrink-0" style={{ background: `${tone}14`, color: tone, boxShadow: `inset 0 0 0 1px ${tone}55` }}>
+                          <DeviceGlyph type={p.type} size={20} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] font-medium tracking-tight truncate text-foreground">{p.model}</div>
+                          <div className="text-[10px] text-muted-foreground truncate">{p.mfr}</div>
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-2">{p.sub ?? '—'}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {/* Tray (renders above the bar when a category is open AND the
+          search panel isn't already active) */}
+      {!searchActive && open && trayCat && (
         <div
           className="mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden"
           style={{ borderColor: 'var(--border)' }}
@@ -16478,12 +16686,159 @@ function BottomDeviceBar({
                 );
               })()}
             </div>
+          ) : trayCat.id === 'cam' ? (
+            // ── Camera tray (V3 catalog browsing pass) ──────────────────
+            // Sub-type tabs filter to a single form factor (PTZ, Fisheye,
+            // Dome, Bullet, Multisensor). Above the tabs sit two
+            // dropdowns: manufacturer (any catalog mfr that ships a
+            // camera) and tech stack (Cloud / On-prem / Hybrid via
+            // techModels.includes — array semantics). Tabs and filters
+            // compose; the grid below shows the intersection. The other
+            // camera types (turret, thermal, lpr, body) stay reachable
+            // through the 'All' tab and the global product search on the
+            // bar — they intentionally don't get their own tab.
+            <div className="p-3 max-h-[420px] overflow-auto space-y-3">
+              {/* Filters row */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <span className="uppercase tracking-[0.10em]">Manufacturer</span>
+                </div>
+                <select
+                  value={camMfr ?? ''}
+                  onChange={(e) => setCamMfr(e.target.value || null)}
+                  data-testid="cam-tray-mfr"
+                  className="text-[11px] px-2 h-7 rounded-md border border-border bg-card focus:outline-none focus:border-primary/40"
+                >
+                  <option value="">All</option>
+                  {camMfrOptions.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <div className="ml-3 flex items-stretch border border-border rounded-md overflow-hidden">
+                  {([
+                    { id: 'all'     as const, label: 'All stacks' },
+                    { id: 'cloud'   as const, label: 'Cloud' },
+                    { id: 'on_prem' as const, label: 'On-prem' },
+                    { id: 'hybrid'  as const, label: 'Hybrid' },
+                  ]).map((m) => {
+                    const active = camTech === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => setCamTech(m.id)}
+                        data-testid={`cam-tray-tech-${m.id}`}
+                        className={`text-[10px] px-2 h-7 transition-colors ${active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'}`}
+                      >
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(camMfr || camTech !== 'all' || camSub !== 'all') && (
+                  <button
+                    onClick={() => { setCamMfr(null); setCamTech('all'); setCamSub('all'); }}
+                    data-testid="cam-tray-reset"
+                    className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline decoration-dotted underline-offset-2"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {/* Sub type tabs.
+                  Note on the Dome tab label: the catalog tags some
+                  turret cameras with `subcategory: 'turret'` /
+                  `cameraType: 'turret'` but routes them to
+                  `deviceType: 'cam.dome'` (the dome renderer doubles
+                  as the turret renderer). Under the 'Dome' tab the
+                  user therefore sees both true domes and turrets;
+                  labelling the tab "Dome · Turret" matches what's
+                  actually in the grid. A dedicated Turret tab isn't
+                  in scope for this pass per Mohammad's brief; users
+                  still search "turret" to pinpoint them. */}
+              <div
+                className="flex flex-wrap items-center gap-1 border-b border-border pb-2"
+                data-testid="cam-sub-tabs"
+              >
+                {([
+                  { id: 'all'         as CamSub, label: 'All' },
+                  { id: 'ptz'         as CamSub, label: 'PTZ' },
+                  { id: 'fisheye'     as CamSub, label: 'Fisheye' },
+                  { id: 'dome'        as CamSub, label: 'Dome · Turret' },
+                  { id: 'bullet'      as CamSub, label: 'Bullet' },
+                  { id: 'multisensor' as CamSub, label: 'Multisensor' },
+                ]).map((s) => {
+                  const active = camSub === s.id;
+                  const count = camSubCounts[s.id];
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => setCamSub(s.id)}
+                      data-testid={`cam-sub-${s.id}`}
+                      className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors flex items-center gap-1.5 ${
+                        active
+                          ? 'border-primary/40 bg-primary/12 text-primary'
+                          : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                      }`}
+                    >
+                      <span>{s.label}</span>
+                      <span className={`tabular-nums text-[9.5px] ${active ? 'text-primary/70' : 'text-muted-foreground/60'}`}>{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {camFiltered.length === 0 ? (
+                <div className="px-5 py-8 text-center text-[12px] text-muted-foreground">
+                  No cameras match those filters. Clear them, or search the full catalog from the bar below.
+                </div>
+              ) : (
+                <>
+                  <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1">
+                    {camFiltered.length} camera{camFiltered.length === 1 ? '' : 's'}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {camFiltered.map((p) => {
+                      const tone = KIND_TONE[TYPE_KIND[p.type]] ?? 'var(--primary)';
+                      return (
+                        <button
+                          key={p.id}
+                          onPointerDown={(e) => { onStartDrag(p, e); setOpen(null); }}
+                          data-track={`bottombar-cam-${p.id}`}
+                          className="group text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-[var(--shadow-low)] hover:-translate-y-[1px] transition-all p-3 flex flex-col gap-2"
+                          style={{ transitionDuration: 'var(--motion-fast)' }}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-md flex items-center justify-center shrink-0" style={{ background: `${tone}14`, color: tone, boxShadow: `inset 0 0 0 1px ${tone}55` }}>
+                              <DeviceGlyph type={p.type} size={20} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] font-medium tracking-tight truncate text-foreground">{p.model}</div>
+                              <div className="text-[10px] text-muted-foreground truncate">{p.mfr}</div>
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground line-clamp-2">{p.sub ?? '—'}</div>
+                          <div className="flex items-center justify-between text-[10px]">
+                            {(p as any).recommended ? (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-500">Recommended</span>
+                            ) : <span />}
+                            <span className="inline-flex items-center gap-1 text-muted-foreground">
+                              <GripVertical className="w-3 h-3 opacity-60" />
+                              Drag or click to place
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
           ) : trayProducts.length === 0 ? (
             <div className="px-5 py-8 text-center text-[12px] text-muted-foreground">
               No catalog items in this category yet.
             </div>
           ) : (
-            // Default product-grid tray for cam / acc / door / net / power / intercom / etc.
+            // Default product-grid tray for acc / door / net / power / intercom / etc.
+            // (Cameras get their own branch above with sub type tabs + filters.)
             // Cards carry an icon, manufacturer + model, and a per-card hint line.
             <div className="p-3 max-h-[360px] overflow-auto">
               <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground mb-1.5 px-1">{trayProducts.length} item{trayProducts.length === 1 ? '' : 's'}</div>
@@ -16569,6 +16924,13 @@ function BottomDeviceBar({
                       <button
                         key={c.id}
                         onClick={() => {
+                          // Clicking a category dismisses the search panel
+                          // — search + tray are mutually exclusive at the
+                          // render level, so we enforce the same at the
+                          // input level to avoid a dead state where the
+                          // button silently flips `open` while the
+                          // search panel stays anchored above the bar.
+                          if (searchQuery) setSearchQuery('');
                           if (isToolCat && c.tool) { onPickTool(c.tool); setOpen(null); return; }
                           setOpen(open === c.id ? null : c.id);
                         }}
@@ -16611,6 +16973,40 @@ function BottomDeviceBar({
             </div>
           );
         })}
+        {/* Product search — same haystack the catalog audit confirmed:
+            manufacturer, model, productLine, productName, cameraType,
+            subcategory, resolution. Sits at the right edge of the bar
+            so it's always reachable; typing surfaces results above the
+            bar in the search panel. */}
+        <span aria-hidden className="self-stretch w-px bg-border/70 my-1.5" />
+        <div className="flex flex-col">
+          <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
+            Search
+          </div>
+          <div className="flex items-center px-2 pb-1.5">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search products"
+                data-testid="bottombar-search-input"
+                aria-label="Search products"
+                className="w-[180px] h-[34px] pl-7 pr-2 text-[12px] rounded-md border border-border bg-card focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/15 placeholder:text-muted-foreground/50"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground"
+                  title="Clear"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
