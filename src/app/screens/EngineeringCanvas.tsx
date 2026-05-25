@@ -14849,6 +14849,129 @@ function computeIntelIssues(devices: Device[], pxToFt: number): IntelIssue[] {
   return out;
 }
 
+/** Right floating rail — mirrors the left DrawingToolRail's
+ *  collapse-on-hover behavior, with labels reading INWARD (to the
+ *  left of each icon) so they never spill off the right edge of the
+ *  canvas. Icons-only by default; on desktop hover or touch tap the
+ *  rail widens and labels appear next to the icons. Floats over the
+ *  canvas; no layout reflow.
+ *
+ *  Items today: Chips toggle (on-canvas intel chips visibility), AI
+ *  Assistant open/close. No fabricated nav, no decorative dots —
+ *  the assistant tile shows real `high` / `warn` counts only when
+ *  the assistant rule run produces them; "clear" replaces them when
+ *  the canvas has no findings at all. */
+function IntelligenceRail({
+  open, setOpen, panelOpen, setPanelOpen, highCount, warnCount, issuesEmpty,
+}: {
+  open: boolean; setOpen: (b: boolean) => void;
+  panelOpen: boolean; setPanelOpen: (b: boolean) => void;
+  highCount: number; warnCount: number; issuesEmpty: boolean;
+}) {
+  const [hoverExpand, setHoverExpand] = useState(false);
+  const [touchExpand, setTouchExpand] = useState(false);
+  const isCoarsePointer = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(hover: none) and (pointer: coarse)').matches,
+    [],
+  );
+  const expanded = isCoarsePointer ? touchExpand : hoverExpand;
+  const railRef = useRef<HTMLDivElement | null>(null);
+  // Outside-tap / Escape closes the touch-expanded state. Desktop
+  // hover state self-clears on mouseleave so no handler needed there.
+  useEffect(() => {
+    if (!touchExpand) return;
+    const onDown = (e: MouseEvent) => {
+      if (railRef.current && !railRef.current.contains(e.target as Node)) setTouchExpand(false);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setTouchExpand(false); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onEsc);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onEsc); };
+  }, [touchExpand]);
+
+  type RailItem = {
+    id: string;
+    icon: any;
+    label: string;
+    title: string;
+    active: boolean;
+    onClick: () => void;
+    badge?: React.ReactNode;
+  };
+  const items: RailItem[] = [
+    {
+      id: 'chips',
+      icon: open ? Eye : EyeOff,
+      label: 'Chips',
+      title: 'Toggle on-canvas intelligence chips',
+      active: open,
+      onClick: () => setOpen(!open),
+    },
+    {
+      id: 'assistant',
+      icon: Sparkles,
+      label: 'Assistant',
+      title: 'Open AI engineering assistant',
+      active: panelOpen,
+      onClick: () => setPanelOpen(!panelOpen),
+      badge: (
+        // Real counts only — never invent a dot. When the canvas has
+        // zero findings we render a calm "clear" so the rail still
+        // reads as alive without faking a state.
+        <span className="ml-auto inline-flex items-center gap-1 text-[10px] tabular-nums">
+          {highCount > 0 && <span className="text-rose-300">{highCount}</span>}
+          {warnCount > 0 && <span className="text-amber-300">{warnCount}</span>}
+          {highCount === 0 && warnCount === 0 && issuesEmpty && <span className="text-emerald-300">clear</span>}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <div
+      ref={railRef}
+      className="absolute top-3 right-3 z-20 pointer-events-auto select-none"
+      data-canvas-chrome="intel-rail"
+    >
+      <div
+        onMouseEnter={() => !isCoarsePointer && setHoverExpand(true)}
+        onMouseLeave={() => !isCoarsePointer && setHoverExpand(false)}
+        onTouchStart={() => isCoarsePointer && setTouchExpand(true)}
+        data-rail-expanded={expanded ? 'true' : undefined}
+        className="flex flex-col items-stretch gap-0.5 rounded-2xl border bg-[#0B0F19]/85 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)]"
+        style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+      >
+        {items.map((it) => {
+          const Icon = it.icon;
+          return (
+            <button
+              key={it.id}
+              onClick={it.onClick}
+              title={it.title}
+              data-track={`intel-rail-${it.id}`}
+              className={`group relative flex items-center rounded-xl overflow-hidden transition-[width,background-color,color] ${
+                expanded
+                  ? 'h-10 w-[170px] flex-row-reverse justify-start gap-2.5 px-2.5'
+                  : 'h-10 w-10 md:h-11 md:w-11 justify-center'
+              } ${it.active ? 'bg-white/15 text-white' : 'text-white/70 hover:text-white hover:bg-white/8'}`}
+              style={{ transitionDuration: '170ms', transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
+            >
+              <Icon className="w-4 h-4 shrink-0" strokeWidth={1.7} />
+              {expanded && (
+                <span className="flex-1 text-right inline-flex items-center justify-end gap-2 text-[12px] tracking-tight whitespace-nowrap">
+                  <span>{it.label}</span>
+                  {it.badge}
+                </span>
+              )}
+              {it.active && <span className="absolute right-0 top-1.5 bottom-1.5 w-[2px] rounded-l bg-[var(--primary)]" />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: Device[]; pxToFt: number; zoom: number; open: boolean; setOpen: (b: boolean) => void }) {
   const issues = useMemo(() => computeIntelIssues(devices, pxToFt), [devices, pxToFt]);
   const summary = useMemo(() => {
@@ -14905,44 +15028,22 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen }: { devices: 
         </div>
       ))}
 
-      {/* top-right intelligence summary — two stacked pills: a compact
-          chip toggle (left of label), and the AI Assistant open/close. */}
-      <div className="absolute top-3 right-3 z-20 pointer-events-auto select-none flex items-center gap-1.5">
-        <button
-          onClick={() => setOpen(!open)}
-          title="Toggle on-canvas intelligence chips"
-          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px]"
-          style={{
-            background: 'rgba(8,12,20,0.78)',
-            backdropFilter: 'blur(14px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: '#E2E8F0',
-            boxShadow: '0 10px 24px -10px rgba(0,0,0,0.7)',
-          }}
-        >
-          <Activity className="w-3.5 h-3.5 text-sky-300" />
-          <span className="uppercase tracking-[0.18em] text-[9px] text-muted-foreground">Chips</span>
-          {open ? <Eye className="w-3 h-3 text-muted-foreground" /> : <EyeOff className="w-3 h-3 text-muted-foreground" />}
-        </button>
-        <button
-          onClick={() => setPanelOpen(!panelOpen)}
-          title="Open AI engineering assistant"
-          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px]"
-          style={{
-            background: panelOpen ? 'rgba(82,146,220,0.18)' : 'rgba(8,12,20,0.78)',
-            backdropFilter: 'blur(14px)',
-            border: panelOpen ? '1px solid rgba(82,146,220,0.5)' : '1px solid rgba(255,255,255,0.08)',
-            color: '#E2E8F0',
-            boxShadow: '0 10px 24px -10px rgba(0,0,0,0.7)',
-          }}
-        >
-          <Sparkles className="w-3.5 h-3.5" style={{ color: panelOpen ? '#A6C8F0' : '#A6C8F0' }} />
-          <span className="uppercase tracking-[0.18em] text-[9px] text-muted-foreground">Assistant</span>
-          {summary.high ? <span className="tabular-nums text-rose-300">{summary.high}</span> : null}
-          {summary.warn ? <span className="tabular-nums text-amber-300">{summary.warn}</span> : null}
-          {!summary.high && !summary.warn && !issues.length && <span className="tabular-nums text-emerald-300">clear</span>}
-        </button>
-      </div>
+      {/* top-right intelligence rail — mirror of the left DrawingToolRail
+          layout. Two items today (Chips toggle, AI Assistant). Same
+          collapse-on-hover behavior as the left rail: icons-only by
+          default; on hover/tap the rail widens and labels appear to the
+          LEFT of icons (read inward, never off screen). Floats over the
+          canvas; no reflow. Badge counts only render when there's a
+          real finding count (no fabricated dots). */}
+      <IntelligenceRail
+        open={open}
+        setOpen={setOpen}
+        panelOpen={panelOpen}
+        setPanelOpen={setPanelOpen}
+        highCount={summary.high ?? 0}
+        warnCount={summary.warn ?? 0}
+        issuesEmpty={!issues.length}
+      />
 
       {/* AI Assistant side panel — embedded on the right of the canvas.
           Lists every issue with severity, location, and suggestion.
@@ -15666,17 +15767,37 @@ function DrawingToolRail({
   // panel persists with the chosen tool's id. Clicking the same icon
   // again toggles the panel closed.
   const [panelId, setPanelId] = useState<ItemId | null>(null);
+  // V4 — Hover/tap-expand for label readability. Collapsed default
+  // (icons only); on desktop hover OR explicit touch tap, the rail
+  // widens and each tile shows its label inline next to the icon.
+  // The expansion floats over the canvas; the bar's wrapper is
+  // absolute-positioned at z-40 so the canvas never reflows.
+  const [hoverExpand, setHoverExpand] = useState(false);
+  const [touchExpand, setTouchExpand] = useState(false);
+  const isCoarsePointer = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(hover: none) and (pointer: coarse)').matches,
+    [],
+  );
+  const railExpanded = isCoarsePointer ? touchExpand : hoverExpand;
   const railRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!panelId) return;
+    if (!panelId && !touchExpand) return;
     const onDown = (e: MouseEvent) => {
-      if (railRef.current && !railRef.current.contains(e.target as Node)) setPanelId(null);
+      if (railRef.current && !railRef.current.contains(e.target as Node)) {
+        setPanelId(null);
+        setTouchExpand(false);
+      }
     };
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setPanelId(null); };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPanelId(null);
+        setTouchExpand(false);
+      }
+    };
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onEsc);
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onEsc); };
-  }, [panelId]);
+  }, [panelId, touchExpand]);
 
   const onPick = (it: Item) => {
     if (it.coming) return;
@@ -15694,17 +15815,24 @@ function DrawingToolRail({
         onClick={() => onPick(it)}
         title={it.coming ? `${it.label} — Coming soon` : `${it.label}${it.key ? ` (${it.key})` : ''} — ${it.hint}`}
         data-track={`tool-${it.label.toLowerCase().replace(/\W+/g,'-')}`}
-        className={`group relative flex flex-col items-center justify-center gap-0.5 w-10 h-10 md:w-12 md:h-12 rounded-xl transition-colors ${
+        className={`group relative flex items-center rounded-xl transition-[width,background-color,color] overflow-hidden ${
+          railExpanded
+            ? 'h-10 w-[150px] justify-start gap-2.5 px-2.5'
+            : 'h-10 w-10 md:h-12 md:w-12 justify-center'
+        } ${
           isDimmed
             ? 'text-white/30 cursor-not-allowed'
             : isActiveTool || isActivePanel
               ? 'bg-white/15 text-white'
               : 'text-white/65 hover:text-white hover:bg-white/8'
         }`}
+        style={{ transitionDuration: '170ms', transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
         disabled={isDimmed}
       >
-        <Icon className="w-4 h-4" strokeWidth={1.7} />
-        <span className="hidden md:inline text-[8.5px] tracking-tight">{it.label}</span>
+        <Icon className="w-4 h-4 shrink-0" strokeWidth={1.7} />
+        {railExpanded && (
+          <span className="text-[12px] tracking-tight whitespace-nowrap">{it.label}</span>
+        )}
         {(isActiveTool || isActivePanel) && <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r bg-[var(--primary)]" />}
         {badge}
       </button>
@@ -15719,13 +15847,20 @@ function DrawingToolRail({
           as a black slab regardless of theme so it reads consistently
           across Light Drafting / Slate / Dark Command. Swapping for a
           semantic token would let the rail follow the theme card and
-          lose its identity. */}
+          lose its identity.
+          V4 — Hover-expand: collapsed by default (icons only); on
+          desktop hover or touch tap the rail widens smoothly and shows
+          each item's label inline. Floats over the canvas; no reflow. */}
       <div
-        className="flex flex-col items-center gap-0.5 rounded-2xl border bg-[#0B0F19]/95 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)] select-none"
+        onMouseEnter={() => !isCoarsePointer && setHoverExpand(true)}
+        onMouseLeave={() => !isCoarsePointer && setHoverExpand(false)}
+        onTouchStart={() => isCoarsePointer && setTouchExpand(true)}
+        className="flex flex-col items-stretch gap-0.5 rounded-2xl border bg-[#0B0F19]/95 backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)] select-none"
         style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+        data-rail-expanded={railExpanded ? 'true' : undefined}
       >
         {items.map((it) => <Tile key={it.label} it={it} />)}
-        <div className="w-7 h-px bg-white/10 my-1.5" />
+        <div className="h-px bg-white/10 my-1.5 mx-1.5" />
         {/* Snap toggle was removed from the rail to drop the duplicate
             (it now lives only in the top bar overflow menu). Layers
             and Map remain because they each open distinct side panels. */}
