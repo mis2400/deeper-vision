@@ -16200,6 +16200,14 @@ function BottomDeviceBar({
   // a query is active, the tray flips into a search-results mode
   // regardless of which category is open.
   const [searchQuery, setSearchQuery] = useState('');
+  // Pass B: search input collapses to a single icon by default. Click
+  // expands into the textbox; outside-click / Escape collapse back and
+  // clear the query so the results panel dismisses with the same
+  // gesture. The actual input + floating results panel are reused
+  // verbatim from the V3 catalog browsing pass — only the chrome
+  // shifted from "always-on input" to "icon trigger + on-demand input".
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   // The Conduit sub-tab defaults to a 6-button "common sizes" set
   // (EMT 1/2 · EMT 3/4 · EMT 1 · PVC 3/4 · PVC 1 · raceway). Flip this
   // toggle to expose the full 30-cell type × size matrix.
@@ -16213,8 +16221,8 @@ function BottomDeviceBar({
   // other floating affordance.
   const searchPanelLive = searchQuery.trim().length >= 2;
   useEffect(() => {
-    if (!open && !searchPanelLive) return;
-    const dismiss = () => { setOpen(null); setSearchQuery(''); };
+    if (!open && !searchPanelLive && !searchOpen) return;
+    const dismiss = () => { setOpen(null); setSearchQuery(''); setSearchOpen(false); };
     const onDown = (e: MouseEvent) => {
       if (trayRef.current && !trayRef.current.contains(e.target as Node)) dismiss();
     };
@@ -16222,7 +16230,15 @@ function BottomDeviceBar({
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onEsc);
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onEsc); };
-  }, [open, searchPanelLive]);
+  }, [open, searchPanelLive, searchOpen]);
+  // Focus the input when the user clicks the search icon so they can
+  // start typing immediately. Runs after the conditional render flips
+  // the textbox into the DOM.
+  useEffect(() => {
+    if (searchOpen) {
+      requestAnimationFrame(() => { searchInputRef.current?.focus(); });
+    }
+  }, [searchOpen]);
 
   // Resolve products per category. We only show items whose DeviceType is
   // present in the PRODUCTS catalog AND has at least one product — that
@@ -16879,44 +16895,56 @@ function BottomDeviceBar({
                   </button>
                 )}
               </div>
-              {/* Sub type tabs.
-                  Note on the Dome tab label: the catalog tags some
-                  turret cameras with `subcategory: 'turret'` /
-                  `cameraType: 'turret'` but routes them to
-                  `deviceType: 'cam.dome'` (the dome renderer doubles
-                  as the turret renderer). Under the 'Dome' tab the
-                  user therefore sees both true domes and turrets;
-                  labelling the tab "Dome · Turret" matches what's
-                  actually in the grid. A dedicated Turret tab isn't
-                  in scope for this pass per Mohammad's brief; users
-                  still search "turret" to pinpoint them. */}
+              {/* Sub type tabs — now icon buttons that REUSE the existing
+                  DeviceGlyph art (no new icons drawn). Each tile shows
+                  the device glyph + the live per-type count. The 'All'
+                  tile uses the bottom-bar Cameras icon (Video lucide
+                  glyph) since there's no DeviceType for "all cameras".
+                  Note on the Dome tab: the catalog tags some turret
+                  cameras with subcategory + cameraType 'turret' but
+                  routes them through deviceType 'cam.dome' (one
+                  renderer). Selecting Dome therefore shows both true
+                  domes and turrets — search "turret" to pinpoint them. */}
               <div
-                className="flex flex-wrap items-center gap-1 border-b border-border pb-2"
+                className="flex flex-wrap items-center gap-1.5 border-b border-border pb-2"
                 data-testid="cam-sub-tabs"
               >
                 {([
-                  { id: 'all'         as CamSub, label: 'All' },
-                  { id: 'ptz'         as CamSub, label: 'PTZ' },
-                  { id: 'fisheye'     as CamSub, label: 'Fisheye' },
-                  { id: 'dome'        as CamSub, label: 'Dome · Turret' },
-                  { id: 'bullet'      as CamSub, label: 'Bullet' },
-                  { id: 'multisensor' as CamSub, label: 'Multisensor' },
+                  { id: 'all'         as CamSub, label: 'All',          glyphType: null as DeviceType | null, lucide: Video },
+                  { id: 'ptz'         as CamSub, label: 'PTZ',          glyphType: 'cam.ptz'         as DeviceType, lucide: null },
+                  { id: 'fisheye'     as CamSub, label: 'Fisheye',      glyphType: 'cam.fisheye'     as DeviceType, lucide: null },
+                  { id: 'dome'        as CamSub, label: 'Dome · Turret', glyphType: 'cam.dome'        as DeviceType, lucide: null },
+                  { id: 'bullet'      as CamSub, label: 'Bullet',       glyphType: 'cam.bullet'      as DeviceType, lucide: null },
+                  { id: 'multisensor' as CamSub, label: 'Multisensor',  glyphType: 'cam.multisensor' as DeviceType, lucide: null },
                 ]).map((s) => {
                   const active = camSub === s.id;
                   const count = camSubCounts[s.id];
+                  const LucideIcon = s.lucide;
                   return (
                     <button
                       key={s.id}
                       onClick={() => setCamSub(s.id)}
                       data-testid={`cam-sub-${s.id}`}
-                      className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors flex items-center gap-1.5 ${
+                      title={`${s.label} · ${count}`}
+                      className={`relative inline-flex flex-col items-center justify-center gap-0.5 w-[58px] h-[58px] rounded-lg border transition-colors ${
                         active
                           ? 'border-primary/40 bg-primary/12 text-primary'
-                          : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                          : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong hover:bg-secondary/30'
                       }`}
                     >
-                      <span>{s.label}</span>
-                      <span className={`tabular-nums text-[9.5px] ${active ? 'text-primary/70' : 'text-muted-foreground/60'}`}>{count}</span>
+                      {s.glyphType ? (
+                        <DeviceGlyph type={s.glyphType} size={20} />
+                      ) : LucideIcon ? (
+                        <LucideIcon className="w-[20px] h-[20px]" strokeWidth={1.7} />
+                      ) : null}
+                      <span className="text-[9px] tracking-tight leading-none">{s.label.split(' · ')[0]}</span>
+                      <span
+                        className={`absolute top-0.5 right-1 text-[9px] tabular-nums leading-none ${
+                          active ? 'text-primary/70' : 'text-muted-foreground/60'
+                        }`}
+                      >
+                        {count}
+                      </span>
                     </button>
                   );
                 })}
@@ -17108,38 +17136,56 @@ function BottomDeviceBar({
             </div>
           );
         })}
-        {/* Product search — same haystack the catalog audit confirmed:
-            manufacturer, model, productLine, productName, cameraType,
-            subcategory, resolution. Sits at the right edge of the bar
-            so it's always reachable; typing surfaces results above the
-            bar in the search panel. */}
+        {/* Product search — Pass B collapses the input behind a single
+            icon by default to keep the bar calm. Clicking the icon
+            expands to the textbox; outside-click and Escape collapse
+            back and clear the query. Haystack stays the same
+            (manufacturer, model, productLine, productName, cameraType,
+            subcategory, resolution, sub). The floating results panel
+            above the bar is unchanged. */}
         <span aria-hidden className="self-stretch w-px bg-border/70 my-1.5" />
         <div className="flex flex-col">
           <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.10em] font-medium text-muted-foreground/70 whitespace-nowrap">
             Search
           </div>
           <div className="flex items-center px-2 pb-1.5">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search products"
-                data-testid="bottombar-search-input"
+            {!searchOpen ? (
+              <button
+                onClick={() => setSearchOpen(true)}
+                title="Search products"
                 aria-label="Search products"
-                className="w-[180px] h-[34px] pl-7 pr-2 text-[12px] rounded-md border border-border bg-card focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/15 placeholder:text-muted-foreground/50"
-              />
-              {searchQuery && (
+                data-testid="bottombar-search-icon"
+                className={`w-[34px] h-[34px] flex items-center justify-center rounded-md border transition-colors ${
+                  searchQuery
+                    ? 'border-primary/40 bg-primary/12 text-primary'
+                    : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                }`}
+              >
+                <Search className="w-4 h-4" />
+              </button>
+            ) : (
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search products"
+                  data-testid="bottombar-search-input"
+                  aria-label="Search products"
+                  className="w-[200px] h-[34px] pl-7 pr-7 text-[12px] rounded-md border border-border bg-card focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/15 placeholder:text-muted-foreground/50"
+                />
                 <button
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => { setSearchQuery(''); setSearchOpen(false); }}
                   className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground"
-                  title="Clear"
-                  aria-label="Clear search"
+                  title="Collapse search"
+                  aria-label="Collapse search"
+                  data-testid="bottombar-search-collapse"
                 >
                   <X className="w-3 h-3" />
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
