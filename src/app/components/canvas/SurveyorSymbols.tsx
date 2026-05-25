@@ -68,94 +68,118 @@ const VB = 24;
  *  positioned in the consumer; we keep them small and let the wrapper
  *  scale + translate. Stroke is `currentColor`, no fills, no halos. */
 const SYMBOLS: Record<string, React.ReactNode> = {
-  // ── Cameras — plan-symbol style: rectangle / circle body + sightline
+  // ── Cameras — pictorial silhouettes of the actual hardware (V3.6
+  //    recognizability pass). Each glyph shows the device's real form
+  //    so a glance on the plan reads as "security camera" rather than
+  //    abstract plan marker. Side elevation for directional cameras
+  //    (bullet / turret / PTZ / LPR / thermal / body) — lens points
+  //    right at rot=0, so `d.rot` rotates the camera the way it
+  //    physically swings on its mount. Top-down for symmetric ones
+  //    (multisensor / fisheye). Dome uses side elevation because
+  //    top-down dome is indistinguishable from any other circular
+  //    ceiling fixture. All glyphs centered at (12,12) of the 24-unit
+  //    viewBox, monoline currentColor, designed legible at ~17 px
+  //    plotted canvas size and at 14-32 px in the dock.
   'cam.dome': (
+    // Hanging hemisphere on a mounting plate. Reads as ceiling dome.
     <g>
-      <circle cx={12} cy={12} r={6.5} />
-      <circle cx={12} cy={12} r={2.2} />
-      <path d="M 12 5.5 L 12 2" />
+      <line x1={5} y1={8.5} x2={19} y2={8.5} />
+      <path d="M 5 8.5 a 7 7 0 0 0 14 0" />
+      <circle cx={12} cy={13.5} r={1.4} fill="currentColor" stroke="none" />
     </g>
   ),
   'cam.bullet': (
+    // Cylindrical body + sunshade + lens on the right + L-shape arm
+    // mount + wall base. Iconic bullet camera silhouette.
     <g>
-      <rect x={5} y={9} width={11} height={6} rx={1.2} />
-      <line x1={5} y1={12} x2={5} y2={12} />
-      <line x1={16} y1={9}  x2={20} y2={6} />
-      <line x1={16} y1={15} x2={20} y2={18} />
-      <line x1={20} y1={6}  x2={20} y2={18} />
-      <circle cx={5.5} cy={12} r={1.2} />
+      <rect x={5} y={10} width={11} height={6} rx={1.6} />
+      <path d="M 4 8.5 L 17 8.5 L 17 11 L 15.5 11" />
+      <circle cx={14.5} cy={13} r={1.3} />
+      <path d="M 5 13 L 3 13 L 3 19" />
+      <line x1={1.5} y1={19} x2={4.5} y2={19} />
     </g>
   ),
   'cam.turret': (
+    // Eyeball turret: half-sphere "eyeball" body on a flat gimbal ring,
+    // with a prominent center lens. Distinct from dome (gimballed ball
+    // rather than hemisphere hanging from a plate).
     <g>
-      <circle cx={12} cy={13} r={5.5} />
-      <circle cx={12} cy={13} r={1.6} />
-      <path d="M 7 9 L 12 4 L 17 9 Z" />
+      <ellipse cx={12} cy={17} rx={7} ry={1.5} />
+      <path d="M 5 17 a 7 5 0 0 1 14 0" />
+      <circle cx={12} cy={13.5} r={2.2} />
+      <circle cx={12} cy={13.5} r={0.7} fill="currentColor" stroke="none" />
     </g>
   ),
   'cam.ptz': (
+    // Pendant PTZ: stem at top, larger pendant dome, motorized lens
+    // inside. Distinct from dome (pendant on stem rather than flush
+    // ceiling mount) and from turret (larger, mast-mounted).
     <g>
-      <circle cx={12} cy={13} r={6.5} />
-      <path d="M 6 13 A 6 6 0 0 1 18 13" />
-      <circle cx={12} cy={13} r={2} />
-      <path d="M 12 4 L 12 7" />
+      <rect x={11} y={2.5} width={2} height={3.5} />
+      <line x1={8.5} y1={6.5} x2={15.5} y2={6.5} />
+      <path d="M 6.5 6.5 L 6.5 13 a 5.5 6 0 0 0 11 0 L 17.5 6.5" />
+      <circle cx={12} cy={13.5} r={2.3} />
+      <circle cx={12} cy={13.5} r={0.7} fill="currentColor" stroke="none" />
     </g>
   ),
   'cam.multisensor': (
+    // Top-down: central dome housing with four lens apertures at the
+    // compass points. Reads as multi-imager fish on a single mount.
     <g>
-      <circle cx={12} cy={12} r={7} />
-      <line x1={12} y1={2}  x2={12} y2={22} />
-      <line x1={2}  y1={12} x2={22} y2={12} />
-      <circle cx={7.5} cy={7.5} r={1.4} />
-      <circle cx={16.5} cy={7.5} r={1.4} />
-      <circle cx={7.5} cy={16.5} r={1.4} />
-      <circle cx={16.5} cy={16.5} r={1.4} />
+      <circle cx={12} cy={12} r={8} />
+      <circle cx={12} cy={6.5} r={1.7} />
+      <circle cx={17.5} cy={12} r={1.7} />
+      <circle cx={12} cy={17.5} r={1.7} />
+      <circle cx={6.5} cy={12} r={1.7} />
     </g>
   ),
   'cam.fisheye': (
+    // Top-down: dome housing with a single large central lens that
+    // dominates the housing. Distinct from multisensor (one big lens
+    // versus four small).
     <g>
-      <circle cx={12} cy={12} r={7.5} />
-      <circle cx={12} cy={12} r={4.5} />
-      <circle cx={12} cy={12} r={1.8} />
+      <circle cx={12} cy={12} r={8} />
+      <circle cx={12} cy={12} r={5.5} />
+      <circle cx={12} cy={12} r={1.4} fill="currentColor" stroke="none" />
     </g>
   ),
   'cam.lpr': (
-    // Bullet camera body + small plate-readout tick lines (vertical
-    // bars indicating the plate being read). Reads as "license-plate
-    // camera" in plan view without the LPR text label.
+    // Long-barrel bullet for plate reading + a small license-plate
+    // rectangle below the camera so the intent is unambiguous.
     <g>
-      <rect x={4} y={9} width={12} height={6} rx={1} />
-      <line x1={16} y1={9}  x2={21} y2={5} />
-      <line x1={16} y1={15} x2={21} y2={19} />
-      <line x1={21} y1={5}  x2={21} y2={19} />
-      <line x1={6.5} y1={11} x2={6.5} y2={13} />
-      <line x1={8.5} y1={11} x2={8.5} y2={13} />
-      <line x1={10.5} y1={11} x2={10.5} y2={13} />
-      <line x1={12.5} y1={11} x2={12.5} y2={13} />
+      <rect x={3} y={10} width={13} height={6} rx={1.6} />
+      <path d="M 2 8.5 L 17 8.5 L 17 11 L 15.5 11" />
+      <circle cx={14.5} cy={13} r={1.3} />
+      <path d="M 3 13 L 1 13 L 1 19" />
+      <line x1={-0.5} y1={19} x2={2.5} y2={19} />
+      <rect x={8} y={18.5} width={6} height={2.2} rx={0.3} strokeOpacity="0.6" />
     </g>
   ),
   'cam.thermal': (
-    // Bullet body with a small lens + radiating dashes — classic
-    // thermal-camera plan glyph (the dashes evoke heat sensing).
+    // Bullet form with a slightly larger lens (germanium glass) and
+    // three short radiating dashes from the lens face indicating
+    // thermal sensing.
     <g>
-      <rect x={5} y={9} width={12} height={6} rx={1.2} />
-      <line x1={16} y1={9}  x2={20} y2={6} />
-      <line x1={16} y1={15} x2={20} y2={18} />
-      <line x1={20} y1={6}  x2={20} y2={18} />
-      <circle cx={8.5} cy={12} r={1.5} />
-      <line x1={11} y1={11} x2={12.5} y2={11} />
-      <line x1={11} y1={12} x2={13.5} y2={12} />
-      <line x1={11} y1={13} x2={12.5} y2={13} />
+      <rect x={5} y={10} width={11} height={6} rx={1.6} />
+      <path d="M 4 8.5 L 17 8.5 L 17 11 L 15.5 11" />
+      <circle cx={14.5} cy={13} r={1.7} />
+      <path d="M 5 13 L 3 13 L 3 19" />
+      <line x1={1.5} y1={19} x2={4.5} y2={19} />
+      <line x1={17.5} y1={11.5} x2={19.5} y2={10.5} strokeOpacity="0.6" />
+      <line x1={17.5} y1={13} x2={20} y2={13} strokeOpacity="0.6" />
+      <line x1={17.5} y1={14.5} x2={19.5} y2={15.5} strokeOpacity="0.6" />
     </g>
   ),
   'cam.body': (
-    // Worn / body-camera plan symbol: small rectangular body with a
-    // chest-mount clip + lens. Reads compactly without a mascot-style
-    // person silhouette.
+    // Compact body-worn camera: small rectangular housing with a
+    // belt/chest clip on top and a prominent front lens. The little
+    // filled dot below the lens reads as the recording indicator
+    // every body cam carries.
     <g>
-      <rect x={8} y={6} width={8} height={12} rx={1.2} />
-      <circle cx={12} cy={10} r={1.8} />
-      <rect x={10} y={4} width={4} height={3} rx={0.6} />
+      <rect x={7} y={7} width={10} height={11} rx={1.2} />
+      <rect x={10} y={4} width={4} height={3.5} rx={0.4} />
+      <circle cx={12} cy={11} r={1.8} />
+      <circle cx={9} cy={15} r={0.6} fill="currentColor" stroke="none" />
     </g>
   ),
 
