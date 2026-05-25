@@ -4004,10 +4004,10 @@ export function EngineeringCanvas() {
                 </div>
               </div>
             )}
-            </div>
-            {/* Docked bottom toolbar — sibling to the inner viewport.
-                Now claims its own slot at the bottom of the canvas
-                column so the plan ends just above it. */}
+            {/* Item 1 — floating bottom toolbar. Lives back inside the
+                inner viewport as an absolutely-positioned overlay over
+                the canvas (the left rail's twin), so the plan extends
+                beneath it instead of ending at a white docked band. */}
             {viewMode !== 'canvas' && (
               <BottomDeviceBar
                 onStartDrag={(p, e) => {
@@ -4022,7 +4022,7 @@ export function EngineeringCanvas() {
                 tool={tool}
               />
             )}
-          </div>
+            </div>
 
           {/* ITEM 1 — docked right inspector column. Mounts as a flex
               sibling so the canvas (`flex-1 min-w-0`) shrinks to the
@@ -4059,6 +4059,7 @@ export function EngineeringCanvas() {
               onOpenBundle={(bid) => { setSelPathwayId(null); setBundleInspectorId(bid); }}
             />
           )}
+          </div>
         </div>
 
         {!onboarded && (
@@ -17328,7 +17329,7 @@ function BottomDeviceBar({
   }, [floorDevices, floorPathways]);
 
   return (
-    <div className="hidden md:flex shrink-0 relative justify-center pt-2.5 pb-3 px-4" ref={trayRef} data-canvas-chrome="tray">
+    <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 bottom-[68px] z-30 justify-center" ref={trayRef} data-canvas-chrome="tray">
       {/* Global product search results panel — wins over the category
           tray when a query is active so the operator always sees ONE
           source of truth above the bar. Same chrome as the tray for
@@ -18003,16 +18004,16 @@ function BottomDeviceBar({
         onMouseLeave={() => !barCoarsePointer && setBarHover(false)}
         onTouchStart={() => barCoarsePointer && setBarTapExpand(true)}
         data-bar-expanded={barExpanded ? 'true' : undefined}
-        className="flex items-center rounded-xl border shadow-[0_18px_36px_-18px_rgba(0,0,0,0.55)]"
+        className="flex items-center rounded-2xl border backdrop-blur-md shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)]"
         style={{
           background: 'var(--canvas-rail)',
           borderColor: 'var(--canvas-rail-border)',
-          // Item 1 — smooth hover expand. The previous transition
-          // animated `width,padding,color` per-button which fought the
-          // bar's flex layout and produced layout jank. The bar grows
-          // upward in one pass via a single max-height on the labels
-          // (see button + group header below), one motion token, one
-          // ease curve — no width transition.
+          // Item 1 — chrome matches the left tool rail exactly:
+          // rounded-2xl, canvas-rail background, canvas-rail-border,
+          // backdrop blur, same shadow strength. The bar floats over
+          // the canvas, the plan extends beneath, no docked white
+          // band behind it. Hover transition keeps the single
+          // motion-standard / ease-out token from the prior pass.
           transitionProperty: 'background-color, border-color',
           transitionDuration: 'var(--motion-standard)',
           transitionTimingFunction: 'var(--ease-out)',
