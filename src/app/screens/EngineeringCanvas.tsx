@@ -10304,23 +10304,55 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pa
         <circle cx={e2X} cy={e2Y} r={3.1} fill={color} stroke="var(--canvas-background)" strokeWidth="0.85" />
       </g>
       {/* Rotation puck — only mounted when the caller has wired
-          onRotate. Drag angularly around the camera center to spin
-          the whole fan. Inverted treatment (hollow center, solid
-          ring) so it visually reads distinct from the FOV / range
-          handles. */}
+          onRotate. Item 5: the handle now carries an explicit rotate
+          icon (circular arrow with a small aim chevron pointing
+          along the cone direction) so its purpose is obvious. Inner
+          card is filled in the cone's `color` for a vivid affordance
+          against the canvas. */}
       {onRotate && (
-        <g onPointerDown={onRotDown} className="dv-cone-handle" style={{ cursor: 'move' }}>
-          <circle cx={rotPX} cy={rotPY} r={8} fill={color} opacity="0.22" />
-          <circle cx={rotPX} cy={rotPY} r={3.4} fill="var(--canvas-background)" stroke={color} strokeWidth="1.2" />
-          {/* Tiny tick at center showing the aim direction so the puck
-              reads as "this is the rotation control" even at small
-              zoom. */}
-          <line
-            x1={rotPX} y1={rotPY}
-            x2={rotPX + Math.cos(aMid) * 4.5}
-            y2={rotPY + Math.sin(aMid) * 4.5}
-            stroke={color} strokeWidth="0.8" strokeLinecap="round"
-          />
+        <g onPointerDown={onRotDown} className="dv-cone-handle" style={{ cursor: 'grab' }}>
+          {/* Touch target — generous radius so the puck is easy to
+              grab; transparent fill so it doesn't compete visually. */}
+          <circle cx={rotPX} cy={rotPY} r={10} fill={color} fillOpacity="0.20" />
+          {/* Filled card — gives the icon a high contrast plate. */}
+          <circle cx={rotPX} cy={rotPY} r={6.5} fill="var(--canvas-background)" stroke={color} strokeWidth="1.4" />
+          {/* Rotate icon — circular arrow with an arrowhead. Drawn at
+              fixed canvas size (6.5 px card radius), so it stays a
+              clear glyph at every zoom. The chevron at the end of
+              the arc reads as "rotate". */}
+          <g pointerEvents="none">
+            <path
+              d={`M ${rotPX - 3.2} ${rotPY + 0.4}
+                  A 3.2 3.2 0 1 1 ${rotPX + 0.6} ${rotPY + 3.1}`}
+              fill="none"
+              stroke={color}
+              strokeWidth="1.3"
+              strokeLinecap="round"
+            />
+            <path
+              d={`M ${rotPX + 0.6} ${rotPY + 3.1}
+                  L ${rotPX - 0.9} ${rotPY + 3.3}
+                  M ${rotPX + 0.6} ${rotPY + 3.1}
+                  L ${rotPX + 1.6} ${rotPY + 1.6}`}
+              fill="none"
+              stroke={color}
+              strokeWidth="1.3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Aim chevron — small triangle pointing along the cone's
+                center direction. Reinforces the "this rotates the
+                cone direction" mental model. */}
+            <polygon
+              points={`
+                ${rotPX + Math.cos(aMid) * 4.0},${rotPY + Math.sin(aMid) * 4.0}
+                ${rotPX + Math.cos(aMid + 2.5) * 2.0},${rotPY + Math.sin(aMid + 2.5) * 2.0}
+                ${rotPX + Math.cos(aMid - 2.5) * 2.0},${rotPY + Math.sin(aMid - 2.5) * 2.0}
+              `}
+              fill={color}
+              opacity="0.65"
+            />
+          </g>
         </g>
       )}
       {/* Consolidated live readout — single chip below the marker
