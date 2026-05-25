@@ -14055,14 +14055,13 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         </div>
       </div>
 
-      {/* Section grid — 3 icons per row, no horizontal scroll. V3.3
-          iteration: pale tone14 + tone55 ring read too soft against
-          the outlined inactive tiles. Bluebeam / Axis use a solid
-          color block with white text for "you are here" — pulled
-          the device-kind tone in at full strength and inverted the
-          contents to white. Inactive tiles stay outlined so the
-          grid still reads as a flat panel of options. */}
-      <div className="px-3 py-3 border-b border-border/40 grid grid-cols-3 gap-1.5">
+      {/* Item 4 — compact icon row replaces the old 3 col tab grid.
+          One section visible at a time (accordion semantics already
+          enforced by the `tab` state below). The active section's
+          label sits to the right of the row so the operator sees
+          which section is currently expanded without losing the
+          chrome to a label-per-tile grid. */}
+      <div className="px-3 py-2 border-b border-border/40 flex items-center gap-1 overflow-x-auto">
         {tilesForDevice(d).map((t) => {
           const active = tabGroupOf(tab) === t.id;
           const Icon = t.icon;
@@ -14073,10 +14072,12 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
               data-track={`drawer-tab-${t.id}`}
               data-testid={`drawer-tab-${t.id}`}
               data-active={active ? 'true' : undefined}
-              className={`flex flex-col items-center justify-center gap-1 py-2.5 rounded-md text-[10px] tracking-tight transition-colors ${
+              title={t.label}
+              aria-label={t.label}
+              className={`shrink-0 w-9 h-9 rounded-md inline-flex items-center justify-center transition-colors ${
                 active
                   ? ''
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30 border border-border/40'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30'
               }`}
               style={active ? {
                 background: tone,
@@ -14085,10 +14086,18 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
               } : undefined}
             >
               <Icon className="w-4 h-4" style={{ color: active ? '#ffffff' : undefined }} />
-              <span className="font-medium">{t.label}</span>
             </button>
           );
         })}
+        {/* Active label — shows which accordion section is currently
+            open. Reads inline next to the icon row so the operator
+            doesn't have to memorise the icon-to-section mapping. */}
+        <span className="ml-2 text-[11px] font-medium text-foreground tracking-tight truncate">
+          {(() => {
+            const activeTile = tilesForDevice(d).find((t) => tabGroupOf(tab) === t.id);
+            return activeTile?.label ?? '';
+          })()}
+        </span>
       </div>
 
       {/* Tab body. Each section renders when its tab group is active —
