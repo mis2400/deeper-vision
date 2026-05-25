@@ -8377,7 +8377,22 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
             const isSel = d.id === selId;
             if (!layers.fov && !isSel) return null;
             const dim = (selId ? (isSel ? 1 : 0.28) : 1) * coverageAlpha;
-            return <FOV key={`fov-${d.id}`} d={d} pxToFt={currentFloorPxToFt} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} emphasizedDoriLevel={isSel ? selectedDoriLevel : null} />;
+            // Item 6 — find the room polygon that contains this
+            // camera (if any). Cameras inside a room get their cone
+            // clipped to that polygon downstream in FOV. Cameras
+            // outside any room render unclipped.
+            let roomPolygon: { x: number; y: number }[] | null = null;
+            if (rooms && rooms.length > 0) {
+              for (const r of rooms) {
+                if (r.floorId !== currentFloorId) continue;
+                if (!r.polygon || r.polygon.length < 3) continue;
+                if (pointInPolygon({ x: d.x, y: d.y }, r.polygon)) {
+                  roomPolygon = r.polygon;
+                  break;
+                }
+              }
+            }
+            return <FOV key={`fov-${d.id}`} d={d} pxToFt={currentFloorPxToFt} mode={coverageMode} dim={dim} selected={isSel} activeLens={isSel ? activeLens : 'all'} hoveredLens={isSel ? hoveredLens : null} emphasizedDoriLevel={isSel ? selectedDoriLevel : null} roomPolygon={roomPolygon} />;
           })}
         </g>
 
@@ -9944,7 +9959,7 @@ function FovCone({
   );
 }
 
-function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null, emphasizedDoriLevel = null }: { d: Device; pxToFt: number; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null; emphasizedDoriLevel?: DoriLevel | null }) {
+function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens = 'all', hoveredLens = null, emphasizedDoriLevel = null, roomPolygon = null }: { d: Device; pxToFt: number; mode?: CoverageMode; dim?: number; selected?: boolean; activeLens?: ActiveLens; hoveredLens?: LensId | null; emphasizedDoriLevel?: DoriLevel | null; roomPolygon?: { x: number; y: number }[] | null }) {
   // Mode-driven render parameters. Tuned down for the ergonomics pass so
   // unselected coverage doesn't dominate the plan. Selected coverage
   // keeps a small 1.2× boost so it reads as clear without being loud —
@@ -9969,8 +9984,22 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
     // overlap regions without any extra UI. This is the multisensor's
     // signature visual moment.
     const useScreenBlend = selected && activeLens === 'all' && !wireframe;
+    // Item 6 — multisensor cones inherit the same room clip as the
+    // single-lens branch when the device sits inside a Room polygon.
+    const msRoomClipId = roomPolygon && roomPolygon.length >= 3 ? `cone-room-ms-${d.id}` : null;
+    const msRoomClipPath = msRoomClipId
+      ? roomPolygon!.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
+      : null;
     return (
       <g style={useScreenBlend ? { mixBlendMode: 'screen' } : undefined}>
+        {msRoomClipId && msRoomClipPath && (
+          <defs>
+            <clipPath id={msRoomClipId} clipPathUnits="userSpaceOnUse">
+              <path d={msRoomClipPath} />
+            </clipPath>
+          </defs>
+        )}
+        <g clipPath={msRoomClipId ? `url(#${msRoomClipId})` : undefined}>
         {(['a', 'b', 'c', 'd'] as const).map((k) => {
           const L = lenses[k];
           if (!L.enabled) return null;
@@ -10005,6 +10034,7 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
             />
           );
         })}
+        </g>
       </g>
     );
   }
@@ -10073,8 +10103,30 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
     const yb2 = d.y + Math.sin(a2) * rIn;
     return `M ${xb1} ${yb1} L ${xa1} ${ya1} A ${rOut} ${rOut} 0 ${large} 1 ${xa2} ${ya2} L ${xb2} ${yb2} A ${rIn} ${rIn} 0 ${large} 0 ${xb1} ${yb1} Z`;
   };
+  // Item 6 — room-bound cone clip. When the camera sits inside a
+  // drawn Room polygon, build an SVG clipPath from that polygon and
+  // apply it to the cone group. Cameras outside any room (perimeter,
+  // exterior) render unclipped — their cones extend freely past the
+  // building outline, which is the honest behaviour for an outdoor
+  // PTZ pointed at a parking lot. Visual clip only; the band math
+  // (px/ft, reach, grade) is unchanged.
+  const roomClipId = roomPolygon && roomPolygon.length >= 3 ? `cone-room-${d.id}` : null;
+  const roomClipPath = roomClipId
+    ? roomPolygon!.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
+    : null;
   return (
     <g opacity={opacity}>
+      {roomClipId && roomClipPath && (
+        <defs>
+          <clipPath id={roomClipId} clipPathUnits="userSpaceOnUse">
+            <path d={roomClipPath} />
+          </clipPath>
+        </defs>
+      )}
+      {/* Cone payload — wrapped in a group with the room clipPath when
+          present so the cone, bands, arcs, and labels all clip to the
+          camera's enclosing room. */}
+      <g clipPath={roomClipId ? `url(#${roomClipId})` : undefined}>
       {/* Single-pass fill — no more bloom doubling. Hairline edge stroke. */}
       {!wireframe && <path d={path} fill={`url(#${gradId})`} />}
       <path d={path} fill="none" stroke={edge} strokeWidth={wireframe ? 0.9 : 0.5} opacity={wireframe ? 0.85 : 0.32} />
@@ -10164,6 +10216,7 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
           stroke={edge} strokeWidth="0.4" opacity="0.4" strokeDasharray="2 3"
         />
       )}
+      </g>
     </g>
   );
 }
