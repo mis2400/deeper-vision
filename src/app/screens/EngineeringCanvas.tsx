@@ -9089,6 +9089,18 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           // of the device visual.
           const s = renderedDevices.find((d) => d.id === selId);
           if (!s || TYPE_KIND[s.type] !== 'camera') return null;
+          // Audit Group B.4 (second pass) — planBounds for clamping
+          // ConeHandles to stay inside the floor plan, computed the
+          // same way as the FOV IIFE up above. Camera cones already
+          // clip to this rect; handles now clamp to it too.
+          const planBoundsLocal = (floorBackground && floorBackground.naturalWidth && floorBackground.naturalHeight)
+            ? {
+                x: floorBackground.x,
+                y: floorBackground.y,
+                w: floorBackground.naturalWidth * (floorBackground.scale ?? 1),
+                h: floorBackground.naturalHeight * (floorBackground.scale ?? 1),
+              }
+            : { x: 80, y: 80, w: 640, h: 480 };
           const isMs = s.type === 'cam.multisensor';
           const lensMode = s.lensMode ?? 'linked';
           const rotateLens = isMs && activeLens !== 'all' && lensMode === 'independent';
@@ -9191,6 +9203,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                               const baseLenses = latest ? getLenses(latest) : ls;
                               onUpdateDevice(s.id, { lenses: { ...baseLenses, [k]: { ...baseLenses[k], rotation: relative } } });
                             }}
+                            planBounds={planBoundsLocal}
                           />
                         );
                       })}
@@ -9211,6 +9224,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                     zoom={zoom}
                     pan={pan}
                     color={KIND_TONE.camera}
+                    planBounds={planBoundsLocal}
                     onUpdate={(p) => onUpdateDevice(s.id, p)}
                     onRotate={(rotDeg) => onRotateDevice(s.id, rotDeg)}
                   />
@@ -10555,7 +10569,7 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
  *  numbers all derive from the real calibration. Each handle writes
  *  through onUpdate which the caller wires to onUpdateDevice — values
  *  persist via the Zustand store. */
-function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pan, color, onUpdate, onRotate }: {
+function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pan, color, onUpdate, onRotate, planBounds }: {
   cx: number; cy: number;
   rotDeg: number; fovDeg: number; rangeFt: number;
   pxToFt: number;
@@ -10568,6 +10582,15 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pa
    *  Single-lens cameras pass this; multisensors leave it undefined so
    *  the cone keeps its per-lens rotation editing in the drawer. */
   onRotate?: (rotDeg: number) => void;
+  /** Audit Group B.4 (second pass) — plan bounds for clamping the
+   *  handle VISUAL positions to stay inside the plan. The drag math
+   *  still reads cursor position and computes range/FOV from the
+   *  underlying geometry, so the handle remains fully functional;
+   *  only where it RENDERS is clamped. Without this, multisensor
+   *  lens handles drifted outside the plan rectangle (the cones
+   *  themselves were clipped, but the handle dots stayed at the
+   *  geometric cone tip and edges). */
+  planBounds?: { x: number; y: number; w: number; h: number } | null;
 }) {
   // SC.7.1: handle positions follow the calibrated cone — without the
   // fix, dragging the tip on a calibrated floor moved the handle to the
@@ -10578,19 +10601,53 @@ function ConeHandles({ cx, cy, rotDeg, fovDeg, rangeFt, pxToFt, svgRef, zoom, pa
   const aMid = (rotDeg * Math.PI) / 180;
   const a1 = ((rotDeg - half) * Math.PI) / 180;
   const a2 = ((rotDeg + half) * Math.PI) / 180;
-  const tipX = cx + Math.cos(aMid) * r;
-  const tipY = cy + Math.sin(aMid) * r;
-  const e1X = cx + Math.cos(a1) * r * 0.92;
-  const e1Y = cy + Math.sin(a1) * r * 0.92;
-  const e2X = cx + Math.cos(a2) * r * 0.92;
-  const e2Y = cy + Math.sin(a2) * r * 0.92;
+  // Audit Group B.4 (second pass) — clamp a (x, y) point to the plan
+  // rect inset by 6 ft so the handle dot is visibly inside the plan
+  // edge. Walks back along the camera-to-point ray until inside; if
+  // the camera itself is outside, returns the camera position.
+  const clampToPlan = (px: number, py: number): { x: number; y: number } => {
+    if (!planBounds) return { x: px, y: py };
+    const insetFt = 6;
+    const insetPx = pxToFt > 0 ? insetFt / pxToFt : 60;
+    const minX = planBounds.x + insetPx;
+    const minY = planBounds.y + insetPx;
+    const maxX = planBounds.x + planBounds.w - insetPx;
+    const maxY = planBounds.y + planBounds.h - insetPx;
+    if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
+      return { x: px, y: py };
+    }
+    const dx = px - cx;
+    const dy = py - cy;
+    let t = 0.99;
+    while (t > 0) {
+      const x = cx + dx * t;
+      const y = cy + dy * t;
+      if (x >= minX && x <= maxX && y >= minY && y <= maxY) return { x, y };
+      t -= 0.01;
+    }
+    return { x: cx, y: cy };
+  };
+  const tipRaw = { x: cx + Math.cos(aMid) * r, y: cy + Math.sin(aMid) * r };
+  const tipC = clampToPlan(tipRaw.x, tipRaw.y);
+  const tipX = tipC.x;
+  const tipY = tipC.y;
+  const e1Raw = { x: cx + Math.cos(a1) * r * 0.92, y: cy + Math.sin(a1) * r * 0.92 };
+  const e1C = clampToPlan(e1Raw.x, e1Raw.y);
+  const e1X = e1C.x;
+  const e1Y = e1C.y;
+  const e2Raw = { x: cx + Math.cos(a2) * r * 0.92, y: cy + Math.sin(a2) * r * 0.92 };
+  const e2C = clampToPlan(e2Raw.x, e2Raw.y);
+  const e2X = e2C.x;
+  const e2Y = e2C.y;
   // Rotation puck — midway along the aim line. Far enough from the
   // marker not to occlude it, close enough to the marker that the
   // operator's intuition reads "rotate around the camera" rather than
   // "extend the range."
   const rotPuckR = Math.max(14, Math.min(r * 0.45, r - 10));
-  const rotPX = cx + Math.cos(aMid) * rotPuckR;
-  const rotPY = cy + Math.sin(aMid) * rotPuckR;
+  const rotPRaw = { x: cx + Math.cos(aMid) * rotPuckR, y: cy + Math.sin(aMid) * rotPuckR };
+  const rotPC = clampToPlan(rotPRaw.x, rotPRaw.y);
+  const rotPX = rotPC.x;
+  const rotPY = rotPC.y;
 
   // Track which handle is being dragged so the live readout can
   // emphasize the active value. Cleared on pointer-up.
