@@ -66,6 +66,7 @@ import {
 import { SelectionMenu as CanvasSelectionMenu } from '../canvas/chrome/SelectionMenu';
 import { LeftRail as CanvasLeftRail } from '../canvas/chrome/LeftRail';
 import { StatusBar } from '../canvas/chrome/StatusBar';
+import { SimulatedMapBadge } from '../canvas/plan/SimulatedMapBadge';
 
 /*
   Engineering Canvas v2 — designed around four ideas
@@ -9576,17 +9577,8 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
 
 /** Small honest badge on simulated map modes. The brief is explicit:
  *  if there's no live provider, label it. */
-function SimulatedMapBadge({ label, tone = 'light' }: { label: string; tone?: 'light' | 'dark' }) {
-  const bg = tone === 'dark' ? 'rgba(13,20,36,0.85)' : 'rgba(13,20,36,0.78)';
-  const fg = '#F4E07A';
-  return (
-    <g transform="translate(540, 580)">
-      <rect width="170" height="20" rx="10" fill={bg} stroke={fg + '55'} strokeWidth="0.6" />
-      <circle cx="11" cy="10" r="3" fill={fg} opacity="0.85" />
-      <text x="20" y="14" fill={fg} fontSize="10.5" fontFamily="ui-sans-serif">{label}</text>
-    </g>
-  );
-}
+// SimulatedMapBadge moved to canvas/plan/SimulatedMapBadge.tsx
+// (M11 monolith breakup). Import at top of file.
 
 function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: string }) {
   // Honest map modes. Every value the picker offers produces a visually
