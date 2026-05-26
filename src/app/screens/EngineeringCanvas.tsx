@@ -4004,29 +4004,32 @@ export function EngineeringCanvas() {
               const ft = Math.round(zoom * 100 * ftPerPx * 10) / 10;
               return (
                 <div
-                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none hidden md:flex items-center gap-1.5"
+                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none hidden md:flex items-center gap-2"
                   data-testid="scale-bar"
                   data-canvas-chrome="scalebar"
                   style={{
-                    background: 'var(--panel-background)',
+                    background: 'var(--canvas-rail)',
                     backdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(255,255,255,0.10)',
-                    borderRadius: '6px',
-                    padding: '6px 10px',
-                    boxShadow: '0 6px 16px -8px rgba(0,0,0,0.5)',
+                    border: '1px solid var(--canvas-rail-border)',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    boxShadow: 'var(--shadow-rail), inset 0 1px 0 rgba(255,255,255,0.05)',
+                    color: 'var(--canvas-rail-foreground)',
                   }}
                   title={isCalibrated
                     ? 'Calibrated scale — derived from the floor record'
                     : 'Default scale only — click Set scale to calibrate against a known feature.'}
                 >
-                  <span className="text-[10px] text-muted-foreground tabular-nums pointer-events-none">0</span>
-                  <svg width={zoom * 100} height={10} className="inline-block pointer-events-none">
-                    <line x1={0} y1={5} x2={zoom * 100} y2={5} stroke="#E2E8F0" strokeWidth="1.2" />
-                    <line x1={0} y1={1} x2={0} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
-                    <line x1={zoom * 100} y1={1} x2={zoom * 100} y2={9} stroke="#E2E8F0" strokeWidth="1.2" />
-                    <line x1={zoom * 50} y1={3} x2={zoom * 50} y2={7} stroke="#E2E8F0" strokeWidth="0.8" opacity="0.6" />
+                  <span className="tabular-nums pointer-events-none" style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>0</span>
+                  <svg width={zoom * 100} height={12} className="inline-block pointer-events-none">
+                    <line x1={0} y1={6} x2={zoom * 100} y2={6} stroke="var(--canvas-rail-foreground)" strokeWidth="1.4" strokeLinecap="round" />
+                    <line x1={0.7} y1={1} x2={0.7} y2={11} stroke="var(--canvas-rail-foreground)" strokeWidth="1.4" strokeLinecap="round" />
+                    <line x1={zoom * 100 - 0.7} y1={1} x2={zoom * 100 - 0.7} y2={11} stroke="var(--canvas-rail-foreground)" strokeWidth="1.4" strokeLinecap="round" />
+                    <line x1={zoom * 25} y1={3} x2={zoom * 25} y2={9} stroke="var(--canvas-rail-foreground-muted)" strokeWidth="0.9" strokeLinecap="round" />
+                    <line x1={zoom * 50} y1={2} x2={zoom * 50} y2={10} stroke="var(--canvas-rail-foreground-muted)" strokeWidth="0.9" strokeLinecap="round" />
+                    <line x1={zoom * 75} y1={3} x2={zoom * 75} y2={9} stroke="var(--canvas-rail-foreground-muted)" strokeWidth="0.9" strokeLinecap="round" />
                   </svg>
-                  <span className="text-[10px] text-muted-foreground tabular-nums pointer-events-none">{ft} ft</span>
+                  <span className="tabular-nums pointer-events-none font-medium" style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground)' }}>{ft} ft</span>
                   {isCalibrated ? (
                     // V1 1A.5 — Verified badge is now a button that
                     // reopens the calibration tool. Same tool path as
@@ -4037,18 +4040,20 @@ export function EngineeringCanvas() {
                       onClick={() => { resetCalibrate(); setTool('calibrate'); }}
                       title="Recalibrate against a new known feature"
                       data-testid="scale-verified-badge"
-                      className="text-[9px] uppercase tracking-[0.10em] ml-1 px-1.5 py-px rounded border border-emerald-400/30 bg-emerald-400/12 text-emerald-300 hover:bg-emerald-400/20 transition-colors"
+                      className="uppercase ml-1 px-2 py-0.5 rounded-md border border-emerald-400/35 bg-emerald-400/15 text-emerald-200 hover:bg-emerald-400/22 transition-colors font-medium"
+                      style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.10em' }}
                     >
                       Verified
                     </button>
                   ) : (
                     <>
-                      <span className="text-[9px] uppercase tracking-[0.10em] text-amber-300/80 ml-1 pointer-events-none">Default scale</span>
+                      <span className="uppercase ml-1 pointer-events-none font-medium" style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.10em', color: '#FBBF24' }}>Default scale</span>
                       <button
                         onClick={() => { resetCalibrate(); setTool('calibrate'); }}
                         title="Click two points on a known feature, then enter its real length"
                         data-testid="scale-set-btn"
-                        className="text-[9.5px] uppercase tracking-[0.10em] ml-1 px-1.5 py-0.5 rounded border border-primary/40 bg-primary/12 text-primary hover:bg-primary/20"
+                        className="uppercase ml-1 px-2 py-0.5 rounded-md border border-primary/45 bg-primary/15 text-primary hover:bg-primary/22 font-medium"
+                        style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.10em' }}
                       >
                         Set scale
                       </button>
