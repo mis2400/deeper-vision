@@ -70,6 +70,7 @@ import { SimulatedMapBadge } from '../canvas/plan/SimulatedMapBadge';
 import { CanvasErrorBoundary } from '../canvas/components/CanvasErrorBoundary';
 import { IsoDeviceBadge, DEVICE_ICON } from '../canvas/devices/IsoDeviceBadge';
 import { DeviceGlyph } from '../canvas/devices/DeviceGlyph';
+import { MiniMapFloorStrip } from '../canvas/chrome/MiniMapFloorStrip';
 
 /*
   Engineering Canvas v2 — designed around four ideas
@@ -19204,53 +19205,8 @@ function ZoomDock({
  * descending so the strip reads like a building elevation. Click
  * any floor to make it active.
  */
-function MiniMapFloorStrip({ projectId, activeFloorId, onPickFloor }: {
-  projectId: string;
-  activeFloorId: string;
-  onPickFloor: (floorId: string) => void;
-}) {
-  const floorsMap = useProjectStore((s) => s.floors);
-  const projectFloors = useMemo(() => Object.values(floorsMap)
-    .filter((f) => f.projectId === projectId)
-    .sort((a, b) => (b.level - a.level) || ((b.createdAt ?? 0) - (a.createdAt ?? 0))),
-    [floorsMap, projectId],
-  );
-  const levelBadge = (level: number) => {
-    if (level < 0) return `B${Math.abs(level)}`;
-    if (level === 0) return 'G';
-    return `L${level + 1}`;
-  };
-  return (
-    <div
-      className="absolute right-3 bottom-[68px] z-20 hidden md:flex flex-col gap-1 p-1.5 rounded-lg bg-card border border-border shadow-md"
-      data-testid="minimap-floor-strip"
-      data-canvas-chrome="floor-strip"
-    >
-      {/* Audit Group C contrast — was `bg-card/90` which mixed in the
-          underlying canvas; in light themes that diluted the card and
-          dropped the white "G" letter on the active pill to a 3.2:1
-          ratio. Fully opaque card; foreground stays AA in all three
-          themes. */}
-      {projectFloors.map((f) => {
-        const isActive = f.id === activeFloorId;
-        return (
-          <button
-            key={f.id}
-            onClick={() => onPickFloor(f.id)}
-            title={f.name}
-            aria-label={`Switch to ${f.name}`}
-            className={`inline-flex items-center justify-center w-9 h-7 rounded text-[11px] font-medium tabular-nums transition-colors ${
-              isActive ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-secondary/40'
-            }`}
-            data-track="minimap-floor-pick"
-          >
-            {levelBadge(f.level)}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+// MiniMapFloorStrip moved to canvas/chrome/MiniMapFloorStrip.tsx
+// (M11 monolith breakup). Import at top of file.
 
 function MiniMap({ devices, walls, background }: {
   devices: Device[];

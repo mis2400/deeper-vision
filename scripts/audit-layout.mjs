@@ -124,6 +124,11 @@ const lines = file.split('\n');
 // The runtime audit harness selects these by data attribute. If a
 // future refactor drops the attribute, the harness loses visibility
 // without anyone noticing — this gate fails the build instead.
+// As of M11 the monolith breakup these chrome attributes can live in
+// the extracted canvas/* modules, not necessarily in EngineeringCanvas
+// itself. Walk the canvas/ module tree alongside the canvas file so
+// the harness keeps catching missing tags regardless of which module
+// hosts them.
 {
   const required = [
     { pattern: /data-canvas-chrome="selection-pill"/, what: 'SelectionPill missing data-canvas-chrome="selection-pill"' },
@@ -136,8 +141,28 @@ const lines = file.split('\n');
     { pattern: /data-canvas-chrome="tray"/, what: 'Bottom tray missing data-canvas-chrome="tray"' },
     { pattern: /data-canvas-chrome="scalebar"/, what: 'Scale bar missing data-canvas-chrome="scalebar"' },
   ];
+
+  // Build a combined source blob from the canvas + every TSX under
+  // src/app/canvas/. Required attributes can live in either home.
+  const combinedSources = [file];
+  {
+    const { readdirSync, statSync } = await import('node:fs');
+    const canvasDir = 'src/app/canvas';
+    function walk(d) {
+      try {
+        for (const entry of readdirSync(d)) {
+          const p = `${d}/${entry}`;
+          if (statSync(p).isDirectory()) walk(p);
+          else if (/\.(tsx?|jsx?)$/.test(entry)) combinedSources.push(readFileSync(p, 'utf-8'));
+        }
+      } catch { /* canvas dir may not exist on older branches */ }
+    }
+    walk(canvasDir);
+  }
+  const combined = combinedSources.join('\n');
+
   for (const r of required) {
-    if (!r.pattern.test(file)) {
+    if (!r.pattern.test(combined)) {
       failures.push(`${CANVAS_PATH} — ${r.what} (Audit Group E)`);
     }
   }
