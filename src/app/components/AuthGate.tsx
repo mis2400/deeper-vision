@@ -56,11 +56,35 @@ type GateState =
 /** Audit-only bypass. Set by scripts/audit-runtime.mjs via puppeteer's
  *  `evaluateOnNewDocument` BEFORE the page loads. The flag is read once
  *  at component init so the gate doesn't bounce to /login before the
- *  audit can exercise the actual routes. Never set by production users;
- *  ignored by every code path outside the gate itself. */
+ *  audit can exercise the actual routes.
+ *
+ *  Hostname-gated. The bypass is INERT on any deployed domain. A user
+ *  who opens devtools on the live site (vercel.app or the custom domain)
+ *  and sets dv-audit-bypass=true CANNOT skip AuthGate: window.location
+ *  .hostname is not localhost, so this returns false before the
+ *  localStorage read. The runtime audit hits vite preview at
+ *  localhost:4173, where the hostname check passes and the flag works.
+ *  Same bundle ships to prod and runs in the audit, so the audit still
+ *  exercises the real deploy artifact.
+ *
+ *  Threat model the gate covers:
+ *    real user sets dv-audit-bypass=true on the live site → hostname is
+ *    not localhost → returns false → AuthGate runs the real Supabase
+ *    session check → no session → redirects to /login. The flag has no
+ *    effect outside localhost.
+ *
+ *  Threat model the gate does NOT need to cover:
+ *    someone running their own localhost copy pointed at their own
+ *    backend. They already control the entire client. The real security
+ *    boundary on user data is Supabase RLS, not this UI gate.
+ */
 function isAuditBypass(): boolean {
   try {
-    return typeof window !== 'undefined' && window.localStorage?.getItem('dv-audit-bypass') === 'true';
+    if (typeof window === 'undefined') return false;
+    const host = window.location.hostname;
+    // Inert on every deployed domain. Audit and local dev hit localhost.
+    if (host !== 'localhost' && host !== '127.0.0.1' && host !== '0.0.0.0') return false;
+    return window.localStorage?.getItem('dv-audit-bypass') === 'true';
   } catch {
     return false;
   }
