@@ -11236,7 +11236,11 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
   // signal so a selected device is always distinguishable from its
   // assigned color regardless of where on the palette that color sits.
   const ink = deviceTone(d);
-  const sw = 1.4;
+  // M11 visual redesign — stroke 1.4 → 1.5 so canvas device symbols
+  // match the consistent 1.5 px stroke used across the rails, the
+  // selection menu, and the inspector. Subtle but it pulls every
+  // device on the plan into one visual language.
+  const sw = 1.5;
   const accKind = (d as any).accessoryKind as string | undefined;
 
   // Distinct technical glyphs for cable accessories. Drawn before the

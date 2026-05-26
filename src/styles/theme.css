@@ -327,8 +327,13 @@
   --sidebar-border:               rgba(80, 96, 130, 0.18);
   --sidebar-ring:                 #2D6FB8;
 
-  --canvas-background: #F6F8FB;
-  --canvas-grid:       rgba(80, 96, 130, 0.07);
+  /* M11 plan redesign — drafting paper feel. The prior #F6F8FB read
+     cool-blue; the new value has a subtle warm cast that says
+     architectural paper instead of office app. Grid bumped from 7%
+     to 9% alpha so the reference grid actually reads through the
+     paper. */
+  --canvas-background: #F4F5F8;
+  --canvas-grid:       rgba(72, 88, 122, 0.09);
   --canvas-axis:       rgba(80, 96, 130, 0.20);
 
   /* Chrome rails — identical across all themes per the rail's
