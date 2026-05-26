@@ -87,7 +87,13 @@ export function AssistantPanel({ projectId }: Props) {
           data-testid="assistant-panel-trigger"
           onClick={() => setOpen(true)}
           title="Open DV Assist"
-          className="absolute bottom-3 right-3 z-40 inline-flex items-center gap-2 px-3 py-2 rounded-full bg-card border border-border shadow-md text-foreground hover:bg-secondary/40 transition-colors"
+          /* Audit Group A.2 (second pass) — DV Assist used to sit at
+             bottom-3 right-3 where it visually stacked next to the
+             docked bottom toolbar. The new docked edit panel (Group
+             C.6) lives in the same bottom region; lifting the trigger
+             to bottom-[148px] clears both the tray and a collapsed
+             edit panel, so a control never ends up tucked behind it. */
+          className="absolute bottom-[148px] right-3 z-40 inline-flex items-center gap-2 px-3 py-2 rounded-full bg-card border border-border shadow-md text-foreground hover:bg-secondary/40 transition-colors"
           style={{
             // V3.9 motion discipline: opacity + color only, no scale, no
             // bounce. 120ms standard token.

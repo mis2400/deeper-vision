@@ -156,6 +156,37 @@ const lines = file.split('\n');
   }
 }
 
+// ─── 5b. Cone fills must use ZERO margin against the plan rect ───────
+//
+// Mohammad reviewed 02ed1993 on screen and reported cones still
+// spilling past the plan border. Root cause: the plan-clip rect was
+// inflated by 20 ft of "exterior breathing room" — exactly the
+// behaviour he doesn't want. Both the single-lens cone clip
+// (`planMarginPx` near line ~10390) and the multisensor lens cone
+// clip (`msPlanMarginPx` near ~10240) and the non-camera coverage
+// clip (`planMarginPx` in the AP-circle block near ~8580) must all
+// resolve to 0. This gate fails if any of them re-introduces the
+// margin.
+{
+  // We allow any expression that resolves to 0, but reject the
+  // historical "20 / pxToFt" / "20 / currentFloorPxToFt" / ": 200"
+  // shapes — those were the source of the bleed.
+  const margins = [];
+  const reMargin = /(?:planMarginPx|msPlanMarginPx)\s*=\s*([^;]+);/g;
+  let m;
+  while ((m = reMargin.exec(file)) !== null) {
+    margins.push({ index: m.index, expr: m[1].trim() });
+  }
+  if (margins.length < 3) {
+    failures.push(`${CANVAS_PATH} — expected ≥3 plan-margin declarations (single-lens, multisensor, non-camera); found ${margins.length} (Audit Group A.3 second pass)`);
+  }
+  for (const decl of margins) {
+    if (decl.expr !== '0' && !/\b0\b/.test(decl.expr.split('?').pop() || decl.expr)) {
+      failures.push(`${CANVAS_PATH} — plan-margin "${decl.expr}" is non-zero; cones will spill past the plan (Audit Group A.3 second pass)`);
+    }
+  }
+}
+
 // ─── 6. Theme coverage-multiplier wired in all themes ────────────────
 {
   const theme = readFileSync(THEME_PATH, 'utf-8');

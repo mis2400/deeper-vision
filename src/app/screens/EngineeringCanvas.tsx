@@ -2311,10 +2311,10 @@ export function EngineeringCanvas() {
         if (scanBuildOpen)         { setScanBuildOpen(false); return; }
         // Cancel a pending click-to-arm placement before generic deselect.
         if (armedProduct)          { setArmedProduct(null); toast.message('Placement cancelled', { duration: 2000 }); return; }
-        // V3.3 Phase A — Esc closes the open drawer without dropping the
-        // underlying selection. The pill stays anchored to the device so
-        // the operator can re-open the drawer or pick a sibling action.
-        if (editOpen)              { setEditOpen(false); return; }
+        // Audit Group C.6 — Esc now drops the selection entirely
+        // (which auto-closes the bottom-docked drawer); there is no
+        // intermediate "drawer closed, device still selected" state
+        // since the drawer mirrors selection 1:1.
         setSelId(null); setSelIds(new Set()); setDrag(null); setOpenCat(null); setOpenType(null);
         setWallStart(null);
         setMeasure({ start: null, end: null, cursor: null });
@@ -3476,7 +3476,11 @@ export function EngineeringCanvas() {
                   else next.add(sel.id);
                   setLockedIds(next);
                 }}
-                drawerOpen={editOpen}
+                /* Audit Group C.6 — drawer auto-opens whenever sel
+                   exists, so the pill's Edit button is always
+                   redundant when the pill is visible. Pass `true`
+                   so the pill never renders the dead button. */
+                drawerOpen={true}
               />
             )}
 
@@ -3723,6 +3727,51 @@ export function EngineeringCanvas() {
                 (Passive / Suggestion / Action). Default Passive — quiet
                 until the operator switches. */}
             <AssistantPanel projectId={projectId} />
+
+            {/* Audit Group C.6 — docked edit panel. The drawer mounts
+                here as an absolute panel above the bottom tray. Auto-
+                opens on selection so the user sees the controls without
+                a second Edit click; the right side of the canvas stays
+                clear. The PathwayDrawer follows the same anchor. The
+                panel caps at 56 vh to keep the canvas visible behind
+                it. */}
+            {sel && (
+              <div
+                className="absolute left-3 right-3 z-30 pointer-events-auto"
+                style={{ bottom: '68px' }}
+              >
+                <CanvasErrorBoundary label="EditDrawer">
+                  <EditDrawer
+                    d={sel}
+                    open={true}
+                    tab={editTab}
+                    setTab={setEditTab}
+                    onClose={() => { setSelId(null); }}
+                    onUpdate={updateSel}
+                    activeLens={activeLens}
+                    setActiveLens={setActiveLens}
+                    lensMode={(sel.lensMode ?? 'linked') as LensMode}
+                    setLensMode={setLensModeForSel}
+                    selectedDoriLevel={selectedDoriLevel}
+                    setSelectedDoriLevel={setSelectedDoriLevel}
+                    pxToFtForFloor={currentFloorPxToFt}
+                    personProbePos={personProbePos}
+                  />
+                </CanvasErrorBoundary>
+              </div>
+            )}
+            {selPathwayId && (
+              <div
+                className="absolute left-3 right-3 z-30 pointer-events-auto"
+                style={{ bottom: '68px' }}
+              >
+                <PathwayDrawer
+                  pathwayId={selPathwayId}
+                  onClose={() => setSelPathwayId(null)}
+                  onOpenBundle={(bid) => { setSelPathwayId(null); setBundleInspectorId(bid); }}
+                />
+              </div>
+            )}
 
             {/* ITEM 1 — right inspector drawer moved out of the canvas
                 region. It now mounts as a flex-row sibling next to the
@@ -4004,33 +4053,14 @@ export function EngineeringCanvas() {
             )}
             <MiniMap devices={devices} walls={allWalls} background={floorBackground ?? null} />
 
-            {/* Static North indicator — drafting-style: a needle inside a
-                thin circle with a single "N" tick. It is not interactive;
-                site orientation is not editable yet. Lives at the BOTTOM
-                LEFT of the canvas now (just inside-right of the floating
-                left tool rail, above the floating bottom toolbar) so it
-                doesn't overlap the right rail's zoom-percent tile. */}
-            <div className="absolute bottom-[68px] left-[76px] z-10 pointer-events-none select-none">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center"
-                style={{
-                  background: 'var(--panel-background)',
-                  backdropFilter: 'blur(8px)',
-                  border: '1px solid var(--border)',
-                }}
-                title="North indicator · canvas-up = North"
-              >
-                <svg viewBox="-12 -16 24 28" width="20" height="22" aria-hidden>
-                  {/* Tick at the top of the dial */}
-                  <line x1="0" y1="-11" x2="0" y2="-9" stroke="var(--muted-foreground)" strokeWidth="0.8" />
-                  {/* North label sits above the tick */}
-                  <text y="-13" textAnchor="middle" fill="var(--muted-foreground)" fontSize="5.5" fontWeight="600" fontFamily="ui-sans-serif" letterSpacing="0.3" /* audit:icon-glyph compass-N */>N</text>
-                  {/* Two-tone arrow head: dark north half, hairline south half */}
-                  <path d="M 0 -8 L 3 6 L 0 3 Z" fill="var(--foreground)" />
-                  <path d="M 0 -8 L -3 6 L 0 3 Z" fill="none" stroke="var(--foreground)" strokeWidth="0.6" />
-                </svg>
-              </div>
-            </div>
+            {/* Audit Group D.7 (second pass) — the static North compass
+                used to live here. It was decorative: canvas-up was
+                always "north" by convention, the dial never rotated
+                with plan orientation, and the underlying floor record
+                does not yet carry an orientation field. Per Mohammad's
+                honesty rule "do not keep a dead control," it's removed.
+                When orientation lands on the floor schema we will
+                re-introduce a real compass that rotates with the plan. */}
 
             {/* Scale bar — honest about calibration. The default
                 "20 px = 1 ft" canvas constant is a starter scale, not a
@@ -4143,45 +4173,12 @@ export function EngineeringCanvas() {
             </div>
           </div>
 
-          {/* Item 1 (refixed) — drawer column lives in the FLEX ROW as
-              a sibling to the canvas column, not inside it. The prior
-              refactor put the drawer inside `<div flex-1 min-w-0 flex
-              flex-col>` (the canvas column), which is flex-direction:
-              column. With `h-full` on the drawer that collapsed the
-              viewport and the drawer rendered at the LEFT edge stacked
-              on top of the canvas. Moved to be a sibling of the canvas
-              column so the row layout actually pushes the canvas left
-              when the drawer is open.
-              EditDrawer and PathwayDrawer are mutually exclusive (the
-              canvas handlers clear one when the other is set), so only
-              one column ever renders. */}
-          {sel && editOpen && (
-            <CanvasErrorBoundary label="EditDrawer">
-              <EditDrawer
-                d={sel}
-                open={editOpen}
-                tab={editTab}
-                setTab={setEditTab}
-                onClose={() => setEditOpen(false)}
-                onUpdate={updateSel}
-                activeLens={activeLens}
-                setActiveLens={setActiveLens}
-                lensMode={(sel.lensMode ?? 'linked') as LensMode}
-                setLensMode={setLensModeForSel}
-                selectedDoriLevel={selectedDoriLevel}
-                setSelectedDoriLevel={setSelectedDoriLevel}
-                pxToFtForFloor={currentFloorPxToFt}
-                personProbePos={personProbePos}
-              />
-            </CanvasErrorBoundary>
-          )}
-          {selPathwayId && (
-            <PathwayDrawer
-              pathwayId={selPathwayId}
-              onClose={() => setSelPathwayId(null)}
-              onOpenBundle={(bid) => { setSelPathwayId(null); setBundleInspectorId(bid); }}
-            />
-          )}
+          {/* Audit Group C.6 — drawer no longer lives in the canvas
+              flex row. It now docks ABOVE the bottom tray as an
+              absolute-positioned panel, full canvas width minus
+              insets, capped at 56 vh so the canvas stays visible.
+              The PathwayDrawer follows the same bottom-dock pattern
+              for the same reasons. */}
         </div>
 
         {!onboarded && (
@@ -8575,7 +8572,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 h: floorBackground.naturalHeight * (floorBackground.scale ?? 1),
               }
             : { x: 80, y: 80, w: 640, h: 480 };
-          const planMarginPx = currentFloorPxToFt > 0 ? 20 / currentFloorPxToFt : 200;
+          // Group A.3 (second pass) — non-camera coverage clip with 0
+          // margin so AP RF discs, sector wedges, etc. also stop at
+          // the plan rectangle.
+          const planMarginPx = 0;
           return (
           <g pointerEvents="none">
             {renderedDevices.map((d) => {
@@ -10238,7 +10238,9 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
       : msUsePlan
         ? `cone-plan-ms-${d.id}`
         : null;
-    const msPlanMarginPx = pxToFt > 0 ? 20 / pxToFt : 200;
+    // Group A.3 (second pass) — multisensor cones clip with 0 margin
+    // so coverage stops at the plan rectangle, same rule as single-lens.
+    const msPlanMarginPx = 0;
     const msClipPathD = msUseRoom
       ? roomPolygon!.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
       : msUsePlan && planBounds
@@ -10385,7 +10387,12 @@ function FOV({ d, pxToFt, mode = 'soft', dim = 1, selected = false, activeLens =
   // room. With the canvas's ~12 px/ft default this is ~240 px; on a
   // calibrated floor it scales with `pxToFt` so the margin stays a
   // real 20 feet.
-  const planMarginPx = pxToFt > 0 ? 20 / pxToFt : 200;
+  // Group A.3 (second pass) — cone clip uses ZERO margin so coverage
+  // never extends past the plan rectangle. Mohammad: "no coverage
+  // beyond the canvas, period." The prior 20 ft breathing room let
+  // exterior cameras spill their cones across the canvas gutter; with
+  // 0 margin the cone is cut exactly at the plan edge.
+  const planMarginPx = 0;
   const clipPathD = useRoomClip
     ? roomPolygon!.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
     : usePlanClip && planBounds
@@ -10865,13 +10872,25 @@ function PersonProbe({
         <line x1={r * 1.7} y1={0} x2={r * 2.2} y2={0} stroke={mTone} strokeWidth="1.2" />
         <line x1={0} y1={-r * 2.2} x2={0} y2={-r * 1.7} stroke={mTone} strokeWidth="1.2" />
         <line x1={0} y1={r * 1.7} x2={0} y2={r * 2.2} stroke={mTone} strokeWidth="1.2" />
-        {/* Person silhouette — head + body, drawn in the magenta tone
-            on the white halo so even at zoom-out the figure reads. */}
-        <circle cx={0} cy={-r * 0.55} r={r * 0.4} fill={mTone} />
-        <path
-          d={`M ${-r * 0.7} ${r * 0.55} Q 0 ${-r * 0.05} ${r * 0.7} ${r * 0.55} L ${r * 0.7} ${r * 0.95} L ${-r * 0.7} ${r * 0.95} Z`}
-          fill={mTone}
-        />
+        {/* Audit Group D.8 (second pass) — was a cartoon silhouette
+            (head circle + trapezoid torso). Replaced with an
+            anatomical standing figure derived from the Lucide
+            person-standing glyph: small head, shoulders, raised
+            arms, torso line, and a V of legs. Reads as a real human
+            figure at every zoom level, not a smiley-face avatar.
+            The path is hand-authored from Lucide's open-source
+            person-standing icon (ISC license, no celebrity / no
+            identifiable real person), drawn at 1.6× scale so the
+            figure sits cleanly inside the white halo ring. */}
+        <g transform={`scale(${r / 7})`} fill="none" stroke={mTone} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx={0} cy={-5.2} r={1.4} fill={mTone} />
+          {/* shoulders + raised arms */}
+          <path d="M -3.6 -2.2 L 0 -1 L 3.6 -2.2" />
+          {/* torso */}
+          <line x1={0} y1={-1} x2={0} y2={2.6} />
+          {/* legs */}
+          <path d="M -2.4 6 L 0 2.6 L 2.4 6" />
+        </g>
       </g>
       {/* Live callout — Item 9.
           Inside cone: two-line readout (distance + px/ft).
@@ -15078,11 +15097,20 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   return (
     <div
       data-canvas-chrome={open ? 'drawer' : undefined}
-      className="shrink-0 w-full md:w-[400px] h-full flex flex-col"
+      data-drawer-mode="docked-bottom"
+      /* Audit Group C.6 — the drawer used to live in the canvas
+         flex-row as a 400 px right-side column. Per Mohammad's
+         restructure the drawer now docks ABOVE the bottom toolbar,
+         spans the full canvas width minus a small inset, and caps
+         its height at 56 vh so the operator always sees both the
+         canvas and the inspector. The internal sections retain
+         their existing structure (tab strip + scrollable body);
+         only the outer container's position changed. */
+      className="w-full max-h-[56vh] flex flex-col rounded-2xl border shadow-[0_22px_48px_-18px_rgba(0,0,0,0.65)]"
       style={{
         background: 'var(--drawer-background)',
         color: 'var(--drawer-foreground)',
-        borderLeft: '1px solid var(--border)',
+        borderColor: 'var(--border)',
       }}
     >
       {/* Drawer header — V3.3 Phase A.
@@ -16505,7 +16533,16 @@ function IntelligenceRail({
   return (
     <div
       ref={railRef}
-      className="absolute top-3 right-3 z-20 pointer-events-auto select-none"
+      /* Audit Group C.5 — the view controls (zoom %, zoom in, fit,
+         eye toggle, assistant) used to live on the RIGHT side of the
+         canvas as a separate rail. Per Mohammad's restructure, the
+         right side is now cleared: this rail moves to the LEFT side
+         and anchors BELOW the tool rail, vertically aligned along
+         the same edge so the operator's eye tracks a single column
+         of canvas chrome on the left. Position is bottom-left so the
+         intel rail still sits over the canvas, never inside the new
+         docked bottom toolbar / edit panel. */
+      className="absolute bottom-3 left-2 md:left-3 z-20 pointer-events-auto select-none"
       data-canvas-chrome="intel-rail"
     >
       <div
@@ -16633,7 +16670,12 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen, setZoom, onFi
           that updates the moment the canvas changes. */}
       {panelOpen && (
         <div
-          className="absolute top-3 right-3 mt-12 z-30 w-[320px] max-h-[calc(100vh-180px)] overflow-hidden flex flex-col rounded-xl"
+          /* Group C.5 — assistant panel now opens from the BOTTOM-LEFT
+             where the new intel rail lives, instead of the cleared
+             right side. Bottom anchor keeps the panel docked to the
+             button that opened it; max-height keeps it from
+             overlapping the top chrome on short viewports. */
+          className="absolute bottom-3 left-[64px] z-30 w-[320px] max-h-[calc(100vh-180px)] overflow-hidden flex flex-col rounded-xl"
           style={{
             background: 'var(--popover)',
             backdropFilter: 'blur(20px)',
