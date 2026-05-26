@@ -58,6 +58,11 @@ import { toast } from 'sonner';
 //   src/app/canvas/constants.ts  — KIND_TONE, TYPE_KIND, CATEGORIES, ...
 //   src/app/canvas/catalog.ts    — PRODUCTS, PRODUCTS_BY_ID, ...
 //   src/app/canvas/utils.ts      — deviceTone, findHostUnderPointer, ...
+//   src/app/canvas/interaction/dragDrop.ts — HTML5 tray-to-canvas drop (M6)
+
+import {
+  beginProductDrag, allowProductDrop, readProductIdFromDrop, clientToCanvas,
+} from '../canvas/interaction/dragDrop';
 
 /*
   Engineering Canvas v2 — designed around four ideas
@@ -1949,6 +1954,36 @@ export function EngineeringCanvas() {
   // where the pointer landed at pointerdown and is never written
   // anywhere else.
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  // M6 — set to true the moment an HTML5 drop completes a placement.
+  // The legacy pointer-event drop handler (line ~2559) checks this ref
+  // on every pointerup and bails when it's set, so we never double
+  // place when both pipelines see the same release. Reset on the next
+  // microtask so the next drag is unaffected.
+  const htmlDropConsumedRef = useRef(false);
+  // M6 — while an HTML5 drag is in flight the browser is rendering its
+  // own native ghost. The legacy React ghost div suppresses itself
+  // while this is true so two ghosts don't race. Set on dragstart from
+  // any tray callsite, cleared by the document-level dragend listener
+  // below.
+  const [htmlDragInFlight, setHtmlDragInFlight] = useState(false);
+  useEffect(() => {
+    // dragstart on any element bubbles up to document. Filter to OUR
+    // drags (anything carrying our MIME). The ghost-suppression flag
+    // flips on at the start of a tray drag and clears at dragend.
+    const onStart = (e: DragEvent) => {
+      const types = e.dataTransfer?.types;
+      if (types && Array.from(types).includes('application/dv-product')) {
+        setHtmlDragInFlight(true);
+      }
+    };
+    const onEnd = () => setHtmlDragInFlight(false);
+    document.addEventListener('dragstart', onStart);
+    document.addEventListener('dragend', onEnd);
+    return () => {
+      document.removeEventListener('dragstart', onStart);
+      document.removeEventListener('dragend', onEnd);
+    };
+  }, []);
   // Click-to-arm placement: if the user releases a product card without
   // actually dragging onto the canvas, we treat the action as "arm
   // placement" — the next surface click on the canvas places the device
@@ -2552,6 +2587,14 @@ export function EngineeringCanvas() {
       });
     };
     const onUp = (e: PointerEvent) => {
+      // M6 — HTML5 onDrop on the canvas SVG runs BEFORE this window
+      // pointerup. When it ran and consumed the drop, neutralise this
+      // legacy path so the device isn't placed twice.
+      if (htmlDropConsumedRef.current) {
+        htmlDropConsumedRef.current = false;
+        setDrag(null); setHoverHost(null); dragStartRef.current = null;
+        return;
+      }
       const r = surfaceRef.current?.getBoundingClientRect();
       if (!r || !drag) { setDrag(null); setHoverHost(null); dragStartRef.current = null; return; }
       // Short release without meaningful drag → arm placement instead of
@@ -3202,6 +3245,55 @@ export function EngineeringCanvas() {
               pan={pan}
               setPan={setPan}
               onUserTouchView={() => { userTouchedViewRef.current = true; }}
+              onProductDrop={(productId, x, y, clientX, clientY) => {
+                // M6 — HTML5 drop. Resolve the product, decide whether
+                // the cursor landed on a host (door / IDF), and either
+                // append to that host's assembly or place a fresh device.
+                const product = PRODUCTS_BY_ID.get(productId);
+                if (!product) return;
+                // Flag the legacy pointer-event drop handler so it
+                // doesn't fire a duplicate placement on the same release.
+                htmlDropConsumedRef.current = true;
+                setDrag(null);
+                setHoverHost(null);
+                dragStartRef.current = null;
+                const surfRect = surfaceRef.current?.getBoundingClientRect();
+                const dropHost = surfRect ? findHostUnderPointer(clientX, clientY, surfRect, pan, zoom, devices, product.type) : null;
+                if (dropHost) {
+                  const { host, hostKind, compat } = dropHost;
+                  if (!compat.allowed) {
+                    toast.warning(compat.reason ?? 'Not compatible with that host', {
+                      description: compat.hint, duration: 6500,
+                    });
+                    return;
+                  }
+                  if (hostKind === 'door') {
+                    const hw = productTypeToDoorHardware(product.type);
+                    if (!hw) {
+                      toast.warning(`${product.model} isn't door hardware`, {
+                        description: 'Drop it on the canvas instead, or attach to an IDF / rack.',
+                        duration: 5000,
+                      });
+                      return;
+                    }
+                    const cur = (host.doorAssembly ?? []) as DoorHardware[];
+                    const next = cur.includes(hw) ? cur : [...cur, hw];
+                    const curState = ((host as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
+                    const nextState = cur.includes(hw) ? curState : { ...curState, [hw]: 'proposed' as const };
+                    setDevices((ds) => ds.map((d) => d.id === host.id ? { ...d, doorAssembly: next, doorAssemblyState: nextState, stack: undefined, linkedIds: undefined } : d));
+                    setSelId(host.id);
+                    setSelPathwayId(null);
+                    toast.success(`Added ${hw} to ${host.id}`, {
+                      description: hw === 'maglock'
+                        ? 'Maglocks require a REX for code-compliant egress.'
+                        : 'Door assembly updated.',
+                      duration: 4500,
+                    });
+                    return;
+                  }
+                }
+                placeProductAt(product, x, y);
+              }}
               devices={devices.filter((d) => !hiddenIds.has(d.id))}
               selId={selId}
               selPathwayId={selPathwayId}
@@ -4203,9 +4295,13 @@ export function EngineeringCanvas() {
               {COMMIT_HASH} · {buildLabel().split('·').slice(-1)[0].trim()}
             </div>
 
-            {/* Drag ghost */}
+            {/* Drag ghost. M6 — display:none while an HTML5 drag is in
+                flight so the browser's native ghost doesn't race with
+                this legacy React ghost. The legacy path remains for
+                arm-to-click placement (a short release with no drag),
+                which still uses this ghost preview. */}
             {drag && (
-              <div className="pointer-events-none absolute z-50" style={{ left: drag.x - 16, top: drag.y - 16 }}>
+              <div className="pointer-events-none absolute z-50" style={{ left: drag.x - 16, top: drag.y - 16, display: htmlDragInFlight ? 'none' : undefined }}>
                 <div className="w-8 h-8 rounded-full bg-card border border-primary flex items-center justify-center shadow-lg">
                   <DeviceGlyph type={drag.product.type} size={20} />
                 </div>
@@ -7469,6 +7565,8 @@ function InsertDock(props: {
                     return (
                       <button
                         key={p.id}
+                        draggable
+                        onDragStart={(e) => beginProductDrag(p.id, e)}
                         onPointerDown={(e) => { e.preventDefault(); props.onStartDrag(p, e); }}
                         className={`w-full text-left px-4 py-2 hover:bg-secondary/40 cursor-grab active:cursor-grabbing flex items-center gap-2.5 transition-colors duration-150 group ${outOfStack ? 'opacity-55 hover:opacity-100' : ''}`}
                       >
@@ -8101,6 +8199,13 @@ interface SurfaceProps {
    *  drawer's preview controls so the two stay in sync. */
   personProbePos: { x: number; y: number } | null;
   setPersonProbePos: (pos: { x: number; y: number }) => void;
+  /** M6 — HTML5 drag and drop receiver. Fires when a tray product is
+   *  dropped onto the canvas. The handler is given the product id
+   *  carried via dataTransfer plus the world-space coordinates of the
+   *  drop (already inverse-transformed through the live pan + zoom).
+   *  Parent dispatches the placement, including any door / IDF host
+   *  attachment, from this single entry point. */
+  onProductDrop?: (productId: string, worldX: number, worldY: number, clientX: number, clientY: number) => void;
 }
 
 const ICON_SCALE: Record<IconSize, number> = { compact: 0.75, standard: 1, large: 1.35 };
@@ -8119,7 +8224,7 @@ function labelVisibleFor(d: Device, density: LabelDensity, isSel: boolean): bool
 
 import { forwardRef } from 'react';
 const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSurface(
-  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid, rooms, roomDraw, onPickRoom, annotations, onPatchAnnotation, onRemoveAnnotation, selectedDoriLevel, personProbePos, setPersonProbePos }, ref
+  { tool, zoom, pan, setPan, onUserTouchView, devices, selId, selPathwayId, selIds, presence, hoverByPresence, planSource, siteAddress, walls, wallStart, wallCursor, onPick, onBlank, onArmedClick, currentFloorPxToFt, currentFloorId, dragging, snap, onSurfaceClick, onSurfaceMove, onSurfaceDblClick, onSurfaceContextMenu, onMoveDevice, onRotateDevice, onUpdateDevice, activeLens, setActiveLens, coverageMode, layers, display, measure, calibrate, cableDraw, dragLag, onDragStart, onDragEnd, hoveredLens, hoverHost, floorBackground, onUpdateBackground, persistedMeasurements, measurementsVisible, onRemoveMeasurement, coverageGrid, rooms, roomDraw, onPickRoom, annotations, onPatchAnnotation, onRemoveAnnotation, selectedDoriLevel, personProbePos, setPersonProbePos, onProductDrop }, ref
 ) {
   const iconScale = ICON_SCALE[display.iconSize];
   const coverageAlpha = Math.max(0, Math.min(1, display.coverageOpacity / 100));
@@ -8244,6 +8349,25 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch {}
     }
   };
+  // M6 — HTML5 drop receiver. Bound on the SVG root so any drop within
+  // the canvas viewport is captured. preventDefault on dragover is
+  // required by the spec for drop events to fire. The product id comes
+  // out of dataTransfer; coordinates inverse-transform through the
+  // live pan + zoom so the device lands exactly where the cursor was.
+  const onCanvasDragOver = (e: React.DragEvent<SVGSVGElement>) => {
+    allowProductDrop(e);
+  };
+  const onCanvasDrop = (e: React.DragEvent<SVGSVGElement>) => {
+    if (!onProductDrop) return;
+    e.preventDefault();
+    const productId = readProductIdFromDrop(e);
+    if (!productId) return;
+    const svgEl = (ref as React.RefObject<SVGSVGElement>).current;
+    if (!svgEl) return;
+    const rect = svgEl.getBoundingClientRect();
+    const { x, y } = clientToCanvas(e.clientX, e.clientY, rect, pan, zoom);
+    onProductDrop(productId, x, y, e.clientX, e.clientY);
+  };
   return (
     <svg
       ref={ref}
@@ -8251,6 +8375,8 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       onPointerMove={onPanMove}
       onPointerUp={onPanEnd}
       onPointerCancel={onPanEnd}
+      onDragOver={onCanvasDragOver}
+      onDrop={onCanvasDrop}
       onWheel={(e) => {
         // Wheel-zoom centred on the cursor for smooth, GIS-like zooming.
         if (!ref) return;
@@ -18388,6 +18514,8 @@ function BottomDeviceBar({
                   return (
                     <button
                       key={p.id}
+                      draggable
+                      onDragStart={(e) => { beginProductDrag(p.id, e); setSearchQuery(''); setOpen(null); }}
                       onPointerDown={(e) => { onStartDrag(p, e); setSearchQuery(''); setOpen(null); }}
                       data-track={`bottombar-search-${p.id}`}
                       className="group text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-[var(--shadow-low)] hover:-translate-y-[1px] transition-all p-3 flex flex-col gap-2"
@@ -18928,6 +19056,8 @@ function BottomDeviceBar({
                       return (
                         <button
                           key={p.id}
+                          draggable
+                          onDragStart={(e) => { beginProductDrag(p.id, e); setOpen(null); }}
                           onPointerDown={(e) => { onStartDrag(p, e); setOpen(null); }}
                           data-track={`bottombar-cam-${p.id}`}
                           className="group text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-[var(--shadow-low)] hover:-translate-y-[1px] transition-all p-3 flex flex-col gap-2"
@@ -18975,6 +19105,8 @@ function BottomDeviceBar({
                   return (
                     <button
                       key={p.id}
+                      draggable
+                      onDragStart={(e) => { beginProductDrag(p.id, e); setOpen(null); }}
                       onPointerDown={(e) => { onStartDrag(p, e); setOpen(null); }}
                       data-track={`bottombar-${trayCat.id}-${p.id}`}
                       className="group text-left rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-[var(--shadow-low)] hover:-translate-y-[1px] transition-all p-3 flex flex-col gap-2"
