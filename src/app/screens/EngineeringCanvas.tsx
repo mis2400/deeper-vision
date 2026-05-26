@@ -84,6 +84,7 @@ import { CoverageStatsPanel } from '../canvas/chrome/CoverageStatsPanel';
 import { RoomInspector } from '../canvas/chrome/RoomInspector';
 import { FloorOverview } from '../canvas/chrome/FloorOverview';
 import { FloorSwitcher } from '../canvas/chrome/FloorSwitcher';
+import { UndoRedoButtons } from '../canvas/chrome/UndoRedoButtons';
 import { FOV, FovCone } from '../canvas/coverage/FOV';
 import {
   CoverageMode, DORI_BASE_OPACITY, DORI_LABEL, DORI_ORDER, DORI_PX_PER_FT,
@@ -4183,50 +4184,8 @@ export function EngineeringCanvas() {
 // to canvas/chrome/FloorSwitcher.tsx (M11 monolith breakup).
 // Import at top of file.
 
-/* ═══════════════════════════════════════════════════════════════════════
-   UNDO / REDO BUTTONS — Canvas V2 Pass 1.1
-   ═══════════════════════════════════════════════════════════════════════ */
-
-function UndoRedoButtons() {
-  const past = useProjectStore((s) => s.canvasHistory.past);
-  const future = useProjectStore((s) => s.canvasHistory.future);
-  const nextUndo = past[past.length - 1];
-  const nextRedo = future[future.length - 1];
-  const canUndo = !!nextUndo;
-  const canRedo = !!nextRedo;
-  const handleUndo = () => {
-    const popped = useProjectStore.getState().canvasUndo();
-    if (popped) toast.message(`Undo: ${popped.label}`, { duration: 2000 });
-  };
-  const handleRedo = () => {
-    const popped = useProjectStore.getState().canvasRedo();
-    if (popped) toast.message(`Redo: ${popped.label}`, { duration: 2000 });
-  };
-  return (
-    <div className="inline-flex items-center gap-0.5 h-8 px-0.5 rounded-lg border border-border bg-background">
-      <button
-        onClick={handleUndo}
-        disabled={!canUndo}
-        title={canUndo ? `Undo: ${nextUndo.label}  (⌘Z)` : 'Nothing to undo'}
-        className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors ${canUndo ? 'text-foreground hover:bg-secondary' : 'text-muted-foreground/40 cursor-default'}`}
-        data-track="topbar-undo"
-        aria-label="Undo"
-      >
-        <Undo2 className="w-3.5 h-3.5" />
-      </button>
-      <button
-        onClick={handleRedo}
-        disabled={!canRedo}
-        title={canRedo ? `Redo: ${nextRedo.label}  (⇧⌘Z)` : 'Nothing to redo'}
-        className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors ${canRedo ? 'text-foreground hover:bg-secondary' : 'text-muted-foreground/40 cursor-default'}`}
-        data-track="topbar-redo"
-        aria-label="Redo"
-      >
-        <Redo2 className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  );
-}
+// UndoRedoButtons moved to canvas/chrome/UndoRedoButtons.tsx
+// (M11 monolith breakup). Import at top of file.
 
 /* ═══════════════════════════════════════════════════════════════════════
    MOBILE ACTIONS MENU — Canvas V2 Pass 1.5.1
