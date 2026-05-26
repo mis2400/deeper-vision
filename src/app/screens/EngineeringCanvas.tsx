@@ -64,6 +64,7 @@ import {
   beginProductDrag, allowProductDrop, readProductIdFromDrop, clientToCanvas,
 } from '../canvas/interaction/dragDrop';
 import { SelectionMenu as CanvasSelectionMenu } from '../canvas/chrome/SelectionMenu';
+import { LeftRail as CanvasLeftRail } from '../canvas/chrome/LeftRail';
 
 /*
   Engineering Canvas v2 — designed around four ideas
@@ -3728,25 +3729,25 @@ export function EngineeringCanvas() {
                 Tools only (no devices). Always visible in Default + Field;
                 in Canvas mode a small reopener takes its place. */}
             {viewMode !== 'canvas' && (
-              <DrawingToolRail
+              /* M4 — UNIFIED LEFT RAIL. Tools / View / Zoom in one
+                 container. Replaces DrawingToolRail (top-left) +
+                 IntelligenceRail (bottom-left). No more hardcoded
+                 top-[480px] offset; the three groups flex naturally
+                 inside one rail with subtle separators between them.
+                 zoom-in is now physically present in the same column
+                 as the other zoom controls — the earlier missing-
+                 zoom-in regression cannot recur. */
+              <CanvasLeftRail
                 tool={tool} setTool={setTool}
                 snap={snap} setSnap={setSnap}
                 layersOpen={layersOpen} onToggleLayers={() => setLayersOpen((v) => !v)}
-                onOpenScanBuild={() => setScanBuildOpen(true)}
+                mapOpen={scanBuildOpen} onToggleMap={() => setScanBuildOpen((v) => !v)}
+                coverageMode={coverageMode} setCoverageMode={setCoverageMode}
+                chipsOpen={intelOpen} setChipsOpen={setIntelOpen}
+                zoom={zoom}
+                setZoom={(z) => { setZoom(z); userTouchedViewRef.current = true; }}
                 onFit={() => { applyFit();   userTouchedViewRef.current = false; }}
-                onCenter={() => { applyCenter(); userTouchedViewRef.current = true; }}
                 onActual={() => { applyActualScale(); userTouchedViewRef.current = true; }}
-                onSelectAll={(kind) => {
-                  const visible = devices.filter((d) => !hiddenIds.has(d.id));
-                  let list: Device[] = [];
-                  if (kind === 'cameras') list = visible.filter((d) => TYPE_KIND[d.type] === 'camera');
-                  if (kind === 'doors')   list = visible.filter((d) => (d.type as string).startsWith('inf.door') || (d.type as string).startsWith('inf.gate') || (d.type as string).startsWith('inf.storefront') || (d.type as string).startsWith('inf.doubledoor'));
-                  if (kind === 'readers') list = visible.filter((d) => d.type === 'acc.reader' || d.type === 'acc.keypad');
-                  if (kind === 'idfs')    list = visible.filter((d) => d.type === 'net.idf' || d.type === 'net.mdf' || d.type === 'inf.rack' || d.type === 'inf.mdf');
-                  setSelIds(new Set(list.map((d) => d.id)));
-                  if (list[0]) setSelId(list[0].id);
-                  toast.message(`Selected ${list.length} · ${kind} on floor`, { duration: 2500 });
-                }}
               />
             )}
             {viewMode === 'canvas' && (
@@ -16865,26 +16866,11 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen, setZoom, onFi
         </div>
       ))}
 
-      {/* top-right intelligence rail — mirror of the left DrawingToolRail
-          layout. Two items today (Chips toggle, AI Assistant). Same
-          collapse-on-hover behavior as the left rail: icons-only by
-          default; on hover/tap the rail widens and labels appear to the
-          LEFT of icons (read inward, never off screen). Floats over the
-          canvas; no reflow. Badge counts only render when there's a
-          real finding count (no fabricated dots). */}
-      <IntelligenceRail
-        open={open}
-        setOpen={setOpen}
-        panelOpen={panelOpen}
-        setPanelOpen={setPanelOpen}
-        highCount={summary.high ?? 0}
-        warnCount={summary.warn ?? 0}
-        issuesEmpty={!issues.length}
-        zoom={zoom}
-        setZoom={setZoom}
-        onFit={onFit}
-        onActual={onActual}
-      />
+      {/* M4 — IntelligenceRail render removed. The zoom controls,
+          chips toggle, and view layers it carried are merged into the
+          unified LeftRail (canvas/chrome/LeftRail.tsx). The intel
+          chips overlay above this comment still renders unconditionally
+          when `open` is true. */}
 
       {/* AI Assistant side panel — embedded on the right of the canvas.
           Lists every issue with severity, location, and suggestion.
