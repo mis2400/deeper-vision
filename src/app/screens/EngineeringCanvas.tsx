@@ -10297,21 +10297,26 @@ function FovCone({
   return (
     <g opacity={opacity}>
       <defs>
-        {/* Lens-cone wash — drafting paper alpha, not spotlight beam. */}
+        {/* M11 cone redesign — three-stop wash with a brighter lens core
+            and a soft outer falloff. Reads as a deliberate engineering
+            coverage zone rather than a flat spotlight or a washed-out
+            tint. Multi-cone overlap composites cleanly because the
+            falloff is exponential, not linear. */}
         <radialGradient id={gid} cx={cx} cy={cy} r={r} gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.22" />
-          <stop offset="50%"  stopColor={color} stopOpacity="0.10" />
+          <stop offset="0%"   stopColor={color} stopOpacity="0.34" />
+          <stop offset="35%"  stopColor={color} stopOpacity="0.18" />
+          <stop offset="70%"  stopColor={color} stopOpacity="0.08" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </radialGradient>
       </defs>
-      {/* Single-pass fill. The bloom pass that used to live here was the
-          main source of the lens's "spotlight" cyber feel; without it the
-          cone reads as a clean engineering callout. */}
       {!wireframe && <path d={path} fill={`url(#${gid})`} />}
-      {/* Edge stroke — hairline draftsman line, low opacity. */}
-      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 0.9 : 0.5} opacity={wireframe ? 0.85 : 0.3} />
-      {/* DORI band rings — quieter still in clean modes; they used to
-          overprint walls and labels in dense plans. */}
+      {/* Edge stroke — defined draftsman line. Bumped opacity 0.30 → 0.55
+          so the cone boundary reads at a glance instead of fading into
+          the plan background. */}
+      <path d={path} fill="none" stroke={color} strokeWidth={wireframe ? 0.9 : 0.7} opacity={wireframe ? 0.85 : 0.55} strokeLinejoin="round" />
+      {/* DORI band rings — solid hairlines at 0.28 opacity. Dashed lines
+          read as in-progress geometry; solid reads as the engineering
+          callout this actually is. */}
       {!wireframe && [0.35, 0.6, 0.8].map((f) => {
         const rr = r * f;
         const xa = cx + Math.cos(a1) * rr;
@@ -10320,9 +10325,18 @@ function FovCone({
         const yb = cy + Math.sin(a2) * rr;
         return (
           <path key={f} d={`M ${xa} ${ya} A ${rr} ${rr} 0 ${half > 90 ? 1 : 0} 1 ${xb} ${yb}`}
-            fill="none" stroke={color} strokeWidth="0.35" opacity="0.18" strokeDasharray="2 4" />
+            fill="none" stroke={color} strokeWidth="0.5" opacity="0.28" />
         );
       })}
+      {/* Lens core — small bright dot at the camera origin. Anchors the
+          cone visually so the operator's eye finds the camera origin
+          first, the coverage zone second. */}
+      {!wireframe && (
+        <>
+          <circle cx={cx} cy={cy} r={3.2} fill={color} opacity="0.85" />
+          <circle cx={cx} cy={cy} r={1.4} fill="#FFFFFF" opacity="0.85" />
+        </>
+      )}
       {label && (
         <g
           transform={`translate(${tipX}, ${tipY})`}
@@ -10331,12 +10345,16 @@ function FovCone({
           data-lens-label={label}
           data-lens-clamped={tipClamped.clamped ? 'true' : 'false'}
         >
-          <circle r={9} fill="var(--panel-background)" fillOpacity="0.88" stroke={color} strokeWidth="0.8" />
-          <text textAnchor="middle" y={3} fontSize="9" fontWeight="700" fill={color} fontFamily="ui-monospace, monospace">{label}</text>
+          {/* M11 cone redesign — lens marker badge rebuilt with the
+              canvas-rail token system so the chip reads as part of
+              the same chrome language the rails use. White-on-dark in
+              every theme, tighter typography, refined ring. */}
+          <circle r={10} fill="var(--canvas-rail)" fillOpacity="0.96" stroke={color} strokeWidth="1.2" />
+          <text textAnchor="middle" y={3.5} fontSize="11" fontWeight="700" fill="var(--canvas-rail-foreground)" fontFamily="ui-monospace, monospace">{label}</text>
           {telemetry && (
-            <g transform="translate(0, 16)">
-              <rect x={-26} y={-6} width={52} height={12} rx={2} fill="var(--panel-background)" fillOpacity="0.85" stroke={color} strokeWidth="0.5" opacity="0.85" />
-              <text textAnchor="middle" y={2.5} fontSize="9" fill="var(--foreground)" fontFamily="ui-monospace, monospace">{telemetry}</text>
+            <g transform="translate(0, 18)">
+              <rect x={-30} y={-7} width={60} height={14} rx={4} fill="var(--canvas-rail)" fillOpacity="0.96" stroke="var(--canvas-rail-border)" strokeWidth="0.8" />
+              <text textAnchor="middle" y={3} fontSize="10" fill="var(--canvas-rail-foreground-muted)" fontFamily="ui-monospace, monospace">{telemetry}</text>
             </g>
           )}
         </g>
