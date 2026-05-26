@@ -16952,16 +16952,13 @@ function IntelligenceRail({
   return (
     <div
       ref={railRef}
-      /* Audit Group C.5 — the view controls (zoom %, zoom in, fit,
-         eye toggle, assistant) used to live on the RIGHT side of the
-         canvas as a separate rail. Per Mohammad's restructure, the
-         right side is now cleared: this rail moves to the LEFT side
-         and anchors BELOW the tool rail, vertically aligned along
-         the same edge so the operator's eye tracks a single column
-         of canvas chrome on the left. Position is bottom-left so the
-         intel rail still sits over the canvas, never inside the new
-         docked bottom toolbar / edit panel. */
-      className="absolute bottom-3 left-2 md:left-3 z-20 pointer-events-auto select-none"
+      /* M4 — unified left rail. The view + zoom controls now anchor
+         DIRECTLY beneath the tool rail (top-left) rather than docking
+         to the bottom-left, so the operator sees ONE left column of
+         chrome, not two. The 480 px top offset clears the tool rail
+         comfortably (8 tools × 44 px + padding). Same z token as the
+         tool rail so they sit on the same stacking plane. */
+      className="absolute top-[480px] left-2 md:left-3 z-rail pointer-events-auto select-none"
       data-canvas-chrome="intel-rail"
     >
       <div
