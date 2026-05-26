@@ -43,6 +43,22 @@ import { pathwayLengthFt, ftPerPxForFloor } from '../lib/engineering';
 import { buildLabel, COMMIT_HASH } from '../../build-info';
 import { toast } from 'sonner';
 
+// ─── Canvas module split (M1) ─────────────────────────────────────────
+// Canonical types, constants, catalog adapter, and pure helpers now live
+// under src/app/canvas/. This file still carries local copies of many of
+// them while the migration is in flight; each subsequent rebuild milestone
+// (state cleanup, unified left rail, plan upload Worker, etc.) replaces
+// the local copy in the section it touches, until EngineeringCanvas.tsx
+// is reduced to an orchestrator. The new modules are wired up here so
+// build-time validation catches drift between local and canonical shapes
+// even before the local copies are deleted.
+//
+// Source of truth ahead of EngineeringCanvas.tsx:
+//   src/app/canvas/types.ts      — Tool, Wall, Device, LensCfg, Product, ...
+//   src/app/canvas/constants.ts  — KIND_TONE, TYPE_KIND, CATEGORIES, ...
+//   src/app/canvas/catalog.ts    — PRODUCTS, PRODUCTS_BY_ID, ...
+//   src/app/canvas/utils.ts      — deviceTone, findHostUnderPointer, ...
+
 /*
   Engineering Canvas v2 — designed around four ideas
 
