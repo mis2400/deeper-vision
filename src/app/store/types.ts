@@ -882,8 +882,17 @@ export interface Floor {
 
 export interface FloorBackground {
   /** Data URL — image/png or image/jpeg, downscaled to max 2048px on long
-   *  edge so localStorage stays under a few MB. */
+   *  edge. LEGACY field. New uploads (M5) leave this as the empty string
+   *  and carry the binary out of localStorage via `blobHash` below. Kept
+   *  for backwards compatibility with persisted floors that predate M5.
+   *  The render hook (usePlanBlobUrl) prefers blobHash when set. */
   dataUrl: string;
+  /** SHA-256 of the encoded image bytes. When set, the actual binary
+   *  lives in IndexedDB (src/app/canvas/plan/planStorage.ts) and the
+   *  render hook resolves a session-scoped object URL on demand. Setting
+   *  this keeps multi-MB image payloads OUT of the Zustand persist
+   *  payload, which previously froze the main thread on save. */
+  blobHash?: string;
   /** Original filename (for re-export and the inspector). */
   fileName: string;
   /** Source: user-imported file vs VisionScan-generated synthetic. */

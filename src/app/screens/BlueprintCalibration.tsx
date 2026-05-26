@@ -24,6 +24,7 @@ import { useProjectStore, selectors } from '../store/projectStore';
 import type { Floor, Site, Building } from '../store/types';
 import { importFloorplanFile } from '../lib/floorplanImport';
 import { bytesLabel, approxDataUrlBytes } from '../lib/mediaCapture';
+import { usePlanBlobUrl } from '../canvas/plan/usePlanBlobUrl';
 
 type Step = 'upload' | 'orient' | 'scale' | 'floors' | 'done';
 
@@ -298,7 +299,11 @@ export function BlueprintCalibration() {
     );
   }
 
-  const bgUrl = activeFloor.background?.dataUrl ?? null;
+  // M5 — prefer the IndexedDB-backed blob URL when the floor was uploaded
+  // through the Web Worker path. Falls back to the legacy dataUrl for any
+  // floor persisted before M5. Either way the SVG <image> renders the
+  // same way.
+  const bgUrl = usePlanBlobUrl(activeFloor.background) ?? activeFloor.background?.dataUrl ?? null;
   const bgW = activeFloor.background?.naturalWidth ?? 0;
   const bgH = activeFloor.background?.naturalHeight ?? 0;
 
@@ -469,6 +474,7 @@ export function BlueprintCalibration() {
                 scalePxToFt={scalePxToFt}
                 onConfirm={confirmScale}
                 onBack={() => setStep('orient')}
+                onResetPoints={resetPoints}
               />
             )}
             {step === 'floors' && (
@@ -584,7 +590,7 @@ function OrientPanel({
 }
 
 function ScalePanel({
-  pickCount, realFeet, onChangeFeet, pxPerFt, scalePxToFt, onConfirm, onBack,
+  pickCount, realFeet, onChangeFeet, pxPerFt, scalePxToFt, onConfirm, onBack, onResetPoints,
 }: {
   pickCount: number;
   realFeet: string;
@@ -593,14 +599,32 @@ function ScalePanel({
   scalePxToFt: number;
   onConfirm: () => void;
   onBack: () => void;
+  onResetPoints: () => void;
 }) {
+  // M5 — explicit blocker copy. The button used to disable silently with
+  // no hint at why. Each missing condition appears as a chip below the
+  // controls so the user knows exactly what's left.
+  const missing: string[] = [];
+  if (pickCount < 2) missing.push(pickCount === 0 ? 'Click 2 points on the plan' : 'Click 1 more point');
+  if (!Number(realFeet)) missing.push('Enter the real distance in feet');
+  else if (Number(realFeet) <= 0) missing.push('Distance must be greater than 0');
+  if (pickCount === 2 && Number(realFeet) > 0 && scalePxToFt <= 0) missing.push('Points are at the same location, pick two distinct points');
+  const ready = missing.length === 0;
+
   return (
     <div className="bg-card border border-border rounded-lg p-4 space-y-3">
       <h3 className="text-sm font-medium">Set the scale</h3>
       <p className="text-xs text-muted-foreground leading-relaxed">
         Click two points on the plan with a known real distance (a wall, a column grid, a door). Then enter how many feet that distance is.
       </p>
-      <div className="text-xs text-muted-foreground">Points: <span className="text-foreground">{pickCount} / 2</span></div>
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-muted-foreground">Points: <span className="text-foreground tabular-nums">{pickCount} / 2</span></div>
+        {pickCount > 0 && (
+          <button onClick={onResetPoints} className="text-[11px] text-muted-foreground hover:text-foreground">
+            Reset points
+          </button>
+        )}
+      </div>
       <div className="flex items-center gap-2">
         <Ruler className="w-4 h-4 text-muted-foreground" />
         <input
@@ -610,6 +634,7 @@ function ScalePanel({
           min={0.1}
           step={0.1}
           className="flex-1 bg-input-background border border-input-border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-primary"
+          aria-label="Real distance in feet"
         />
         <span className="text-xs text-muted-foreground">feet</span>
       </div>
@@ -619,9 +644,27 @@ function ScalePanel({
           <div className="text-[11px]">Stored as <span className="tabular-nums">{scalePxToFt.toFixed(4)}</span> ft per px.</div>
         </div>
       )}
+      {/* Inline blocker chips. Appear only when the Apply button can't
+          fire yet; vanish once every condition is satisfied. */}
+      {!ready && (
+        <ul className="space-y-1 rounded-md border border-border bg-secondary/30 px-2.5 py-2">
+          {missing.map((m) => (
+            <li key={m} className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+              <span className="mt-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-500/80 shrink-0" />
+              <span>{m}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="flex gap-2 pt-1">
         <Button variant="ghost" onClick={onBack}><ArrowLeft className="w-3.5 h-3.5 mr-1" />Back</Button>
-        <Button className="flex-1" onClick={onConfirm} disabled={pickCount !== 2 || !Number(realFeet) || scalePxToFt <= 0}>
+        <Button
+          className="flex-1"
+          onClick={onConfirm}
+          disabled={!ready}
+          data-testid="confirm-scale"
+          title={ready ? 'Save the scale and continue' : missing.join('. ')}
+        >
           <Check className="w-3.5 h-3.5 mr-1" />Confirm scale
         </Button>
       </div>

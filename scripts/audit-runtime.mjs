@@ -39,6 +39,11 @@ const routes = [
   { name: 'review',     path: '/project/p1/review' },
   { name: 'canvas-bom', path: '/project/p1/canvas', after: 'open-bom' },
   { name: 'canvas-sel', path: '/project/p1/canvas', after: 'select-device' },
+  // M5 — calibration screen exercises the Web Worker plan import path
+  // and the IndexedDB blob storage plumbing on boot. A regression in
+  // either lands here as a console error or blank body before reaching
+  // any user surface.
+  { name: 'calibrate',  path: '/calibrate/p1' },
 ];
 
 // ─── Vite preview server ──────────────────────────────────────────────

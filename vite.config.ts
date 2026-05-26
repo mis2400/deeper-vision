@@ -64,4 +64,12 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  // Web Workers (M5 — plan import) need ES module format to support
+  // code splitting, because planImport.worker.ts dynamically imports
+  // pdfjs-dist only when a PDF is actually uploaded. Vite's default
+  // iife format errors out on dynamic imports inside workers.
+  worker: {
+    format: 'es',
+  },
 })
