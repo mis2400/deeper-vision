@@ -74,6 +74,7 @@ import { DeviceGlyph } from '../canvas/devices/DeviceGlyph';
 import { HardwareGlyph } from '../canvas/devices/HardwareGlyph';
 import { ConeHandles } from '../canvas/devices/ConeHandles';
 import { PersonProbe, RotationRing } from '../canvas/devices/PersonProbe';
+import { CategoryGlyph, KIND_ICON } from '../canvas/devices/CategoryGlyph';
 import { MiniMapFloorStrip } from '../canvas/chrome/MiniMapFloorStrip';
 import { FOV, FovCone } from '../canvas/coverage/FOV';
 import {
@@ -9623,133 +9624,6 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
  *  drags but the canvas callout and the drawer preview both flip to
  *  "No coverage here". When resolution or per floor calibration is
  *  missing, the probe doesn't mount at all (caller gates). */
-function DeviceGlyphPaths({ type, tone }: { type: DeviceType; tone: string }) {
-  const s = 1;
-  switch (type) {
-    case 'cam.bullet':
-      return (
-        <g transform={`scale(${s})`}>
-          <rect x="-10" y="-5" width="20" height="10" rx="2" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <circle cx="8" cy="0" r="3.5" fill="var(--canvas-background)" />
-          <circle cx="8" cy="0" r="1.6" fill={tone} />
-          <rect x="-11" y="-2" width="3" height="4" fill="var(--canvas-background)" />
-        </g>
-      );
-    case 'cam.dome':
-      return (
-        <g transform={`scale(${s})`}>
-          <circle r="10" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <circle r="6" fill="var(--canvas-background)" />
-          <circle r="3" fill={tone} />
-        </g>
-      );
-    case 'cam.ptz':
-      return (
-        <g transform={`scale(${s})`}>
-          <circle r="11" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <path d="M -7 -2 A 7 7 0 0 1 7 -2" fill="none" stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <circle r="3.5" fill="var(--canvas-background)" />
-          <polygon points="7,-4 11,-2 7,0" fill="var(--canvas-background)" />
-        </g>
-      );
-    case 'cam.multisensor':
-      return (
-        <g transform={`scale(${s})`}>
-          <circle r="12" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          {[[-5,-5],[5,-5],[-5,5],[5,5]].map(([x,y],i) => (
-            <g key={i}>
-              <circle cx={x} cy={y} r="3" fill="var(--canvas-background)" />
-              <circle cx={x} cy={y} r="1.4" fill={tone} />
-            </g>
-          ))}
-        </g>
-      );
-    case 'cam.fisheye':
-      return (
-        <g transform={`scale(${s})`}>
-          <circle r="11" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <circle r="7" fill="var(--canvas-background)" />
-          <circle r="3" fill={tone} />
-          <line x1="-11" y1="0" x2="11" y2="0" stroke="var(--canvas-background)" strokeWidth="0.8" />
-          <line x1="0" y1="-11" x2="0" y2="11" stroke="var(--canvas-background)" strokeWidth="0.8" />
-        </g>
-      );
-    case 'cam.thermal':
-      return (
-        <g transform={`scale(${s})`}>
-          <rect x="-10" y="-6" width="20" height="12" rx="2" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <rect x="-7" y="-3" width="14" height="6" fill="var(--canvas-background)" />
-          <text x="0" y="2" textAnchor="middle" fill={tone} fontSize="6" fontWeight="700" /* audit:icon-glyph thermostat-TH */>TH</text>
-        </g>
-      );
-    case 'acc.reader':
-      return (
-        <g transform={`scale(${s})`}>
-          <rect x="-4" y="-11" width="8" height="22" rx="1.5" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <circle cx="0" cy="-7" r="1.6" fill="var(--canvas-background)" />
-          <rect x="-2.5" y="-3" width="5" height="9" rx="0.5" fill="var(--canvas-background)" />
-        </g>
-      );
-    case 'acc.strike':
-      return (
-        <g transform={`scale(${s})`}>
-          <rect x="-10" y="-4" width="20" height="8" rx="1.5" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <rect x="-3" y="-2" width="6" height="4" fill="var(--canvas-background)" />
-          <rect x="-3" y="-1" width="6" height="2" fill={tone} />
-        </g>
-      );
-    case 'acc.maglock':
-      return (
-        <g transform={`scale(${s})`}>
-          <rect x="-12" y="-3" width="24" height="6" rx="1" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <rect x="-10" y="-1.5" width="3" height="3" fill="var(--canvas-background)" />
-          <rect x="7" y="-1.5" width="3" height="3" fill="var(--canvas-background)" />
-        </g>
-      );
-    case 'acc.exit':
-      return (
-        <g transform={`scale(${s})`}>
-          <circle r="9" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <circle r="5" fill="var(--canvas-background)" />
-          <path d="M -2 0 L 0 -2 L 2 0 L 0 2 Z" fill={tone} />
-        </g>
-      );
-    case 'net.switch':
-      return (
-        <g transform={`scale(${s})`}>
-          <rect x="-12" y="-5" width="24" height="10" rx="1.5" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          {[-8,-4,0,4,8].map((x,i) => <rect key={i} x={x-1} y={-1.5} width="2" height="3" fill="var(--canvas-background)" />)}
-        </g>
-      );
-    case 'net.idf':
-      return (
-        <g transform={`scale(${s})`}>
-          <rect x="-9" y="-12" width="18" height="24" rx="1.5" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          {[-8,-4,0,4,8].map((y,i) => <rect key={i} x={-6} y={y-1} width="12" height="2" fill="var(--canvas-background)" />)}
-        </g>
-      );
-    case 'net.ap':
-      return (
-        <g transform={`scale(${s})`}>
-          <circle r="11" fill={tone} stroke="var(--canvas-background)" strokeWidth="1.5" />
-          <circle r="7" fill="none" stroke="var(--canvas-background)" strokeWidth="1.2" />
-          <circle r="3.5" fill="none" stroke="var(--canvas-background)" strokeWidth="1.2" />
-          <circle r="1.5" fill="var(--canvas-background)" />
-        </g>
-      );
-  }
-}
-
-const KIND_ICON: Record<DeviceKind, any> = {
-  camera: Video, access: ScanFace, network: Cable, intrusion: Radar,
-  audio: Volume2, storage: HardDrive, display: Monitor, power: BatteryCharging, sensor: Thermometer,
-  infrastructure: DoorOpen, cyber: ShieldCheck, fire: Flame, building: Server,
-};
-
-function CategoryGlyph({ kind, active }: { kind: DeviceKind; active?: boolean }) {
-  const Icon = KIND_ICON[kind];
-  return <Icon style={{ width: 14, height: 14 }} strokeWidth={2} />;
-}
 
 /* ═══════════════════════════════════════════════════════════════════════
    SELECTION PILL — floats near the selected device
