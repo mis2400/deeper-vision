@@ -251,25 +251,36 @@
    slate-flashing FOUC. */
 :root,
 [data-theme="light"] {
-  --background: #EEF1F6;
-  --foreground: #1F2738;
+  /* M11 visual redesign — refined Light Drafting palette. The
+     prior values read as gray-on-gray (Mohammad's "looks like 2005"
+     complaint). The new values:
+       background     drafting paper, slight warm cast, less cool blue
+       foreground     deeper slate so type pops
+       primary        modern indigo-blue (Linear/Notion family) instead
+                      of the prior muddy navy
+       border         lighter, more neutral
+       muted          slightly more contrast against bg so muted text
+                      is still legible without competing
+     The Slate and Dark themes keep their own primaries unchanged. */
+  --background: #F2F4F8;
+  --foreground: #1A2236;
 
   --card: #FFFFFF;
-  --card-foreground: #1F2738;
+  --card-foreground: #1A2236;
 
   --popover: #FFFFFF;
-  --popover-foreground: #1F2738;
+  --popover-foreground: #1A2236;
 
-  --primary: #2D6FB8;
+  --primary: #2563EB;
   --primary-foreground: #FFFFFF;
 
-  --secondary: #DAE0EC;
-  --secondary-foreground: #1F2738;
+  --secondary: #DDE3EC;
+  --secondary-foreground: #1A2236;
 
-  --muted: #D2D8E4;
-  --muted-foreground: #5B6B89;
+  --muted: #D5DBE5;
+  --muted-foreground: #54627E;
 
-  --accent: #2D6FB8;
+  --accent: #2563EB;
   --accent-foreground: #FFFFFF;
 
   --destructive: #C8423D;
@@ -281,15 +292,15 @@
   --warning: #C58015;
   --warning-foreground: #FFFFFF;
 
-  --border: #C5CCDB;
-  --border-strong: #A6B0C5;
+  --border: #DEE3EC;
+  --border-strong: #C2C9D7;
 
   --input: transparent;
   --input-background: #FFFFFF;
-  --input-border: #B0BACF;
-  --switch-background: #B0BACF;
+  --input-border: #C2C9D7;
+  --switch-background: #C2C9D7;
 
-  --ring: #2D6FB8;
+  --ring: #2563EB;
 
   --coverage-detect:    rgba(45, 111, 184, 0.16);
   --coverage-observe:   rgba(56, 153, 197, 0.18);
