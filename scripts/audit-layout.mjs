@@ -136,8 +136,7 @@ const lines = file.split('\n');
     { pattern: /data-canvas-element="lens-marker"/, what: 'FovCone lens label missing data-canvas-element="lens-marker"' },
     { pattern: /data-canvas-chrome="drawer"/, what: 'EditDrawer missing data-canvas-chrome="drawer"' },
     { pattern: /data-canvas-chrome="floor-strip"/, what: 'MiniMapFloorStrip missing data-canvas-chrome="floor-strip"' },
-    { pattern: /data-canvas-chrome="rail"/, what: 'Left rail missing data-canvas-chrome="rail"' },
-    { pattern: /data-canvas-chrome="intel-rail"/, what: 'Intel rail missing data-canvas-chrome="intel-rail"' },
+    { pattern: /data-canvas-chrome="left-rail"/, what: 'Left rail missing data-canvas-chrome="left-rail"' },
     { pattern: /data-canvas-chrome="tray"/, what: 'Bottom tray missing data-canvas-chrome="tray"' },
     { pattern: /data-canvas-chrome="scalebar"/, what: 'Scale bar missing data-canvas-chrome="scalebar"' },
   ];
