@@ -2321,6 +2321,26 @@ export function EngineeringCanvas() {
     return id;
   }, [setDevices]);
 
+  // M6 audit seam — exposes window.__dvSimulateDrop so the runtime
+  // audit can exercise the HTML5 drop placement path end-to-end. Real
+  // HTML5 drag-and-drop cannot be driven from puppeteer (headless
+  // Chromium doesn't fire dragstart from synthesised mouse events, and
+  // dispatchEvent of synthetic DragEvents bypasses React's synthetic
+  // event delegation). The seam invokes the same callback the SVG
+  // onDrop handler would. Production users could call this from
+  // devtools to place a product they could already place from the
+  // tray, so it's not a privilege boundary; it's a test convenience.
+  const productDropRef = useRef<(productId: string, clientX: number, clientY: number) => void>(() => { /* no-op until first render */ });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    (window as unknown as Record<string, unknown>).__dvSimulateDrop = (productId: string, clientX: number, clientY: number) => {
+      productDropRef.current(productId, clientX, clientY);
+    };
+    return () => {
+      try { delete (window as unknown as Record<string, unknown>).__dvSimulateDrop; } catch { /* shutdown noise */ }
+    };
+  }, []);
+
   // Standalone conduit / pathway draw state — armed by the Cabling tray.
   // Carries the chosen kind + (for conduit) trade size so the cable
   // tool's commit handler writes the right fields onto the new pathway.
@@ -3007,56 +3027,71 @@ export function EngineeringCanvas() {
               pan={pan}
               setPan={setPan}
               onUserTouchView={() => { userTouchedViewRef.current = true; }}
-              onProductDrop={(productId, x, y, clientX, clientY) => {
-                // M6 — HTML5 drop. Resolve the product, decide whether
-                // the cursor landed on a host (door / IDF), and either
-                // append to that host's assembly or place a fresh device.
-                const product = PRODUCTS_BY_ID.get(productId);
-                if (!product) return;
-                // Legacy pointer-event drag state may still be set if
-                // the user pointer-downed on a tray button before the
-                // browser switched to HTML5 drag. Clear it so the
-                // React ghost doesn't linger after drop.
-                setDrag(null);
-                setHoverHost(null);
-                dragStartRef.current = null;
-                const surfRect = surfaceRef.current?.getBoundingClientRect();
-                const dropHost = surfRect ? findHostUnderPointer(clientX, clientY, surfRect, pan, zoom, devices, product.type) : null;
-                if (dropHost) {
-                  const { host, hostKind, compat } = dropHost;
-                  if (!compat.allowed) {
-                    toast.warning(compat.reason ?? 'Not compatible with that host', {
-                      description: compat.hint, duration: 6500,
-                    });
-                    return;
-                  }
-                  if (hostKind === 'door') {
-                    const hw = productTypeToDoorHardware(product.type);
-                    if (!hw) {
-                      toast.warning(`${product.model} isn't door hardware`, {
-                        description: 'Drop it on the canvas instead, or attach to an IDF / rack.',
-                        duration: 5000,
+              onProductDrop={(() => {
+                // Inline IIFE that returns the drop callback. Same body
+                // as before, with productDropRef.current ALSO pointing
+                // at it so the audit seam (window.__dvSimulateDrop) runs
+                // the exact same code path the real drop handler does.
+                const cb = (productId: string, x: number, y: number, clientX: number, clientY: number) => {
+                  const product = PRODUCTS_BY_ID.get(productId);
+                  if (!product) return;
+                  // Legacy pointer-event drag state may still be set if
+                  // the user pointer-downed on a tray button before the
+                  // browser switched to HTML5 drag. Clear it so the
+                  // React ghost doesn't linger after drop.
+                  setDrag(null);
+                  setHoverHost(null);
+                  dragStartRef.current = null;
+                  const surfRect = surfaceRef.current?.getBoundingClientRect();
+                  const dropHost = surfRect ? findHostUnderPointer(clientX, clientY, surfRect, pan, zoom, devices, product.type) : null;
+                  if (dropHost) {
+                    const { host, hostKind, compat } = dropHost;
+                    if (!compat.allowed) {
+                      toast.warning(compat.reason ?? 'Not compatible with that host', {
+                        description: compat.hint, duration: 6500,
                       });
                       return;
                     }
-                    const cur = (host.doorAssembly ?? []) as DoorHardware[];
-                    const next = cur.includes(hw) ? cur : [...cur, hw];
-                    const curState = ((host as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
-                    const nextState = cur.includes(hw) ? curState : { ...curState, [hw]: 'proposed' as const };
-                    setDevices((ds) => ds.map((d) => d.id === host.id ? { ...d, doorAssembly: next, doorAssemblyState: nextState, stack: undefined, linkedIds: undefined } : d));
-                    setSelId(host.id);
-                    setSelPathwayId(null);
-                    toast.success(`Added ${hw} to ${host.id}`, {
-                      description: hw === 'maglock'
-                        ? 'Maglocks require a REX for code-compliant egress.'
-                        : 'Door assembly updated.',
-                      duration: 4500,
-                    });
-                    return;
+                    if (hostKind === 'door') {
+                      const hw = productTypeToDoorHardware(product.type);
+                      if (!hw) {
+                        toast.warning(`${product.model} isn't door hardware`, {
+                          description: 'Drop it on the canvas instead, or attach to an IDF / rack.',
+                          duration: 5000,
+                        });
+                        return;
+                      }
+                      const cur = (host.doorAssembly ?? []) as DoorHardware[];
+                      const next = cur.includes(hw) ? cur : [...cur, hw];
+                      const curState = ((host as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
+                      const nextState = cur.includes(hw) ? curState : { ...curState, [hw]: 'proposed' as const };
+                      setDevices((ds) => ds.map((d) => d.id === host.id ? { ...d, doorAssembly: next, doorAssemblyState: nextState, stack: undefined, linkedIds: undefined } : d));
+                      setSelId(host.id);
+                      setSelPathwayId(null);
+                      toast.success(`Added ${hw} to ${host.id}`, {
+                        description: hw === 'maglock'
+                          ? 'Maglocks require a REX for code-compliant egress.'
+                          : 'Door assembly updated.',
+                        duration: 4500,
+                      });
+                      return;
+                    }
                   }
-                }
-                placeProductAt(product, x, y);
-              }}
+                  placeProductAt(product, x, y);
+                };
+                // Keep the audit seam ref pointing at the latest closure.
+                // World→client mapping happens inside this callback so
+                // the seam can pass client coords directly.
+                productDropRef.current = (productId, clientX, clientY) => {
+                  const svgEl = surfaceRef.current;
+                  if (!svgEl) return;
+                  const r = svgEl.getBoundingClientRect();
+                  const wx = (clientX - r.left - pan.x) / zoom;
+                  const wy = (clientY - r.top  - pan.y) / zoom;
+                  cb(productId, wx, wy, clientX, clientY);
+                };
+                return cb;
+              })()}
               devices={devices.filter((d) => !hiddenIds.has(d.id))}
               selId={selId}
               selPathwayId={selPathwayId}
@@ -7296,7 +7331,7 @@ function InsertDock(props: {
                         key={p.id}
                         draggable
                         onDragStart={(e) => beginProductDrag(p.id, e)}
-                        onPointerDown={(e) => { e.preventDefault(); props.onStartDrag(p, e); }}
+                        onPointerDown={(e) => { props.onStartDrag(p, e); }}
                         className={`w-full text-left px-4 py-2 hover:bg-secondary/40 cursor-grab active:cursor-grabbing flex items-center gap-2.5 transition-colors duration-150 group ${outOfStack ? 'opacity-55 hover:opacity-100' : ''}`}
                       >
                         <div
@@ -7428,7 +7463,7 @@ function InsertDock(props: {
                 {products.map((p) => (
                   <button
                     key={p.id}
-                    onPointerDown={(e) => { e.preventDefault(); props.onStartDrag(p, e); }}
+                    onPointerDown={(e) => { props.onStartDrag(p, e); }}
                     className="w-full text-left p-2.5 rounded-xl border border-border hover:border-primary/60 hover:bg-primary/[0.04] cursor-grab active:cursor-grabbing flex items-center gap-3 transition-colors group"
                   >
                     <div className="w-11 h-11 rounded-lg bg-secondary group-hover:bg-background border border-border flex items-center justify-center shrink-0">
@@ -8085,8 +8120,18 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
   // live pan + zoom so the device lands exactly where the cursor was.
   const onCanvasDragOver = (e: React.DragEvent<SVGSVGElement>) => {
     allowProductDrop(e);
+    if (typeof window !== 'undefined') {
+      (window as unknown as Record<string, unknown>).__dvDragOverFired = true;
+    }
   };
   const onCanvasDrop = (e: React.DragEvent<SVGSVGElement>) => {
+    if (typeof window !== 'undefined') {
+      const w = window as unknown as Record<string, unknown>;
+      w.__dvDropFired = true;
+      // Capture what the handler sees so the audit can pinpoint where
+      // the synthetic drag path breaks. Removed once the audit passes.
+      w.__dvDropProductId = e.dataTransfer ? e.dataTransfer.getData('application/dv-product') : '<no-dataTransfer>';
+    }
     if (!onProductDrop) return;
     e.preventDefault();
     const productId = readProductIdFromDrop(e);

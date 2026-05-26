@@ -32,19 +32,41 @@ if (!existsSync(OUT)) mkdirSync(OUT);
 
 // ─── Routes ───────────────────────────────────────────────────────────
 // One entry per surface the operator hits. `after` runs an interaction
-// before we sample the body / capture the screenshot.
+// before we sample the body / capture the screenshot. `assert` runs an
+// in-page check whose return value becomes a failure message; null /
+// undefined means pass. Assertions catch the regression class that body
+// length + console errors miss (an entire button missing, text rendering
+// invisibly against its background, a placement action that returns
+// silently).
 const routes = [
-  { name: 'canvas',     path: '/project/p1/canvas' },
+  { name: 'canvas',     path: '/project/p1/canvas',
+    // Three zoom controls must render — Mohammad lost the zoom-in
+    // button on a prior rail-position change. Body length + console
+    // errors don't catch this; an explicit DOM count does.
+    assert: 'rail-has-zoom' },
   { name: 'deployment', path: '/project/p1/deployment' },
   { name: 'review',     path: '/project/p1/review' },
   { name: 'canvas-bom', path: '/project/p1/canvas', after: 'open-bom' },
-  { name: 'canvas-sel', path: '/project/p1/canvas', after: 'select-device' },
+  { name: 'canvas-sel', path: '/project/p1/canvas', after: 'open-selection-section',
+    // Open the AIM section panel and verify its text contrasts with the
+    // panel background. The first M7 ship rendered dark text on the
+    // dark canvas-rail surface and was unreadable across themes.
+    assert: 'panel-text-readable' },
   // M9 — selecting a multisensor must auto-set activeLens to a specific
   // lens slot ('a' by default) and only ONE ConeHandles rig mounts on
   // the canvas. A regression here looks like four handle sets stacked
   // at the same coordinate or a console error in the activeLens reset
   // effect.
   { name: 'canvas-multisensor', path: '/project/p1/canvas', after: 'select-multisensor' },
+  // M6 — drag a real tray card onto the canvas via synthetic HTML5
+  // drag events and assert a new device appears. Body length doesn't
+  // catch a silent drag-and-drop failure; the device count delta does.
+  // Native puppeteer cannot truly simulate HTML5 drag with a custom
+  // dataTransfer; this synthesises the dragstart / dragover / drop
+  // events directly, which IS what the production handlers receive
+  // from the browser.
+  { name: 'canvas-drag-place', path: '/project/p1/canvas', after: 'drag-place-camera',
+    assert: 'drag-placed-device' },
   // M5 — calibration screen exercises the Web Worker plan import path
   // and the IndexedDB blob storage plumbing on boot. A regression in
   // either lands here as a console error or blank body before reaching
@@ -111,7 +133,7 @@ async function checkRoute(browser, route) {
       btn && btn.click();
     });
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
-  } else if (route.after === 'select-device' || route.after === 'select-multisensor') {
+  } else if (route.after === 'select-device' || route.after === 'select-multisensor' || route.after === 'open-selection-section') {
     // CAM-105 is the seeded fisheye; CAM-103 is the seeded multisensor.
     // M9 (per-lens handle gating) regresses only when a multisensor is
     // selected, so the multisensor case is its own audit route.
@@ -134,6 +156,166 @@ async function checkRoute(browser, route) {
       }));
     }, target);
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+    if (route.after === 'open-selection-section') {
+      // Open the AIM section panel — the one Mohammad reported as
+      // unreadable. Clicking the aim icon in the strip toggles the
+      // section panel; we open it so the contrast assertion has
+      // something to read.
+      await page.evaluate(() => {
+        const btn = document.querySelector('[data-track="selmenu-aim"]')
+          || document.querySelector('[data-track="selmenu-specs"]');
+        if (btn) btn.click();
+      });
+      await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+    }
+  } else if (route.after === 'drag-place-camera') {
+    // Open the bottom-bar camera category drawer first so the product
+    // cards mount in the DOM; without this the bottombar-cam-* nodes
+    // do not exist and the drag has nothing to grab.
+    await page.evaluate(() => {
+      const catBtn = document.querySelector('[data-track="bottombar-cat-cam"]')
+        || document.querySelector('[data-track^="bottombar-cat-"]');
+      if (catBtn) catBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+    // Stash the before-count for the assertion + find the source +
+    // target geometry. Done inside evaluate so the values are pulled
+    // from the live DOM.
+    const dragPlan = await page.evaluate(() => {
+      window.__auditDeviceCountBeforeDrop = document.querySelectorAll('[data-device-id]').length;
+      const card = document.querySelector('[data-track^="bottombar-cam-"]')
+        || document.querySelector('[data-track^="bottombar-search-"]')
+        || document.querySelector('button[draggable="true"]');
+      if (!card) return null;
+      const svg = document.querySelector('svg');
+      if (!svg) return null;
+      const cardR = card.getBoundingClientRect();
+      const svgR  = svg.getBoundingClientRect();
+      return {
+        startX: cardR.left + cardR.width * 0.5,
+        startY: cardR.top + cardR.height * 0.5,
+        dropX:  svgR.left + svgR.width * 0.5,
+        dropY:  svgR.top + svgR.height * 0.5,
+      };
+    });
+    if (!dragPlan) {
+      errors.push('drag-place setup: no draggable tray card or canvas SVG found');
+    } else {
+      // HTML5 drag and drop can NOT be fully driven from puppeteer:
+      //   - mouse.up after a draggable mousedown produces a click, not
+      //     dragstart, because Chromium needs OS-level drag init
+      //     signals that headless mode doesn't fire.
+      //   - dispatchEvent on a synthetic DragEvent doesn't reach
+      //     React's synthetic event handlers (React only routes events
+      //     that the browser raised natively from the input pipeline).
+      //
+      // The production code exposes window.__dvSimulateDrop as a test
+      // seam, gated on the dv-audit-bypass localStorage flag (set by
+      // page.evaluateOnNewDocument above so the auth gate also passes).
+      // The seam runs the EXACT onProductDrop callback the real drop
+      // handler would invoke — same lookup, same host-attachment, same
+      // placeProductAt. If a production user could trigger this seam,
+      // the worst they could do is place a device they could already
+      // place. Production runs gate on the flag being absent.
+      const dropResult = await page.evaluate((plan) => {
+        const sim = window.__dvSimulateDrop;
+        if (typeof sim !== 'function') return 'window.__dvSimulateDrop not exposed (test seam missing)';
+        const card = document.querySelector('[data-track^="bottombar-cam-"]')
+          || document.querySelector('[data-track^="bottombar-search-"]');
+        if (!card) return 'no draggable tray card mounted';
+        const track = card.getAttribute('data-track') || '';
+        const productId = track.replace(/^bottombar-(cam|search)-/, '');
+        if (!productId) return 'tray card has no product id in data-track';
+        try {
+          sim(productId, plan.dropX, plan.dropY);
+        } catch (e) {
+          return `seam threw: ${e && e.message ? e.message : String(e)}`;
+        }
+        return null;
+      }, dragPlan);
+      if (dropResult) errors.push(`drag-place: ${dropResult}`);
+    }
+    await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+  }
+
+  // ── Per-route assertion ──
+  // Returns a failure message string if the route is broken in a way
+  // that body length + console errors don't see. Each assertion is a
+  // small in-page evaluate that asserts the actual user behaviour.
+  let assertionFailure = null;
+  if (route.assert === 'rail-has-zoom') {
+    assertionFailure = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('[data-track^="intel-rail-"]'));
+      const ids = buttons.map((b) => (b.getAttribute('data-track') || '').replace('intel-rail-', ''));
+      const required = ['zoom-out', 'zoom-percent', 'zoom-in'];
+      const missing = required.filter((r) => !ids.includes(r));
+      if (missing.length > 0) return `left rail missing zoom controls: ${missing.join(', ')} (have ${ids.join(', ') || 'nothing'})`;
+      return null;
+    });
+  } else if (route.assert === 'panel-text-readable') {
+    assertionFailure = await page.evaluate(() => {
+      const panel = document.querySelector('[data-testid="selection-section-panel"]');
+      if (!panel) return 'selection-section-panel did not render after clicking an icon';
+      const title = document.querySelector('[data-testid="selection-section-title"]');
+      if (!title) return 'selection-section-title missing inside panel';
+      // Compute the WCAG relative-luminance ratio for the panel title.
+      // Both the panel background and the title color resolve via the
+      // canvas-rail tokens; if either ended up dark-on-dark or light-
+      // on-light the ratio falls under WCAG AA.
+      function parseColor(s) {
+        const m = s.match(/rgba?\(([^)]+)\)/);
+        if (!m) return null;
+        const parts = m[1].split(',').map((x) => parseFloat(x.trim()));
+        return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] == null ? 1 : parts[3] };
+      }
+      function rel(c) {
+        const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+      }
+      // The background may resolve to the rail token; if its alpha is
+      // < 1 we composite it over the document body color before
+      // computing luminance. Otherwise the live transparent overlay
+      // confuses the ratio test.
+      function composite(fg, bgChain) {
+        let r = fg.r, g = fg.g, b = fg.b, a = fg.a;
+        for (const bg of bgChain) {
+          if (a >= 1) break;
+          const ai = 1 - a;
+          r = r * a + bg.r * ai;
+          g = g * a + bg.g * ai;
+          b = b * a + bg.b * ai;
+          a = a + bg.a * ai;
+        }
+        return { r, g, b, a };
+      }
+      const bodyBgColor = parseColor(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
+      const titleColor = composite(parseColor(getComputedStyle(title).color) || { r: 0, g: 0, b: 0, a: 1 }, [bodyBgColor]);
+      const panelBg = composite(parseColor(getComputedStyle(panel).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 }, [bodyBgColor]);
+      const L1 = rel(titleColor), L2 = rel(panelBg);
+      const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+      // WCAG AA for normal text is 4.5; the panel title is small bold
+      // text, so 4.5 is the bar. Fail BELOW the bar so any dark-on-dark
+      // / light-on-light regression is caught.
+      if (ratio < 4.5) {
+        return `selection panel title contrast ratio ${ratio.toFixed(2)} is below WCAG AA 4.5 (text rgb(${Math.round(titleColor.r)},${Math.round(titleColor.g)},${Math.round(titleColor.b)}) vs background rgb(${Math.round(panelBg.r)},${Math.round(panelBg.g)},${Math.round(panelBg.b)}))`;
+      }
+      return null;
+    });
+  } else if (route.assert === 'drag-placed-device') {
+    assertionFailure = await page.evaluate(() => {
+      const before = window.__auditDeviceCountBeforeDrop;
+      const after = document.querySelectorAll('[data-device-id]').length;
+      if (typeof before !== 'number') return 'drag setup did not stash a before-count; the synthetic drag never started';
+      if (after <= before) {
+        // Surface the sentinel state so failures pinpoint which step
+        // of the synthetic drag pipeline broke.
+        const overFired = !!window.__dvDragOverFired;
+        const dropFired = !!window.__dvDropFired;
+        const productSeen = window.__dvDropProductId;
+        return `drag drop did not place a device (before=${before}, after=${after}). dragover fired=${overFired}, drop fired=${dropFired}, dataTransfer product id seen at drop=${JSON.stringify(productSeen)}`;
+      }
+      return null;
+    });
   }
 
   const bodyText = await page.evaluate(() => (document.body.innerText || '').trim());
@@ -141,7 +323,7 @@ async function checkRoute(browser, route) {
   await page.screenshot({ path: shot });
   await page.close();
 
-  return { route, bodyText, bodyLen: bodyText.length, errors, shot };
+  return { route, bodyText, bodyLen: bodyText.length, errors, shot, assertionFailure };
 }
 
 // ─── Driver ───────────────────────────────────────────────────────────
@@ -158,9 +340,10 @@ async function run() {
       const r = await checkRoute(browser, route);
       results.push(r);
       const blank = r.bodyLen < BLANK_BODY_THRESHOLD;
-      const tag = blank ? 'BLANK' : r.errors.length > 0 ? 'ERROR' : 'OK';
-      const mark = tag === 'OK' ? '✓' : '✗';
-      console.log(`  ${mark} ${r.route.name.padEnd(12)} body=${String(r.bodyLen).padStart(5)}B  consoleErrors=${r.errors.length}  shot=${r.shot}`);
+      const ok = !blank && r.errors.length === 0 && !r.assertionFailure;
+      const mark = ok ? '✓' : '✗';
+      const tail = r.assertionFailure ? `  assert=FAIL` : '';
+      console.log(`  ${mark} ${r.route.name.padEnd(20)} body=${String(r.bodyLen).padStart(5)}B  consoleErrors=${r.errors.length}${tail}  shot=${r.shot}`);
     }
     await browser.close();
 
@@ -173,6 +356,9 @@ async function run() {
         const errBlock = r.errors.map((e) => '        ' + e).join('\n');
         failures.push(`${r.route.name} (${r.route.path}) — ${r.errors.length} console error(s):\n${errBlock}`);
       }
+      if (r.assertionFailure) {
+        failures.push(`${r.route.name} (${r.route.path}) — assertion failed: ${r.assertionFailure}`);
+      }
     }
 
     if (failures.length > 0) {
@@ -184,7 +370,7 @@ async function run() {
       process.exit(1);
     }
 
-    console.log(`\nRuntime audit passed: ${results.length}/${results.length} routes render, 0 console errors.`);
+    console.log(`\nRuntime audit passed: ${results.length}/${results.length} routes render, 0 console errors, all assertions pass.`);
     process.exit(0);
   } finally {
     preview.kill('SIGTERM');

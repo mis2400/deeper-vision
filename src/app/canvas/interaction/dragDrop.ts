@@ -47,17 +47,27 @@ export function readProductIdFromDrop(event: React.DragEvent | DragEvent): strin
 }
 
 /** Canvas-side: allow drop. Vital — browsers reject `drop` events on
- *  elements that don't preventDefault their `dragover`. */
+ *  elements that don't preventDefault their `dragover`.
+ *
+ *  Iterates dataTransfer.types via for-of because the type of that
+ *  property differs across browsers: Chrome ships a string[], spec
+ *  says DOMStringList (only `.length` + `.item()` + `.contains()`,
+ *  NOT `.includes()`). `Array.from` worked but a for-of with a
+ *  string compare is simplest and bullet-proof. The previous version
+ *  of this function used `.includes()` directly and silently failed
+ *  in Safari + some Firefox builds, which manifested as drops never
+ *  firing on the canvas. */
 export function allowProductDrop(event: React.DragEvent): void {
-  // Only allow drops carrying our MIME so the user can't accidentally
-  // drop a random file into the canvas and have the browser try to
-  // navigate to it. dataTransfer.types is a live list of MIMEs the
-  // current drag carries; .includes() works even when the actual data
-  // is hidden until drop (Chrome behaviour).
-  if (event.dataTransfer.types.includes(DRAG_MIME)) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
+  const types = event.dataTransfer?.types;
+  if (!types) return;
+  let ours = false;
+  // for-of works on both string[] (Chrome) and DOMStringList (spec).
+  for (const t of Array.from(types as unknown as Iterable<string>)) {
+    if (t === DRAG_MIME) { ours = true; break; }
   }
+  if (!ours) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
 }
 
 /** Convert client (viewport) coords into canvas world coords using the

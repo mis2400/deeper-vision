@@ -132,25 +132,31 @@ export function SelectionMenu({
       <div
         className="pointer-events-auto inline-flex items-center gap-1 px-2 py-1.5 rounded-full border backdrop-blur-md"
         style={{
-          background: 'var(--canvas-rail, rgba(20, 24, 35, 0.92))',
-          borderColor: 'var(--canvas-rail-border, rgba(255,255,255,0.10))',
+          background: 'var(--canvas-rail)',
+          borderColor: 'var(--canvas-rail-border)',
+          color: 'var(--canvas-rail-foreground)',
           boxShadow: '0 18px 36px -18px rgba(0,0,0,0.65)',
         }}
       >
-        {/* Device label chip — non-interactive identity */}
+        {/* Device label chip — non-interactive identity. Both spans
+            inherit the canvas-rail foreground from the wrapper above so
+            the text reads white-on-dark regardless of the active page
+            theme. Without this, Light Drafting resolved text-foreground
+            to near-black against the dark rail background and the chip
+            was unreadable. */}
         <span
-          className="px-2 py-1 text-foreground"
+          className="px-2 py-1"
           style={{ fontSize: 'var(--chrome-sm)' }}
           title={`${device.label} · ${deviceTypeLabel(device.type)}`}
         >
-          <span className="font-medium text-foreground/90">{device.label}</span>
-          <span className="ml-1.5 text-muted-foreground">{deviceTypeLabel(device.type)}</span>
+          <span className="font-medium" style={{ color: 'var(--canvas-rail-foreground)' }}>{device.label}</span>
+          <span className="ml-1.5" style={{ color: 'var(--canvas-rail-foreground-muted)' }}>{deviceTypeLabel(device.type)}</span>
         </span>
 
         {/* Multisensor lens chips (M9 binding). The active chip drives
             both the canvas handles and any open section panel content. */}
         {isMultisensor && setActiveLens && (
-          <div className="flex items-center gap-0.5 px-1 border-l border-white/10 ml-1">
+          <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--canvas-rail-divider)' }}>
             {(['a', 'b', 'c', 'd'] as const).map((k) => {
               const lens = getLenses(device)[k];
               const isActive = activeLens === k;
@@ -162,7 +168,7 @@ export function SelectionMenu({
                   style={{
                     fontSize: 'var(--chrome-xs)',
                     background: isActive ? `${LENS_TONE[k]}22` : 'transparent',
-                    color: isActive ? '#F8FAFC' : '#94A3B8',
+                    color: isActive ? 'var(--canvas-rail-foreground)' : 'var(--canvas-rail-foreground-muted)',
                     boxShadow: isActive ? `inset 0 0 0 1px ${LENS_TONE[k]}66` : 'none',
                     opacity: lens.enabled ? 1 : 0.45,
                   }}
@@ -177,7 +183,7 @@ export function SelectionMenu({
         )}
 
         {/* Section icons. Each opens a small panel above. */}
-        <div className="flex items-center gap-0.5 px-1 border-l border-white/10 ml-1">
+        <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--canvas-rail-divider)' }}>
           {items.map((it) => {
             const Icon = it.icon;
             const isOpen = openSection === it.id;
@@ -189,8 +195,8 @@ export function SelectionMenu({
                 aria-label={it.label}
                 className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
                 style={{
-                  background: isOpen ? 'rgba(255,255,255,0.18)' : 'transparent',
-                  color: isOpen ? '#F8FAFC' : '#CBD5E1',
+                  background: isOpen ? 'var(--canvas-rail-active-bg)' : 'transparent',
+                  color: isOpen ? 'var(--canvas-rail-foreground)' : 'var(--canvas-rail-foreground-muted)',
                 }}
                 data-track={`selmenu-${it.id}`}
               >
@@ -201,12 +207,13 @@ export function SelectionMenu({
         </div>
 
         {/* Duplicate + delete + close — always rendered */}
-        <div className="flex items-center gap-0.5 px-1 border-l border-white/10 ml-1">
+        <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--canvas-rail-divider)' }}>
           <button
             onClick={onDuplicate}
             title="Duplicate"
             aria-label="Duplicate"
-            className="w-7 h-7 rounded-md flex items-center justify-center text-foreground/80 hover:bg-white/10 hover:text-white"
+            className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
+            style={{ color: 'var(--canvas-rail-foreground-muted)' }}
             data-track="selmenu-duplicate"
           >
             <Copy className="w-4 h-4" strokeWidth={1.5} />
@@ -224,7 +231,8 @@ export function SelectionMenu({
             onClick={onClose}
             title="Close"
             aria-label="Close"
-            className="w-7 h-7 rounded-md flex items-center justify-center text-foreground/60 hover:bg-white/10 hover:text-white"
+            className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
+            style={{ color: 'var(--canvas-rail-foreground-faint)' }}
             data-track="selmenu-close"
           >
             <X className="w-4 h-4" strokeWidth={1.5} />
@@ -247,28 +255,36 @@ function SectionPanel({
   activeLens?: ActiveLens;
 }) {
   // Capped per the spec: ~320 px wide, never more than 40% of viewport.
+  // All colors resolve via the canvas-rail tokens so text reads as
+  // white-on-dark in every theme. Light Drafting used to resolve the
+  // foreground to near-black against the dark rail background, which
+  // is what Mohammad reported on the live build.
   return (
     <div
+      data-testid="selection-section-panel"
       className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-inspector rounded-xl border backdrop-blur-md overflow-hidden"
       style={{
         bottom: '52px', // sits above the 44 px strip + 8 px gap
         width: '320px',
         maxHeight: '40vh',
-        background: 'var(--canvas-rail, rgba(20, 24, 35, 0.96))',
-        borderColor: 'var(--canvas-rail-border, rgba(255,255,255,0.10))',
+        background: 'var(--canvas-rail)',
+        borderColor: 'var(--canvas-rail-border)',
+        color: 'var(--canvas-rail-foreground)',
         boxShadow: '0 22px 44px -18px rgba(0,0,0,0.65)',
       }}
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/8">
+      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--canvas-rail-divider)' }}>
         <div
-          className="font-medium text-foreground/90 uppercase"
-          style={{ fontSize: 'var(--chrome-xs)', letterSpacing: '0.08em' }}
+          data-testid="selection-section-title"
+          className="font-medium uppercase"
+          style={{ fontSize: 'var(--chrome-xs)', letterSpacing: '0.08em', color: 'var(--canvas-rail-foreground)' }}
         >
           {SECTION_TITLE[section]}
         </div>
         <button
           onClick={onClose}
-          className="w-5 h-5 rounded flex items-center justify-center text-foreground/60 hover:bg-white/10 hover:text-white"
+          className="w-5 h-5 rounded flex items-center justify-center transition-colors"
+          style={{ color: 'var(--canvas-rail-foreground-muted)' }}
           aria-label="Close section"
         >
           <X className="w-3 h-3" strokeWidth={1.8} />
@@ -373,8 +389,8 @@ function AimSection({ device, onUpdate, activeLens }: {
         onChange={(v) => onUpdate({ mountFt: v })}
       />
       {isMs && (
-        <p className="text-muted-foreground" style={{ fontSize: 'var(--chrome-xs)' }}>
-          Editing lens <span className="text-foreground">{LENS_LABEL[effectiveLensKey]}</span>. Pick another in the strip to switch.
+        <p style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>
+          Editing lens <span style={{ color: 'var(--canvas-rail-foreground)' }}>{LENS_LABEL[effectiveLensKey]}</span>. Pick another in the strip to switch.
         </p>
       )}
     </div>
@@ -403,7 +419,7 @@ function CoverageSection({ device, onUpdate }: { device: Device; onUpdate: (p: P
 function ColorSection({ device, onUpdate }: { device: Device; onUpdate: (p: Partial<Device>) => void }) {
   return (
     <div>
-      <p className="text-muted-foreground mb-2" style={{ fontSize: 'var(--chrome-xs)' }}>
+      <p className="mb-2" style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>
         Override the category tone for this device only.
       </p>
       <div className="grid grid-cols-5 gap-1.5">
@@ -421,7 +437,7 @@ function ColorSection({ device, onUpdate }: { device: Device; onUpdate: (p: Part
                 border: isActive ? '2px solid #F8FAFC' : '1px solid rgba(255,255,255,0.10)',
               }}
             >
-              {isReset && <X className="w-3 h-3 text-foreground/70" strokeWidth={1.8} />}
+              {isReset && <X className="w-3 h-3" strokeWidth={1.8} style={{ color: 'var(--canvas-rail-foreground-muted)' }} />}
             </button>
           );
         })}
@@ -432,7 +448,7 @@ function ColorSection({ device, onUpdate }: { device: Device; onUpdate: (p: Part
 
 function ProbeSection({ device }: { device: Device }) {
   return (
-    <p className="text-muted-foreground" style={{ fontSize: 'var(--chrome-xs)' }}>
+    <p style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>
       Person probe drops on the canvas when {device.label} is selected. Drag the marker to test pixel density at any point in the cone.
     </p>
   );
@@ -440,7 +456,7 @@ function ProbeSection({ device }: { device: Device }) {
 
 function PowerSection({ device }: { device: Device }) {
   return (
-    <p className="text-muted-foreground" style={{ fontSize: 'var(--chrome-xs)' }}>
+    <p style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>
       Power source for {device.label} is set by the catalog product. Switch the product to change the source.
     </p>
   );
@@ -450,7 +466,7 @@ function PairingSection({ device }: { device: Device }) {
   const linked = device.linkedIds ?? [];
   if (linked.length === 0) {
     return (
-      <p className="text-muted-foreground" style={{ fontSize: 'var(--chrome-xs)' }}>
+      <p style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>
         No paired devices. Drop a reader / strike onto a door to pair it.
       </p>
     );
@@ -460,8 +476,8 @@ function PairingSection({ device }: { device: Device }) {
       {linked.map((id) => (
         <li
           key={id}
-          className="text-foreground/90 px-2 py-1 rounded bg-white/5"
-          style={{ fontSize: 'var(--chrome-sm)' }}
+          className="px-2 py-1 rounded"
+          style={{ fontSize: 'var(--chrome-sm)', color: 'var(--canvas-rail-foreground)', background: 'var(--canvas-rail-hover-bg)' }}
         >
           {id}
         </li>
@@ -484,8 +500,8 @@ function SpecsSection({ device }: { device: Device }) {
     <div className="space-y-1">
       {rows.map(([k, v]) => (
         <div key={k} className="flex items-center justify-between">
-          <span className="text-muted-foreground" style={{ fontSize: 'var(--chrome-xs)' }}>{k}</span>
-          <span className="text-foreground/90" style={{ fontSize: 'var(--chrome-sm)' }}>{v}</span>
+          <span style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>{k}</span>
+          <span style={{ fontSize: 'var(--chrome-sm)', color: 'var(--canvas-rail-foreground)' }}>{v}</span>
         </div>
       ))}
     </div>
@@ -503,8 +519,8 @@ function NumericRow({
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between">
-        <span className="text-muted-foreground" style={{ fontSize: 'var(--chrome-xs)' }}>{label}</span>
-        <span className="text-foreground/90 tabular-nums" style={{ fontSize: 'var(--chrome-sm)' }}>
+        <span style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>{label}</span>
+        <span className="tabular-nums" style={{ fontSize: 'var(--chrome-sm)', color: 'var(--canvas-rail-foreground)' }}>
           {value}{suffix ?? ''}
         </span>
       </div>
@@ -528,11 +544,14 @@ function ToggleRow({
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-white/5"
+      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md transition-colors"
+      style={{ background: 'transparent' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--canvas-rail-hover-bg)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
     >
       <span className="text-left">
-        <span className="block text-foreground/90" style={{ fontSize: 'var(--chrome-sm)' }}>{label}</span>
-        {hint && <span className="block text-muted-foreground" style={{ fontSize: 'var(--chrome-xs)' }}>{hint}</span>}
+        <span className="block" style={{ fontSize: 'var(--chrome-sm)', color: 'var(--canvas-rail-foreground)' }}>{label}</span>
+        {hint && <span className="block" style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>{hint}</span>}
       </span>
       <span
         className="inline-flex w-8 h-4 rounded-full transition-colors"
