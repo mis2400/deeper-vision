@@ -55,7 +55,7 @@
   --chrome-lg:  13px;
 }
 
-[data-theme="slate"] {
+:root[data-theme="slate"], [data-theme="slate"] {
   /* ── SLATE ENGINEERING — opt-in. ──
      Medium slate workspace with light panels. The accent is a softer
      blueprint blue. Pure black is banned. */
@@ -286,7 +286,7 @@
 
 /* ── DARK COMMAND — the previous deep palette, retained for
    night-ops contexts. Still avoids pure black. */
-[data-theme="dark"] {
+:root[data-theme="dark"], [data-theme="dark"] {
   --background: #161E2E;
   --foreground: #E8EDF4;
 

@@ -10115,11 +10115,18 @@ function FovCone({
   const rawTipY = cy + Math.sin((rotDeg * Math.PI) / 180) * r;
   const tipClamped = (() => {
     if (!planBounds) return { x: rawTipX, y: rawTipY, clamped: false };
-    const marginPx = pxToFt > 0 ? 20 / pxToFt : 200;
-    const minX = planBounds.x - marginPx;
-    const minY = planBounds.y - marginPx;
-    const maxX = planBounds.x + planBounds.w + marginPx;
-    const maxY = planBounds.y + planBounds.h + marginPx;
+    // Audit Group B.1 — marker labels clamp to the plan rect with a
+    // small 4 ft inset so the label badge sits visibly INSIDE the
+    // floorplan polygon, not on its edge. The cone's own clipPath
+    // still uses the 20 ft margin for breathing room on exterior
+    // coverage, but lens letter chips are decorative and shouldn't
+    // float into the bare canvas.
+    const insetFt = 4;
+    const insetPx = pxToFt > 0 ? insetFt / pxToFt : 40;
+    const minX = planBounds.x + insetPx;
+    const minY = planBounds.y + insetPx;
+    const maxX = planBounds.x + planBounds.w - insetPx;
+    const maxY = planBounds.y + planBounds.h - insetPx;
     if (rawTipX >= minX && rawTipX <= maxX && rawTipY >= minY && rawTipY <= maxY) {
       return { x: rawTipX, y: rawTipY, clamped: false };
     }
