@@ -103,6 +103,7 @@ import { FloorplanBackgroundControls } from '../canvas/chrome/FloorplanBackgroun
 import { CableTypePicker } from '../canvas/chrome/CableTypePicker';
 import { PathwaysOverlay } from '../canvas/pathways/PathwaysOverlay';
 import { PathwayVertexEditor } from '../canvas/pathways/PathwayVertexEditor';
+import { Row, DrawerSection, FindingRow } from '../canvas/components/DrawerPrimitives';
 import { EMT_SIZES } from '../canvas/cabling';
 import { FOV, FovCone } from '../canvas/coverage/FOV';
 import {
@@ -6212,38 +6213,9 @@ function labelForKind(k: DeviceKind): string {
   } as Record<string, string>)[k] ?? k;
 }
 
-// Drawer building blocks — refined for editorial readability over HUD
-// density. Sentence-case labels, no tracking, calmer weights, more
-// breathing room. The drawer body should read like a configuration page,
-// not a debug panel.
-function Row({ label, value, tone }: { label: string; value: any; tone?: string }) {
-  // Theme-aware contrast — the old code hardcoded value to #E7EDF6
-  // and the divider to white/[0.04], which read as near-invisible on
-  // the light drafting theme's white drawer surface. Both now route
-  // through theme tokens so Mount values, PoE numbers, etc. stay
-  // readable across all three themes.
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-border/40 last:border-b-0">
-      <span className="text-[11px] text-muted-foreground">{label}</span>
-      <span className="text-[12px] tabular-nums font-medium text-foreground" style={tone ? { color: tone } : undefined}>{value}</span>
-    </div>
-  );
-}
-
-/** Audit follow-up — inline number chip for the docked drawer's
- *  collapsed strip. Renders as a small label + numeric input pair.
- *  Click into the input to type a value; arrow keys step. The
- *  parent's onChange clamps to a valid range. Used for camera
- *  rotation / FOV / range so the operator can adjust the primary
- *  coverage levers without expanding the inspector. */
-function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-6">
-      <div className="text-[13px] font-medium text-foreground mb-3 tracking-tight">{title}</div>
-      {children}
-    </div>
-  );
-}
+// Row + DrawerSection moved to canvas/components/DrawerPrimitives.tsx
+// (M11 monolith breakup). FindingRow rides along to the same module.
+// All three import at top of file.
 
 /** Accessories section in the camera inspector. Lists compatible mounts /
  *  junction boxes for the camera type, allows toggling them on/off — each
@@ -8052,15 +8024,8 @@ function IdfPortScheduleSection({ idfId }: { idfId: string }) {
   );
 }
 
-function FindingRow({ severity, text }: { severity: 'high' | 'warn' | 'ok'; text: string }) {
-  const tone = severity === 'high' ? '#E55B5B' : severity === 'warn' ? '#E5A23A' : '#4FB87E';
-  return (
-    <div className="flex items-start gap-2 rounded-md border p-2" style={{ borderColor: `${tone}40`, background: `${tone}10` }}>
-      <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: tone }} />
-      <span className="text-[11px] leading-snug" style={{ color: tone }}>{text}</span>
-    </div>
-  );
-}
+// FindingRow moved to canvas/components/DrawerPrimitives.tsx
+// (M11 monolith breakup). Import at top of file.
 
 function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
   const [mode, setMode] = useState<'overview' | 'prosecution'>('overview');
