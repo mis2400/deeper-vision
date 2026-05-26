@@ -5427,108 +5427,6 @@ function TopBar(props: {
   );
 }
 
-function SegButton({ active, onClick, icon: Icon, label, hint }: { active?: boolean; onClick: () => void; icon: any; label: string; hint?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      title={hint ? `${label} · ${hint}` : label}
-      className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs transition-colors ${active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
-    >
-      <Icon className="w-3.5 h-3.5" />{label}
-    </button>
-  );
-}
-
-function Avatar({ initials, tone }: { initials: string; tone: string }) {
-  return (
-    <div
-      title={initials}
-      className="w-7 h-7 rounded-full border-2 border-background text-[10px] font-medium text-white flex items-center justify-center"
-      style={{ background: tone }}
-    >{initials}</div>
-  );
-}
-
-function PillBtn({ children, active, onClick, icon: Icon }: { children: React.ReactNode; active?: boolean; onClick: () => void; icon?: any }) {
-  return (
-    <button onClick={onClick} className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}>
-      {Icon && <Icon className="w-3.5 h-3.5" />}{children}
-    </button>
-  );
-}
-function IconBtn({ children, title, onClick }: { children: React.ReactNode; title?: string; onClick?: () => void }) {
-  return <button title={title} onClick={onClick} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground">{children}</button>;
-}
-
-function Dropdown({ label, options, onPick }: { label: string; options: string[]; onPick: (i: number) => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-secondary text-sm">
-        {label}<ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-1 z-20 min-w-[200px] bg-popover border border-border rounded-xl shadow-xl py-1.5">
-            {options.map((o, i) => (
-              <button key={o} onClick={() => { onPick(i); setOpen(false); }} className="w-full text-left text-sm px-3 py-2 hover:bg-secondary">{o}</button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   INSERT DOCK — 56px rail, click a category to drawer it open
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/* ═══════════════════════════════════════════════════════════════════════
-   LEFT NAV RAIL — Project / Devices / Recording / Accessories / Maps / Reports / Docs
-   ═══════════════════════════════════════════════════════════════════════ */
-
-const NAV_ITEMS: Array<{ id: 'overview' | 'devices' | 'recording' | 'accessories' | 'other' | 'maps' | 'reports' | 'docs'; label: string; icon: any }> = [
-  { id: 'overview',    label: 'Project overview', icon: Grid3x3 },
-  { id: 'devices',     label: 'Devices',          icon: Video },
-  { id: 'recording',   label: 'Recording',        icon: Server },
-  { id: 'accessories', label: 'Accessories',      icon: Cable },
-  { id: 'other',       label: 'Other',            icon: MoreHorizontal },
-  { id: 'maps',        label: 'Maps',             icon: MapPin },
-  { id: 'reports',     label: 'Reports',          icon: FileText },
-  { id: 'docs',        label: 'Documentation',    icon: FileText },
-];
-
-function LeftNavRail({ section, setSection }: { section: string; setSection: (s: any) => void }) {
-  // Narrowed from 88px → 56px in the chrome-reduction pass. Icon-only with a
-  // tooltip on hover; labels still appear when the user pauses. Saves 32px
-  // of horizontal canvas real estate without losing nav clarity.
-  return (
-    <div className="w-[56px] shrink-0 border-r border-border bg-card flex flex-col py-2.5">
-      {NAV_ITEMS.map((it) => {
-        const active = section === it.id;
-        const Icon = it.icon;
-        return (
-          <button
-            key={it.id}
-            onClick={() => setSection(it.id)}
-            title={it.label}
-            className={`relative mx-1.5 mb-1 py-2.5 rounded-lg flex items-center justify-center transition-colors ${active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
-          >
-            <Icon className="w-[18px] h-[18px]" strokeWidth={1.7} />
-            {active && <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-primary" />}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   SECTION PANEL — content for non-Devices nav sections
-   ═══════════════════════════════════════════════════════════════════════ */
-
 function MapsPanel({ onOpenScanBuild, onStartCalibrate }: { onOpenScanBuild?: () => void; onStartCalibrate?: () => void }) {
   // SITE_BUILDINGS is the seed. The user can add new buildings and floors
   // through this panel; both flows mutate local state so the additions show
@@ -10009,44 +9907,6 @@ function Row({ label, value, tone }: { label: string; value: any; tone?: string 
  *  parent's onChange clamps to a valid range. Used for camera
  *  rotation / FOV / range so the operator can adjust the primary
  *  coverage levers without expanding the inspector. */
-function InlineNumberChip({ label, value, unit, onChange, step = 1 }: {
-  label: string;
-  value: number;
-  unit: string;
-  onChange: (next: number) => void;
-  step?: number;
-}) {
-  const [draft, setDraft] = useState(String(Math.round(value)));
-  useEffect(() => { setDraft(String(Math.round(value))); }, [value]);
-  const commit = () => {
-    const n = parseFloat(draft);
-    if (Number.isFinite(n)) onChange(Math.round(n));
-    else setDraft(String(Math.round(value)));
-  };
-  return (
-    <label
-      className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-card text-[11px] text-foreground whitespace-nowrap"
-      title={`${label}: drag handle on canvas or type here. ${step}-unit steps with arrow keys.`}
-    >
-      <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">{label}</span>
-      <input
-        type="number"
-        value={draft}
-        step={step}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { commit(); (e.target as HTMLInputElement).blur(); }
-          if (e.key === 'Escape') { setDraft(String(Math.round(value))); (e.target as HTMLInputElement).blur(); }
-        }}
-        className="w-10 bg-transparent text-right tabular-nums focus:outline-none"
-        data-testid={`inline-${label.toLowerCase()}`}
-      />
-      <span className="text-[10px] text-muted-foreground">{unit}</span>
-    </label>
-  );
-}
-
 function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-6">
@@ -11971,33 +11831,6 @@ function AiOptimizeSection({ d, tone }: { d: Device; tone: string }) {
   );
 }
 
-function Slider({ label, value, min, max, step = 1, unit, onChange, tone }: { label: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void; tone: string }) {
-  return (
-    <div className="mb-3.5">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] text-muted-foreground">{label}</span>
-        <span className="text-[12px] tabular-nums font-medium text-foreground">{value.toFixed(step < 1 ? 1 : 0)}{unit}</span>
-      </div>
-      <input
-        type="range" min={min} max={max} step={step} value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full cursor-pointer"
-        style={{ accentColor: tone }}
-      />
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PATHWAY DRAWER — opens when a cable / conduit / J-hook / tray
-   pathway is clicked on the canvas. Mirrors the EditDrawer style so
-   the surveyor reads as one product. Body branches by `pathwayKind`:
-   cable variant exposes route / type / source / dest / lengths /
-   conduit assignment / terminations / ports / accessories / suggestions /
-   BOM; conduit variant exposes type / size / cables inside / fill /
-   pull boxes / bends / firestop / suggestions / BOM.
-   ═══════════════════════════════════════════════════════════════════════ */
-
 function PathwayDrawer({ pathwayId, onClose, onOpenBundle }: {
   pathwayId: string;
   onClose: () => void;
@@ -12716,54 +12549,6 @@ function IntelligenceLayer({ devices, pxToFt, zoom, open, setOpen, setZoom, onFi
   );
 }
 
-function HudChip({ children, onClick, active, title }: { children: any; onClick: () => void; active?: boolean; title: string }) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`px-2 inline-flex items-center gap-1 border-r border-white/8 transition-colors ${
-        active ? 'bg-white/10 text-white' : 'text-muted-foreground hover:text-white hover:bg-white/5'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function CommitInput({ value, onCommit, className, style }: { value: string; onCommit: (v: string) => void; className?: string; style?: React.CSSProperties }) {
-  const [local, setLocal] = useState(value);
-  useEffect(() => { setLocal(value); }, [value]);
-  return (
-    <input
-      value={local}
-      onChange={(e) => setLocal(e.target.value)}
-      onBlur={() => { if (local !== value) onCommit(local); }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); }
-        if (e.key === 'Escape') { setLocal(value); (e.target as HTMLInputElement).blur(); }
-      }}
-      className={className}
-      style={style}
-    />
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <div className="text-[10px] text-muted-foreground mb-1">{label}</div>
-      {children}
-    </label>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   QUICK TOOLS CAPSULE  ·  ZOOM DOCK  ·  MINIMAP  ·  STATUS BAR
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/** Picker that floats above the canvas QuickTools strip while the cable
- *  tool is active. Click a cable type to set it for the in-progress run.
- *  The selected type drives the line stroke + appears in the pathway record. */
 function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t: CableTypeId) => void }) {
   return (
     // Item 4 — bottom bar is now at bottom-3; picker stacks above it
@@ -14674,69 +14459,9 @@ function BottomDeviceBar({
   );
 }
 
-function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool) => void; showWall: boolean }) {
-  // Every tool here MUST have a working canvas behavior. Text and comment
-  // tools were previously listed but never handled a click — they've been
-  // removed until they're implemented. The brief's rule: no dead controls.
-  const items: Array<{ id: Tool; icon: any; label: string; key: string; hint: string }> = [
-    { id: 'select',  icon: MousePointer2, label: 'Select',  key: 'V', hint: 'Select and edit objects' },
-    { id: 'pan',     icon: Hand,          label: 'Pan',     key: 'H', hint: 'Pan the map · does not select' },
-    { id: 'measure', icon: Ruler,         label: 'Measure', key: 'M', hint: 'Click two points to measure distance · ESC to cancel' },
-    { id: 'cable',   icon: Cable,         label: 'Cable',   key: 'C', hint: 'Draw cable / pathway · click vertices · Enter or dbl-click to finish · Esc to cancel' },
-    ...(showWall ? [{ id: 'wall' as Tool, icon: WallIcon, label: 'Wall', key: 'W', hint: 'Draw a wall · double-click to finish' }] : []),
-  ];
-  return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-5 z-20">
-      <style>{`@keyframes tool-hint-in { from { opacity: 0; transform: translate(-50%, -4px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
-      <div className="bg-card/85 backdrop-blur-xl border border-border/80 rounded-2xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.04)] px-1.5 py-1.5 flex items-center gap-0.5">
-        {items.map((it) => {
-          const Icon = it.icon;
-          const active = tool === it.id;
-          return (
-            <button
-              key={it.id}
-              onClick={() => setTool(it.id)}
-              title={`${it.label} (${it.key}) — ${it.hint}`}
-              className={`relative w-10 h-10 rounded-xl inline-flex items-center justify-center transition-all duration-200 ease-out will-change-transform ${active ? 'bg-primary text-primary-foreground shadow-[0_4px_12px_-4px_rgba(74,149,232,0.5)] scale-[1.08]' : 'text-muted-foreground hover:bg-secondary hover:text-foreground hover:scale-[1.04] active:scale-[0.98] scale-100'}`}
-              style={{ transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)' }}
-            >
-              <Icon className={`w-[18px] h-[18px] transition-transform duration-200 ${active ? 'scale-110' : ''}`} />
-              {active && (
-                <span
-                  key={it.id + '-hint'}
-                  className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] text-foreground/60 font-mono tracking-wide"
-                  style={{ animation: 'tool-hint-in 220ms ease-out both' }}
-                >{it.key}</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ZoomDock removed (M11 monolith breakup). The function defined a
-// floating zoom-controls pill at bottom-left of the canvas. As of the
-// M4-real unified LeftRail merge those controls live inside the
-// unified left rail (canvas/chrome/LeftRail.tsx Zoom group). No site
-// in this file ever rendered <ZoomDock /> after the merge — verified
-// by grep at extraction time. Deleting the dead definition.
-
-/**
- * Canvas V2 Pass 2A.8 — vertical floor strip next to the minimap.
- * One small tile per floor, ordered top to bottom by level
- * descending so the strip reads like a building elevation. Click
- * any floor to make it active.
- */
-// MiniMapFloorStrip moved to canvas/chrome/MiniMapFloorStrip.tsx
-// (M11 monolith breakup). Import at top of file.
-
-// ReportKind restored after the MiniMap extraction. The type lived
-// inline near MiniMap in the original layout; multiple downstream
-// report-renderer functions (ReportExportRow, drawReport, the BOM
-// page renderer) reference it, so it stays in the monolith until
-// those functions extract together.
+// ReportKind union — consumed by ReportExportRow + drawReport + the
+// BOM page renderer. Sits inline because those callers live in this
+// file. Will move when the report-renderer slice extracts together.
 type ReportKind =
   | 'engineering' | 'customer' | 'camera-schedule' | 'door-schedule'
   | 'cable-schedule' | 'conduit-schedule' | 'bom' | 'compliance' | 'commissioning';
