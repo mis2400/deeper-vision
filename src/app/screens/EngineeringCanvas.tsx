@@ -100,6 +100,7 @@ import { SelectByMenu } from '../canvas/chrome/SelectByMenu';
 import { IntelligenceLayer } from '../canvas/chrome/IntelligenceLayer';
 import { ProjectBomDrawer } from '../canvas/chrome/ProjectBomDrawer';
 import { FloorplanBackgroundControls } from '../canvas/chrome/FloorplanBackgroundControls';
+import { CableTypePicker } from '../canvas/chrome/CableTypePicker';
 import { EMT_SIZES } from '../canvas/cabling';
 import { FOV, FovCone } from '../canvas/coverage/FOV';
 import {
@@ -8527,35 +8528,8 @@ function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: numbe
 // IntelligenceLayer moved to canvas/chrome/IntelligenceLayer.tsx
 // (M11 monolith breakup). Import at top of file.
 
-function CableTypePicker({ value, onChange }: { value: CableTypeId; onChange: (t: CableTypeId) => void }) {
-  return (
-    // Item 4 — bottom bar is now at bottom-3; picker stacks above it
-    // at bottom-[80px] so the cable type chips don't overlap the
-    // category icons.
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-[80px] z-20 select-none hidden md:block">
-      <div className="bg-card/95 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)] px-1.5 py-1.5 flex items-center gap-1 max-w-[680px] overflow-x-auto">
-        <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground px-1.5 shrink-0">Cable</span>
-        {CABLE_TYPES.map((c) => {
-          const active = c.id === value;
-          return (
-            <button
-              key={c.id}
-              onClick={() => onChange(c.id)}
-              title={`${c.label} — ${c.note} · $${c.pricePerFt.toFixed(2)}/ft`}
-              className={`shrink-0 px-2 h-7 rounded-md text-[11px] transition-colors flex items-center gap-1.5 ${
-                active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
-              }`}
-              style={active ? { boxShadow: `inset 0 0 0 1px ${c.tone}55` } : undefined}
-            >
-              <span className="w-2 h-2 rounded-full" style={{ background: c.tone }} />
-              {c.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+// CableTypePicker moved to canvas/chrome/CableTypePicker.tsx
+// (M11 monolith breakup). Import at top of file.
 
 /* ═══════════════════════════════════════════════════════════════════════
    PATHWAYS OVERLAY — renders every committed pathway record (cable
