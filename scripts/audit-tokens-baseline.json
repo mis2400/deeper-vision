@@ -79,7 +79,7 @@
   "src/app/screens/DeploymentModeMobile.tsx": 36,
   "src/app/screens/DeviceLibrary.tsx": 5,
   "src/app/screens/DoorEngineering.tsx": 18,
-  "src/app/screens/EngineeringCanvas.tsx": 537,
+  "src/app/screens/EngineeringCanvas.tsx": 509,
   "src/app/screens/EstimatorView.tsx": 5,
   "src/app/screens/FlowView.tsx": 7,
   "src/app/screens/KnowledgeBase.tsx": 4,
