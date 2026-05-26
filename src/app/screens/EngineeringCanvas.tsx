@@ -63,6 +63,7 @@ import { toast } from 'sonner';
 import {
   beginProductDrag, allowProductDrop, readProductIdFromDrop, clientToCanvas,
 } from '../canvas/interaction/dragDrop';
+import { SelectionMenu as CanvasSelectionMenu } from '../canvas/chrome/SelectionMenu';
 
 /*
   Engineering Canvas v2 — designed around four ideas
@@ -3592,37 +3593,11 @@ export function EngineeringCanvas() {
                 was previously docking at canvas-bottom where the new
                 drawer lives. The selection ring drawn on the device
                 glyph itself remains the at-device selection signal. */}
-            {false && sel && surfaceRef.current && (
-              <SelectionPill
-                d={sel}
-                zoom={zoom}
-                pan={pan}
-                onRotate={(r) => updateSel({ rot: r })}
-                onDelete={deleteSel}
-                onUpdate={updateSel}
-                onEdit={() => openTab('overview')}
-                onTargetSim={() => { /* no-op: TargetSimOverlay removed 2026-05-24, no replacement yet */ }}
-                onDuplicate={duplicateSel}
-                onOpenTab={openTab}
-                activeLens={activeLens}
-                setActiveLens={setActiveLens}
-                lensMode={(sel.lensMode ?? 'linked') as LensMode}
-                setLensMode={setLensModeForSel}
-                onLensHover={setHoveredLens}
-                isLocked={lockedIds.has(sel.id)}
-                onToggleLock={() => {
-                  const next = new Set(lockedIds);
-                  if (next.has(sel.id)) next.delete(sel.id);
-                  else next.add(sel.id);
-                  setLockedIds(next);
-                }}
-                /* Audit Group C.6 — drawer auto-opens whenever sel
-                   exists, so the pill's Edit button is always
-                   redundant when the pill is visible. Pass `true`
-                   so the pill never renders the dead button. */
-                drawerOpen={true}
-              />
-            )}
+            {/* SelectionPill removed in M7. The compact icon strip
+                (CanvasSelectionMenu, mounted below) replaces it. The
+                dead `{false && ...}` block that was previously here
+                guarded an overlay that has not been part of the
+                interaction model since Audit Group C.6. */}
 
             {/* Tool status banner — wall / measure / cable draw modes get
                 a visible top-center indicator with explicit Done and Cancel
@@ -3883,32 +3858,24 @@ export function EngineeringCanvas() {
                 left-[72px] (clears the left rail), right-[60px] (clears
                 the floor-badge), and bottom-[68px] (still sits above
                 the bottom toolbar). */}
+            {/* M7 — compact icon strip above the bottom toolbar. Replaces
+                the legacy EditDrawer (editOpen / editExpanded) that
+                covered the canvas. The strip never covers the canvas;
+                its section panel is capped at 320 x 360 px / 40 vh
+                and only opens on icon click. */}
             {sel && (
-              <div
-                className="absolute left-[72px] right-[60px] z-30 pointer-events-auto"
-                style={{ bottom: '68px' }}
-              >
-                <CanvasErrorBoundary label="EditDrawer">
-                  <EditDrawer
-                    d={sel}
-                    open={true}
-                    tab={editTab}
-                    setTab={setEditTab}
-                    onClose={() => { setSelId(null); setEditExpanded(false); }}
-                    onUpdate={updateSel}
-                    activeLens={activeLens}
-                    setActiveLens={setActiveLens}
-                    lensMode={(sel.lensMode ?? 'linked') as LensMode}
-                    setLensMode={setLensModeForSel}
-                    selectedDoriLevel={selectedDoriLevel}
-                    setSelectedDoriLevel={setSelectedDoriLevel}
-                    pxToFtForFloor={currentFloorPxToFt}
-                    personProbePos={personProbePos}
-                    expanded={editExpanded}
-                    onToggleExpanded={() => setEditExpanded((v) => !v)}
-                  />
-                </CanvasErrorBoundary>
-              </div>
+              <CanvasErrorBoundary label="SelectionMenu">
+                <CanvasSelectionMenu
+                  device={sel}
+                  bottomBarOffsetPx={72}
+                  onUpdate={updateSel}
+                  onDuplicate={duplicateSel}
+                  onDelete={deleteSel}
+                  onClose={() => setSelId(null)}
+                  activeLens={activeLens}
+                  setActiveLens={setActiveLens}
+                />
+              </CanvasErrorBoundary>
             )}
             {selPathwayId && (
               <div
