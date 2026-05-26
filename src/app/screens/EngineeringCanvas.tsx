@@ -19160,44 +19160,12 @@ function QuickTools({ tool, setTool, showWall }: { tool: Tool; setTool: (t: Tool
   );
 }
 
-function ZoomDock({
-  zoom, setZoom, onFit, onCenter, onActual,
-}: {
-  zoom: number;
-  setZoom: (z: number) => void;
-  onFit: () => void;
-  onCenter: () => void;
-  onActual: () => void;
-}) {
-  return (
-    <div className="absolute bottom-5 left-5 z-20 hidden md:inline-flex items-center bg-card/85 backdrop-blur-xl border border-border/80 rounded-xl shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)] overflow-hidden text-xs">
-      <button onClick={() => setZoom(Math.max(0.25, zoom / 1.2))} data-track="zoom-out" title="Zoom out (⌘-)"
-        className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
-        <ZoomOut className="w-3.5 h-3.5" />
-      </button>
-      <button onClick={onFit} data-track="zoom-fit" title="Fit plan to viewport"
-        className="px-2.5 h-9 border-x border-border/60 hover:bg-secondary min-w-[58px] text-center tabular-nums font-medium">
-        {Math.round(zoom * 100)}%
-      </button>
-      <button onClick={() => setZoom(Math.min(4, zoom * 1.2))} data-track="zoom-in" title="Zoom in (⌘+)"
-        className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
-        <ZoomIn className="w-3.5 h-3.5" />
-      </button>
-      <button onClick={onFit} data-track="zoom-fit-icon" title="Fit plan"
-        className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground border-l border-border/60 transition-colors">
-        <Maximize2 className="w-3.5 h-3.5" />
-      </button>
-      <button onClick={onCenter} data-track="zoom-center" title="Center plan"
-        className="w-9 h-9 inline-flex items-center justify-center hover:bg-secondary text-muted-foreground hover:text-foreground border-l border-border/60 transition-colors">
-        <Crosshair className="w-3.5 h-3.5" />
-      </button>
-      <button onClick={onActual} data-track="zoom-actual" title="Actual scale (1:1)"
-        className="px-2 h-9 inline-flex items-center justify-center hover:bg-secondary text-[10px] uppercase tracking-[0.10em] text-muted-foreground hover:text-foreground border-l border-border/60 transition-colors">
-        1:1
-      </button>
-    </div>
-  );
-}
+// ZoomDock removed (M11 monolith breakup). The function defined a
+// floating zoom-controls pill at bottom-left of the canvas. As of the
+// M4-real unified LeftRail merge those controls live inside the
+// unified left rail (canvas/chrome/LeftRail.tsx Zoom group). No site
+// in this file ever rendered <ZoomDock /> after the merge — verified
+// by grep at extraction time. Deleting the dead definition.
 
 /**
  * Canvas V2 Pass 2A.8 — vertical floor strip next to the minimap.
