@@ -192,13 +192,29 @@ const lines = file.split('\n');
 // resolve to 0. This gate fails if any of them re-introduces the
 // margin.
 {
-  // We allow any expression that resolves to 0, but reject the
-  // historical "20 / pxToFt" / "20 / currentFloorPxToFt" / ": 200"
-  // shapes — those were the source of the bleed.
+  // As of M11 the FOV / FovCone components live in
+  // canvas/coverage/FOV.tsx and carry two of the three plan-margin
+  // declarations (single-lens + multisensor). The non-camera AP
+  // circle declaration still lives in the monolith. Scan the union
+  // of the monolith + the canvas modules to find all of them.
+  const { readdirSync, statSync } = await import('node:fs');
+  const canvasSources = [file];
+  function walkForMargins(d) {
+    try {
+      for (const entry of readdirSync(d)) {
+        const p = `${d}/${entry}`;
+        if (statSync(p).isDirectory()) walkForMargins(p);
+        else if (/\.(tsx?|jsx?)$/.test(entry)) canvasSources.push(readFileSync(p, 'utf-8'));
+      }
+    } catch { /* canvas dir may not exist */ }
+  }
+  walkForMargins('src/app/canvas');
+  const combinedSource = canvasSources.join('\n');
+
   const margins = [];
   const reMargin = /(?:planMarginPx|msPlanMarginPx)\s*=\s*([^;]+);/g;
   let m;
-  while ((m = reMargin.exec(file)) !== null) {
+  while ((m = reMargin.exec(combinedSource)) !== null) {
     margins.push({ index: m.index, expr: m[1].trim() });
   }
   if (margins.length < 3) {
