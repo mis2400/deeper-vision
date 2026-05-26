@@ -9825,55 +9825,159 @@ function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAddress: 
       </g>
     );
   }
-  // Crisp, obvious building outline with paper-fill interior so you SEE the floor plan
+  // M11 plan redesign — modern engineering output, not the prior
+  // washed out demo. Hierarchy:
+  //   1. Plan paper at canvas-background with the architectural grid
+  //   2. Subtle drop shadow under the paper so it lifts off the canvas
+  //   3. Eight tinted room fills so rooms read as distinct spaces
+  //   4. Heavy exterior wall (2.8 px) in foreground tone
+  //   5. Medium interior walls (1.6 px) in foreground tone
+  //   6. Door openings as proper gaps with thin swing arcs
+  //   7. Room labels in chrome-md semibold + chrome-xs muted area
+  //   8. Exterior context labels at chrome-2xs muted-foreground
+  //   9. Scale tick that matches the floating scale bar's instrument look
   return (
     <g>
-      {/* Floor plan — theme-aware paper + charcoal wall lines.
-          The in-plan North arrow was removed: the HTML compass at the
-          top-right of the canvas is the single source of orientation. */}
-      <g>
-        <rect x="80" y="80" width="640" height="480" fill="url(#plan-paper)" rx="3" />
-        <rect x="80" y="80" width="640" height="480" fill="none" stroke="var(--foreground)" strokeWidth="2" opacity="0.7" rx="3" />
+      <defs>
+        {/* Plan paper elevation — soft ambient + tight contact so the
+            sheet visibly sits above the canvas surface. */}
+        <filter id="plan-elevation" x="-2%" y="-2%" width="104%" height="108%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="6" />
+          <feOffset dx="0" dy="6" result="shadow" />
+          <feColorMatrix in="shadow" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0.1  0 0 0 0.28 0" />
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        {/* Faint room fill tones — read as warm/cool zones at low alpha
+            so the eye groups adjacent spaces. KIND_TONE values are
+            domain data; these are just room-zone tints. */}
+        <linearGradient id="room-fill-warm" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stopColor="rgb(245, 220, 180)" stopOpacity="0.10" />
+          <stop offset="100%" stopColor="rgb(245, 220, 180)" stopOpacity="0.04" />
+        </linearGradient>
+        <linearGradient id="room-fill-cool" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stopColor="rgb(190, 215, 240)" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="rgb(190, 215, 240)" stopOpacity="0.04" />
+        </linearGradient>
+        <linearGradient id="room-fill-neutral" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stopColor="rgb(200, 200, 200)" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="rgb(200, 200, 200)" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+
+      {/* Plan paper with subtle elevation. The architectural grid pattern
+          inside canvas-background gives the sheet a drawing-paper feel
+          without competing with the walls. */}
+      <g filter="url(#plan-elevation)">
+        <rect x="80" y="80" width="640" height="480" fill="url(#plan-paper)" rx="6" />
       </g>
 
-      <g stroke="var(--foreground)" strokeWidth="1.6" opacity="0.55" strokeLinecap="square">
+      {/* Room zone fills — eight cells grouped by use. Sits BENEATH the
+          walls so the boundary stays crisp. */}
+      <g>
+        <rect x="80"  y="80"  width="160" height="240" fill="url(#room-fill-warm)" />
+        <rect x="240" y="80"  width="160" height="240" fill="url(#room-fill-neutral)" />
+        <rect x="400" y="80"  width="160" height="240" fill="url(#room-fill-cool)" />
+        <rect x="560" y="80"  width="160" height="240" fill="url(#room-fill-warm)" />
+        <rect x="80"  y="320" width="160" height="240" fill="url(#room-fill-cool)" />
+        <rect x="240" y="320" width="160" height="240" fill="url(#room-fill-cool)" />
+        <rect x="400" y="320" width="160" height="240" fill="url(#room-fill-neutral)" />
+        <rect x="560" y="320" width="160" height="240" fill="url(#room-fill-warm)" />
+      </g>
+
+      {/* Exterior wall — heavy stroke so the building envelope reads
+          as the primary boundary. Rounded join keeps corners crisp. */}
+      <rect
+        x="80" y="80" width="640" height="480"
+        fill="none"
+        stroke="var(--foreground)"
+        strokeWidth="2.8"
+        strokeLinejoin="round"
+        opacity="0.92"
+        rx="2"
+      />
+
+      {/* Interior walls — medium stroke, same tone, lower opacity so
+          the eye reads exterior first, interior second. */}
+      <g
+        stroke="var(--foreground)"
+        strokeWidth="1.6"
+        opacity="0.78"
+        strokeLinecap="round"
+      >
         <line x1="80"  y1="320" x2="720" y2="320" />
         <line x1="400" y1="80"  x2="400" y2="560" />
         <line x1="240" y1="80"  x2="240" y2="320" />
+        <line x1="560" y1="80"  x2="560" y2="320" />
+        <line x1="240" y1="320" x2="240" y2="560" />
         <line x1="560" y1="320" x2="560" y2="560" />
       </g>
 
-      {/* Door openings — gap + swing arc that read on any theme */}
+      {/* Door openings — paper-colored cut through the wall plus a
+          thin half-arc showing the swing. Stronger than the prior
+          dotted hint; reads as proper architectural notation. */}
       <g>
-        <line x1="380" y1="80" x2="420" y2="80" stroke="var(--canvas-background)" strokeWidth="3" />
-        <path d="M 380 80 A 40 40 0 0 1 420 120" fill="none" stroke="var(--foreground)" strokeWidth="1" strokeDasharray="3 3" opacity="0.45" />
-        <line x1="680" y1="320" x2="720" y2="320" stroke="var(--canvas-background)" strokeWidth="3" />
-        <path d="M 680 320 A 40 40 0 0 1 720 360" fill="none" stroke="var(--foreground)" strokeWidth="1" strokeDasharray="3 3" opacity="0.45" />
+        {/* Top edge entrance */}
+        <line x1="380" y1="80" x2="420" y2="80" stroke="var(--canvas-background)" strokeWidth="4" />
+        <path d="M 380 80 L 380 120 A 40 40 0 0 1 420 80" fill="none" stroke="var(--foreground)" strokeWidth="1.2" opacity="0.55" />
+        {/* Right edge entrance */}
+        <line x1="720" y1="240" x2="720" y2="280" stroke="var(--canvas-background)" strokeWidth="4" />
+        <path d="M 720 240 L 680 240 A 40 40 0 0 1 720 280" fill="none" stroke="var(--foreground)" strokeWidth="1.2" opacity="0.55" />
       </g>
 
-      <g fill="var(--foreground)" fontSize="11" fontWeight="500">
-        <text x="160" y="200">Lobby</text>
-        <text x="320" y="200">Reception</text>
-        <text x="480" y="200">Open office</text>
-        <text x="640" y="200">IT room</text>
-        <text x="160" y="440">Conference A</text>
-        <text x="320" y="440">Conference B</text>
-        <text x="480" y="440">Open office</text>
-        <text x="640" y="440">Storage</text>
+      {/* Room labels — chrome scale semibold name + muted area chip below.
+          textAnchor middle so they land center of each cell. The fontSize
+          maps to var(--chrome-md) for the name and var(--chrome-xs) for
+          the area, but SVG <text> needs literal numbers; the values match. */}
+      <g style={{ fontFamily: 'inherit' }}>
+        <RoomLabel x={160} y={186} name="Lobby"        area="2,400 sq ft" />
+        <RoomLabel x={320} y={186} name="Reception"    area="1,200 sq ft" />
+        <RoomLabel x={480} y={186} name="Open office"  area="3,200 sq ft" />
+        <RoomLabel x={640} y={186} name="IT room"      area="1,400 sq ft" />
+        <RoomLabel x={160} y={428} name="Conference A" area="1,600 sq ft" />
+        <RoomLabel x={320} y={428} name="Conference B" area="1,600 sq ft" />
+        <RoomLabel x={480} y={428} name="Open office"  area="3,200 sq ft" />
+        <RoomLabel x={640} y={428} name="Storage"      area="1,400 sq ft" />
       </g>
 
-      <g fill="var(--muted-foreground)" fontSize="10">
-        <text x="40" y="320" transform="rotate(-90 40 320)">Exterior — parking</text>
-        <text x="400" y="50" textAnchor="middle">Exterior — courtyard</text>
+      {/* Exterior context labels — muted, uppercase, tracked. Read as
+          metadata rather than competing with room names. */}
+      <g
+        fill="var(--muted-foreground)"
+        fontSize="11"
+        fontWeight="500"
+        opacity="0.75"
+        style={{ letterSpacing: '0.10em', textTransform: 'uppercase' }}
+      >
+        <text x="44" y="320" transform="rotate(-90 44 320)" textAnchor="middle">Exterior · parking</text>
+        <text x="400" y="62" textAnchor="middle">Exterior · courtyard</text>
       </g>
 
-      <g transform="translate(100, 580)">
-        <line x1="0" y1="0" x2="100" y2="0" stroke="#1F2937" strokeWidth="1.5" />
-        <line x1="0" y1="-4" x2="0" y2="4" stroke="#1F2937" strokeWidth="1.5" />
-        <line x1="100" y1="-4" x2="100" y2="4" stroke="#1F2937" strokeWidth="1.5" />
-        <text x="50" y="-7" textAnchor="middle" fill="var(--foreground)" fontSize="10">10 ft</text>
+      {/* In-plan scale tick — matches the floating scale bar's
+          instrument look (rounded line caps, refined tick weight,
+          chrome-2xs labels). */}
+      <g transform="translate(100, 596)">
+        <line x1="0"   y1="0" x2="100" y2="0" stroke="var(--foreground)" strokeWidth="1.6" strokeLinecap="round" opacity="0.78" />
+        <line x1="0"   y1="-5" x2="0"   y2="5" stroke="var(--foreground)" strokeWidth="1.6" strokeLinecap="round" opacity="0.78" />
+        <line x1="100" y1="-5" x2="100" y2="5" stroke="var(--foreground)" strokeWidth="1.6" strokeLinecap="round" opacity="0.78" />
+        <line x1="50"  y1="-3" x2="50"  y2="3" stroke="var(--foreground)" strokeWidth="1.2" strokeLinecap="round" opacity="0.55" />
+        <text x="50" y="-9" textAnchor="middle" fill="var(--foreground)" fontSize="11" fontWeight="500" opacity="0.85">10 ft</text>
       </g>
     </g>
+  );
+}
+
+// Room label component — chrome-md semibold name centered above a
+// chrome-xs muted area. textAnchor middle so the pair reads as a
+// unit. Used by the blueprint FloorPlan branch.
+function RoomLabel({ x, y, name, area }: { x: number; y: number; name: string; area: string }) {
+  return (
+    <>
+      <text x={x} y={y} textAnchor="middle" fill="var(--foreground)" fontSize="13" fontWeight="600">{name}</text>
+      <text x={x} y={y + 16} textAnchor="middle" fill="var(--muted-foreground)" fontSize="11" fontWeight="500" opacity="0.85">{area}</text>
+    </>
   );
 }
 
