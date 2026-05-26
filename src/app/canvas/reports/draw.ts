@@ -76,11 +76,20 @@ function drawConduitSchedule(doc: any, projectId: string) {
       first.conduitType && first.conduitSize ? 'assigned' : 'open',
     ]);
   });
-  // NOTE: drawHeader's third arg (page) is undefined here and drawTable
-  // is missing startY + colW. Both are pre-existing bugs in the original
-  // call, ported verbatim — fixing them is out of scope for this pass.
-  (drawHeader as any)(doc, 'Conduit schedule');
-  (drawTable as any)(doc, ['Conduit ID', 'Type', 'Size', 'Length', 'Cables', 'Fill %', 'Recommended', 'Status'], rows);
+  // M11 fix — the original code passed only (doc, title) to drawHeader
+  // (page=undefined → "Page undefined") and (doc, headers, rows) to
+  // drawTable (startY became the headers array, colW was undefined →
+  // `colW[i]` threw on every column). Both calls now match the
+  // signatures the other report drawers use: drawHeader(doc, title, 2)
+  // and drawTable(doc, startY, headers, rows, colW).
+  drawHeader(doc, 'Conduit schedule', 2);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(22, 30, 46);
+  doc.text('Conduit schedule', 56, 76);
+  drawTable(doc, 100,
+    ['Conduit ID', 'Type', 'Size', 'Length', 'Cables', 'Fill %', 'Recommended', 'Status'],
+    rows,
+    [60, 50, 55, 55, 65, 50, 95, 65],
+  );
 }
 
 const REPORT_TITLE: Record<ReportKind, string> = {
