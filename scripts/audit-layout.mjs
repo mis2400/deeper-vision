@@ -131,7 +131,7 @@ const lines = file.split('\n');
 // hosts them.
 {
   const required = [
-    { pattern: /data-canvas-chrome="selection-pill"/, what: 'SelectionPill missing data-canvas-chrome="selection-pill"' },
+    { pattern: /data-canvas-chrome="selection-menu"/, what: 'SelectionMenu missing data-canvas-chrome="selection-menu"' },
     { pattern: /data-canvas-element="person-probe"/, what: 'PersonProbe group missing data-canvas-element="person-probe"' },
     { pattern: /data-canvas-element="lens-marker"/, what: 'FovCone lens label missing data-canvas-element="lens-marker"' },
     { pattern: /data-canvas-chrome="drawer"/, what: 'EditDrawer missing data-canvas-chrome="drawer"' },
