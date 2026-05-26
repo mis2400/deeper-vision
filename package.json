@@ -12,7 +12,8 @@
     "audit:runtime": "node scripts/audit-runtime.mjs",
     "audit:z": "node scripts/audit-z.mjs",
     "audit:state": "node scripts/audit-state.mjs",
-    "verify": "npm run typecheck:gate && npm run audit:layout && npm run audit:z && npm run audit:state && npm run build && npm run audit:runtime"
+    "audit:tokens": "node scripts/audit-tokens.mjs",
+    "verify": "npm run typecheck:gate && npm run audit:layout && npm run audit:z && npm run audit:state && npm run audit:tokens && npm run build && npm run audit:runtime"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

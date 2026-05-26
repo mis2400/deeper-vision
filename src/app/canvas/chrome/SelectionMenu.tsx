@@ -194,7 +194,7 @@ export function SelectionMenu({
                 }}
                 data-track={`selmenu-${it.id}`}
               >
-                <Icon className="w-4 h-4" strokeWidth={1.6} />
+                <Icon className="w-4 h-4" strokeWidth={1.5} />
               </button>
             );
           })}
@@ -209,7 +209,7 @@ export function SelectionMenu({
             className="w-7 h-7 rounded-md flex items-center justify-center text-foreground/80 hover:bg-white/10 hover:text-white"
             data-track="selmenu-duplicate"
           >
-            <Copy className="w-4 h-4" strokeWidth={1.6} />
+            <Copy className="w-4 h-4" strokeWidth={1.5} />
           </button>
           <button
             onClick={onDelete}
@@ -218,7 +218,7 @@ export function SelectionMenu({
             className="w-7 h-7 rounded-md flex items-center justify-center text-rose-400 hover:bg-rose-500/15"
             data-track="selmenu-delete"
           >
-            <Trash2 className="w-4 h-4" strokeWidth={1.6} />
+            <Trash2 className="w-4 h-4" strokeWidth={1.5} />
           </button>
           <button
             onClick={onClose}
@@ -227,7 +227,7 @@ export function SelectionMenu({
             className="w-7 h-7 rounded-md flex items-center justify-center text-foreground/60 hover:bg-white/10 hover:text-white"
             data-track="selmenu-close"
           >
-            <X className="w-4 h-4" strokeWidth={1.6} />
+            <X className="w-4 h-4" strokeWidth={1.5} />
           </button>
         </div>
       </div>
