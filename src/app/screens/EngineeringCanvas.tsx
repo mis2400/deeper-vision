@@ -69,6 +69,7 @@ import { StatusBar } from '../canvas/chrome/StatusBar';
 import { SimulatedMapBadge } from '../canvas/plan/SimulatedMapBadge';
 import { CanvasErrorBoundary } from '../canvas/components/CanvasErrorBoundary';
 import { IsoDeviceBadge, DEVICE_ICON } from '../canvas/devices/IsoDeviceBadge';
+import { DeviceGlyph } from '../canvas/devices/DeviceGlyph';
 
 /*
   Engineering Canvas v2 — designed around four ideas
@@ -11625,46 +11626,8 @@ const KIND_INITIAL: Record<DeviceKind, string> = {
 // IsoDeviceBadge moved to canvas/devices/IsoDeviceBadge.tsx (M11
 // monolith breakup). Import at top of file.
 
-function DeviceGlyph({ type, size, tone }: { type: DeviceType; size: number; tone?: string }) {
-  // V3.6 Part B: dock / palette / drag-ghost / layer rows render the
-  // SAME schematic plan symbols the canvas plots, in the category's
-  // resolved color (category override > KIND_TONE default). Callers
-  // can override per call site by passing `tone` explicitly (e.g.,
-  // when previewing an item-color override choice in the picker).
-  const overrideMap = useProjectStore((s) => s.categoryColors);
-  const kind = TYPE_KIND[type];
-  const ink = tone ?? overrideMap?.[kind] ?? KIND_TONE[kind];
-  if (SURVEYOR_SYMBOL_HAS(type)) {
-    // Stroke widens slightly for smaller chrome sizes so the symbol
-    // still reads crisp at 14-16px. At 24+ the default holds.
-    const stroke = size <= 16 ? 1.6 : size <= 22 ? 1.5 : 1.4;
-    return (
-      <span
-        className="inline-flex items-center justify-center"
-        style={{ width: size, height: size, color: ink }}
-      >
-        <SurveyorSymbol id={type} size={size} stroke={stroke} />
-      </span>
-    );
-  }
-  // Fallback for any device type we genuinely don't have a symbol
-  // for. Flagged via console so we add the symbol rather than ship
-  // a mismatched lucide marker. Renders an empty box, deliberately
-  // ugly so the missing symbol is visible during development.
-  if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
-    console.warn('[DeviceGlyph] no SurveyorSymbol for device type', type);
-  }
-  return (
-    <span
-      className="inline-flex items-center justify-center border border-dashed border-current/40"
-      style={{ width: size, height: size, color: ink, fontSize: Math.max(8, size * 0.45) }}
-      title={`Missing icon for ${type}`}
-    >
-      ?
-    </span>
-  );
-}
+// DeviceGlyph moved to canvas/devices/DeviceGlyph.tsx (M11 monolith
+// breakup). Import at top of file.
 
 // SVG path version kept for use inside the canvas SVG layer (presence cursors etc.)
 // Kept as a no-op fallback in case anything still references it.
