@@ -273,24 +273,32 @@ function SectionPanel({
         boxShadow: 'var(--shadow-panel), inset 0 1px 0 rgba(255,255,255,0.05)',
       }}
     >
-      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--canvas-rail-divider)' }}>
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--canvas-rail-divider)' }}>
         <div
           data-testid="selection-section-title"
           className="font-medium uppercase"
-          style={{ fontSize: 'var(--chrome-xs)', letterSpacing: '0.08em', color: 'var(--canvas-rail-foreground)' }}
+          style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.12em', color: 'var(--canvas-rail-foreground-muted)' }}
         >
           {SECTION_TITLE[section]}
         </div>
         <button
           onClick={onClose}
-          className="w-5 h-5 rounded flex items-center justify-center transition-colors"
-          style={{ color: 'var(--canvas-rail-foreground-muted)' }}
+          className="w-6 h-6 rounded-md flex items-center justify-center transition-colors"
+          style={{ color: 'var(--canvas-rail-foreground-faint)' }}
           aria-label="Close section"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--canvas-rail-hover-bg)';
+            e.currentTarget.style.color = 'var(--canvas-rail-foreground)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--canvas-rail-foreground-faint)';
+          }}
         >
-          <X className="w-3 h-3" strokeWidth={1.8} />
+          <X className="w-3.5 h-3.5" strokeWidth={1.8} />
         </button>
       </div>
-      <div className="px-3 py-3 overflow-auto" style={{ maxHeight: 'calc(40vh - 40px)' }}>
+      <div className="px-4 py-4 overflow-auto" style={{ maxHeight: 'calc(40vh - 48px)' }}>
         <SectionBody section={section} device={device} onUpdate={onUpdate} activeLens={activeLens} />
       </div>
     </div>
@@ -517,11 +525,19 @@ function NumericRow({
   min: number; max: number; step: number; onChange: (v: number) => void;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <span style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>{label}</span>
-        <span className="tabular-nums" style={{ fontSize: 'var(--chrome-sm)', color: 'var(--canvas-rail-foreground)' }}>
-          {value}{suffix ?? ''}
+        <span
+          className="font-medium"
+          style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)', letterSpacing: '-0.005em' }}
+        >
+          {label}
+        </span>
+        <span
+          className="tabular-nums font-semibold"
+          style={{ fontSize: 'var(--chrome-md)', color: 'var(--canvas-rail-foreground)' }}
+        >
+          {value}<span style={{ color: 'var(--canvas-rail-foreground-faint)', fontWeight: 400 }}>{suffix ?? ''}</span>
         </span>
       </div>
       <input
