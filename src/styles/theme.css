@@ -48,11 +48,37 @@
        --chrome-sm  11 px   inspector row / hint
        --chrome-md  12 px   button text / inline value
        --chrome-lg  13 px   strong button / section header */
-  --chrome-2xs: 9px;
-  --chrome-xs:  10px;
-  --chrome-sm:  11px;
-  --chrome-md:  12px;
-  --chrome-lg:  13px;
+  /* Chrome type scale — bumped one step in the M11 visual redesign so
+     canvas chrome is legible at a glance rather than cramped. The
+     prior 9-13 px range read as engineering-CAD-software-from-2005;
+     11-15 px gives breathing room while staying tighter than the
+     base 14 px body scale. Tailwind arbitrary values text-[11px] /
+     text-[12px] / text-[13px] / text-[14px] / text-[15px] still map
+     cleanly. */
+  --chrome-2xs: 11px;
+  --chrome-xs:  12px;
+  --chrome-sm:  13px;
+  --chrome-md:  14px;
+  --chrome-lg:  15px;
+
+  /* Semantic elevation tokens — single source of truth for the
+     soft-modern shadow language used across rails, panels, and
+     dialogs. Each layer combines a tight contact shadow with a
+     diffuse ambient shadow so depth feels intentional, not heavy.
+     Cards / inline chrome use --shadow-flat; floating rails use
+     --shadow-rail; dialogs use --shadow-modal. */
+  --shadow-flat:   0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
+  --shadow-rail:   0 1px 2px rgba(15, 23, 42, 0.10), 0 8px 24px -8px rgba(15, 23, 42, 0.35);
+  --shadow-panel:  0 2px 4px rgba(15, 23, 42, 0.08), 0 16px 32px -12px rgba(15, 23, 42, 0.40);
+  --shadow-modal:  0 4px 8px rgba(15, 23, 42, 0.10), 0 24px 48px -16px rgba(15, 23, 42, 0.50);
+
+  /* Motion tokens — slightly faster than the v1 values so chrome
+     feels responsive without rushing the eye. */
+  --motion-fast:     140ms;
+  --motion-standard: 220ms;
+  --motion-slow:     360ms;
+  --ease-out:        cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* ── Z-index scale (M2) ──────────────────────────────────────────
      A single canonical stack so popovers, modals, toolbars, and the
@@ -172,14 +198,21 @@
      bottom device bar. Intentionally a black slab regardless of
      theme so chrome reads as one consistent surface across Light
      Drafting / Slate / Dark Command. */
-  --canvas-rail:           #0B0F19;
-  --canvas-rail-border:    rgba(255, 255, 255, 0.08);
-  --canvas-rail-divider:   rgba(255, 255, 255, 0.10);
-  --canvas-rail-foreground:        rgba(255, 255, 255, 0.95);
-  --canvas-rail-foreground-muted:  rgba(255, 255, 255, 0.65);
-  --canvas-rail-foreground-faint:  rgba(255, 255, 255, 0.45);
-  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.12);
-  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.08);
+  /* M11 visual redesign — refined canvas-rail palette.
+     #11141F is a deep slate-with-blue-cast (was pure deep navy);
+     reads as a modern dark surface, not a flat black slab. The
+     border now uses a 2-tone treatment: a 1 px white highlight at
+     low alpha on the top edge for subtle bevel, a slightly darker
+     edge elsewhere. Active and hover states bump opacity a touch
+     so interactive feedback reads clearly without overshooting. */
+  --canvas-rail:           #11141F;
+  --canvas-rail-border:    rgba(255, 255, 255, 0.10);
+  --canvas-rail-divider:   rgba(255, 255, 255, 0.08);
+  --canvas-rail-foreground:        rgba(248, 250, 252, 0.96);
+  --canvas-rail-foreground-muted:  rgba(203, 213, 225, 0.78);
+  --canvas-rail-foreground-faint:  rgba(148, 163, 184, 0.62);
+  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.14);
+  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.07);
 
   --panel-background: #34405A;
   --panel-border:     #51607D;
@@ -289,14 +322,21 @@
 
   /* Chrome rails — identical across all themes per the rail's
      "black slab regardless of theme" design rule. */
-  --canvas-rail:           #0B0F19;
-  --canvas-rail-border:    rgba(255, 255, 255, 0.08);
-  --canvas-rail-divider:   rgba(255, 255, 255, 0.10);
-  --canvas-rail-foreground:        rgba(255, 255, 255, 0.95);
-  --canvas-rail-foreground-muted:  rgba(255, 255, 255, 0.65);
-  --canvas-rail-foreground-faint:  rgba(255, 255, 255, 0.45);
-  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.12);
-  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.08);
+  /* M11 visual redesign — refined canvas-rail palette.
+     #11141F is a deep slate-with-blue-cast (was pure deep navy);
+     reads as a modern dark surface, not a flat black slab. The
+     border now uses a 2-tone treatment: a 1 px white highlight at
+     low alpha on the top edge for subtle bevel, a slightly darker
+     edge elsewhere. Active and hover states bump opacity a touch
+     so interactive feedback reads clearly without overshooting. */
+  --canvas-rail:           #11141F;
+  --canvas-rail-border:    rgba(255, 255, 255, 0.10);
+  --canvas-rail-divider:   rgba(255, 255, 255, 0.08);
+  --canvas-rail-foreground:        rgba(248, 250, 252, 0.96);
+  --canvas-rail-foreground-muted:  rgba(203, 213, 225, 0.78);
+  --canvas-rail-foreground-faint:  rgba(148, 163, 184, 0.62);
+  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.14);
+  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.07);
 
   --panel-background: #FFFFFF;
   --panel-border:     #C5CCDB;
@@ -395,14 +435,21 @@
 
   /* Chrome rails — identical across all themes per the rail's
      "black slab regardless of theme" design rule. */
-  --canvas-rail:           #0B0F19;
-  --canvas-rail-border:    rgba(255, 255, 255, 0.08);
-  --canvas-rail-divider:   rgba(255, 255, 255, 0.10);
-  --canvas-rail-foreground:        rgba(255, 255, 255, 0.95);
-  --canvas-rail-foreground-muted:  rgba(255, 255, 255, 0.65);
-  --canvas-rail-foreground-faint:  rgba(255, 255, 255, 0.45);
-  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.12);
-  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.08);
+  /* M11 visual redesign — refined canvas-rail palette.
+     #11141F is a deep slate-with-blue-cast (was pure deep navy);
+     reads as a modern dark surface, not a flat black slab. The
+     border now uses a 2-tone treatment: a 1 px white highlight at
+     low alpha on the top edge for subtle bevel, a slightly darker
+     edge elsewhere. Active and hover states bump opacity a touch
+     so interactive feedback reads clearly without overshooting. */
+  --canvas-rail:           #11141F;
+  --canvas-rail-border:    rgba(255, 255, 255, 0.10);
+  --canvas-rail-divider:   rgba(255, 255, 255, 0.08);
+  --canvas-rail-foreground:        rgba(248, 250, 252, 0.96);
+  --canvas-rail-foreground-muted:  rgba(203, 213, 225, 0.78);
+  --canvas-rail-foreground-faint:  rgba(148, 163, 184, 0.62);
+  --canvas-rail-active-bg:         rgba(255, 255, 255, 0.14);
+  --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.07);
 
   --panel-background: #1F2738;
   --panel-border:     #41506B;

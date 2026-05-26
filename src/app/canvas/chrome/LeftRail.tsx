@@ -161,36 +161,87 @@ export function LeftRail(props: LeftRailProps) {
   ];
 
   // ─── Render ────────────────────────────────────────────────────
+  // M11 visual redesign — larger tiles for modern touch feel, group
+  // headers visible on hover-expand, two-shadow elevation with subtle
+  // 1 px inset highlight on the top edge. The bar feels like raised
+  // metal sitting above the plan rather than a flat dark slab.
   return (
     <div
       ref={railRef}
       data-canvas-chrome="left-rail"
-      className="absolute top-3 left-2 md:left-3 z-rail pointer-events-auto select-none"
+      className="absolute top-4 left-3 md:left-4 z-rail pointer-events-auto select-none"
     >
       <div
         onMouseEnter={() => !isCoarsePointer && setHoverExpand(true)}
         onMouseLeave={() => !isCoarsePointer && setHoverExpand(false)}
         onTouchStart={() => isCoarsePointer && setTouchExpand(true)}
         data-rail-expanded={expanded ? 'true' : undefined}
-        className="flex flex-col items-stretch gap-0.5 rounded-2xl border backdrop-blur-md p-1.5 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)]"
+        className="flex flex-col items-stretch rounded-2xl border backdrop-blur-xl overflow-hidden"
         style={{
           background: 'var(--canvas-rail)',
           borderColor: 'var(--canvas-rail-border)',
           color: 'var(--canvas-rail-foreground)',
+          boxShadow: 'var(--shadow-rail), inset 0 1px 0 rgba(255,255,255,0.05)',
+          padding: '8px',
+          transitionProperty: 'width',
+          transitionDuration: 'var(--motion-standard)',
+          transitionTimingFunction: 'var(--ease-out)',
         }}
       >
-        <RailItemRow items={tools} expanded={expanded} keyPrefix="tools" />
+        <RailGroupBlock label="Tools" expanded={expanded}>
+          <RailItemRow items={tools} expanded={expanded} keyPrefix="tools" />
+        </RailGroupBlock>
         <RailDivider />
-        <RailItemRow items={view} expanded={expanded} keyPrefix="view" />
+        <RailGroupBlock label="View" expanded={expanded}>
+          <RailItemRow items={view} expanded={expanded} keyPrefix="view" />
+        </RailGroupBlock>
         <RailDivider />
-        <RailItemRow items={zoom} expanded={expanded} keyPrefix="zoom" />
+        <RailGroupBlock label="Zoom" expanded={expanded}>
+          <RailItemRow items={zoom} expanded={expanded} keyPrefix="zoom" />
+        </RailGroupBlock>
       </div>
     </div>
   );
 }
 
 function RailDivider() {
-  return <div className="my-1 mx-1.5 h-px" style={{ background: 'var(--canvas-rail-divider)' }} />;
+  return (
+    <div
+      aria-hidden
+      className="my-2 mx-2"
+      style={{ height: '1px', background: 'var(--canvas-rail-divider)' }}
+    />
+  );
+}
+
+function RailGroupBlock({ label, expanded, children }: { label: string; expanded: boolean; children: React.ReactNode }) {
+  // Group header — visible only when the rail is expanded. Always
+  // mounted so the bar's height doesn't jitter on hover; opacity +
+  // max-height animate the reveal so the eye reads the section
+  // grouping without seeing layout shift.
+  return (
+    <div className="flex flex-col gap-1">
+      <div
+        aria-hidden
+        className="px-2 uppercase font-medium whitespace-nowrap overflow-hidden"
+        style={{
+          fontSize: 'var(--chrome-2xs)',
+          letterSpacing: '0.12em',
+          color: 'var(--canvas-rail-foreground-faint)',
+          maxHeight: expanded ? 16 : 0,
+          paddingTop: expanded ? 2 : 0,
+          paddingBottom: expanded ? 4 : 0,
+          opacity: expanded ? 1 : 0,
+          transitionProperty: 'max-height, padding-top, padding-bottom, opacity',
+          transitionDuration: 'var(--motion-standard)',
+          transitionTimingFunction: 'var(--ease-out)',
+        }}
+      >
+        {label}
+      </div>
+      <div className="flex flex-col gap-1">{children}</div>
+    </div>
+  );
 }
 
 function RailItemRow({ items, expanded, keyPrefix }: { items: RailItem[]; expanded: boolean; keyPrefix: string }) {
@@ -199,10 +250,10 @@ function RailItemRow({ items, expanded, keyPrefix }: { items: RailItem[]; expand
       {items.map((it) => {
         const Icon = it.icon;
         const isActive = !!it.active;
-        const baseClass = `group relative flex items-center rounded-xl overflow-hidden transition-[width,background-color,color] ${
+        const baseClass = `group relative flex items-center rounded-lg overflow-hidden ${
           expanded
-            ? 'h-10 w-[170px] flex-row justify-start gap-2.5 px-2.5'
-            : 'h-10 w-10 md:h-11 md:w-11 justify-center'
+            ? 'h-11 w-[200px] flex-row justify-start gap-3 px-3'
+            : 'h-11 w-11 justify-center'
         }`;
         return (
           <button
@@ -217,24 +268,39 @@ function RailItemRow({ items, expanded, keyPrefix }: { items: RailItem[]; expand
             data-track={keyPrefix === 'zoom' ? `intel-rail-${it.id}` : `left-rail-${keyPrefix}-${it.id}`}
             className={baseClass}
             style={{
-              transitionDuration: '170ms',
-              transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+              transitionProperty: 'background-color, color, transform, width',
+              transitionDuration: 'var(--motion-fast)',
+              transitionTimingFunction: 'var(--ease-out)',
               background: isActive ? 'var(--canvas-rail-active-bg)' : 'transparent',
               color: isActive ? 'var(--canvas-rail-foreground)' : 'var(--canvas-rail-foreground-muted)',
+            }}
+            onMouseEnter={(e) => {
+              if (!isActive) e.currentTarget.style.background = 'var(--canvas-rail-hover-bg)';
+              e.currentTarget.style.color = 'var(--canvas-rail-foreground)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = isActive ? 'var(--canvas-rail-active-bg)' : 'transparent';
+              e.currentTarget.style.color = isActive ? 'var(--canvas-rail-foreground)' : 'var(--canvas-rail-foreground-muted)';
             }}
           >
             {it.customGlyph
               ? <span className="shrink-0 inline-flex items-center justify-center">{it.customGlyph}</span>
-              : <Icon className="w-4 h-4 shrink-0" strokeWidth={1.5} />}
+              : <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={1.5} />}
             {expanded && (
               <span
-                className="flex-1 text-left inline-flex items-center gap-2 whitespace-nowrap"
-                style={{ fontSize: 'var(--chrome-sm)', letterSpacing: '-0.005em' }}
+                className="flex-1 text-left whitespace-nowrap"
+                style={{ fontSize: 'var(--chrome-sm)', letterSpacing: '-0.01em', fontWeight: 500 }}
               >
                 {it.label}
               </span>
             )}
-            {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r" style={{ background: 'var(--primary)' }} />}
+            {isActive && (
+              <span
+                aria-hidden
+                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full"
+                style={{ background: 'var(--primary)' }}
+              />
+            )}
           </button>
         );
       })}

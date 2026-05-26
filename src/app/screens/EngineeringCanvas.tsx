@@ -2328,12 +2328,20 @@ export function EngineeringCanvas() {
   // Chromium doesn't fire dragstart from synthesised mouse events, and
   // dispatchEvent of synthetic DragEvents bypasses React's synthetic
   // event delegation). The seam invokes the same callback the SVG
-  // onDrop handler would. Production users could call this from
-  // devtools to place a product they could already place from the
-  // tray, so it's not a privilege boundary; it's a test convenience.
+  // onDrop handler would.
+  //
+  // Hostname-gated identically to AuthGate's audit bypass. The seam
+  // only attaches when the page is served from localhost (vite preview
+  // at :4173 during the audit, vite dev at :5173 during local work).
+  // On deeper-vision-ashy.vercel.app or any custom domain the effect
+  // returns early and window.__dvSimulateDrop is never assigned —
+  // production users cannot script the test seam from devtools.
   const productDropRef = useRef<(productId: string, clientX: number, clientY: number) => void>(() => { /* no-op until first render */ });
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const host = window.location.hostname;
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+    if (!isLocalHost) return;
     (window as unknown as Record<string, unknown>).__dvSimulateDrop = (productId: string, clientX: number, clientY: number) => {
       productDropRef.current(productId, clientX, clientY);
     };

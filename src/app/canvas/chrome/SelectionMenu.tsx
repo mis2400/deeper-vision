@@ -130,12 +130,12 @@ export function SelectionMenu({
         />
       )}
       <div
-        className="pointer-events-auto inline-flex items-center gap-1 px-2 py-1.5 rounded-full border backdrop-blur-md"
+        className="pointer-events-auto inline-flex items-center gap-1 px-3 py-2 rounded-full border backdrop-blur-xl"
         style={{
           background: 'var(--canvas-rail)',
           borderColor: 'var(--canvas-rail-border)',
           color: 'var(--canvas-rail-foreground)',
-          boxShadow: '0 18px 36px -18px rgba(0,0,0,0.65)',
+          boxShadow: 'var(--shadow-rail), inset 0 1px 0 rgba(255,255,255,0.05)',
         }}
       >
         {/* Device label chip — non-interactive identity. Both spans
@@ -264,13 +264,13 @@ function SectionPanel({
       data-testid="selection-section-panel"
       className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-inspector rounded-xl border backdrop-blur-md overflow-hidden"
       style={{
-        bottom: '52px', // sits above the 44 px strip + 8 px gap
-        width: '320px',
+        bottom: '56px', // sits above the 48 px strip + 8 px gap
+        width: '340px',
         maxHeight: '40vh',
         background: 'var(--canvas-rail)',
         borderColor: 'var(--canvas-rail-border)',
         color: 'var(--canvas-rail-foreground)',
-        boxShadow: '0 22px 44px -18px rgba(0,0,0,0.65)',
+        boxShadow: 'var(--shadow-panel), inset 0 1px 0 rgba(255,255,255,0.05)',
       }}
     >
       <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--canvas-rail-divider)' }}>
