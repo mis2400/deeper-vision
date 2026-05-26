@@ -10,7 +10,8 @@
     "typecheck:gate": "node scripts/typecheck-gate.mjs",
     "audit:layout": "node scripts/audit-layout.mjs",
     "audit:runtime": "node scripts/audit-runtime.mjs",
-    "verify": "npm run typecheck:gate && npm run audit:layout && npm run build && npm run audit:runtime"
+    "audit:z": "node scripts/audit-z.mjs",
+    "verify": "npm run typecheck:gate && npm run audit:layout && npm run audit:z && npm run build && npm run audit:runtime"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

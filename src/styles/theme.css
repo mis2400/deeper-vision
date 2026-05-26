@@ -53,6 +53,44 @@
   --chrome-sm:  11px;
   --chrome-md:  12px;
   --chrome-lg:  13px;
+
+  /* ── Z-index scale (M2) ──────────────────────────────────────────
+     A single canonical stack so popovers, modals, toolbars, and the
+     canvas stop fighting each other. Every NEW use of a z-index
+     reaches for one of these tokens via the matching utility class
+     (.z-canvas / .z-rail / .z-modal / ...). Raw z-index values are
+     audited by scripts/audit-z.mjs; the baseline is the current state,
+     and any file's raw count going UP fails the verify gate.
+       --z-canvas         0   the floor plan layer, base of the stack
+       --z-device        10   placed devices and pathways
+       --z-handle        20   cone handles, rotation pucks
+       --z-floor-badge   30   floor pill at top-left
+       --z-rail          40   left rail + bottom device bar
+       --z-bottom-bar    40   same plane, sits beside rail
+       --z-selection-menu 45  compact icon strip above bottom bar
+       --z-inspector     50   inspector panel anchored above strip
+       --z-dv-assist     55   DV Assist floating button
+       --z-overlay       60   opaque covers (import dialog, etc)
+       --z-popover       70   in-canvas popovers
+       --z-modal         80   centered dialogs
+       --z-confirm       90   confirm-on-top dialogs
+       --z-toast        100   toast notifications
+       --z-shortcut-help 110  keyboard shortcut overlay (top of stack) */
+  --z-canvas:           0;
+  --z-device:          10;
+  --z-handle:          20;
+  --z-floor-badge:     30;
+  --z-rail:            40;
+  --z-bottom-bar:      40;
+  --z-selection-menu:  45;
+  --z-inspector:       50;
+  --z-dv-assist:       55;
+  --z-overlay:         60;
+  --z-popover:         70;
+  --z-modal:           80;
+  --z-confirm:         90;
+  --z-toast:          100;
+  --z-shortcut-help:  110;
 }
 
 :root[data-theme="slate"], [data-theme="slate"] {
@@ -519,6 +557,28 @@
   .dv-input::placeholder { color: var(--muted-foreground); opacity: 0.7; }
   textarea.dv-input { min-height: 64px; line-height: 1.4; }
   select.dv-input { appearance: auto; padding-right: 1.5rem; }
+}
+
+/* ── Z-index utilities (M2) ────────────────────────────────────────────
+   Tailwind v4 utility classes that resolve to the --z-* tokens defined
+   on :root. Use these instead of raw z-[N] or z-N. The audit script
+   refuses any file that increases its count of raw z-index usages. */
+@layer utilities {
+  .z-canvas         { z-index: var(--z-canvas); }
+  .z-device         { z-index: var(--z-device); }
+  .z-handle         { z-index: var(--z-handle); }
+  .z-floor-badge    { z-index: var(--z-floor-badge); }
+  .z-rail           { z-index: var(--z-rail); }
+  .z-bottom-bar     { z-index: var(--z-bottom-bar); }
+  .z-selection-menu { z-index: var(--z-selection-menu); }
+  .z-inspector      { z-index: var(--z-inspector); }
+  .z-dv-assist      { z-index: var(--z-dv-assist); }
+  .z-overlay        { z-index: var(--z-overlay); }
+  .z-popover        { z-index: var(--z-popover); }
+  .z-modal          { z-index: var(--z-modal); }
+  .z-confirm        { z-index: var(--z-confirm); }
+  .z-toast          { z-index: var(--z-toast); }
+  .z-shortcut-help  { z-index: var(--z-shortcut-help); }
 }
 
 /* ── Phase 3A density preference ─────────────────────────────────────
