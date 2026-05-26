@@ -65,6 +65,7 @@ import {
 } from '../canvas/interaction/dragDrop';
 import { SelectionMenu as CanvasSelectionMenu } from '../canvas/chrome/SelectionMenu';
 import { LeftRail as CanvasLeftRail } from '../canvas/chrome/LeftRail';
+import { StatusBar } from '../canvas/chrome/StatusBar';
 
 /*
   Engineering Canvas v2 — designed around four ideas
@@ -19475,45 +19476,9 @@ function MiniMap({ devices, walls, background }: {
   );
 }
 
-function StatusBar({ tool, zoom, counts, units }: { tool: Tool; zoom: number; counts: Record<DeviceKind, number>; units: 'ft' | 'm' }) {
-  const toolLabel = tool === 'select' ? 'Select' : tool === 'pan' ? 'Pan' : tool === 'measure' ? 'Measure' : tool === 'wall' ? 'Wall' : tool === 'cable' ? 'Cable' : 'Tool';
-  // Audit Group C contrast — was `bg-card/80` + Unicode `●` glyphs in
-  // chrome tone hex codes; under light theme the translucent card let
-  // canvas bg bleed through and the chrome glyphs missed AA (4.45 /
-  // 3.86). Now fully opaque card and real <span> shape dots styled
-  // through KIND_TONE so they share the rest of the canvas's category
-  // palette (and the audit harness can read them via the count chip
-  // selectors).
-  return (
-    <div
-      className="absolute left-1/2 -translate-x-1/2 top-4 z-20 inline-flex items-center gap-3 px-3.5 h-8 rounded-full bg-card border border-border text-foreground"
-      data-canvas-chrome="topbar-status"
-      style={{ fontSize: 'var(--chrome-sm)', boxShadow: 'var(--shadow-flat)' }}
-    >
-      <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: 'var(--primary)' }}>
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--primary)' }} aria-hidden />
-        {toolLabel}
-      </span>
-      <span aria-hidden style={{ width: '1px', height: '12px', background: 'var(--border)' }} />
-      <span style={{ color: 'var(--muted-foreground)' }}>1 in = 10 {units}</span>
-      <span aria-hidden style={{ width: '1px', height: '12px', background: 'var(--border)' }} />
-      <span className="inline-flex items-center gap-2.5 tabular-nums" data-testid="status-counts">
-        <span className="inline-flex items-center gap-1.5 font-medium" title="Cameras">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: KIND_TONE.camera }} aria-hidden />
-          {counts.camera}
-        </span>
-        <span className="inline-flex items-center gap-1.5 font-medium" title="Access">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: KIND_TONE.access }} aria-hidden />
-          {counts.access}
-        </span>
-        <span className="inline-flex items-center gap-1.5 font-medium" title="Network">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: KIND_TONE.network }} aria-hidden />
-          {counts.network}
-        </span>
-      </span>
-    </div>
-  );
-}
+// StatusBar moved to canvas/chrome/StatusBar.tsx as part of M11
+// monolith breakup. The import at the top of this file now provides
+// the same component.
 
 
 /* ═══════════════════════════════════════════════════════════════════════
