@@ -3458,7 +3458,13 @@ export function EngineeringCanvas() {
             />
 
             {/* Floating selection toolbar */}
-            {sel && surfaceRef.current && (
+            {/* Audit Group C.6 — SelectionPill removed from the canvas
+                because the docked drawer (rendered below) now carries
+                the same identity strip + edit actions, AND the pill
+                was previously docking at canvas-bottom where the new
+                drawer lives. The selection ring drawn on the device
+                glyph itself remains the at-device selection signal. */}
+            {false && sel && surfaceRef.current && (
               <SelectionPill
                 d={sel}
                 zoom={zoom}
