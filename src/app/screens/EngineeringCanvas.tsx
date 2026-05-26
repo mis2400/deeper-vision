@@ -1867,6 +1867,12 @@ export function EngineeringCanvas() {
   }, []);
 
   const [editOpen, setEditOpen] = useState(false);
+  /* Audit Group C.6 — drawer compact vs expanded state. Compact (false,
+     default) shows just the identity strip + tab icons in a thin bar
+     above the tray; expanded (true) grows the drawer upward into a
+     56 vh panel revealing the full inspector body. Toggled by the
+     chevron in the docked drawer header. */
+  const [editExpanded, setEditExpanded] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('overview');
   // DEFECT FIX (2026-05-24): the stick-figure / TargetSimOverlay was a
   // dead control — it auto-placed itself when the Coverage tab opened
@@ -3746,7 +3752,7 @@ export function EngineeringCanvas() {
                     open={true}
                     tab={editTab}
                     setTab={setEditTab}
-                    onClose={() => { setSelId(null); }}
+                    onClose={() => { setSelId(null); setEditExpanded(false); }}
                     onUpdate={updateSel}
                     activeLens={activeLens}
                     setActiveLens={setActiveLens}
@@ -3756,6 +3762,8 @@ export function EngineeringCanvas() {
                     setSelectedDoriLevel={setSelectedDoriLevel}
                     pxToFtForFloor={currentFloorPxToFt}
                     personProbePos={personProbePos}
+                    expanded={editExpanded}
+                    onToggleExpanded={() => setEditExpanded((v) => !v)}
                   />
                 </CanvasErrorBoundary>
               </div>
@@ -14948,7 +14956,7 @@ function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: numbe
   return inside;
 }
 
-function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode, selectedDoriLevel, setSelectedDoriLevel, pxToFtForFloor, personProbePos }: {
+function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setActiveLens, lensMode, setLensMode, selectedDoriLevel, setSelectedDoriLevel, pxToFtForFloor, personProbePos, expanded, onToggleExpanded }: {
   d: Device; open: boolean; tab: EditTab; setTab: (t: EditTab) => void; onClose: () => void;
   onUpdate: (p: Partial<Device>) => void;
   activeLens: ActiveLens; setActiveLens: (l: ActiveLens) => void;
@@ -14956,6 +14964,12 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
   selectedDoriLevel: DoriLevel | null;
   setSelectedDoriLevel: (l: DoriLevel | null) => void;
   pxToFtForFloor: number;
+  /* Audit Group C.6 — compact vs expanded state. When `expanded` is
+     false, the drawer renders only the header strip + tab icons (a
+     thin bar above the bottom tray). When true, the full inspector
+     body renders below the strip up to 56 vh tall. */
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
   personProbePos: { x: number; y: number } | null;
 }) {
   const product = PRODUCTS.find((p) => p.id === d.product);
@@ -15098,19 +15112,24 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
     <div
       data-canvas-chrome={open ? 'drawer' : undefined}
       data-drawer-mode="docked-bottom"
+      data-drawer-expanded={expanded ? 'true' : 'false'}
       /* Audit Group C.6 — the drawer used to live in the canvas
          flex-row as a 400 px right-side column. Per Mohammad's
          restructure the drawer now docks ABOVE the bottom toolbar,
-         spans the full canvas width minus a small inset, and caps
-         its height at 56 vh so the operator always sees both the
-         canvas and the inspector. The internal sections retain
-         their existing structure (tab strip + scrollable body);
-         only the outer container's position changed. */
-      className="w-full max-h-[56vh] flex flex-col rounded-2xl border shadow-[0_22px_48px_-18px_rgba(0,0,0,0.65)]"
+         spans the full canvas width minus a small inset. Two modes:
+         compact (default, ~72 px tall) shows only the identity
+         strip + tab icons + expand chevron; expanded (toggled by
+         the chevron) grows upward to 56 vh and reveals the full
+         scrollable inspector body. The compact mode keeps the
+         canvas fully visible until the operator opts into details. */
+      className={`w-full ${expanded ? 'max-h-[56vh]' : 'max-h-[72px]'} flex flex-col rounded-2xl border shadow-[0_22px_48px_-18px_rgba(0,0,0,0.65)] overflow-hidden`}
       style={{
         background: 'var(--drawer-background)',
         color: 'var(--drawer-foreground)',
         borderColor: 'var(--border)',
+        transitionProperty: 'max-height',
+        transitionDuration: 'var(--motion-standard, 200ms)',
+        transitionTimingFunction: 'var(--ease-out)',
       }}
     >
       {/* Drawer header — V3.3 Phase A.
@@ -15145,6 +15164,22 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                 of this drawer header onto the SelectionPill (next to
                 Edit). One obvious entry point for item color; the
                 drawer header no longer duplicates it. */}
+            {/* Audit Group C.6 — expand / collapse chevron. Compact
+                drawer shows only the identity strip + tab icons;
+                clicking the chevron grows the drawer upward to its
+                full inspector body. Chevron points up when collapsed
+                (suggests "lift this up") and down when expanded. */}
+            {onToggleExpanded && (
+              <button
+                onClick={onToggleExpanded}
+                className="p-1.5 rounded-md hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
+                title={expanded ? 'Collapse inspector' : 'Expand inspector'}
+                data-testid="drawer-expand-toggle"
+                aria-expanded={!!expanded}
+              >
+                <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? '' : 'rotate-180'}`} />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 rounded-md hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
