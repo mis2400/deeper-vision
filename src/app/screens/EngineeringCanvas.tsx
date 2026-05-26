@@ -77,7 +77,6 @@ import { PersonProbe, RotationRing } from '../canvas/devices/PersonProbe';
 import { CategoryGlyph, KIND_ICON } from '../canvas/devices/CategoryGlyph';
 import { MiniMapFloorStrip } from '../canvas/chrome/MiniMapFloorStrip';
 import { MiniMap } from '../canvas/chrome/MiniMap';
-import { AddBuildingDialog, AddFloorDialog } from '../canvas/dialogs/AddBuildingDialog';
 import { CmdKOverlay, type CmdKCommand } from '../canvas/chrome/CmdKOverlay';
 import { Onboarding } from '../canvas/chrome/Onboarding';
 import { CoverageStatsPanel } from '../canvas/chrome/CoverageStatsPanel';
@@ -854,31 +853,10 @@ const SEED_DEVICES: Device[] = [
   { id: 'AP-1',    type: 'net.ap',          label: 'Floor 1 AP', product: 'p-cisco-ap',     x: 360, y: 320, rot:   0 },
 ];
 
-const FLOORS = ['Ground floor', 'Level 2', 'Level 3', 'Roof'];
-
-interface SiteFloor { id: string; name: string; deviceCount: number; updated: string; source: 'blueprint' | 'satellite' | 'sketch'; }
-interface SiteBuilding { id: string; name: string; address: string; floors: SiteFloor[]; }
-
-const SITE_BUILDINGS: SiteBuilding[] = [
-  { id: 'bld-a', name: 'Building A — Headquarters', address: '500 Terry A. Francois Blvd', floors: [
-    { id: 'a-g', name: 'Ground floor', deviceCount: 14, updated: '2d ago',  source: 'blueprint' },
-    { id: 'a-2', name: 'Level 2',      deviceCount: 18, updated: '5h ago',  source: 'blueprint' },
-    { id: 'a-3', name: 'Level 3',      deviceCount: 11, updated: '1w ago',  source: 'blueprint' },
-    { id: 'a-r', name: 'Rooftop',      deviceCount: 4,  updated: '3d ago',  source: 'satellite' },
-  ]},
-  { id: 'bld-b', name: 'Building B — Warehouse', address: '510 Industrial Way', floors: [
-    { id: 'b-g', name: 'Ground floor', deviceCount: 22, updated: '1d ago',  source: 'blueprint' },
-    { id: 'b-m', name: 'Mezzanine',    deviceCount: 8,  updated: '4d ago',  source: 'sketch' },
-  ]},
-  { id: 'bld-c', name: 'Building C — Operations', address: '525 Riverbend Pkwy', floors: [
-    { id: 'c-1', name: '1st floor',    deviceCount: 9,  updated: '6h ago',  source: 'blueprint' },
-    { id: 'c-2', name: '2nd floor',    deviceCount: 12, updated: '6h ago',  source: 'blueprint' },
-  ]},
-  { id: 'site',  name: 'Site & exteriors', address: 'Parcel + parking + perimeter', floors: [
-    { id: 's-aerial', name: 'Aerial / satellite', deviceCount: 6, updated: '1w ago', source: 'satellite' },
-    { id: 's-perim',  name: 'Perimeter walk',     deviceCount: 3, updated: '2d ago', source: 'sketch' },
-  ]},
-];
+// M11 — FLOORS / SiteFloor / SiteBuilding / SITE_BUILDINGS removed
+// here: they were the seed for the dead MapsPanel below. The
+// canvas/types.ts + canvas/constants.ts already host the live
+// versions of those types and the seed.
 
 export function EngineeringCanvas() {
   const { projectId = 'p1' } = useParams();
@@ -1696,9 +1674,8 @@ export function EngineeringCanvas() {
   // generate a floor surface (scan with camera, upload, satellite trace,
   // or sketch from scratch).
   const [scanBuildOpen, setScanBuildOpen] = useState(false);
-  // Upload modal — independent of the MapsPanel's own importOpen so the
-  // "Add plan → Upload" flow can be triggered directly from the TopBar
-  // without forcing the user through the section nav.
+  // Upload modal — "Add plan → Upload" flow triggered directly from
+  // the TopBar without forcing the user through the section nav.
   const [canvasImportOpen, setCanvasImportOpen] = useState(false);
   // Project BOM drawer — right-side, opened from the TopBar BOM &
   // Estimate button. Renders per-source rows derived live from the
@@ -4195,188 +4172,10 @@ export function EngineeringCanvas() {
 // TopBar moved to canvas/chrome/TopBar.tsx (M11 monolith
 // breakup). Import at top of file.
 
-function MapsPanel({ onOpenScanBuild, onStartCalibrate }: { onOpenScanBuild?: () => void; onStartCalibrate?: () => void }) {
-  // SITE_BUILDINGS is the seed. The user can add new buildings and floors
-  // through this panel; both flows mutate local state so the additions show
-  // up immediately. (When the full site/building/floor store is wired up,
-  // this state moves there. For now the panel is self-contained but real.)
-  const [buildings, setBuildings] = useState<SiteBuilding[]>(SITE_BUILDINGS);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['bld-a', 'bld-c']));
-  const [activeFloor, setActiveFloor] = useState<string>('a-g');
-  const [addBuildingOpen, setAddBuildingOpen] = useState(false);
-  const [addFloorTo, setAddFloorTo] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const toggle = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const totalFloors = buildings.reduce((n, b) => n + b.floors.length, 0);
-  const sourceIcon = (s: SiteFloor['source']) => s === 'blueprint' ? FileText : s === 'satellite' ? MapIcon : PencilLine;
-  const sourceLabel = (s: SiteFloor['source']) => s === 'blueprint' ? 'Blueprint' : s === 'satellite' ? 'Satellite' : 'Sketch';
-
-  const handleAddBuilding = (name: string, address: string) => {
-    const id = `bld-${Date.now().toString(36).slice(-5)}`;
-    const groundId = `${id}-g`;
-    const newBuilding: SiteBuilding = {
-      id, name, address,
-      floors: [{ id: groundId, name: 'Ground floor', deviceCount: 0, updated: 'just now', source: 'blank' as any }],
-    };
-    setBuildings((bs) => [...bs, newBuilding]);
-    setExpanded((s) => { const n = new Set(s); n.add(id); return n; });
-    setActiveFloor(groundId);
-    toast.success(`Added building · ${name}`, { description: 'Default ground floor created. Open the floor to start placing devices.', duration: 4500 });
-  };
-
-  const handleAddFloor = (buildingId: string, name: string, source: SiteFloor['source']) => {
-    const fid = `${buildingId}-f${Date.now().toString(36).slice(-4)}`;
-    setBuildings((bs) => bs.map((b) =>
-      b.id === buildingId
-        ? { ...b, floors: [...b.floors, { id: fid, name, deviceCount: 0, updated: 'just now', source }] }
-        : b
-    ));
-    setActiveFloor(fid);
-    toast.success(`Added floor · ${name}`, { duration: 3500 });
-  };
-
-  return (
-    <div className="w-[360px] shrink-0 border-r border-border bg-card flex flex-col">
-      <div className="px-4 pt-4 pb-3 border-b border-border">
-        <div className="text-[13px] font-semibold tracking-tight">Maps</div>
-        <div className="text-[11px] text-muted-foreground mt-0.5">{buildings.length} buildings · {totalFloors} floor maps</div>
-      </div>
-
-      {/* Primary entry — Scan / Build Floorplan. The four-way workflow
-          (scan / upload / satellite / sketch) is the obvious first step
-          on any project, so it lives at the top of the Maps panel. */}
-      {onOpenScanBuild && (
-        <div className="px-3 pt-2 pb-1.5 border-b border-border">
-          <button
-            onClick={onOpenScanBuild}
-            data-track="maps-scan-build"
-            className="w-full inline-flex items-center justify-center gap-2 text-[12px] h-9 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_1px_2px_rgba(0,0,0,0.4)]"
-          >
-            <ScanLine className="w-3.5 h-3.5" /> Scan / Build Floorplan
-          </button>
-          <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
-            Camera scan · upload · satellite trace · sketch
-          </div>
-        </div>
-      )}
-
-      <div className="px-3 py-2 border-b border-border flex items-center gap-2">
-        <button
-          onClick={() => setAddBuildingOpen(true)}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 text-[11px] h-7 rounded-lg border border-border hover:bg-secondary/30 transition-colors"
-        >
-          <Plus className="w-3 h-3" /> Add building
-        </button>
-        <button
-          onClick={() => setImportOpen(true)}
-          className="inline-flex items-center justify-center gap-1.5 text-[11px] h-7 px-2.5 rounded-lg border border-border hover:bg-secondary/30 transition-colors"
-          title="Import a PNG, JPG, or PDF floorplan onto the active floor"
-        >
-          <Upload className="w-3 h-3" /> Import
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-auto">
-        {buildings.map((b) => {
-          const open = expanded.has(b.id);
-          const buildingDevices = b.floors.reduce((n, f) => n + f.deviceCount, 0);
-          return (
-            <div key={b.id} className="border-b border-border/50">
-              <button onClick={() => toggle(b.id)} className="w-full px-3 py-2.5 flex items-center gap-2.5 hover:bg-secondary/40 text-left">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                  <Layers className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-medium truncate">{b.name}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{b.address}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[10px] text-muted-foreground">{b.floors.length} floors</div>
-                  <div className="text-[10px] text-muted-foreground/70">{buildingDevices} devices</div>
-                </div>
-                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground ml-1 transition-transform ${open ? '' : '-rotate-90'}`} />
-              </button>
-
-              {open && (
-                <div className="pb-2">
-                  {b.floors.map((f, i) => {
-                    const active = activeFloor === f.id;
-                    const SrcIcon = sourceIcon(f.source);
-                    const isLast = i === b.floors.length - 1;
-                    return (
-                      <button
-                        key={f.id}
-                        onClick={() => setActiveFloor(f.id)}
-                        className={`w-full text-left pl-4 pr-3 py-2 flex items-center gap-2 transition-colors ${active ? 'bg-primary/8' : 'hover:bg-secondary/40'}`}
-                      >
-                        {/* Tree connector */}
-                        <div className="relative w-5 h-5 shrink-0">
-                          <div className={`absolute left-2 top-0 ${isLast ? 'h-1/2' : 'h-full'} w-px bg-border`} />
-                          <div className="absolute left-2 top-1/2 w-3 h-px bg-border" />
-                        </div>
-                        <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${active ? 'bg-primary text-primary-foreground' : 'bg-background border border-border text-muted-foreground'}`}>
-                          <SrcIcon className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[12px] flex items-center gap-1.5">
-                            <span className="truncate">{f.name}</span>
-                            {active && <span className="text-[9px] uppercase tracking-wide text-primary">on canvas</span>}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground truncate">{sourceLabel(f.source)} · {f.deviceCount} devices · {f.updated}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                  <div className="pl-9 pr-3 pt-1">
-                    <button
-                      onClick={() => setAddFloorTo(b.id)}
-                      className="text-[10px] text-primary hover:underline inline-flex items-center gap-1"
-                    >
-                      <Plus className="w-3 h-3" /> Add floor map to {b.name.split(' — ')[0]}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="px-4 py-2 border-t border-border text-[10px] text-muted-foreground flex items-center gap-1.5 bg-secondary/20">
-        <MapIcon className="w-3 h-3" /> Click a floor to load it onto the canvas
-      </div>
-
-      {addBuildingOpen && (
-        <AddBuildingDialog
-          onClose={() => setAddBuildingOpen(false)}
-          onSubmit={(name, address) => { handleAddBuilding(name, address); setAddBuildingOpen(false); }}
-        />
-      )}
-      {addFloorTo && (
-        <AddFloorDialog
-          buildingName={buildings.find((b) => b.id === addFloorTo)?.name ?? 'Building'}
-          onClose={() => setAddFloorTo(null)}
-          onSubmit={(name, source) => { handleAddFloor(addFloorTo, name, source); setAddFloorTo(null); }}
-        />
-      )}
-      {importOpen && (
-        <ImportFloorplanDialog
-          onClose={() => setImportOpen(false)}
-          onImported={() => setImportOpen(false)}
-          onStartCalibrate={() => {
-            // Hand the user straight into the in-canvas Calibrate tool
-            // right after they save the upload. Closing the modal first
-            // lets the tool-status banner read cleanly under TopBar.
-            // The parent passes the actual resetCalibrate + setTool
-            // handlers via `onStartCalibrate`; we just need to forward.
-            setImportOpen(false);
-            if (onStartCalibrate) onStartCalibrate();
-          }}
-        />
-      )}
-    </div>
-  );
-}
+// MapsPanel deleted in M11 — it was an experimental sidebar that
+// shipped only its own state and was never mounted on any route.
+// AddBuildingDialog / AddFloorDialog (extracted earlier to
+// canvas/dialogs/) stay available for a future site manager pass.
 
 /** Scan / Build Floorplan — the obvious four-way entry into capturing or
  *  generating a floor surface. The four options map to:
