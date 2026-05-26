@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "typecheck:gate": "node scripts/typecheck-gate.mjs",
     "audit:layout": "node scripts/audit-layout.mjs",
-    "verify": "npm run typecheck:gate && npm run audit:layout && npm run build"
+    "audit:runtime": "node scripts/audit-runtime.mjs",
+    "verify": "npm run typecheck:gate && npm run audit:layout && npm run build && npm run audit:runtime"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -77,6 +78,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "puppeteer": "^25.0.4",
     "tailwindcss": "4.1.12",
     "typescript": "5.6",
     "vite": "6.3.5"

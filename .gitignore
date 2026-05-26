@@ -15,3 +15,7 @@ node_modules/.package-lock.json
 .env
 .env.local
 .env.*.local
+
+# Runtime audit screenshots — regenerated on every `npm run verify`,
+# not deploy artefacts. Local visual record only.
+audit-runtime-shots/

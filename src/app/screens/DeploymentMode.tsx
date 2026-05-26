@@ -88,10 +88,30 @@ export function DeploymentMode() {
   // V1 2A.2 — broadcast deployment context to the AI Assistant. When
   // a work order is selected, the Assistant inherits it as scope.
   // Work order doubles as the "event" selection kind today.
+  //
+  // ROOT-CAUSE FIX (React error #185 / "Maximum update depth exceeded"
+  // / blank /deployment route): the previous dep array listed
+  // `workOrders` directly. `workOrders` is `useMemo(deriveWorkOrders,
+  // [state, projectId])` and `state = useProjectStore()` subscribes
+  // to the WHOLE store, so any store write (including this very
+  // setAssistantContext call) re-rendered this component, which
+  // produced a new `state` reference, which invalidated the
+  // useMemo, which yielded a new array identity for `workOrders`,
+  // which fired this effect again, which wrote setAssistantContext
+  // again, which re-rendered, loop.
+  //
+  // The fix is in the dep array: depend on the SELECTED work order's
+  // primitives (id + title) instead of the whole array. Adding a new
+  // unrelated work order to the list no longer re-fires this effect,
+  // and the store write inside the effect can no longer feed back
+  // into the effect's own dependencies. The whole-store subscription
+  // pattern (`useProjectStore()`) is still inefficient but it is no
+  // longer a crash because nothing on the effect's hot path depends
+  // on the whole-state reference.
   const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
   const deploymentSite = useProjectStore((s) => Object.values(s.sites).find((x) => x.projectId === projectId));
+  const selectedWo = selectedId ? workOrders.find((w) => w.id === selectedId) : undefined;
   useEffect(() => {
-    const selectedWo = selectedId ? workOrders.find((w) => w.id === selectedId) : undefined;
     setAssistantContext({
       surface: 'deployment',
       projectId,
@@ -101,7 +121,7 @@ export function DeploymentMode() {
       selectionId: selectedWo?.id,
       selectionLabel: selectedWo ? selectedWo.title : undefined,
     });
-  }, [setAssistantContext, projectId, deploymentSite?.id, deploymentSite?.name, selectedId, workOrders]);
+  }, [setAssistantContext, projectId, deploymentSite?.id, deploymentSite?.name, selectedWo?.id, selectedWo?.title]);
 
   // Default selection — first WO that isn't complete.
   useEffect(() => {

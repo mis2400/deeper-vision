@@ -53,11 +53,29 @@ type GateState =
   | { kind: 'ready' }
   | { kind: 'check-error'; message: string };
 
+/** Audit-only bypass. Set by scripts/audit-runtime.mjs via puppeteer's
+ *  `evaluateOnNewDocument` BEFORE the page loads. The flag is read once
+ *  at component init so the gate doesn't bounce to /login before the
+ *  audit can exercise the actual routes. Never set by production users;
+ *  ignored by every code path outside the gate itself. */
+function isAuditBypass(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage?.getItem('dv-audit-bypass') === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export function AuthGate({ children }: Props) {
   const navigate = useNavigate();
-  const [state, setState] = useState<GateState>({ kind: 'checking' });
+  const [state, setState] = useState<GateState>(() => (isAuditBypass() ? { kind: 'ready' } : { kind: 'checking' }));
 
   const evaluate = useCallback(async (signal?: { cancelled: boolean }) => {
+    if (isAuditBypass()) {
+      if (signal?.cancelled) return;
+      setState({ kind: 'ready' });
+      return;
+    }
     if (!supabaseConfigured) {
       if (signal?.cancelled) return;
       setState({ kind: 'no-session' });
@@ -98,6 +116,12 @@ export function AuthGate({ children }: Props) {
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (signal.cancelled) return;
+      // Audit bypass also suppresses the onAuthStateChange redirect.
+      // The default case below fires on INITIAL_SESSION when there's
+      // no real Supabase session, which would otherwise push the
+      // headless browser to /login even after evaluate() returned
+      // 'ready'.
+      if (isAuditBypass()) return;
       switch (event) {
         case 'SIGNED_OUT': {
           // Render the loading frame synchronously to avoid a one
