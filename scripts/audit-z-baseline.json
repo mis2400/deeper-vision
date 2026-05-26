@@ -1,4 +1,5 @@
 {
+  "src/app/canvas/chrome/BottomDeviceBar.tsx": 4,
   "src/app/canvas/chrome/CableTypePicker.tsx": 1,
   "src/app/canvas/chrome/CmdKOverlay.tsx": 1,
   "src/app/canvas/chrome/CoverageStatsPanel.tsx": 1,
@@ -66,7 +67,7 @@
   "src/app/screens/CustomerManager.tsx": 1,
   "src/app/screens/CustomerPortal.tsx": 2,
   "src/app/screens/DeploymentModeMobile.tsx": 1,
-  "src/app/screens/EngineeringCanvas.tsx": 19,
+  "src/app/screens/EngineeringCanvas.tsx": 15,
   "src/app/screens/LoginScreen.tsx": 1,
   "src/app/screens/ProposalBuilder.tsx": 3,
   "src/app/screens/ReportsCenter.tsx": 3,
