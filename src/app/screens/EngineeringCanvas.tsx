@@ -11379,10 +11379,15 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
             </text>
           </g>
         )}
-        {/* V3.6 selection ring → single cool accent. No longer
-            picks up category tone, so the only color signal in the
-            plan is "you have this device selected." */}
-        {selected && <circle r={10} fill="none" stroke="var(--primary)" strokeWidth="0.9" opacity="0.95" />}
+        {/* Selection state — solid primary ring + soft halo. Matches
+            the regular-device selection treatment so accessories and
+            point devices read consistently. */}
+        {selected && (
+          <>
+            <circle r={18} fill="var(--primary)" opacity="0.16" />
+            <circle r={13} fill="none" stroke="var(--primary)" strokeWidth="1.4" />
+          </>
+        )}
       </g>
     );
   }
@@ -11671,8 +11676,23 @@ function HardwareGlyph({ d, tone, selected, scale = 1 }: { d: Device; tone: stri
         </g>
       )}
 
-      {/* Selection ring */}
-      {selected && <circle r={15} fill="none" stroke={tone} strokeWidth="1.5" strokeDasharray="3 2" />}
+      {/* Selection ring — M11 redesign. Was a dashed tone-colored
+          circle that read as in-progress geometry, not a deliberate
+          selection state. New treatment:
+            - solid ring at 1.5 px in --primary (theme blue) so the
+              ring stands out from the device's own tone
+            - 17 px radius gives a touch of breathing room between
+              ring and glyph (was 15 px)
+            - soft halo at 24 px in primary at 0.18 alpha so the
+              eye lands on the selected device first
+          The halo reads as ambient focus light, the ring as the
+          actual selection state. Both theme-paired via --primary. */}
+      {selected && (
+        <>
+          <circle r={24} fill="var(--primary)" opacity="0.16" />
+          <circle r={17} fill="none" stroke="var(--primary)" strokeWidth="1.6" />
+        </>
+      )}
     </g>
   );
 }
