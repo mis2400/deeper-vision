@@ -19340,27 +19340,28 @@ function StatusBar({ tool, zoom, counts, units }: { tool: Tool; zoom: number; co
   // selectors).
   return (
     <div
-      className="absolute left-1/2 -translate-x-1/2 top-4 z-20 inline-flex items-center gap-2 px-3 h-7 rounded-full bg-card border border-border text-[11px] text-foreground shadow-[0_6px_18px_-10px_rgba(0,0,0,0.5)]"
+      className="absolute left-1/2 -translate-x-1/2 top-4 z-20 inline-flex items-center gap-3 px-3.5 h-8 rounded-full bg-card border border-border text-foreground"
       data-canvas-chrome="topbar-status"
+      style={{ fontSize: 'var(--chrome-sm)', boxShadow: 'var(--shadow-flat)' }}
     >
-      <span className="inline-flex items-center gap-1.5 text-primary">
-        <span className="w-2 h-2 rounded-full bg-primary" aria-hidden />
+      <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: 'var(--primary)' }}>
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--primary)' }} aria-hidden />
         {toolLabel}
       </span>
-      <span className="w-px h-3 bg-border" />
-      <span>1 in = 10 {units}</span>
-      <span className="w-px h-3 bg-border" />
-      <span className="inline-flex items-center gap-2 tabular-nums" data-testid="status-counts">
-        <span className="inline-flex items-center gap-1" title="Cameras">
-          <span className="w-2 h-2 rounded-full" style={{ background: KIND_TONE.camera }} aria-hidden />
+      <span aria-hidden style={{ width: '1px', height: '12px', background: 'var(--border)' }} />
+      <span style={{ color: 'var(--muted-foreground)' }}>1 in = 10 {units}</span>
+      <span aria-hidden style={{ width: '1px', height: '12px', background: 'var(--border)' }} />
+      <span className="inline-flex items-center gap-2.5 tabular-nums" data-testid="status-counts">
+        <span className="inline-flex items-center gap-1.5 font-medium" title="Cameras">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: KIND_TONE.camera }} aria-hidden />
           {counts.camera}
         </span>
-        <span className="inline-flex items-center gap-1" title="Access">
-          <span className="w-2 h-2 rounded-full" style={{ background: KIND_TONE.access }} aria-hidden />
+        <span className="inline-flex items-center gap-1.5 font-medium" title="Access">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: KIND_TONE.access }} aria-hidden />
           {counts.access}
         </span>
-        <span className="inline-flex items-center gap-1" title="Network">
-          <span className="w-2 h-2 rounded-full" style={{ background: KIND_TONE.network }} aria-hidden />
+        <span className="inline-flex items-center gap-1.5 font-medium" title="Network">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: KIND_TONE.network }} aria-hidden />
           {counts.network}
         </span>
       </span>
