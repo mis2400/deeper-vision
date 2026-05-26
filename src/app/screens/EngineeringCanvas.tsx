@@ -3747,9 +3747,17 @@ export function EngineeringCanvas() {
                 clear. The PathwayDrawer follows the same anchor. The
                 panel caps at 56 vh to keep the canvas visible behind
                 it. */}
+            {/* Audit follow-up — panel position. Left edge was at left-3
+                (12 px from canvas left) which sat UNDER the left tool
+                rail at left-3 with width ~44 px, clipping the panel
+                title. Right edge at right-3 ran into the floor-badge
+                strip also at right-3 (width ~44 px). Anchored now to
+                left-[72px] (clears the left rail), right-[60px] (clears
+                the floor-badge), and bottom-[68px] (still sits above
+                the bottom toolbar). */}
             {sel && (
               <div
-                className="absolute left-3 right-3 z-30 pointer-events-auto"
+                className="absolute left-[72px] right-[60px] z-30 pointer-events-auto"
                 style={{ bottom: '68px' }}
               >
                 <CanvasErrorBoundary label="EditDrawer">
@@ -3776,7 +3784,7 @@ export function EngineeringCanvas() {
             )}
             {selPathwayId && (
               <div
-                className="absolute left-3 right-3 z-30 pointer-events-auto"
+                className="absolute left-[72px] right-[60px] z-30 pointer-events-auto"
                 style={{ bottom: '68px' }}
               >
                 <PathwayDrawer
@@ -3999,9 +4007,13 @@ export function EngineeringCanvas() {
             )}
 
             {/* Floating Add FAB — the canvas-side entry into the device
-                library. When the dock is collapsed (the new default) this
-                is the obvious place to click to plot a device. When the
-                dock is already open it stays out of the way. */}
+                library. Audit follow-up: was at `bottom-20 right-5` which
+                overlapped the floor badge (right-3 / w=44) and the new
+                docked edit panel. Moved to `top-[120px] right-3` so it
+                sits cleanly in the cleared right-side space (intel rail
+                moved away in Group C.5), under the Overview button, and
+                clear of the floor badge, DV Assist trigger, and the
+                docked edit panel — at every panel height. */}
             {viewMode !== 'canvas' && (dockCollapsed || viewMode === 'field') && (
               <button
                 onClick={() => {
@@ -4011,7 +4023,7 @@ export function EngineeringCanvas() {
                 }}
                 data-track="canvas-add-fab"
                 title="Add device · open library"
-                className="absolute z-30 bottom-20 right-5 h-12 w-12 rounded-full hidden md:flex items-center justify-center text-white bg-primary hover:bg-primary/90 transition-colors shadow-[0_2px_4px_-1px_rgba(0,0,0,0.18),0_12px_28px_-12px_rgba(0,0,0,0.45)] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                className="absolute z-30 top-[120px] right-3 h-12 w-12 rounded-full hidden md:flex items-center justify-center text-white bg-primary hover:bg-primary/90 transition-colors shadow-[0_2px_4px_-1px_rgba(0,0,0,0.18),0_12px_28px_-12px_rgba(0,0,0,0.45)] focus:outline-none focus:ring-2 focus:ring-primary/40"
               >
                 <Plus className="w-5 h-5" strokeWidth={2.2} />
               </button>
@@ -12746,6 +12758,50 @@ function Row({ label, value, tone }: { label: string; value: any; tone?: string 
   );
 }
 
+/** Audit follow-up — inline number chip for the docked drawer's
+ *  collapsed strip. Renders as a small label + numeric input pair.
+ *  Click into the input to type a value; arrow keys step. The
+ *  parent's onChange clamps to a valid range. Used for camera
+ *  rotation / FOV / range so the operator can adjust the primary
+ *  coverage levers without expanding the inspector. */
+function InlineNumberChip({ label, value, unit, onChange, step = 1 }: {
+  label: string;
+  value: number;
+  unit: string;
+  onChange: (next: number) => void;
+  step?: number;
+}) {
+  const [draft, setDraft] = useState(String(Math.round(value)));
+  useEffect(() => { setDraft(String(Math.round(value))); }, [value]);
+  const commit = () => {
+    const n = parseFloat(draft);
+    if (Number.isFinite(n)) onChange(Math.round(n));
+    else setDraft(String(Math.round(value)));
+  };
+  return (
+    <label
+      className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-card text-[11px] text-foreground whitespace-nowrap"
+      title={`${label}: drag handle on canvas or type here. ${step}-unit steps with arrow keys.`}
+    >
+      <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">{label}</span>
+      <input
+        type="number"
+        value={draft}
+        step={step}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { commit(); (e.target as HTMLInputElement).blur(); }
+          if (e.key === 'Escape') { setDraft(String(Math.round(value))); (e.target as HTMLInputElement).blur(); }
+        }}
+        className="w-10 bg-transparent text-right tabular-nums focus:outline-none"
+        data-testid={`inline-${label.toLowerCase()}`}
+      />
+      <span className="text-[10px] text-muted-foreground">{unit}</span>
+    </label>
+  );
+}
+
 function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-6">
@@ -15225,7 +15281,15 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
          the chevron) grows upward to 56 vh and reveals the full
          scrollable inspector body. The compact mode keeps the
          canvas fully visible until the operator opts into details. */
-      className={`w-full ${expanded ? 'max-h-[56vh]' : 'max-h-[72px]'} flex flex-col rounded-2xl border shadow-[0_22px_48px_-18px_rgba(0,0,0,0.65)] overflow-hidden`}
+      /* Audit follow-up — expanded cap. Was 56 vh which on a 786 px
+         viewport hauls 440 px of panel up over the canvas, leaving only
+         a sliver of plan visible. Capped to 360 px so the plan stays
+         clearly visible above when the operator expands; the body
+         scrolls inside the panel for sections that don't fit. Collapsed
+         strip now sits at 88 px so the inline primary control row
+         (rotation / FOV / range chips, color swatch, expand toggle)
+         can render under the identity row. */
+      className={`w-full ${expanded ? 'max-h-[360px]' : 'max-h-[88px]'} flex flex-col rounded-2xl border shadow-[0_22px_48px_-18px_rgba(0,0,0,0.65)] overflow-hidden`}
       style={{
         background: 'var(--drawer-background)',
         color: 'var(--drawer-foreground)',
@@ -15235,13 +15299,97 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
         transitionTimingFunction: 'var(--ease-out)',
       }}
     >
-      {/* Drawer header — V3.3 Phase A.
-            Top row: capability dot + kind label + status pill + close.
-            Body:    headline name (large), supporting metadata line
-                     (mfr · model · floor · room) reading like an
-                     engineering artifact, not a debug record.
-          Click-outside intentionally does NOT close the drawer; only
-          the X button or Esc dismiss. Selection persists either way. */}
+      {/* Audit follow-up — header adapts to collapsed/expanded.
+            COLLAPSED: a single horizontal strip showing identity +
+                       primary edit controls inline (rotation, FOV,
+                       range for cameras; just identity for other
+                       types) + expand toggle + close. Fits in 88 px.
+            EXPANDED:  full V3.3 header with kind row + headline +
+                       metadata line, then tab strip + scrollable body.
+          The expand chevron toggles between the two. */}
+      {!expanded ? (
+        <div className="px-3 py-2 border-b border-border/40 flex items-center gap-3 h-[68px]">
+          <div className="inline-flex items-center gap-2 min-w-0 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tone }} />
+            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground whitespace-nowrap">{labelForKind(kind)}</span>
+          </div>
+          <div className="font-semibold tracking-tight text-foreground truncate text-[14px] min-w-0 max-w-[200px]" title={headlineName}>{headlineName}</div>
+          {/* Primary inline controls — only for cameras (rot / fov /
+              range). Other device kinds get a quieter identity chip
+              row. Numbers are click-to-step (down 5° / up 5° on
+              shift-click, default 1° step). For drag editing, expand. */}
+          {kind === 'camera' && d.type !== 'cam.multisensor' && d.type !== 'cam.fisheye' && (
+            <div className="inline-flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
+              <InlineNumberChip
+                label="Rot"
+                value={d.rot ?? 0}
+                unit="°"
+                onChange={(v) => onUpdate({ rot: ((v % 360) + 360) % 360 })}
+                step={5}
+              />
+              <InlineNumberChip
+                label="FOV"
+                value={d.fov ?? (d.type === 'cam.ptz' ? 36 : 70)}
+                unit="°"
+                onChange={(v) => onUpdate({ fov: Math.max(10, Math.min(360, v)) })}
+                step={5}
+              />
+              <InlineNumberChip
+                label="Range"
+                value={d.range ?? (d.type === 'cam.ptz' ? 44 : d.type === 'cam.bullet' ? 50 : 30)}
+                unit="ft"
+                onChange={(v) => onUpdate({ range: Math.max(5, Math.min(150, v)) })}
+                step={5}
+              />
+            </div>
+          )}
+          {kind === 'camera' && d.type === 'cam.multisensor' && (
+            <div className="inline-flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden text-[11px] text-muted-foreground">
+              <span>Multisensor · 4 lenses</span>
+              <span className="opacity-50">·</span>
+              <span>Expand to edit per lens</span>
+            </div>
+          )}
+          {kind !== 'camera' && product && (
+            <div className="inline-flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden text-[11px] text-muted-foreground">
+              <span className="truncate">{productLabel(product, d.id)}</span>
+              {drawerFloor && (<><span className="opacity-50">·</span><span className="truncate">{drawerFloor.name}</span></>)}
+              {drawerRoom && (<><span className="opacity-50">·</span><span className="truncate">{drawerRoom.name}</span></>)}
+            </div>
+          )}
+          <div className="inline-flex items-center gap-1 shrink-0 ml-auto">
+            {statusBadge && (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.10em] px-1.5 py-0.5 rounded-full border"
+                style={{ color: statusBadge.tone, borderColor: `${statusBadge.tone}55`, background: `${statusBadge.tone}14` }}
+                data-testid="drawer-status-pill"
+              >
+                <span className="w-1 h-1 rounded-full" style={{ background: statusBadge.tone }} />
+                {statusBadge.label}
+              </span>
+            )}
+            {onToggleExpanded && (
+              <button
+                onClick={onToggleExpanded}
+                className="p-1.5 rounded-md hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
+                title="Expand inspector"
+                data-testid="drawer-expand-toggle"
+                aria-expanded={false}
+              >
+                <ChevronDown className="w-4 h-4 rotate-180" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-md hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
+              title="Close inspector (Esc)"
+              data-testid="drawer-close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className="px-5 pt-5 pb-4 border-b border-border/40">
         <div className="flex items-center justify-between gap-3 mb-2">
           <div className="inline-flex items-center gap-2 min-w-0">
@@ -15263,24 +15411,15 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
                 {statusBadge.label}
               </span>
             )}
-            {/* V3.6 Part B follow-up: the item color picker moved out
-                of this drawer header onto the SelectionPill (next to
-                Edit). One obvious entry point for item color; the
-                drawer header no longer duplicates it. */}
-            {/* Audit Group C.6 — expand / collapse chevron. Compact
-                drawer shows only the identity strip + tab icons;
-                clicking the chevron grows the drawer upward to its
-                full inspector body. Chevron points up when collapsed
-                (suggests "lift this up") and down when expanded. */}
             {onToggleExpanded && (
               <button
                 onClick={onToggleExpanded}
                 className="p-1.5 rounded-md hover:bg-secondary/40 text-muted-foreground hover:text-foreground transition-colors"
-                title={expanded ? 'Collapse inspector' : 'Expand inspector'}
+                title="Collapse inspector"
                 data-testid="drawer-expand-toggle"
-                aria-expanded={!!expanded}
+                aria-expanded={true}
               >
-                <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? '' : 'rotate-180'}`} />
+                <ChevronDown className="w-4 h-4" />
               </button>
             )}
             <button
@@ -15324,6 +15463,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           )}
         </div>
       </div>
+      )}
 
       {/* Item 4 + Audit Group B.3 — compact icon row replaces the old
           3 col tab grid. One section visible at a time (accordion
@@ -15334,6 +15474,7 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           own line above the icon strip, full width, no competition
           for horizontal space; the strip beneath scrolls when the
           per-device tab count exceeds the drawer width. */}
+      {expanded && (
       <div className="px-3 pt-2 pb-1 border-b border-border/40">
         <div className="text-[11px] font-medium text-foreground tracking-tight mb-1.5">
           {(() => {
@@ -15371,7 +15512,10 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
           })}
         </div>
       </div>
+      )}
 
+      {expanded && (
+      <>
       {/* Tab body. Each section renders when its tab group is active —
           so Coverage shows Lens + AI + Telemetry together, Power & Network
           shows Power + Network together, Compatibility shows Compliance +
@@ -16015,6 +16159,8 @@ function EditDrawer({ d, open, tab, setTab, onClose, onUpdate, activeLens, setAc
             Files (AttachmentPanel) replaces Media; History returns
             with the per-object audit log. */}
       </div>
+      </>
+      )}
     </div>
   );
 }
