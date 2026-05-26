@@ -1,5 +1,6 @@
 {
   "src/app/canvas/chrome/StatusBar.tsx": 1,
+  "src/app/canvas/components/CanvasErrorBoundary.tsx": 1,
   "src/app/components/AppShell.tsx": 3,
   "src/app/components/BrandWatermark.tsx": 1,
   "src/app/components/CommissionSheet.tsx": 1,
@@ -43,7 +44,7 @@
   "src/app/screens/CustomerManager.tsx": 1,
   "src/app/screens/CustomerPortal.tsx": 2,
   "src/app/screens/DeploymentModeMobile.tsx": 1,
-  "src/app/screens/EngineeringCanvas.tsx": 68,
+  "src/app/screens/EngineeringCanvas.tsx": 67,
   "src/app/screens/LoginScreen.tsx": 1,
   "src/app/screens/ProposalBuilder.tsx": 3,
   "src/app/screens/ReportsCenter.tsx": 3,
