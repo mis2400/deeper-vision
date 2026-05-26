@@ -1,4 +1,5 @@
 {
+  "src/app/canvas/chrome/CmdKOverlay.tsx": 7,
   "src/app/canvas/chrome/MiniMap.tsx": 1,
   "src/app/canvas/chrome/MiniMapFloorStrip.tsx": 1,
   "src/app/canvas/chrome/SelectionMenu.tsx": 1,
@@ -63,7 +64,7 @@
   "src/app/screens/DeploymentModeMobile.tsx": 36,
   "src/app/screens/DeviceLibrary.tsx": 5,
   "src/app/screens/DoorEngineering.tsx": 18,
-  "src/app/screens/EngineeringCanvas.tsx": 735,
+  "src/app/screens/EngineeringCanvas.tsx": 728,
   "src/app/screens/EstimatorView.tsx": 5,
   "src/app/screens/FlowView.tsx": 7,
   "src/app/screens/KnowledgeBase.tsx": 4,
