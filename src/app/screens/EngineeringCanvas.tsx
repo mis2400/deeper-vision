@@ -1955,12 +1955,6 @@ export function EngineeringCanvas() {
   // where the pointer landed at pointerdown and is never written
   // anywhere else.
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-  // M6 — set to true the moment an HTML5 drop completes a placement.
-  // The legacy pointer-event drop handler (line ~2559) checks this ref
-  // on every pointerup and bails when it's set, so we never double
-  // place when both pipelines see the same release. Reset on the next
-  // microtask so the next drag is unaffected.
-  const htmlDropConsumedRef = useRef(false);
   // M6 — while an HTML5 drag is in flight the browser is rendering its
   // own native ghost. The legacy React ghost div suppresses itself
   // while this is true so two ghosts don't race. Set on dragstart from
@@ -2588,14 +2582,6 @@ export function EngineeringCanvas() {
       });
     };
     const onUp = (e: PointerEvent) => {
-      // M6 — HTML5 onDrop on the canvas SVG runs BEFORE this window
-      // pointerup. When it ran and consumed the drop, neutralise this
-      // legacy path so the device isn't placed twice.
-      if (htmlDropConsumedRef.current) {
-        htmlDropConsumedRef.current = false;
-        setDrag(null); setHoverHost(null); dragStartRef.current = null;
-        return;
-      }
       const r = surfaceRef.current?.getBoundingClientRect();
       if (!r || !drag) { setDrag(null); setHoverHost(null); dragStartRef.current = null; return; }
       // Short release without meaningful drag → arm placement instead of
@@ -2616,239 +2602,14 @@ export function EngineeringCanvas() {
         });
         return;
       }
-      dragStartRef.current = null;
-      // ── Drop on a host? ──
-      // Compute the host SYNCHRONOUSLY from the pointerup coords + the
-      // live devices array. hoverHost (React state set by pointermove)
-      // can lag: the move handler may not have flushed for the final
-      // cursor position, leading to the prior bug where a tray drop
-      // directly over a door created a loose accessory device. The
-      // pure helper bypasses that race entirely.
-      const dropHost = findHostUnderPointer(e.clientX, e.clientY, r, pan, zoom, devices, drag.product.type);
-      if (dropHost) {
-        const { host, hostKind, compat } = dropHost;
-        if (!compat.allowed) {
-          toast.warning(compat.reason ?? 'Not compatible with that host', {
-            description: compat.hint,
-            duration: 6500,
-          });
-          setDrag(null); setHoverHost(null);
-          return;
-        }
-        // Door host: drop the dropped product directly into the door's
-        // persisted doorAssembly[] instead of spawning a ghost accessory
-        // device. The door becomes one system element; the dropped
-        // product is consumed (no separate device created). ALSO clear
-        // any legacy stack/linkedIds on the door so old data doesn't
-        // surface as the "Legacy stack" panel ever again. If the dropped
-        // product doesn't map onto a known DoorHardware slot we REJECT
-        // the drop — no fallthrough to legacy stack[] for doors.
-        if (hostKind === 'door') {
-          const hw = productTypeToDoorHardware(drag.product.type);
-          if (!hw) {
-            toast.warning(`${drag.product.model} isn't door hardware`, {
-              description: 'Drop it on the canvas instead, or attach to an IDF / rack.',
-              duration: 5000,
-            });
-            setDrag(null); setHoverHost(null);
-            return;
-          }
-          const cur = (host.doorAssembly ?? []) as DoorHardware[];
-          const next = cur.includes(hw) ? cur : [...cur, hw];
-          // New hardware defaults to 'proposed' (it's a designer dropping
-          // a fresh piece into the schedule). The user can flip it to
-          // 'existing' from the Hardware assembly section if it's
-          // already-installed gear we're documenting.
-          const curState = ((host as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
-          const nextState = cur.includes(hw) ? curState : { ...curState, [hw]: 'proposed' as const };
-          setDevices((ds) => ds.map((d) => d.id === host.id ? { ...d, doorAssembly: next, doorAssemblyState: nextState, stack: undefined, linkedIds: undefined } : d));
-          setSelId(host.id);
-          setSelPathwayId(null);
-          toast.success(`Added ${hw} to ${host.id}`, {
-            description: hw === 'maglock' ? 'Maglocks require a REX for code-compliant egress.' : 'Door assembly updated. Marked as Proposed by default — flip to Existing in the inspector if it\'s already there.',
-            duration: 4500,
-          });
-          setDrag(null); setHoverHost(null);
-          return;
-        }
-        const kind = TYPE_KIND[drag.product.type];
-        // Door / opening types get the DR prefix regardless of TYPE_KIND
-        // (which maps them under infrastructure → NW). Mirrors the
-        // placeProductAt (click-to-arm) path so both placement flows
-        // produce the same id shape.
-        const dropType = drag.product.type as string;
-        const isOpening = dropType.startsWith('inf.door')
-          || dropType.startsWith('inf.gate')
-          || dropType.startsWith('inf.storefront')
-          || dropType.startsWith('inf.doubledoor');
-        const prefix = isOpening
-          ? 'DR'
-          : kind === 'camera'
-            ? 'CAM'
-            : kind === 'access'
-              ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR')
-              : 'NW';
-        const cohortCount = isOpening
-          ? devices.filter((d) => {
-              const t = d.type as string;
-              return t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
-            }).length
-          : devices.filter((d) => TYPE_KIND[d.type] === kind).length;
-        const id = `${prefix}-${100 + cohortCount + 1}`;
-        // Offset the new device just outside the host so both glyphs are
-        // visible. 22px adjacent to the host center reads as "attached".
-        // When attaching to a stackable host (door / gate / elevator), the
-        // child device becomes part of the host's `stack[]` — drawn as a tiny
-        // count chip on the host glyph and listed in the inspector. The
-        // older `linkedIds` channel is still populated so any existing
-        // consumer (BOM, AI) keeps working.
-        const isStackDrop = isStackableHost(host.type) && isStackAccessory(drag.product.type);
-        const newDevice: Device = {
-          id, type: drag.product.type, label: drag.product.model, product: drag.product.id,
-          x: host.x + 22, y: host.y, rot: 0,
-          linkedIds: [host.id],
-        };
-        setDevices((ds) => ds.map((d) => d.id === host.id
-          ? {
-              ...d,
-              linkedIds: [...(d.linkedIds ?? []), id],
-              stack: isStackDrop ? [...(d.stack ?? []), id] : d.stack,
-            }
-          : d).concat(newDevice));
-        setSelId(id);
-        toast.success(`Attached ${drag.product.model} to ${host.id}`, {
-          description: compat.reason ? undefined : 'Linked and added to BOM',
-          duration: 3500,
-        });
-        if (drag.product.type === 'acc.maglock') {
-          // canHost flagged the maglock → REX dependency. Surface it.
-          toast.message('Heads up', {
-            description: 'A REX (request-to-exit) is required when using a maglock for fire-egress compliance.',
-            duration: 6000,
-          });
-        }
-        setDrag(null); setHoverHost(null);
-        return;
-      }
-      // ── Normal floor drop ──
-      // Canvas V2 Pass 1.7 — door hardware can no longer orphan on the
-      // floor. If the dropped product maps onto a DoorHardware slot
-      // (strike, maglock, rex, dps, reader, keypad, biometric) AND no
-      // door was within HOST_RANGE at drop time, we look for the
-      // nearest door within a generous 120 unit fallback range. If
-      // one exists, route to it. If none exists, reject the drop with
-      // an honest prompt instead of silently creating a floating
-      // accessory device that pollutes the BOM.
-      {
-        const droppedHw = productTypeToDoorHardware(drag.product.type);
-        if (droppedHw) {
-          const cx = (e.clientX - r.left - pan.x) / zoom;
-          const cy = (e.clientY - r.top  - pan.y) / zoom;
-          let bestDoor: { dev: Device; d: number } | null = null;
-          for (const dev of devices) {
-            if (!isStackableHost(dev.type)) continue;
-            const d = Math.hypot(dev.x - cx, dev.y - cy);
-            if (d <= 120 && (!bestDoor || d < bestDoor.d)) bestDoor = { dev, d };
-          }
-          if (bestDoor) {
-            // Auto attach to the nearest door inside the fallback range.
-            const host = bestDoor.dev;
-            const cur = (host.doorAssembly ?? []) as DoorHardware[];
-            const next = cur.includes(droppedHw) ? cur : [...cur, droppedHw];
-            const curState = ((host as any).doorAssemblyState ?? {}) as Partial<Record<DoorHardware, 'proposed' | 'existing'>>;
-            const nextState = cur.includes(droppedHw) ? curState : { ...curState, [droppedHw]: 'proposed' as const };
-            setDevices((ds) => ds.map((dd) => dd.id === host.id ? { ...dd, doorAssembly: next, doorAssemblyState: nextState, stack: undefined, linkedIds: undefined } : dd));
-            setSelId(host.id);
-            setSelPathwayId(null);
-            toast.success(`Attached ${droppedHw} to ${host.id}`, {
-              description: `Snapped to nearest door (${Math.round(bestDoor.d)} units away). Drag closer next time to skip the fallback.`,
-              duration: 4500,
-            });
-            setDrag(null); setHoverHost(null);
-            return;
-          }
-          // No door anywhere reasonable. Refuse the drop honestly.
-          toast.error(`${droppedHw} needs to attach to a door`, {
-            description: 'Drag it onto a door on the plan. No door nearby was found — place a door first or drop closer to one.',
-            duration: 6000,
-          });
-          setDrag(null); setHoverHost(null);
-          return;
-        }
-      }
-      const rawX = (e.clientX - r.left - pan.x) / zoom;
-      const rawY = (e.clientY - r.top  - pan.y) / zoom;
-      const x = snap ? Math.round(rawX / 20) * 20 : rawX;
-      const y = snap ? Math.round(rawY / 20) * 20 : rawY;
-      const kind = TYPE_KIND[drag.product.type];
-      // Door / opening types get the DR prefix regardless of TYPE_KIND
-      // (which buckets them as infrastructure → NW). Mirrors the
-      // placeProductAt (click-to-arm) path so both placement flows
-      // produce the same id shape.
-      const dropType = drag.product.type as string;
-      const isOpening = dropType.startsWith('inf.door')
-        || dropType.startsWith('inf.gate')
-        || dropType.startsWith('inf.storefront')
-        || dropType.startsWith('inf.doubledoor');
-      const prefix = isOpening
-        ? 'DR'
-        : kind === 'camera'
-          ? 'CAM'
-          : kind === 'access'
-            ? (drag.product.type === 'acc.reader' ? 'RD' : 'DR')
-            : 'NW';
-      // Cable accessory? The product id of a cable-tray accessory
-      // starts with `cabacc-`; we surface a friendlier prefix and
-      // try to auto-attach to the nearest pathway within 60 plan
-      // units so the user gets immediate context.
-      const isCableAcc = String(drag.product.id ?? '').startsWith('cabacc-');
-      const accKind = isCableAcc ? (String(drag.product.id).split('-')[1] as any) : undefined;
-      const cohortCount = isOpening
-        ? devices.filter((d) => {
-            const t = d.type as string;
-            return t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
-          }).length
-        : devices.filter((d) => TYPE_KIND[d.type] === kind).length;
-      const id = isCableAcc
-        ? `${(accKind ?? 'ACC').toString().toUpperCase()}-${100 + devices.filter((d) => (d as any).accessoryKind).length + 1}`
-        : `${prefix}-${100 + cohortCount + 1}`;
-      // Find nearest pathway midpoint within 60 units for cable accessories.
-      // Patch panels are explicitly skipped here — they belong on an IDF
-      // host, not on a pathway. The user can drag them onto the IDF/rack
-      // for the existing stack-attach flow.
-      let attachedPathwayId: string | undefined;
-      const isPatchPanel = accKind === 'pp24' || accKind === 'pp48' || accKind === 'pp-fiber';
-      if (isCableAcc && !isPatchPanel) {
-        const allP = (Object.values(useProjectStore.getState().pathways) as any[]).filter((p) => p.projectId === (projectId ?? 'p1'));
-        let best: { id: string; d: number } | null = null;
-        for (const p of allP) {
-          const pts = p.points ?? [];
-          if (pts.length < 2) continue;
-          // Distance from the drop point to the polyline midpoint.
-          const mid = { x: (pts[0].x + pts[pts.length - 1].x) / 2, y: (pts[0].y + pts[pts.length - 1].y) / 2 };
-          const d = Math.hypot(mid.x - x, mid.y - y);
-          if (d < 60 && (!best || d < best.d)) best = { id: p.id, d };
-        }
-        if (best) {
-          attachedPathwayId = best.id;
-          // Increment the pathway's accessory tally so BOM rolls it up.
-          const ap = (useProjectStore.getState().pathways as any)[best.id];
-          if (ap) {
-            const next = { ...(ap.accessories ?? {}), [accKind ?? 'jack']: (ap.accessories?.[accKind ?? 'jack'] ?? 0) + 1 };
-            useProjectStore.getState().updatePathway(best.id, { accessories: next } as any);
-          }
-          toast.success(`Attached · ${drag.product.model} → ${best.id}`, { duration: 3500 });
-        }
-      }
-      const newDevice: Device = {
-        id, type: drag.product.type,
-        label: drag.product.model, product: drag.product.id,
-        x, y, rot: 0,
-        ...(isCableAcc ? { accessoryKind: accKind, attachedPathwayId } : {}),
-      } as Device;
-      setDevices((ds) => [...ds, newDevice]);
-      setSelId(id);
-      setDrag(null); setHoverHost(null);
+      // M6 cleanup — the legacy pointer-event PLACEMENT path is gone.
+      // HTML5 drag and drop (canvas/interaction/dragDrop.ts) is the only
+      // path that creates devices on the canvas, including host
+      // attachment. This onUp now ONLY handles the arm-to-click case
+      // above; a "real" pointer drag (>= 8 px movement) just clears
+      // the legacy drag state so the React ghost goes away. The drop
+      // itself was already consumed by the SVG-level onDrop.
+      setDrag(null); setHoverHost(null); dragStartRef.current = null;
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -3252,9 +3013,10 @@ export function EngineeringCanvas() {
                 // append to that host's assembly or place a fresh device.
                 const product = PRODUCTS_BY_ID.get(productId);
                 if (!product) return;
-                // Flag the legacy pointer-event drop handler so it
-                // doesn't fire a duplicate placement on the same release.
-                htmlDropConsumedRef.current = true;
+                // Legacy pointer-event drag state may still be set if
+                // the user pointer-downed on a tray button before the
+                // browser switched to HTML5 drag. Clear it so the
+                // React ghost doesn't linger after drop.
                 setDrag(null);
                 setHoverHost(null);
                 dragStartRef.current = null;
