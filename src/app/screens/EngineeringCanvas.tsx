@@ -8354,6 +8354,36 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         <clipPath id="canvas-bounds-clip" clipPathUnits="userSpaceOnUse">
           <rect x="0" y="0" width="100%" height="100%" />
         </clipPath>
+        {/* Audit follow-up — master plan clip. Every camera-coverage
+            element — fill, outline stroke, decorative arcs, DORI band
+            rings, edge strokes, labels — must clip to the floorplan
+            rectangle. The per-camera clipPaths already do this for the
+            cone fill polygons. This master clip is a defensive second
+            layer wrapping the WHOLE coverage group, so any new
+            decoration added later (or any future per-camera clipPath
+            quirk) still cannot paint into the exterior. The path
+            below is the same M 80 80 L 720 80 ... rect every per-
+            camera clip uses, anchored to user space. */}
+        <clipPath id="master-plan-coverage-clip" clipPathUnits="userSpaceOnUse">
+          {(() => {
+            const planBounds = (floorBackground && floorBackground.naturalWidth && floorBackground.naturalHeight)
+              ? {
+                  x: floorBackground.x,
+                  y: floorBackground.y,
+                  w: floorBackground.naturalWidth * (floorBackground.scale ?? 1),
+                  h: floorBackground.naturalHeight * (floorBackground.scale ?? 1),
+                }
+              : { x: 80, y: 80, w: 640, h: 480 };
+            return (
+              <rect
+                x={planBounds.x}
+                y={planBounds.y}
+                width={planBounds.w}
+                height={planBounds.h}
+              />
+            );
+          })()}
+        </clipPath>
       </defs>
 
       {/* Canvas backdrop — grid lattice, soft vignette, and a high-
@@ -8520,7 +8550,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                 }
               : { x: 80, y: 80, w: 640, h: 480 };
           return (
-        <g style={{ mixBlendMode: coverageMode === 'heatmap' ? 'screen' : 'normal' }}>
+        <g style={{ mixBlendMode: coverageMode === 'heatmap' ? 'screen' : 'normal' }} clipPath="url(#master-plan-coverage-clip)">
           {renderedDevices.filter((d) => TYPE_KIND[d.type] === 'camera').map((d) => {
             const isSel = d.id === selId;
             if (!layers.fov && !isSel) return null;
@@ -8591,7 +8621,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           // the plan rectangle.
           const planMarginPx = 0;
           return (
-          <g pointerEvents="none">
+          <g pointerEvents="none" clipPath="url(#master-plan-coverage-clip)">
             {renderedDevices.map((d) => {
               if (TYPE_KIND[d.type] === 'camera') return null;
               const isSel = d.id === selId;
@@ -9129,8 +9159,18 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
                   disabled there (no single cone to grab when activeLens
                   === 'all', and per-lens rotation only happens via the ring
                   in independent mode). */}
+              {/* Audit follow-up — RotationRing is a coverage drawing
+                  per Mohammad's brief; wrapping in the master plan
+                  clip keeps the visible ring + ticks + heading badge
+                  from extending past the plan border. The interactive
+                  drag puck inside the ring is at d.rot * R=34 from
+                  the device — well within the plan for any non-
+                  pathological device position, so functional reach
+                  is unaffected. */}
               {isMs && (
-                <RotationRing d={s} onRotate={handleRotate} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} pan={pan} overrideColor={ringColor} />
+                <g clipPath="url(#master-plan-coverage-clip)">
+                  <RotationRing d={s} onRotate={handleRotate} svgRef={ref as React.RefObject<SVGSVGElement>} zoom={zoom} pan={pan} overrideColor={ringColor} />
+                </g>
               )}
               {/* Direct manipulation cone handles (rotate puck, FOV edges,
                   range tip). For single lens cameras one set attaches to
