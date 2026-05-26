@@ -39,6 +39,12 @@ const routes = [
   { name: 'review',     path: '/project/p1/review' },
   { name: 'canvas-bom', path: '/project/p1/canvas', after: 'open-bom' },
   { name: 'canvas-sel', path: '/project/p1/canvas', after: 'select-device' },
+  // M9 — selecting a multisensor must auto-set activeLens to a specific
+  // lens slot ('a' by default) and only ONE ConeHandles rig mounts on
+  // the canvas. A regression here looks like four handle sets stacked
+  // at the same coordinate or a console error in the activeLens reset
+  // effect.
+  { name: 'canvas-multisensor', path: '/project/p1/canvas', after: 'select-multisensor' },
   // M5 — calibration screen exercises the Web Worker plan import path
   // and the IndexedDB blob storage plumbing on boot. A regression in
   // either lands here as a console error or blank body before reaching
@@ -105,9 +111,13 @@ async function checkRoute(browser, route) {
       btn && btn.click();
     });
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
-  } else if (route.after === 'select-device') {
-    await page.evaluate(() => {
-      const node = document.querySelector('[data-device-id="CAM-105"]');
+  } else if (route.after === 'select-device' || route.after === 'select-multisensor') {
+    // CAM-105 is the seeded fisheye; CAM-103 is the seeded multisensor.
+    // M9 (per-lens handle gating) regresses only when a multisensor is
+    // selected, so the multisensor case is its own audit route.
+    const target = route.after === 'select-multisensor' ? 'CAM-103' : 'CAM-105';
+    await page.evaluate((deviceId) => {
+      const node = document.querySelector(`[data-device-id="${deviceId}"]`);
       const hit = (node && node.querySelector('[data-hit="device"]')) || node;
       if (!hit) return;
       const r = hit.getBoundingClientRect();
@@ -122,7 +132,7 @@ async function checkRoute(browser, route) {
       hit.dispatchEvent(new MouseEvent('click', {
         bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0,
       }));
-    });
+    }, target);
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
   }
 

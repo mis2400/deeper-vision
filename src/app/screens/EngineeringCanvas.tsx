@@ -1544,6 +1544,26 @@ export function EngineeringCanvas() {
   // never bleeds across cameras.
   const [selectedDoriLevel, setSelectedDoriLevel] = useState<DoriLevel | null>(null);
   useEffect(() => { setSelectedDoriLevel(null); }, [selId]);
+  // M9 — when the selected device is a multisensor, default activeLens
+  // to 'a' so the per-lens handles attach immediately (rather than
+  // requiring the operator to click a chip first). On a non-multisensor
+  // selection we reset to 'all' so coverage rendering doesn't carry
+  // over a stale per-lens dim state from the previous selection. The
+  // chip row in the drawer keeps full control after this default.
+  useEffect(() => {
+    if (!selId) return;
+    const sel = useProjectStore.getState().devices[selId];
+    if (!sel) return;
+    if (sel.type === 'cam.multisensor') {
+      // Only seed if the user hasn't picked a specific lens already.
+      if (activeLens === 'all') setActiveLens('a');
+    } else {
+      // Coming from a multisensor onto a non-multisensor — clear the
+      // per-lens highlight so single-lens coverage reads normally.
+      if (activeLens !== 'all') setActiveLens('all');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selId]);
   // Person probe — canvas-world position of the draggable face marker
   // tied to the selected camera. Drives both the on-canvas marker and
   // the drawer's live density preview. Cleared when the selected
@@ -9209,35 +9229,41 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
               {(() => {
                 if (s.type === 'cam.fisheye') return null;
                 if (isMs) {
-                  // PASS D — every enabled lens gets its own set of
-                  // handles directly on the plan: rotation puck on the
-                  // aim ray, two FOV edge handles on the outer arc, and
-                  // a range tip at the apex. The old code mounted
-                  // handles only for the single 'active' lens (and not
-                  // at all in 'all' mode); the spec is now "every lens
-                  // on a multisensor is adjustable on the plan", so we
-                  // map over all four slots and mount per-lens handles.
+                  // M9 (2026-05-26) — gate the per-lens handle mount on
+                  // activeLens. Previously every enabled lens mounted
+                  // its own rotation puck + FOV edges + range tip at
+                  // the SAME origin (the device body), so all four
+                  // handle sets piled up on one point and the operator
+                  // could not reliably grab a specific lens.
                   //
-                  // The multisensor rotation ring (RotationRing above)
-                  // stays as-is for body rotation per the brief. Each
-                  // ConeHandles emits absolute world-space rotation;
-                  // lens rotations are stored RELATIVE to the body, so
-                  // we subtract `s.rot` before persisting to the lens
-                  // slot.
+                  // Spec: only the active lens's handles render. The
+                  // other three cones still draw (FOV component already
+                  // dims them via its activeLens prop) but they have no
+                  // handles. When activeLens === 'all' (the default
+                  // shared / linked-view state from the chip row),
+                  // handles attach to lens 'a' so the user always has
+                  // SOMETHING to grab; the chip row in the drawer is
+                  // the way to switch which lens is being edited.
                   //
                   // Linked mode: FOV / range edits propagate to all
-                  // four lenses regardless of which lens's puck the
-                  // user grabbed (preserves each lens's per-quadrant
+                  // four lenses (preserves each lens's per-quadrant
                   // rotation while equalising aperture + reach).
-                  // Independent mode: writes only to the dragged
-                  // lens. Rotation is always per-lens (rotations are
-                  // what aim each lens at its quadrant).
+                  // Independent mode: writes only to the active lens.
+                  // Rotation is ALWAYS per-lens because rotations are
+                  // what aim each lens at its quadrant; even in linked
+                  // mode the rotation goes to the active lens alone.
                   const ls = getLenses(s);
+                  const effectiveLens: LensId = activeLens === 'all' ? 'a' : (activeLens as LensId);
                   return (
                     <>
                       {(['a', 'b', 'c', 'd'] as const).map((k) => {
                         const L = ls[k];
                         if (!L.enabled) return null;
+                        // Only the active lens gets handles. Other
+                        // enabled lenses still show their cones (drawn
+                        // by FOV at reduced opacity via its own
+                        // activeLens prop) but no interactive handles.
+                        if (k !== effectiveLens) return null;
                         return (
                           <ConeHandles
                             key={`ms-${s.id}-${k}`}
