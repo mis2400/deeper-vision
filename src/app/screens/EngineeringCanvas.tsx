@@ -1884,14 +1884,12 @@ export function EngineeringCanvas() {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
   }, []);
 
-  const [editOpen, setEditOpen] = useState(false);
-  /* Audit Group C.6 — drawer compact vs expanded state. Compact (false,
-     default) shows just the identity strip + tab icons in a thin bar
-     above the tray; expanded (true) grows the drawer upward into a
-     56 vh panel revealing the full inspector body. Toggled by the
-     chevron in the docked drawer header. */
-  const [editExpanded, setEditExpanded] = useState(false);
-  const [editTab, setEditTab] = useState<EditTab>('overview');
+  // M11 hardening — legacy EditDrawer state (editOpen, editExpanded,
+  // editTab + EditTab union + the openTab callback) was removed here.
+  // The drawer it gated rendered nothing for several passes already
+  // (replaced by CanvasSelectionMenu + the PathwayDrawer / ProjectBomDrawer
+  // surfaces). Nothing in the tree read any of these values, so the
+  // setters were no-op calls and the state was harmless dead wiring.
   // DEFECT FIX (2026-05-24): the stick-figure / TargetSimOverlay was a
   // dead control — it auto-placed itself when the Coverage tab opened
   // but didn't drive anything the user could action, and the honest
@@ -2815,11 +2813,6 @@ export function EngineeringCanvas() {
   }, [selIds, sel, setDevices]);
   const nudgeSelectionRef = useRef(nudgeSelection);
   useEffect(() => { nudgeSelectionRef.current = nudgeSelection; }, [nudgeSelection]);
-  /** Open the engineering inspector to a specific tab. Used by toolbar
-   *  buttons (Note, Link, FOV, AI Optimize, etc.) so they all jump straight
-   *  to the relevant panel instead of silently doing nothing. */
-  const openTab = (t: EditTab) => { setEditOpen(true); setEditTab(t); };
-
   const counts = useMemo(() => {
     const c: Record<DeviceKind, number> = { camera: 0, access: 0, network: 0, intrusion: 0, audio: 0, storage: 0, display: 0, power: 0, sensor: 0 };
     devices.forEach((d) => c[TYPE_KIND[d.type]]++);
@@ -2909,13 +2902,12 @@ export function EngineeringCanvas() {
             onOpenReport={() => setReportOpen(true)}
             onOpenBom={() => {
               // Free the right-side slot so the BOM drawer is the only
-              // inspector visible. Without this, an EditDrawer / PathwayDrawer
-              // that the user "closed" via its X button is still mounted
-              // (just slid off-screen with selId/selPathwayId preserved) and
-              // would block the BOM mount under the previous gating.
+              // inspector visible. Without this, a PathwayDrawer the user
+              // "closed" via its X button is still mounted (just slid
+              // off-screen with selPathwayId preserved) and would block
+              // the BOM mount under the previous gating.
               setSelId(null);
               setSelPathwayId(null);
-              setEditOpen(false);
               setCanvasBomOpen(true);
             }}
             onOpenReview={() => nav(`/project/${projectId}/review`)}
@@ -3683,7 +3675,6 @@ export function EngineeringCanvas() {
                   setSelId(id);
                   setSelPathwayId(null);
                   setCanvasBomOpen(false);
-                  setEditOpen(true);
                 }}
                 onSelectPathway={(id) => {
                   setSelPathwayId(id);
@@ -6093,17 +6084,9 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
    SELECTION PILL — floats near the selected device
    ═══════════════════════════════════════════════════════════════════════ */
 
-type EditTab =
-  | 'overview' | 'lens' | 'ai' | 'network' | 'power' | 'mounting'
-  | 'compliance' | 'telemetry' | 'linked' | 'notes'
-  // V18 surveyor redesign — accessory editor in the 3-icon grid. Media
-  // and History were removed in Canvas V2 Pass 1.0; the union will be
-  // re-extended when those features have real backing.
-  | 'accessories'
-  // MVP foundation pass — object-linked survey capture
-  | 'survey'
-  // Attachments / Files foundation pass — real shared file system
-  | 'attachments';
+// EditTab union deleted — see the M11 hardening comment further down.
+// It was the type for the dead editTab useState; nothing else
+// referenced it.
 
 
 // ColorPicker moved to canvas/components/ColorPicker.tsx (M11
@@ -6115,10 +6098,11 @@ type EditTab =
 // / FacePixelTile / drawPersonWithPlate / RequiredDensityRow /
 // PersonProbePreview were all defined but never JSX-mounted: the
 // 3-icon-per-row inspector tile grid they powered was retired in an
-// earlier pass without a follow-up cleanup. The `editTab` useState +
-// `openTab` setter survive inside EngineeringCanvas for the
-// SelectionPill's openTab callback — they fire but nothing reads the
-// state today.
+// earlier pass without a follow-up cleanup. The `editTab` /
+// `editOpen` / `editExpanded` state + `openTab` setter that fed into
+// that tile grid were also dead and got removed in the hardening
+// pass — see the cleanup near `useState(false)` for ProjectBomDrawer
+// gating.
 
 function StackSectionForHost({
   d, onUpdate,
