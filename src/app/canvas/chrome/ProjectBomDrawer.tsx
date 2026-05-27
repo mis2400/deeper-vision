@@ -9,9 +9,14 @@
 // (status badges, override marker, floor / room chips, qty +
 // unit + line total).
 //
-// Reads the entire store via useProjectStore() — same pattern
-// the monolith uses; the audit-state baseline already counts
-// this whole-store sub.
+// Reads each store slice with its own primitive selector
+// subscription (projects, projectPricebooks, devices, doors,
+// pathways, idfs, floors, rooms, estimates) — never the whole
+// store. The earlier whole-store pattern that this module was
+// extracted with caused the original /deployment React infinite
+// re-render crash (whole sub → new identity → useEffect dep →
+// loop), so every slice the BOM derive needs lands as its own
+// selector.
 
 import { AlertTriangle, DollarSign, FileDown, X } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -28,13 +33,35 @@ export function ProjectBomDrawer({
   onSelectDevice: (id: string) => void;
   onSelectPathway: (id: string) => void;
 }) {
-  const state = useProjectStore();
-  const projectName = state.projects[projectId]?.name ?? 'Project';
-  const { rows, totals } = useMemo(() => deriveCanvasBomRows(state, projectId), [state, projectId]);
+  // Primitive selector subs — one per slice the drawer actually reads.
+  // Replaces the whole-store sub that originally lived here; React now
+  // only re-renders this drawer when one of these specific slices
+  // changes, not on every unrelated store write.
+  const projects           = useProjectStore((s) => s.projects);
+  const projectPricebooks  = useProjectStore((s) => s.projectPricebooks);
+  const devices            = useProjectStore((s) => s.devices);
+  const doors              = useProjectStore((s) => s.doors);
+  const pathways           = useProjectStore((s) => s.pathways);
+  const idfs               = useProjectStore((s) => s.idfs);
+  const floors             = useProjectStore((s) => s.floors);
+  const rooms              = useProjectStore((s) => s.rooms);
+  const estimates          = useProjectStore((s) => s.estimates);
+
+  const projectName = projects[projectId]?.name ?? 'Project';
+  // deriveCanvasBomRows wants a state-shaped object; assemble a minimal
+  // shim from the selector subs above so the derive helper keeps its
+  // existing signature.
+  const { rows, totals } = useMemo(
+    () => deriveCanvasBomRows(
+      { projects, projectPricebooks, devices, doors, pathways, idfs, floors, rooms, estimates } as any,
+      projectId,
+    ),
+    [projects, projectPricebooks, devices, doors, pathways, idfs, floors, rooms, estimates, projectId],
+  );
   // Pricebook editor is a modal mounted on top of this drawer so the
   // user can watch totals update underneath while editing.
   const [pricebookOpen, setPricebookOpen] = useState(false);
-  const pricebook = state.projectPricebooks[projectId];
+  const pricebook = projectPricebooks[projectId];
   const overrideCount =
     (Object.keys(pricebook?.doorHardware ?? {}).length) +
     (Object.keys(pricebook?.cablePerFt ?? {}).length) +
@@ -51,10 +78,10 @@ export function ProjectBomDrawer({
   // on that floor. Pathway / cable rows also honour the filter via
   // their stored floorId.
   const [floorFilter, setFloorFilter] = useState<string>('all');
-  const projectFloors = useMemo(() => Object.values(state.floors)
+  const projectFloors = useMemo(() => Object.values(floors)
     .filter((f) => f.projectId === projectId)
     .sort((a, b) => (b.level - a.level) || ((b.createdAt ?? 0) - (a.createdAt ?? 0))),
-    [state.floors, projectId],
+    [floors, projectId],
   );
 
   const FILTERS: { id: FilterKey; label: string }[] = [
@@ -72,17 +99,17 @@ export function ProjectBomDrawer({
   const floorIdForRow = useCallback((r: CanvasBomRow): string | null => {
     const sid = (r as any).sourceId as string | undefined;
     if (!sid) return null;
-    const dev = (state.devices as any)[sid];
+    const dev = (devices as any)[sid];
     if (dev?.floorId) return dev.floorId;
-    const path = (state.pathways as any)[sid];
+    const path = (pathways as any)[sid];
     if (path?.floorId) return path.floorId;
     return null;
-  }, [state]);
+  }, [devices, pathways]);
   const floorNameForRow = useCallback((r: CanvasBomRow): string => {
     const fid = floorIdForRow(r);
     if (!fid) return '—';
-    return (state.floors as any)[fid]?.name ?? '—';
-  }, [floorIdForRow, state]);
+    return (floors as any)[fid]?.name ?? '—';
+  }, [floorIdForRow, floors]);
 
   // Canvas V2 Pass 2C.4 — per row room lookup. A device row's "room"
   // is the polygon whose bounds contain the device origin. Pathways
@@ -91,9 +118,9 @@ export function ProjectBomDrawer({
   const roomNameForRow = useCallback((r: CanvasBomRow): string | null => {
     const sid = (r as any).sourceId as string | undefined;
     if (!sid) return null;
-    const dev = (state.devices as any)[sid];
+    const dev = (devices as any)[sid];
     if (!dev) return null;
-    const projectRooms = Object.values(state.rooms).filter((rm: any) => rm.projectId === projectId && rm.floorId === dev.floorId);
+    const projectRooms = Object.values(rooms).filter((rm: any) => rm.projectId === projectId && rm.floorId === dev.floorId);
     for (const rm of projectRooms as any[]) {
       // Ray-casting point in polygon.
       let inside = false;
@@ -108,7 +135,7 @@ export function ProjectBomDrawer({
       if (inside) return rm.name;
     }
     return null;
-  }, [state, projectId]);
+  }, [devices, rooms, projectId]);
 
   const filtered = useMemo(() => {
     let out = rows;
