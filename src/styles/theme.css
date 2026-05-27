@@ -214,6 +214,17 @@
   --canvas-rail-active-bg:         rgba(255, 255, 255, 0.14);
   --canvas-rail-hover-bg:          rgba(255, 255, 255, 0.07);
 
+  /* M11 audit fix (FL3 / UI1 follow up E68): horizontal space the
+     floating LeftRail occupies from the canvas content origin.
+     Default = left-4 inset (16px) + outer padding (8px) + button
+     width (44px) + safety (4px) = 72px on md+ breakpoints. LeftRail
+     overwrites this value at runtime via ResizeObserver so the
+     measurement always tracks the actual rendered rail; any canvas
+     overlay that needs to clear the rail (FloorOverview today,
+     others later) reaches for var(--canvas-rail-clearance) instead
+     of hand picking a number. */
+  --canvas-rail-clearance: 72px;
+
   --panel-background: #34405A;
   --panel-border:     #51607D;
 

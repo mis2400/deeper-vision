@@ -90,6 +90,39 @@ export function LeftRail(props: LeftRailProps) {
     };
   }, [touchExpand]);
 
+  // M11 audit fix (FL3 / UI1 follow up E68): publish the rail's real
+  // right edge (measured from the viewport origin) to the
+  // --canvas-rail-clearance CSS variable. Any overlay that needs to
+  // clear the rail (FloorOverview today) reads the variable instead
+  // of guessing a magic number. ResizeObserver fires on rail mount
+  // and on hover expand / coarse pointer expand, so the value tracks
+  // the actual rendered footprint. An extra 8 px is added as a
+  // breathing buffer between rail and overlay content. The static
+  // fallback in theme.css covers the SSR / pre mount frame.
+  useEffect(() => {
+    const el = railRef.current;
+    if (!el) return;
+    const publish = () => {
+      const r = el.getBoundingClientRect();
+      // r.right is viewport relative; for an absolute child of the
+      // canvas viewport that means "distance from the left of the
+      // overlay's coordinate space" — exactly what FloorOverview's
+      // paddingLeft needs.
+      document.documentElement.style.setProperty(
+        '--canvas-rail-clearance',
+        `${Math.ceil(r.right) + 8}px`,
+      );
+    };
+    publish();
+    const obs = new ResizeObserver(publish);
+    obs.observe(el);
+    window.addEventListener('resize', publish);
+    return () => {
+      obs.disconnect();
+      window.removeEventListener('resize', publish);
+    };
+  }, []);
+
   // ─── Group items ────────────────────────────────────────────────
   const tools: RailItem[] = [
     { id: 'select',   icon: MousePointer2, label: 'Select',   hint: 'Select and edit objects',

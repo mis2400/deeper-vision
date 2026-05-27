@@ -41,23 +41,27 @@ export function FloorOverview({ projectId, onPickFloor, onClose }: {
     return `L${level + 1}`;
   };
 
-  // M11 audit fix (FL3 / UI1): the overlay used to start at `left: 0`
-  // with `px-5` padding (20px), but the floating LeftRail occupies
-  // `left-3 md:left-4` (12-16px) + `w-11` (44px) + p-2 (8px) ≈ 64-72px
-  // of horizontal space. The leftmost tile rendered behind the rail
-  // with its label clipped to a single digit. Per-side padding now
-  // clears the rail (pl-[72px] = 12 inset + 44 rail + 8 padding + 8
-  // safety) and the right edge keeps the existing 20px breathing
-  // room. There is no existing --rail-width CSS variable today; the
-  // 72px is the only magic value, called out in this comment so a
-  // future variable can land in one place. The z-index also moved
-  // from the raw Tailwind class to the `z-overlay` token
-  // (var(--z-overlay) = 60) so the overview sits cleanly above the
-  // floating SelectByMenu and the canvas-add-fab; both used to bleed
-  // through at the old layer.
+  // M11 audit fix (FL3 / UI1, E68 hardened): the overlay used to start
+  // at `left: 0` with `px-5` padding (20px), but the floating LeftRail
+  // bleeds across the leftmost ~64-76px of horizontal space. The
+  // leftmost tile used to render behind the rail with its label
+  // clipped. Per-side padding now reaches for the
+  // var(--canvas-rail-clearance) token published by LeftRail itself
+  // (measured at runtime, updated on resize and hover-expand) — no
+  // magic number lives here anymore. The right edge keeps the
+  // existing 20px breathing room.
+  //
+  // The z-index also moved from the raw Tailwind class to the
+  // `z-overlay` token (var(--z-overlay) = 60) so the overview sits
+  // cleanly above the floating SelectByMenu and the canvas-add-fab;
+  // both used to bleed through at the old layer.
+  const clearanceStyle = { paddingLeft: 'var(--canvas-rail-clearance)' } as const;
   return (
     <div className="absolute inset-0 z-overlay bg-background overflow-auto">
-      <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur-md pl-[72px] pr-5 py-3 flex items-center justify-between">
+      <div
+        style={clearanceStyle}
+        className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur-md pr-5 py-3 flex items-center justify-between"
+      >
         <div>
           <div className="text-sm font-medium">All floors</div>
           <div className="text-[11px] text-muted-foreground">{projectFloors.length} floors · click any tile to open</div>
@@ -71,7 +75,10 @@ export function FloorOverview({ projectId, onPickFloor, onClose }: {
           Exit overview
         </button>
       </div>
-      <div className="pl-[72px] pr-5 py-5 grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+      <div
+        style={{ ...clearanceStyle, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}
+        className="pr-5 py-5 grid gap-4"
+      >
         {projectFloors.map((f) => {
           const devices = devicesByFloor[f.id] ?? [];
           const tileBg = f.background;

@@ -58,7 +58,7 @@
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 492,
+        "bodyLen": 447,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -102,7 +102,7 @@
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -117,14 +117,14 @@
       "beforeText": "Drafting",
       "disabled": false,
       "before": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -139,14 +139,14 @@
       "beforeText": "Slate",
       "disabled": false,
       "before": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -161,14 +161,14 @@
       "beforeText": "Dark",
       "disabled": false,
       "before": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -180,10 +180,10 @@
       "selector": "[data-track=\"topbar-more-reports\"]",
       "label": "More item: topbar-more-reports",
       "found": true,
-      "beforeText": "ReportsProposal package generated from the canvas",
+      "beforeText": "Proposal PackageCustomer ready PDFs and CSVs from this proje",
       "disabled": false,
       "before": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -205,14 +205,14 @@
       "beforeText": "Snap to gridVertices round to the 20 px grid.On",
       "disabled": false,
       "before": {
-        "bodyLen": 3347,
+        "bodyLen": 3360,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3352,
+        "bodyLen": 3365,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -227,14 +227,14 @@
       "beforeText": "AI IntelligenceOff — canvas stays calmOff",
       "disabled": false,
       "before": {
-        "bodyLen": 3352,
+        "bodyLen": 3365,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3546,
+        "bodyLen": 3559,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -249,7 +249,7 @@
       "beforeText": "Report Builder",
       "disabled": false,
       "before": {
-        "bodyLen": 3546,
+        "bodyLen": 3559,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -271,7 +271,7 @@
       "beforeText": "Plan source",
       "disabled": false,
       "before": {
-        "bodyLen": 3546,
+        "bodyLen": 3559,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -293,7 +293,7 @@
       "beforeText": "Open in new window",
       "disabled": false,
       "before": {
-        "bodyLen": 3938,
+        "bodyLen": 3951,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -315,7 +315,7 @@
       "beforeText": "Demo scanDemo only",
       "disabled": false,
       "before": {
-        "bodyLen": 3938,
+        "bodyLen": 3951,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1755,7 +1755,7 @@
       "beforeText": "Mobile view",
       "disabled": false,
       "before": {
-        "bodyLen": 492,
+        "bodyLen": 447,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1777,7 +1777,7 @@
       "beforeText": "Open in Engineering",
       "disabled": false,
       "before": {
-        "bodyLen": 492,
+        "bodyLen": 447,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1971,14 +1971,14 @@
       "beforeText": "Export CSV",
       "disabled": false,
       "before": {
-        "bodyLen": 1580,
+        "bodyLen": 1579,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/estimate/p1"
       },
       "after": {
-        "bodyLen": 1604,
+        "bodyLen": 1603,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
