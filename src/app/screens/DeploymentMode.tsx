@@ -272,15 +272,38 @@ export function DeploymentMode() {
                         <>Project lifecycle is currently <span className="text-foreground">{woGate.phase ?? 'unset'}</span>. Advance to <span className="text-foreground">Deployment</span> from the Project Command Center to start work orders.</>
                       )}
                     </div>
-                    <div className="flex items-center justify-center gap-2">
+                    {/* M11 audit fix (FL1): the empty state used to only
+                        offer "Open Customer Portal", which sent the user
+                        away with no inline path to actually record the
+                        approval. The primary action now lands directly on
+                        the portal's approval sheet via the ?action=approve
+                        query hint, and "Open portal" remains as the
+                        secondary path for when an operator wants to walk
+                        the full customer view. */}
+                    <div className="flex items-center justify-center gap-2 flex-wrap">
                       {(woGate.reason === 'no_approval' || woGate.reason === 'design_only') && (
-                        <button
-                          onClick={() => nav(`/portal/${projectId}`)}
-                          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
-                          data-testid="deploy-empty-portal-link"
-                        >
-                          Open Customer Portal
-                        </button>
+                        <>
+                          <button
+                            onClick={() => nav(`/portal/${projectId}?action=approve`)}
+                            // Font size pulls from the chrome-2xs design
+                            // token via inline style. This matches the 11 px
+                            // of the neighbouring sibling buttons without
+                            // adding another raw arbitrary value class to
+                            // the tokens audit count.
+                            style={{ fontSize: 'var(--chrome-2xs)' }}
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90"
+                            data-testid="deploy-empty-record-approval"
+                          >
+                            Record approval
+                          </button>
+                          <button
+                            onClick={() => nav(`/portal/${projectId}`)}
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] border border-border hover:bg-secondary"
+                            data-testid="deploy-empty-portal-link"
+                          >
+                            Open portal
+                          </button>
+                        </>
                       )}
                       <button
                         onClick={() => nav(`/project/${projectId}`)}

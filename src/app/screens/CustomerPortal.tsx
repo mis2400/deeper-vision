@@ -10,8 +10,8 @@
 //
 // No internal "Skip to canvas", no breadcrumbs, no engineer tabs.
 
-import { useMemo, useState } from 'react';
-import { useParams } from 'react-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   Calendar, FileText, Check, Download, Mail, Phone, MapPin,
@@ -55,6 +55,7 @@ const CUSTOMER_PHASES: Array<{ id: string; label: string; phases: LifecyclePhase
 
 export function CustomerPortal() {
   const { projectId = 'p1' } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const project          = useProjectStore((s) => s.projects[projectId]);
   const customer         = useProjectStore((s) => (project?.customerId ? s.customers[project.customerId] : null));
   const contact          = useProjectStore((s) => (customer?.primaryContactId ? s.contacts[customer.primaryContactId] : null));
@@ -209,6 +210,31 @@ export function CustomerPortal() {
     setApproveErrors({});
     setApproveOpen(true);
   };
+
+  // M11 audit fix (FL1): the Deployment route's empty state used to
+  // push the user to /portal with no further hint, and they'd then
+  // have to find the "Approve proposal" CTA inside a long portal
+  // page. The dead end audit upgraded the deployment empty state
+  // button to "Record approval" with a direct nav to
+  // /portal/:projectId?action=approve. We honour that hint here by
+  // auto opening the approval sheet on first mount, then stripping
+  // the param so a refresh does not loop. autoOpenedRef gates the
+  // effect so it fires exactly once per mount even under StrictMode
+  // double invocation in dev.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedRef.current) return;
+    if (!project) return;
+    if (searchParams.get('action') !== 'approve') return;
+    autoOpenedRef.current = true;
+    openApproveSheet();
+    const next = new URLSearchParams(searchParams);
+    next.delete('action');
+    setSearchParams(next, { replace: true });
+    // openApproveSheet + setSearchParams are stable enough for a
+    // mount only effect; the ref guard is the actual safety net.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, searchParams]);
 
   const submitApproval = () => {
     if (!project) return;
