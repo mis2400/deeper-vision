@@ -227,7 +227,14 @@ export function TopBar(props: {
               </div>
             </div>
 
-            {/* Reports — moved here from the visible top bar in V1 P0.4. */}
+            {/* Proposal Package — moved here from the visible top bar in
+                V1 P0.4. M11 audit fix (U4): the label used to read
+                "Reports", which clashed with the sibling "Report
+                Builder" entry below. Renamed to "Proposal Package"
+                so the two items are distinguishable at a glance —
+                this one ships the full customer set, the other
+                composes ad hoc one off PDFs. Route + data-track id
+                unchanged. */}
             <button
               onClick={() => { setMoreOpen(false); props.onOpenReports(); }}
               className="w-full text-left px-3 py-2 flex items-center gap-2.5 hover:bg-secondary/40 transition-colors"
@@ -235,8 +242,8 @@ export function TopBar(props: {
             >
               <FileText className="w-3.5 h-3.5 text-sky-500" />
               <div className="flex-1 min-w-0">
-                <div className="text-[12px]">Reports</div>
-                <div className="text-[10px] text-muted-foreground">Proposal package generated from the canvas</div>
+                <div className="text-[12px]">Proposal Package</div>
+                <div className="text-[10px] text-muted-foreground">Customer ready PDFs and CSVs from this project</div>
               </div>
             </button>
 
