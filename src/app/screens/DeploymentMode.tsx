@@ -346,11 +346,19 @@ export function DeploymentMode() {
 
         {/* Detail — two-column inside */}
         <div className="grid grid-cols-[minmax(0,1fr)_400px] min-h-0">
+          {/* M11 audit fix (F3 / U2): the right pane used to read
+              "Select a work order on the left to see its details."
+              regardless of left state. When the gate is closed or the
+              left list is empty there is no work order to pick, and
+              the prompt contradicts the empty state on the left. The
+              hint now only appears when the left actually has a list
+              the user could select from. */}
           <div className="overflow-y-auto p-5 min-h-0">
-            {selected
-              ? <WorkOrderDetail wo={selected} floors={floors} state={state} projectId={projectId} />
-              : <div className="text-[12px] text-muted-foreground">Select a work order on the left to see its details.</div>
-            }
+            {selected ? (
+              <WorkOrderDetail wo={selected} floors={floors} state={state} projectId={projectId} />
+            ) : workOrders.length > 0 ? (
+              <div className="text-[12px] text-muted-foreground">Select a work order on the left to see its details.</div>
+            ) : null}
           </div>
           <div className="border-l border-border bg-background/40 overflow-y-auto p-5 min-h-0">
             {selected
