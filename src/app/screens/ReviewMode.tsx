@@ -110,10 +110,37 @@ export function ReviewMode() {
   const { projectId = 'p1' } = useParams();
   const nav = useNavigate();
 
-  // ── Read project state. Subscribe to the full store so any edit on
-  // /canvas is reflected here on next render. We don't write any of it.
-  const state = useProjectStore();
-  const project = state.projects[projectId];
+  // Per-slice selector subs replace the whole-store sub. Review walks
+  // floors via floorsForProject (sites → buildings → floors) and the
+  // active-floor selectors (devicesForFloor, pathwaysForFloor) so the
+  // slice list covers projects + sites + buildings + floors + devices
+  // + pathways. Any edit on /canvas to those slices flows here on the
+  // next render; writes on other slices no longer trigger a Review
+  // re-render.
+  const projectsMap          = useProjectStore((s) => s.projects);
+  const sitesMap             = useProjectStore((s) => s.sites);
+  const buildingsMap         = useProjectStore((s) => s.buildings);
+  const floorsMap            = useProjectStore((s) => s.floors);
+  const devicesMap           = useProjectStore((s) => s.devices);
+  const pathwaysMap          = useProjectStore((s) => s.pathways);
+  // deriveCanvasBomRows further down also reads doors / idfs /
+  // estimates / projectPricebooks, so the shim covers those too;
+  // floors-only and devices-only routes wouldn't need them, but the
+  // BOM toggle on this surface does.
+  const doorsMap             = useProjectStore((s) => s.doors);
+  const idfsMap              = useProjectStore((s) => s.idfs);
+  const estimatesMap         = useProjectStore((s) => s.estimates);
+  const projectPricebooksMap = useProjectStore((s) => s.projectPricebooks);
+  const state = useMemo(
+    () => ({
+      projects: projectsMap, sites: sitesMap, buildings: buildingsMap,
+      floors: floorsMap, devices: devicesMap, pathways: pathwaysMap,
+      doors: doorsMap, idfs: idfsMap, estimates: estimatesMap,
+      projectPricebooks: projectPricebooksMap,
+    } as any),
+    [projectsMap, sitesMap, buildingsMap, floorsMap, devicesMap, pathwaysMap, doorsMap, idfsMap, estimatesMap, projectPricebooksMap],
+  );
+  const project = projectsMap[projectId];
   const floors  = useMemo(() => sel.floorsForProject(state, projectId), [state, projectId]);
 
   const [floorIdx, setFloorIdx] = useState(0);
@@ -124,7 +151,10 @@ export function ReviewMode() {
 
   // V1 2A.2 — broadcast review context to the AI Assistant.
   const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
-  const reviewSite = useProjectStore((s) => Object.values(s.sites).find((x) => x.projectId === projectId));
+  const reviewSite = useMemo(
+    () => Object.values(sitesMap).find((x: any) => x.projectId === projectId) as any,
+    [sitesMap, projectId],
+  );
   useEffect(() => {
     setAssistantContext({
       surface: 'review',
