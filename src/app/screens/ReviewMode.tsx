@@ -912,8 +912,14 @@ function ReviewBomSummary({
   const LABEL: Record<string, string> = { cameras: 'Cameras', access: 'Access control', network: 'Network & power', cabling: 'Cable & pathways', labor: 'Labor', other: 'Equipment' };
   return (
     <div
-      className="absolute right-3 top-3 w-[280px] rounded-xl border border-border p-3 backdrop-blur-md"
-      style={{ background: 'rgba(255,255,255,0.92)' }}
+      // M11 audit fix (FL2): the popover used to hardcode a light
+      // white background. In dark / slate themes the text inside
+      // (the empty state copy "No proposed hardware yet." and the
+      // "Show cost" button label) inherits theme foreground colours
+      // and renders invisible against the white. Swapping to the
+      // bg-card token lets the popover follow the active theme so
+      // text colours have the contrast they were designed for.
+      className="absolute right-3 top-3 w-[280px] rounded-xl border border-border bg-card/95 p-3 backdrop-blur-md"
       data-canvas-chrome="review-bom"
     >
       <div className="flex items-center justify-between mb-2">
