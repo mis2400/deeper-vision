@@ -54,10 +54,10 @@
   Cable sub: bottombar-cable-sub-box                      body3434->3363
   Cable sub: bottombar-cable-sub-firestop                 body3363->3350
   Open Conduit tray                                       body3127->3402
-  Add device FAB                                          [NO DELTA]
+  Add device FAB                                          body3127->7362
   Floor overview open                                     body3127->3267
   Floor switcher open                                     body3267->3330
-  Floor picks visible                                    
+  Floor picks visible                                     [NO DELTA] count=3
 
 === review (21 actions) ===
   Review: review-status-draft                             [NO DELTA]
