@@ -8,22 +8,31 @@ import { spawn } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { freePort } from './audit-port.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const OUT_DIR = resolve(REPO, 'docs/audits/2026-05-26-full-audit');
 const SHOT_DIR = resolve(OUT_DIR, 'screenshots');
 const PROJECT_ID = 'p1';
-const BASE = 'http://localhost:4173';
+const PORT = 4173;
+const BASE = `http://localhost:${PORT}`;
 
 const { default: puppeteer } = await import('puppeteer');
 
-function startVitePreview() {
+async function startVitePreview() {
+  // M11 audit fix (E69): reclaim the port from any stale vite preview
+  // left behind by a previous run before spawning a new one. Without
+  // this, two back to back exercise runs (or a verify + manual run)
+  // hit "address already in use" and the new run produces zero data,
+  // making the audit report look healthier than it is.
+  const cleaned = await freePort(PORT);
+  if (cleaned) console.log(`Reclaimed port ${PORT} (killed ${cleaned.pids.join(',')} via ${cleaned.signal}).`);
   return new Promise((res) => {
-    const proc = spawn('npx', ['vite', 'preview', '--port', '4173'], { cwd: REPO });
+    const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT)], { cwd: REPO });
     proc.stdout.on('data', (b) => {
       const s = b.toString();
-      if (/Local:.*4173|ready in/i.test(s)) res(proc);
+      if (new RegExp(`Local:.*${PORT}|ready in`, 'i').test(s)) res(proc);
     });
     setTimeout(() => res(proc), 3000);
   });

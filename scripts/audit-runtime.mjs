@@ -20,6 +20,7 @@ import puppeteer from 'puppeteer';
 import { spawn } from 'node:child_process';
 import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { freePort } from './audit-port.mjs';
 
 const PREVIEW_PORT = 4173;
 const BASE = `http://localhost:${PREVIEW_PORT}`;
@@ -79,6 +80,13 @@ const routes = [
 // preview serves; the audit script does not invoke build itself so the
 // `verify` script can sequence build → audit cleanly.
 async function startPreview() {
+  // M11 audit fix (E69): a previous crashed run can leave vite holding
+  // 4173. With --strictPort the new run dies immediately and the whole
+  // audit chain reports a misleading "Audit crashed" with exit code 1.
+  // Reclaim the port first so the harness's green/red signal stays
+  // trustworthy.
+  const cleaned = await freePort(PREVIEW_PORT);
+  if (cleaned) console.log(`Reclaimed port ${PREVIEW_PORT} (killed ${cleaned.pids.join(',')} via ${cleaned.signal}).`);
   const proc = spawn('npx', ['vite', 'preview', '--port', String(PREVIEW_PORT), '--strictPort'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
