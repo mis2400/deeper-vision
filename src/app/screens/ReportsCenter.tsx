@@ -62,9 +62,42 @@ type Mode = 'customer' | 'internal';
 export function ReportsCenter() {
   const { projectId = 'p1' } = useParams();
   const nav = useNavigate();
-  const state = useProjectStore();
-  const project = state.projects[projectId];
-  const customer = project?.customerId ? state.customers[project.customerId] : undefined;
+  // Per-slice selector subs replace the whole-store sub that
+  // originally lived here. Reports walks devices + doors +
+  // pathways + idfs + floors for the schedules and BOM, customers
+  // for the cover, sites + buildings + approvals + workOrderProgress
+  // + projectPricebooks for the derived helpers (deriveCanvasBomRows,
+  // deriveWorkOrders, workOrderGate, floorsForProject), and
+  // estimates for the BOM totals.
+  const projectsMap          = useProjectStore((s) => s.projects);
+  const customersMap         = useProjectStore((s) => s.customers);
+  const devicesMap           = useProjectStore((s) => s.devices);
+  const doorsMap             = useProjectStore((s) => s.doors);
+  const pathwaysMap          = useProjectStore((s) => s.pathways);
+  const idfsMap              = useProjectStore((s) => s.idfs);
+  const floorsMap            = useProjectStore((s) => s.floors);
+  const sitesMap             = useProjectStore((s) => s.sites);
+  const buildingsMap         = useProjectStore((s) => s.buildings);
+  const approvalsMap         = useProjectStore((s) => s.approvals);
+  const estimatesMap         = useProjectStore((s) => s.estimates);
+  const projectPricebooksMap = useProjectStore((s) => s.projectPricebooks);
+  const workOrderProgressMap = useProjectStore((s) => s.workOrderProgress);
+  const attachmentsMap       = useProjectStore((s) => s.attachments);
+  // Shim the derive helpers want — assembled from the slice subs so
+  // the helper signatures stay stable and the memos only rerun when
+  // a relevant slice actually changes.
+  const state = useMemo(
+    () => ({
+      projects: projectsMap, customers: customersMap, devices: devicesMap, doors: doorsMap,
+      pathways: pathwaysMap, idfs: idfsMap, floors: floorsMap, sites: sitesMap,
+      buildings: buildingsMap, approvals: approvalsMap, estimates: estimatesMap,
+      projectPricebooks: projectPricebooksMap, workOrderProgress: workOrderProgressMap,
+      attachments: attachmentsMap,
+    } as any),
+    [projectsMap, customersMap, devicesMap, doorsMap, pathwaysMap, idfsMap, floorsMap, sitesMap, buildingsMap, approvalsMap, estimatesMap, projectPricebooksMap, workOrderProgressMap, attachmentsMap],
+  );
+  const project = projectsMap[projectId];
+  const customer = project?.customerId ? customersMap[project.customerId] : undefined;
 
   const floors    = useMemo(() => sel.floorsForProject(state, projectId), [state, projectId]);
   const devices   = useMemo(() => sel.devicesForProject(state, projectId), [state, projectId]);
@@ -77,7 +110,7 @@ export function ReportsCenter() {
   // a misleading "0/0 complete" when the project is pre approval
   // or pre deployment phase.
   const woGate    = useMemo(() => sel.workOrderGate(state, projectId), [state, projectId]);
-  const pricebook = state.projectPricebooks[projectId];
+  const pricebook = projectPricebooksMap[projectId];
 
   const [mode, setMode] = useState<Mode>('internal');
   const isCustomer = mode === 'customer';
@@ -87,7 +120,10 @@ export function ReportsCenter() {
   // still set site so the chip reads "reports · Acme HQ" when the
   // operator hops over.
   const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
-  const reportsSite = useProjectStore((s) => Object.values(s.sites).find((x) => x.projectId === projectId));
+  const reportsSite = useMemo(
+    () => Object.values(sitesMap).find((x: any) => x.projectId === projectId) as any,
+    [sitesMap, projectId],
+  );
   useEffect(() => {
     setAssistantContext({
       surface: 'reports',
@@ -120,7 +156,7 @@ export function ReportsCenter() {
     const t = String(d.type);
     return t.startsWith('inf.door') || t.startsWith('inf.gate') || t.startsWith('inf.storefront') || t.startsWith('inf.doubledoor');
   });
-  const legacyDoors = Object.values(state.doors).filter((d) => d.projectId === projectId);
+  const legacyDoors = Object.values(doorsMap).filter((d) => d.projectId === projectId);
 
   // Warnings: pricing gaps, door hardware sanity, calibration gaps.
   const warnings = computeWarnings({ bom, doorOpenings, legacyDoors, floors, devices });
