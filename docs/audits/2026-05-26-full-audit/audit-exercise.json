@@ -1,0 +1,1991 @@
+{
+  "canvas": [
+    {
+      "selector": "[data-track=\"topbar-bom\"]",
+      "label": "TopBar BOM & Estimate",
+      "found": true,
+      "beforeText": "BOM & Estimate",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 5534,
+        "dialogCount": 0,
+        "drawerCount": 1,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-review\"]",
+      "label": "TopBar Present",
+      "found": true,
+      "beforeText": "Present",
+      "disabled": false,
+      "before": {
+        "bodyLen": 5534,
+        "dialogCount": 0,
+        "drawerCount": 1,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 873,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-deploy\"]",
+      "label": "TopBar Deploy",
+      "found": true,
+      "beforeText": "Deploy",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 492,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/deployment"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-add-plan\"]",
+      "label": "TopBar Add plan",
+      "found": true,
+      "beforeText": "Add plan",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3538,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 1,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more\"]",
+      "label": "TopBar More",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-theme-light\"]",
+      "label": "More: topbar-more-theme-light",
+      "found": true,
+      "beforeText": "Drafting",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-theme-slate\"]",
+      "label": "More: topbar-more-theme-slate",
+      "found": true,
+      "beforeText": "Slate",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-theme-dark\"]",
+      "label": "More: topbar-more-theme-dark",
+      "found": true,
+      "beforeText": "Dark",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-reports\"]",
+      "label": "More item: topbar-more-reports",
+      "found": true,
+      "beforeText": "ReportsProposal package generated from the canvas",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 6711,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-snap\"]",
+      "label": "More toggle: topbar-more-snap",
+      "found": true,
+      "beforeText": "Snap to gridVertices round to the 20 px grid.On",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3347,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3352,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-intel\"]",
+      "label": "More toggle: topbar-more-intel",
+      "found": true,
+      "beforeText": "AI IntelligenceOff — canvas stays calmOff",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3352,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3546,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-report\"]",
+      "label": "More item: topbar-more-report",
+      "found": true,
+      "beforeText": "Report Builder",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3546,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 4447,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 1,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-plan\"]",
+      "label": "More item: topbar-more-plan",
+      "found": true,
+      "beforeText": "Plan source",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3546,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3712,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-popout\"]",
+      "label": "More item: topbar-more-popout",
+      "found": true,
+      "beforeText": "Open in new window",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3938,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3712,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-scan\"]",
+      "label": "More item: topbar-more-scan",
+      "found": true,
+      "beforeText": "Demo scanDemo only",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3938,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 767,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/visionscan"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-view-default\"]",
+      "label": "View mode default",
+      "found": true,
+      "beforeText": "Default",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-view-field\"]",
+      "label": "View mode field",
+      "found": true,
+      "beforeText": "Field",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3109,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-view-canvas\"]",
+      "label": "View mode canvas",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3109,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 2874,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"left-rail-tools-select\"]",
+      "label": "Tool: left-rail-tools-select",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"left-rail-tools-pan\"]",
+      "label": "Tool: left-rail-tools-pan",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3124,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"left-rail-tools-measure\"]",
+      "label": "Tool: left-rail-tools-measure",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3124,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3184,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"left-rail-tools-wall\"]",
+      "label": "Tool: left-rail-tools-wall",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3184,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3200,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"left-rail-tools-room\"]",
+      "label": "Tool: left-rail-tools-room",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3200,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3125,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"left-rail-tools-annotate\"]",
+      "label": "Tool: left-rail-tools-annotate",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3125,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3125,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-all-cameras\"]",
+      "label": "Select-by: select-all-cameras",
+      "found": true,
+      "beforeText": "All cameras on floor5",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3435,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3237,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-all-doors\"]",
+      "label": "Select-by: select-all-doors",
+      "found": true,
+      "beforeText": "All doors on floor1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3547,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3221,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-all-readers\"]",
+      "label": "Select-by: select-all-readers",
+      "found": true,
+      "beforeText": "All readers on floor1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3531,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3244,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-type-cam.bullet\"]",
+      "label": "Select-by: select-type-cam.bullet",
+      "found": true,
+      "beforeText": "cam.bullet2",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3521,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3299,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-type-cam.multisensor\"]",
+      "label": "Select-by: select-type-cam.multisensor",
+      "found": true,
+      "beforeText": "cam.multisensor1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3578,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3286,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-type-cam.ptz\"]",
+      "label": "Select-by: select-type-cam.ptz",
+      "found": true,
+      "beforeText": "cam.ptz1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3563,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3279,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-type-cam.fisheye\"]",
+      "label": "Select-by: select-type-cam.fisheye",
+      "found": true,
+      "beforeText": "cam.fisheye1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3558,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3267,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-type-acc.reader\"]",
+      "label": "Select-by: select-type-acc.reader",
+      "found": true,
+      "beforeText": "acc.reader1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3541,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3238,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-type-acc.strike\"]",
+      "label": "Select-by: select-type-acc.strike",
+      "found": true,
+      "beforeText": "acc.strike1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3520,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3245,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-type-net.ap\"]",
+      "label": "Select-by: select-type-net.ap",
+      "found": true,
+      "beforeText": "net.ap1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3523,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3246,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-type-inf.door-single\"]",
+      "label": "Select-by: select-type-inf.door-single",
+      "found": true,
+      "beforeText": "inf.door-single1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3525,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3251,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"select-clear\"]",
+      "label": "Select-by: select-clear",
+      "found": true,
+      "beforeText": "Clear selection",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3530,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3188,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cat-cam\"]",
+      "label": "Open Cameras tray",
+      "found": true,
+      "beforeText": "Cameras5",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 7362,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-tabs\"]",
+      "label": "Cam sub: cam-sub-tabs",
+      "found": true,
+      "beforeText": "All60PTZ8Fisheye5Dome21Bullet18Multisensor5",
+      "disabled": false,
+      "before": {
+        "bodyLen": 7362,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 7362,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-all\"]",
+      "label": "Cam sub: cam-sub-all",
+      "found": true,
+      "beforeText": "All60",
+      "disabled": false,
+      "before": {
+        "bodyLen": 7362,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 7362,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-ptz\"]",
+      "label": "Cam sub: cam-sub-ptz",
+      "found": true,
+      "beforeText": "PTZ8",
+      "disabled": false,
+      "before": {
+        "bodyLen": 7362,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3913,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-fisheye\"]",
+      "label": "Cam sub: cam-sub-fisheye",
+      "found": true,
+      "beforeText": "Fisheye5",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3913,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3671,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-dome\"]",
+      "label": "Cam sub: cam-sub-dome",
+      "found": true,
+      "beforeText": "Dome21",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3671,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 4603,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-bullet\"]",
+      "label": "Cam sub: cam-sub-bullet",
+      "found": true,
+      "beforeText": "Bullet18",
+      "disabled": false,
+      "before": {
+        "bodyLen": 4603,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 4737,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-multisensor\"]",
+      "label": "Cam sub: cam-sub-multisensor",
+      "found": true,
+      "beforeText": "Multisensor5",
+      "disabled": false,
+      "before": {
+        "bodyLen": 4737,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3773,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cam-p-axis-p3827\"]",
+      "label": "Camera card click (no drag): bottombar-cam-p-axis-p3827",
+      "found": true,
+      "beforeText": "P3827-PVEAxismulti-sensor · multisensor · outdoorDrag or cli",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3773,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3773,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cat-cable\"]",
+      "label": "Open Cabling tray",
+      "found": true,
+      "beforeText": "Cabling",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3656,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cable-sub-cable\"]",
+      "label": "Cable sub: bottombar-cable-sub-cable",
+      "found": true,
+      "beforeText": "Cable",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3656,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3656,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cable-sub-term\"]",
+      "label": "Cable sub: bottombar-cable-sub-term",
+      "found": true,
+      "beforeText": "Terminations",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3656,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3536,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cable-sub-coupler\"]",
+      "label": "Cable sub: bottombar-cable-sub-coupler",
+      "found": true,
+      "beforeText": "Couplers",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3536,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3421,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cable-sub-rack\"]",
+      "label": "Cable sub: bottombar-cable-sub-rack",
+      "found": true,
+      "beforeText": "Patch / Rack",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3421,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3441,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cable-sub-conduit\"]",
+      "label": "Cable sub: bottombar-cable-sub-conduit",
+      "found": true,
+      "beforeText": "Conduit",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3441,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 4107,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cable-sub-pathway\"]",
+      "label": "Cable sub: bottombar-cable-sub-pathway",
+      "found": true,
+      "beforeText": "Pathways",
+      "disabled": false,
+      "before": {
+        "bodyLen": 4107,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3434,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cable-sub-box\"]",
+      "label": "Cable sub: bottombar-cable-sub-box",
+      "found": true,
+      "beforeText": "Pull / J-box",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3434,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3363,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cable-sub-firestop\"]",
+      "label": "Cable sub: bottombar-cable-sub-firestop",
+      "found": true,
+      "beforeText": "Firestop",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3363,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3350,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cat-conduit\"]",
+      "label": "Open Conduit tray",
+      "found": true,
+      "beforeText": "Conduit1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3402,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"canvas-add-fab\"]",
+      "label": "Add device FAB",
+      "found": true,
+      "beforeText": "",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"canvas-overview-open\"]",
+      "label": "Floor overview open",
+      "found": true,
+      "beforeText": "Overview",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3267,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-floor-switcher\"]",
+      "label": "Floor switcher open",
+      "found": true,
+      "beforeText": "Ground floorG",
+      "disabled": false,
+      "before": {
+        "bodyLen": 3267,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 3330,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "minimap-floor-pick-count",
+      "label": "Floor picks visible",
+      "found": true,
+      "count": 3
+    }
+  ],
+  "review": [
+    {
+      "selector": "[data-track=\"review-status-draft\"]",
+      "label": "Review: review-status-draft",
+      "found": true,
+      "beforeText": "Draft",
+      "disabled": false,
+      "before": {
+        "bodyLen": 873,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 873,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-status-ready\"]",
+      "label": "Review: review-status-ready",
+      "found": true,
+      "beforeText": "Ready",
+      "disabled": false,
+      "before": {
+        "bodyLen": 873,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 884,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-status-approved\"]",
+      "label": "Review: review-status-approved",
+      "found": true,
+      "beforeText": "Approved",
+      "disabled": false,
+      "before": {
+        "bodyLen": 884,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 876,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-copy-link\"]",
+      "label": "Review: review-copy-link",
+      "found": true,
+      "beforeText": "Copy review link",
+      "disabled": false,
+      "before": {
+        "bodyLen": 876,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 936,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-print\"]",
+      "label": "Review: review-print",
+      "found": true,
+      "beforeText": "Print review",
+      "disabled": false,
+      "before": {
+        "bodyLen": 936,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 1015,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-open-reports\"]",
+      "label": "Review: review-open-reports",
+      "found": true,
+      "beforeText": "Reports",
+      "disabled": false,
+      "before": {
+        "bodyLen": 1015,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 6850,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-open-engineering\"]",
+      "label": "Review: review-open-engineering",
+      "found": true,
+      "beforeText": "Open in Engineering",
+      "disabled": false,
+      "before": {
+        "bodyLen": 873,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-floor-0\"]",
+      "label": "Review: review-floor-0",
+      "found": true,
+      "beforeText": "Ground floorL0",
+      "disabled": false,
+      "before": {
+        "bodyLen": 873,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 873,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-floor-1\"]",
+      "label": "Review: review-floor-1",
+      "found": true,
+      "beforeText": "Level 2L1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 873,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 841,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-floor-2\"]",
+      "label": "Review: review-floor-2",
+      "found": true,
+      "beforeText": "BasementL-1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 841,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 829,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-toggle-cameras\"]",
+      "label": "Review: review-toggle-cameras",
+      "found": true,
+      "beforeText": "Cameras1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 829,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 822,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-toggle-doors\"]",
+      "label": "Review: review-toggle-doors",
+      "found": true,
+      "beforeText": "Doors0",
+      "disabled": false,
+      "before": {
+        "bodyLen": 822,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 822,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-toggle-access\"]",
+      "label": "Review: review-toggle-access",
+      "found": true,
+      "beforeText": "Access1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 822,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-toggle-network\"]",
+      "label": "Review: review-toggle-network",
+      "found": true,
+      "beforeText": "Network0",
+      "disabled": false,
+      "before": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-toggle-pathways\"]",
+      "label": "Review: review-toggle-pathways",
+      "found": true,
+      "beforeText": "Pathways0",
+      "disabled": false,
+      "before": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-toggle-coverage\"]",
+      "label": "Review: review-toggle-coverage",
+      "found": true,
+      "beforeText": "Coverage1",
+      "disabled": false,
+      "before": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-toggle-notes\"]",
+      "label": "Review: review-toggle-notes",
+      "found": true,
+      "beforeText": "Notes0",
+      "disabled": false,
+      "before": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-toggle-bom\"]",
+      "label": "Review: review-toggle-bom",
+      "found": true,
+      "beforeText": "BOM summary",
+      "disabled": false,
+      "before": {
+        "bodyLen": 816,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 946,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-add-comment\"]",
+      "label": "Review: review-add-comment",
+      "found": true,
+      "beforeText": "",
+      "disabled": true,
+      "before": {
+        "bodyLen": 946,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 946,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-approve\"]",
+      "label": "Review: review-approve",
+      "found": true,
+      "beforeText": "Approve",
+      "disabled": false,
+      "before": {
+        "bodyLen": 946,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 972,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"review-request-changes\"]",
+      "label": "Review: review-request-changes",
+      "found": true,
+      "beforeText": "Request changes",
+      "disabled": false,
+      "before": {
+        "bodyLen": 972,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "after": {
+        "bodyLen": 987,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/review"
+      },
+      "errs": []
+    }
+  ],
+  "deployment": [
+    {
+      "selector": "[data-track=\"deployment-open-mobile\"]",
+      "label": "Deployment: deployment-open-mobile",
+      "found": true,
+      "beforeText": "Mobile view",
+      "disabled": false,
+      "before": {
+        "bodyLen": 492,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/deployment"
+      },
+      "after": {
+        "bodyLen": 158,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/deployment/m"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"deploy-open-engineering\"]",
+      "label": "Deployment: deploy-open-engineering",
+      "found": true,
+      "beforeText": "Open in Engineering",
+      "disabled": false,
+      "before": {
+        "bodyLen": 492,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/deployment"
+      },
+      "after": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    }
+  ],
+  "reports": [
+    {
+      "selector": "[data-track=\"reports-back-canvas\"]",
+      "label": "Reports: reports-back-canvas",
+      "found": true,
+      "beforeText": "Engineering Canvas",
+      "disabled": false,
+      "before": {
+        "bodyLen": 6711,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "after": {
+        "bodyLen": 3127,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"reports-mode-internal\"]",
+      "label": "Reports: reports-mode-internal",
+      "found": true,
+      "beforeText": "Internal view",
+      "disabled": false,
+      "before": {
+        "bodyLen": 6711,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "after": {
+        "bodyLen": 6711,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"reports-mode-customer\"]",
+      "label": "Reports: reports-mode-customer",
+      "found": true,
+      "beforeText": "Customer view",
+      "disabled": false,
+      "before": {
+        "bodyLen": 6711,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "after": {
+        "bodyLen": 6285,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"reports-print\"]",
+      "label": "Reports: reports-print",
+      "found": true,
+      "beforeText": "Print / Save PDF",
+      "disabled": false,
+      "before": {
+        "bodyLen": 6285,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "after": {
+        "bodyLen": 6364,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"reports-csv-Acme_HQ_Austin-cameras.csv\"]",
+      "label": "Reports: reports-csv-Acme_HQ_Austin-cameras.csv",
+      "found": true,
+      "beforeText": "CSV",
+      "disabled": false,
+      "before": {
+        "bodyLen": 6364,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "after": {
+        "bodyLen": 6402,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"reports-csv-Acme_HQ_Austin-doors.csv\"]",
+      "label": "Reports: reports-csv-Acme_HQ_Austin-doors.csv",
+      "found": true,
+      "beforeText": "CSV",
+      "disabled": false,
+      "before": {
+        "bodyLen": 6402,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "after": {
+        "bodyLen": 6438,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"reports-csv-Acme_HQ_Austin-pathways.csv\"]",
+      "label": "Reports: reports-csv-Acme_HQ_Austin-pathways.csv",
+      "found": true,
+      "beforeText": "CSV",
+      "disabled": false,
+      "before": {
+        "bodyLen": 6438,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "after": {
+        "bodyLen": 6477,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"reports-csv-Acme_HQ_Austin-bom.csv\"]",
+      "label": "Reports: reports-csv-Acme_HQ_Austin-bom.csv",
+      "found": false,
+      "before": {
+        "bodyLen": 6477,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "after": null,
+      "errs": []
+    }
+  ],
+  "estimate": [
+    {
+      "selector": "[data-testid=\"estimator-export-csv\"]",
+      "label": "Estimator Export CSV",
+      "found": true,
+      "beforeText": "Export CSV",
+      "disabled": false,
+      "before": {
+        "bodyLen": 1580,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/estimate/p1"
+      },
+      "after": {
+        "bodyLen": 1604,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/estimate/p1"
+      },
+      "errs": []
+    }
+  ],
+  "threat": []
+}

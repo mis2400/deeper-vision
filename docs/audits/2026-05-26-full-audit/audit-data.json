@@ -1,0 +1,2137 @@
+{
+  "generatedAt": "2026-05-27T04:58:29.052Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "routes": [
+    "canvas",
+    "review",
+    "deployment",
+    "reports",
+    "estimate",
+    "threat"
+  ],
+  "themes": [
+    "light",
+    "slate",
+    "dark"
+  ],
+  "baseResults": [
+    {
+      "route": "canvas",
+      "theme": "light",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 60,
+        "inputCount": 1,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 2,
+        "bodyTextLen": 3127
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/canvas-light.png"
+    },
+    {
+      "route": "canvas",
+      "theme": "slate",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 60,
+        "inputCount": 1,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 2,
+        "bodyTextLen": 3127
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/canvas-slate.png"
+    },
+    {
+      "route": "canvas",
+      "theme": "dark",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 60,
+        "inputCount": 1,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 2,
+        "bodyTextLen": 3127
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/canvas-dark.png"
+    },
+    {
+      "route": "review",
+      "theme": "light",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 24,
+        "inputCount": 2,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 1,
+        "bodyTextLen": 873
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/review-light.png"
+    },
+    {
+      "route": "review",
+      "theme": "slate",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 24,
+        "inputCount": 2,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 1,
+        "bodyTextLen": 873
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/review-slate.png"
+    },
+    {
+      "route": "review",
+      "theme": "dark",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 24,
+        "inputCount": 2,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 1,
+        "bodyTextLen": 873
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/review-dark.png"
+    },
+    {
+      "route": "deployment",
+      "theme": "light",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 5,
+        "inputCount": 0,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 492
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/deployment-light.png"
+    },
+    {
+      "route": "deployment",
+      "theme": "slate",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 5,
+        "inputCount": 0,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 492
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/deployment-slate.png"
+    },
+    {
+      "route": "deployment",
+      "theme": "dark",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 5,
+        "inputCount": 0,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 492
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/deployment-dark.png"
+    },
+    {
+      "route": "reports",
+      "theme": "light",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 9,
+        "inputCount": 0,
+        "linkCount": 14,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 6711
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/reports-light.png"
+    },
+    {
+      "route": "reports",
+      "theme": "slate",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 9,
+        "inputCount": 0,
+        "linkCount": 14,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 6711
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/reports-slate.png"
+    },
+    {
+      "route": "reports",
+      "theme": "dark",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 9,
+        "inputCount": 0,
+        "linkCount": 14,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 6711
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/reports-dark.png"
+    },
+    {
+      "route": "estimate",
+      "theme": "light",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 15,
+        "inputCount": 0,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 1580
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/estimate-light.png"
+    },
+    {
+      "route": "estimate",
+      "theme": "slate",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 15,
+        "inputCount": 0,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 1580
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/estimate-slate.png"
+    },
+    {
+      "route": "estimate",
+      "theme": "dark",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 15,
+        "inputCount": 0,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 1580
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/estimate-dark.png"
+    },
+    {
+      "route": "threat",
+      "theme": "light",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 30,
+        "inputCount": 1,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 2794
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/threat-light.png"
+    },
+    {
+      "route": "threat",
+      "theme": "slate",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 30,
+        "inputCount": 1,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 2794
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/threat-slate.png"
+    },
+    {
+      "route": "threat",
+      "theme": "dark",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "controls": {
+        "buttonCount": 30,
+        "inputCount": 1,
+        "linkCount": 0,
+        "dragCount": 0,
+        "buttonsWithoutHandler": 0,
+        "disabledControls": 0,
+        "bodyTextLen": 2794
+      },
+      "screenshot": "/Users/mis/Projects/deeper-vision/docs/audits/2026-05-26-full-audit/screenshots/threat-dark.png"
+    }
+  ],
+  "inventories": {
+    "canvas": {
+      "buttons": [
+        {
+          "tag": "button",
+          "track": "appshell-app-menu",
+          "testid": null,
+          "aria": null,
+          "title": "App menu",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Projects",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Acme HQ — Austin",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Jump to…⌘K",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "appshell-search-mobile",
+          "testid": null,
+          "aria": "Open search",
+          "title": "Search",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Current role and mode",
+          "text": "Engineer·Engineering",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Help",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Settings",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-floor-switcher",
+          "testid": null,
+          "aria": null,
+          "title": "3 floors · ⌘↑ / ⌘↓ to switch",
+          "text": "Ground floorG",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-undo",
+          "testid": null,
+          "aria": "Undo",
+          "title": "Nothing to undo",
+          "text": "",
+          "disabled": true,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-redo",
+          "testid": null,
+          "aria": "Redo",
+          "title": "Nothing to redo",
+          "text": "",
+          "disabled": true,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-add-plan",
+          "testid": null,
+          "aria": null,
+          "title": "Add a floor plan — upload PDF/image, trace satellite, scan demo, or start blank",
+          "text": "Add plan",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-bom",
+          "testid": null,
+          "aria": null,
+          "title": "BOM & Estimate — derived live from the canvas",
+          "text": "BOM & Estimate",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-review",
+          "testid": null,
+          "aria": null,
+          "title": "Open the customer / reviewer presentation view of this project",
+          "text": "Present",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-deploy",
+          "testid": null,
+          "aria": null,
+          "title": "Open Field Deployment — work orders generated live from the canvas",
+          "text": "Deploy",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-project-state",
+          "testid": null,
+          "aria": null,
+          "title": "Project state · export / import / reset",
+          "text": "Project state",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-mobile-actions",
+          "testid": null,
+          "aria": "Open actions menu",
+          "title": "Actions",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-view-default",
+          "testid": null,
+          "aria": null,
+          "title": "Default — full chrome (rails + dock)",
+          "text": "Default",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-view-field",
+          "testid": null,
+          "aria": null,
+          "title": "Field — slim TopBar, no side rails, canvas is the hero",
+          "text": "Field",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-view-canvas",
+          "testid": null,
+          "aria": null,
+          "title": "Full Canvas — only floating controls (Esc exits)",
+          "text": "Canvas",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Fullscreen monitor",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "topbar-more",
+          "testid": null,
+          "aria": null,
+          "title": "More options",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "assistant-panel-trigger",
+          "aria": null,
+          "title": "Open DV Assist",
+          "text": "DV AssistPassive",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-tools-select",
+          "testid": null,
+          "aria": null,
+          "title": "Select and edit objects",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-tools-pan",
+          "testid": null,
+          "aria": null,
+          "title": "Drag to pan the floorplan",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-tools-measure",
+          "testid": null,
+          "aria": null,
+          "title": "Two clicks to measure distance",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-tools-wall",
+          "testid": null,
+          "aria": null,
+          "title": "Draw wall segments",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-tools-room",
+          "testid": null,
+          "aria": null,
+          "title": "Outline a room",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-tools-annotate",
+          "testid": null,
+          "aria": null,
+          "title": "Drop a note or callout",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-view-layers",
+          "testid": null,
+          "aria": null,
+          "title": "Toggle engineering overlays",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-view-map",
+          "testid": null,
+          "aria": null,
+          "title": "Scan / upload / satellite / sketch",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-view-snap",
+          "testid": null,
+          "aria": null,
+          "title": "Magnetic alignment guides",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-view-coverage",
+          "testid": null,
+          "aria": null,
+          "title": "Toggle cone fill style",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "left-rail-view-chips",
+          "testid": null,
+          "aria": null,
+          "title": "Show on-canvas issue chips",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "intel-rail-zoom-out",
+          "testid": null,
+          "aria": null,
+          "title": "One step out",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "intel-rail-zoom-percent",
+          "testid": null,
+          "aria": null,
+          "title": "Click to fit",
+          "text": "128%",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "intel-rail-zoom-in",
+          "testid": null,
+          "aria": null,
+          "title": "One step in",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "intel-rail-zoom-actual",
+          "testid": null,
+          "aria": null,
+          "title": "Reset to actual scale",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "select-by-menu",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Select",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "canvas-overview-open",
+          "testid": null,
+          "aria": null,
+          "title": "Multi floor overview (⌘⇧O)",
+          "text": "Overview",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "canvas-add-fab",
+          "testid": null,
+          "aria": null,
+          "title": "Add device · open library",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "minimap-floor-pick",
+          "testid": null,
+          "aria": "Switch to Level 2",
+          "title": "Level 2",
+          "text": "L2",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "minimap-floor-pick",
+          "testid": null,
+          "aria": "Switch to Ground floor",
+          "title": "Ground floor",
+          "text": "G",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "minimap-floor-pick",
+          "testid": null,
+          "aria": "Switch to Basement",
+          "title": "Basement",
+          "text": "B1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "canvas-minimap-show",
+          "testid": null,
+          "aria": null,
+          "title": "Show minimap",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "scale-set-btn",
+          "aria": null,
+          "title": "Click two points on a known feature, then enter its real length",
+          "text": "Set scale",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-cam",
+          "testid": null,
+          "aria": null,
+          "title": "Cameras · 5 placed",
+          "text": "Cameras5",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-door",
+          "testid": null,
+          "aria": null,
+          "title": "Doors · 1 placed",
+          "text": "Doors1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-acc",
+          "testid": null,
+          "aria": null,
+          "title": "Access · 2 placed",
+          "text": "Access2",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-intercom",
+          "testid": null,
+          "aria": null,
+          "title": "Intercom",
+          "text": "Intercom",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-intrusion",
+          "testid": null,
+          "aria": null,
+          "title": "Intrusion",
+          "text": "Intrusion",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-fire",
+          "testid": null,
+          "aria": null,
+          "title": "Fire",
+          "text": "Fire",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-sensor",
+          "testid": null,
+          "aria": null,
+          "title": "Sensors",
+          "text": "Sensors",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-audio",
+          "testid": null,
+          "aria": null,
+          "title": "Audio / PA",
+          "text": "Audio / PA",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-net",
+          "testid": null,
+          "aria": null,
+          "title": "Network · 1 placed",
+          "text": "Network1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-cable",
+          "testid": null,
+          "aria": null,
+          "title": "Cabling",
+          "text": "Cabling",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-conduit",
+          "testid": null,
+          "aria": null,
+          "title": "Conduit · 1 placed",
+          "text": "Conduit1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-power",
+          "testid": null,
+          "aria": null,
+          "title": "Power",
+          "text": "Power",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "bottombar-cat-inf",
+          "testid": null,
+          "aria": null,
+          "title": "Site infra",
+          "text": "Site infra",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "bottombar-search-icon",
+          "aria": "Search products",
+          "title": "Search products",
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "track": null,
+          "testid": "project-state-file-input",
+          "aria": null,
+          "title": null,
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "links": [],
+      "drags": []
+    },
+    "review": {
+      "buttons": [
+        {
+          "tag": "button",
+          "track": "review-status-draft",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Draft",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-status-ready",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Ready",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-status-approved",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Approved",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-copy-link",
+          "testid": null,
+          "aria": null,
+          "title": "Copy a tokenized share link so a reviewer can open this view",
+          "text": "Copy review link",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-print",
+          "testid": null,
+          "aria": null,
+          "title": "Print the review — canvas snapshot plus comment thread",
+          "text": "Print review",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-open-reports",
+          "testid": null,
+          "aria": null,
+          "title": "Open the Reports / Proposal package — generated from the same canvas data",
+          "text": "Reports",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-open-engineering",
+          "testid": null,
+          "aria": null,
+          "title": "Open the Engineering Canvas — back to the design surface",
+          "text": "Open in Engineering",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-floor-0",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Ground floorL0",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-floor-1",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Level 2L1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-floor-2",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "BasementL-1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-toggle-cameras",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Cameras5",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-toggle-doors",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Doors1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-toggle-access",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Access2",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-toggle-network",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Network1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-toggle-pathways",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Pathways1",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-toggle-coverage",
+          "testid": null,
+          "aria": null,
+          "title": "Camera FOV cones",
+          "text": "Coverage5",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-toggle-notes",
+          "testid": null,
+          "aria": null,
+          "title": "Sensors + alarm points",
+          "text": "Notes0",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-toggle-bom",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "BOM summary",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Mark resolved",
+          "text": "Mark resolved",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Mark resolved",
+          "text": "Mark resolved",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-add-comment",
+          "testid": null,
+          "aria": null,
+          "title": "Add comment · ⌘/Ctrl + Enter",
+          "text": "",
+          "disabled": true,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-approve",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Approve",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "review-request-changes",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Request changes",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": "Export",
+          "title": "Export this screen",
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "track": null,
+          "testid": "review-reviewer-name",
+          "aria": null,
+          "title": null,
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "textarea",
+          "track": null,
+          "testid": "review-comment-input",
+          "aria": null,
+          "title": null,
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "links": [],
+      "drags": []
+    },
+    "deployment": {
+      "buttons": [
+        {
+          "tag": "button",
+          "track": "deployment-open-mobile",
+          "testid": null,
+          "aria": null,
+          "title": "Open the mobile field view in this tab",
+          "text": "Mobile view",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "deploy-open-engineering",
+          "testid": null,
+          "aria": null,
+          "title": "Open the Engineering Canvas — back to the design surface",
+          "text": "Open in Engineering",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "deploy-empty-portal-link",
+          "aria": null,
+          "title": null,
+          "text": "Open Customer Portal",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Project Center",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": "Export",
+          "title": "Export this screen",
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "inputs": [],
+      "links": [],
+      "drags": []
+    },
+    "reports": {
+      "buttons": [
+        {
+          "tag": "button",
+          "track": "reports-back-canvas",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Engineering Canvas",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "reports-mode-internal",
+          "testid": null,
+          "aria": null,
+          "title": "Shows BOM totals, labor hours, pricing assumptions",
+          "text": "Internal view",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "reports-mode-customer",
+          "testid": null,
+          "aria": null,
+          "title": "Hides internal cost detail + pricing assumptions",
+          "text": "Customer view",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "reports-print",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Print / Save PDF",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "reports-csv-Acme_HQ_Austin-cameras.csv",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "CSV",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "reports-csv-Acme_HQ_Austin-doors.csv",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "CSV",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "reports-csv-Acme_HQ_Austin-pathways.csv",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "CSV",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "reports-csv-Acme_HQ_Austin-bom.csv",
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "CSV",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": "Export",
+          "title": "Export this screen",
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "inputs": [],
+      "links": [
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Review mode",
+          "disabled": false,
+          "href": "/project/p1/review"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Cover",
+          "disabled": false,
+          "href": "#sec-cover"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Executive summary",
+          "disabled": false,
+          "href": "#sec-summary"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Sites & floors",
+          "disabled": false,
+          "href": "#sec-floors"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Plan preview",
+          "disabled": false,
+          "href": "#sec-plans"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Camera schedule",
+          "disabled": false,
+          "href": "#sec-cameras"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Door hardware",
+          "disabled": false,
+          "href": "#sec-doors"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Pathways",
+          "disabled": false,
+          "href": "#sec-pathways"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "BOM & pricing",
+          "disabled": false,
+          "href": "#sec-bom"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Deployment",
+          "disabled": false,
+          "href": "#sec-deployment"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Pricing assumptions",
+          "disabled": false,
+          "href": "#sec-assumptions"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Warnings",
+          "disabled": false,
+          "href": "#sec-warnings"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Assumptions & exclusions",
+          "disabled": false,
+          "href": "#sec-exclusions"
+        },
+        {
+          "tag": "a",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Attachments",
+          "disabled": false,
+          "href": "#sec-attachments"
+        }
+      ],
+      "drags": []
+    },
+    "estimate": {
+      "buttons": [
+        {
+          "tag": "button",
+          "track": "appshell-app-menu",
+          "testid": null,
+          "aria": null,
+          "title": "App menu",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Projects",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Acme HQ — Austin",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Jump to…⌘K",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "appshell-search-mobile",
+          "testid": null,
+          "aria": "Open search",
+          "title": "Search",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "estimator-export-csv",
+          "aria": null,
+          "title": null,
+          "text": "Export CSV",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Current role and mode",
+          "text": "Engineer·Engineering",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Help",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Settings",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Hardware· 9 items$16,544",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Access control · doors· 7 items$3,592",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Cable & pathways· 1 item$42",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Network · racks· 2 items$6,020",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Labor· 1 item$3,525",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": "Export",
+          "title": "Export this screen",
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "inputs": [],
+      "links": [],
+      "drags": []
+    },
+    "threat": {
+      "buttons": [
+        {
+          "tag": "button",
+          "track": "appshell-app-menu",
+          "testid": null,
+          "aria": null,
+          "title": "App menu",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Projects",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Canvas",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Jump to…⌘K",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": "appshell-search-mobile",
+          "testid": null,
+          "aria": "Open search",
+          "title": "Search",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Current role and mode",
+          "text": "Engineer·Engineering",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Help",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Settings",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-perimeter-after-hours",
+          "aria": null,
+          "title": null,
+          "text": "Perimeter intrusion, after hoursAfter business hours. Single actor approaches th",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-tailgate-lobby",
+          "aria": null,
+          "title": null,
+          "text": "Daytime tailgate at the lobbyVisitor times their arrival to slip through the mai",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-loading-dock-delivery",
+          "aria": null,
+          "title": null,
+          "text": "Loading dock disguiseActor enters via the loading dock claiming a delivery, navi",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-reception-social-engineer",
+          "aria": null,
+          "title": null,
+          "text": "Reception social engineeringActor approaches reception with a fabricated reason ",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-after-action-walk",
+          "aria": null,
+          "title": null,
+          "text": "After-action coverage walkWalk the floor edge-to-edge to verify camera coverage.",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-daytime-perimeter",
+          "aria": null,
+          "title": null,
+          "text": "Daytime perimeter intrusionActor crosses the perimeter fence mid-shift, walks th",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-internal-theft-employee",
+          "aria": null,
+          "title": null,
+          "text": "Internal theft, after hours employeeEmployee stays late, waits for the floor to ",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-internal-theft-contractor",
+          "aria": null,
+          "title": null,
+          "text": "Contractor diversionContractor on a legitimate work order detours from the assig",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-vehicle-ram",
+          "aria": null,
+          "title": null,
+          "text": "Vehicle threat at perimeterVehicle approaches the main vehicle entry at unsafe s",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-parking-tailgate",
+          "aria": null,
+          "title": null,
+          "text": "Parking lot tailgateMorning arrival: actor parks, follows a badged employee from",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-it-closet-entry",
+          "aria": null,
+          "title": null,
+          "text": "IT closet entryOvernight: actor heads directly for the IT / MDF closet from an i",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-asset-removal-overnight",
+          "aria": null,
+          "title": null,
+          "text": "Asset removal, overnightOvernight removal of larger assets via the loading dock.",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-scenario-late-night-breach",
+          "aria": null,
+          "title": null,
+          "text": "Late-night facility breachCoordinated two-person breach via a low-traffic side d",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Reset to start",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Step back one hop",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Play",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": "Step forward one hop",
+          "text": "",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-harden-lighting",
+          "aria": null,
+          "title": "Add a perimeter light at Rear service door for deterrence.",
+          "text": "Harden on canvas · lighting",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "Harden on canvas",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-capture-baseline",
+          "aria": null,
+          "title": null,
+          "text": "Capture baseline",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": "threat-export-pdf",
+          "aria": null,
+          "title": null,
+          "text": "Print threat report",
+          "disabled": false,
+          "href": null
+        },
+        {
+          "tag": "button",
+          "track": null,
+          "testid": null,
+          "aria": "Export",
+          "title": "Export this screen",
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "track": null,
+          "testid": null,
+          "aria": null,
+          "title": null,
+          "text": "",
+          "disabled": false,
+          "href": null
+        }
+      ],
+      "links": [],
+      "drags": []
+    }
+  },
+  "canvasBarOpens": [
+    {
+      "track": "bottombar-cat-cam",
+      "label": "Cameras · 5 placed",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-door",
+      "label": "Doors · 1 placed",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-acc",
+      "label": "Access · 2 placed",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-intercom",
+      "label": "Intercom",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-intrusion",
+      "label": "Intrusion",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-fire",
+      "label": "Fire",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-sensor",
+      "label": "Sensors",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-audio",
+      "label": "Audio / PA",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-net",
+      "label": "Network · 1 placed",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-cable",
+      "label": "Cabling",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-conduit",
+      "label": "Conduit · 1 placed",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-power",
+      "label": "Power",
+      "trayOpen": true
+    },
+    {
+      "track": "bottombar-cat-inf",
+      "label": "Site infra",
+      "trayOpen": true
+    }
+  ],
+  "topbarMoreItems": [
+    {
+      "track": "topbar-more-theme-light",
+      "label": "Drafting",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-theme-slate",
+      "label": "Slate",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-theme-dark",
+      "label": "Dark",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-reports",
+      "label": "ReportsProposal package generated from the canvas",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-snap",
+      "label": "Snap to gridVertices round to the 20 px grid.On",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-intel",
+      "label": "AI IntelligenceOff — canvas stays calmOff",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-report",
+      "label": "Report Builder",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-plan",
+      "label": "Plan source",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-popout",
+      "label": "Open in new window",
+      "disabled": false
+    },
+    {
+      "track": "topbar-more-scan",
+      "label": "Demo scanDemo only",
+      "disabled": false
+    }
+  ],
+  "reportsExportRows": [
+    {
+      "label": "Print / Save PDF",
+      "disabled": false
+    }
+  ],
+  "findings": [
+    {
+      "bucket": "FLOW",
+      "severity": "INFO",
+      "id": "disabled-controls-canvas-light",
+      "title": "2 disabled control(s) on canvas (light)",
+      "evidence": "inventory pass — count only; per-control identity captured in inventory phase"
+    },
+    {
+      "bucket": "FLOW",
+      "severity": "INFO",
+      "id": "disabled-controls-canvas-slate",
+      "title": "2 disabled control(s) on canvas (slate)",
+      "evidence": "inventory pass — count only; per-control identity captured in inventory phase"
+    },
+    {
+      "bucket": "FLOW",
+      "severity": "INFO",
+      "id": "disabled-controls-canvas-dark",
+      "title": "2 disabled control(s) on canvas (dark)",
+      "evidence": "inventory pass — count only; per-control identity captured in inventory phase"
+    },
+    {
+      "bucket": "FLOW",
+      "severity": "INFO",
+      "id": "disabled-controls-review-light",
+      "title": "1 disabled control(s) on review (light)",
+      "evidence": "inventory pass — count only; per-control identity captured in inventory phase"
+    },
+    {
+      "bucket": "FLOW",
+      "severity": "INFO",
+      "id": "disabled-controls-review-slate",
+      "title": "1 disabled control(s) on review (slate)",
+      "evidence": "inventory pass — count only; per-control identity captured in inventory phase"
+    },
+    {
+      "bucket": "FLOW",
+      "severity": "INFO",
+      "id": "disabled-controls-review-dark",
+      "title": "1 disabled control(s) on review (dark)",
+      "evidence": "inventory pass — count only; per-control identity captured in inventory phase"
+    }
+  ]
+}
