@@ -1685,20 +1685,11 @@ export function EngineeringCanvas() {
   const focusMode = viewMode === 'canvas';
   // Insert dock can be collapsed to a 48px icon rail at any time so the
   // device library never blocks the plan. Collapsed by default so the
-  // canvas owns the screen on first load — engineers click the floating
-  // Add FAB (or any dock icon) to pull the library back in. Their last
-  // choice persists across sessions.
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem('canvas:dock:collapsed');
-      // null = first visit → collapsed default; explicit '0' = user has
-      // pinned the dock open and wants it that way next time.
-      return raw === null ? true : raw === '1';
-    } catch { return true; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem('canvas:dock:collapsed', dockCollapsed ? '1' : '0'); } catch {}
-  }, [dockCollapsed]);
+  // M11 audit fix (F1): the legacy dockCollapsed state + its persist
+  // effect drove the InsertDock side rail's collapse/expand. The
+  // InsertDock was deleted as dead code in E37b; nothing reads
+  // dockCollapsed anymore. Removed here. The FAB visibility gate that
+  // used to consume it now just keys on viewMode.
   // Scan / Build Floorplan modal — the obvious entry point to capture or
   // generate a floor surface (scan with camera, upload, satellite trace,
   // or sketch from scratch).
@@ -1907,8 +1898,10 @@ export function EngineeringCanvas() {
    *  multisensor can have its own setting. */
   const setLensModeForSel = (m: LensMode) => sel && setDevices((ds) => ds.map((d) => d.id === sel.id ? { ...d, lensMode: m } : d));
 
-  // Left navigation rail
-  const [navSection, setNavSection] = useState<'overview' | 'devices' | 'recording' | 'accessories' | 'other' | 'maps' | 'reports' | 'docs'>('devices');
+  // M11 audit fix (F1): the legacy navSection state used to drive the
+  // InsertDock side rail's section nav. The InsertDock was deleted as
+  // dead code in E37b; navSection had no readers anywhere in the tree
+  // after that, and the FAB writing to it was the F1 bug. Removed.
 
   // Insert dock — start at the category grid so user sees all 9 categories first
   const [openCat, setOpenCat] = useState<DeviceKind | null>(null);
@@ -3871,19 +3864,27 @@ export function EngineeringCanvas() {
             )}
 
             {/* Floating Add FAB — the canvas-side entry into the device
-                library. Audit follow-up: was at `bottom-20 right-5` which
-                overlapped the floor badge (right-3 / w=44) and the new
-                docked edit panel. Moved to `top-[120px] right-3` so it
-                sits cleanly in the cleared right-side space (intel rail
-                moved away in Group C.5), under the Overview button, and
-                clear of the floor badge, DV Assist trigger, and the
-                docked edit panel — at every panel height. */}
-            {viewMode !== 'canvas' && (dockCollapsed || viewMode === 'field') && (
+                library. M11 audit fix (F1): the old onClick wrote to
+                dead state (dockCollapsed gated the FAB itself, so the
+                click hid the control the user just pressed; navSection
+                had no readers post-InsertDock-deletion). Now the FAB
+                opens the canonical device entry — the bottom device
+                bar's Cameras tray — by dispatching a click on the
+                already-wired bottombar-cat-cam button. The user gets a
+                grid of draggable camera cards exactly as if they'd
+                clicked the Cameras icon themselves. */}
+            {viewMode !== 'canvas' && (
               <button
                 onClick={() => {
                   if (viewMode === 'field') setViewMode('default');
-                  setDockCollapsed(false);
-                  setNavSection('devices');
+                  // Dispatch on the bottom-bar Cameras category button.
+                  // That button is the canonical entry into the device
+                  // library after the InsertDock deletion. Using a DOM
+                  // click instead of lifting the BottomDeviceBar's
+                  // internal `open` state keeps the FAB stateless and
+                  // matches what a user would do manually.
+                  const camCatBtn = document.querySelector('[data-track="bottombar-cat-cam"]') as HTMLButtonElement | null;
+                  if (camCatBtn) camCatBtn.click();
                 }}
                 data-track="canvas-add-fab"
                 title="Add device · open library"
