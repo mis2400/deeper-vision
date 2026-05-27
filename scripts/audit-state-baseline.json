@@ -1,6 +1,4 @@
 {
-  "src/app/components/canvas/ProjectStateMenu.tsx": 1,
-  "src/app/screens/DeploymentMode.tsx": 3,
   "src/app/screens/EstimatorView.tsx": 1,
   "src/app/screens/ReportsCenter.tsx": 1,
   "src/app/screens/ReviewMode.tsx": 1,

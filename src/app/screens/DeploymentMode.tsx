@@ -71,8 +71,36 @@ const MOCK_TECHS = ['Unassigned', 'Sam Ortiz · Cam crew', 'Priya Banerjee · Ac
 export function DeploymentMode() {
   const { projectId = 'p1' } = useParams();
   const nav = useNavigate();
-  const state = useProjectStore();
-  const project = state.projects[projectId];
+  // Per-slice selector subs. Replaces the whole-store subscription
+  // pattern called out in the earlier comment as still inefficient —
+  // now React only re-renders this surface when one of these specific
+  // slices changes.
+  const projects             = useProjectStore((s) => s.projects);
+  const approvals            = useProjectStore((s) => s.approvals);
+  const devices              = useProjectStore((s) => s.devices);
+  const doors                = useProjectStore((s) => s.doors);
+  const pathways             = useProjectStore((s) => s.pathways);
+  const idfs                 = useProjectStore((s) => s.idfs);
+  const floorsMap            = useProjectStore((s) => s.floors);
+  const projectPricebooks    = useProjectStore((s) => s.projectPricebooks);
+  const workOrderProgress    = useProjectStore((s) => s.workOrderProgress);
+  const sites                = useProjectStore((s) => s.sites);
+  const buildings            = useProjectStore((s) => s.buildings);
+  // deriveWorkOrders / workOrderGate / floorsForProject all want a
+  // state-shaped object. Build a minimal shim from the slice subs and
+  // memo on the same slice identities — when any slice changes, the
+  // shim is re-assembled and the downstream memos rerun.
+  // floorsForProject also walks sites → buildings → floors so both
+  // slices are included (without buildings the selector throws on
+  // `Object.values(undefined)`).
+  const state = useMemo(
+    () => ({
+      projects, approvals, devices, doors, pathways, idfs,
+      floors: floorsMap, projectPricebooks, workOrderProgress, sites, buildings,
+    } as any),
+    [projects, approvals, devices, doors, pathways, idfs, floorsMap, projectPricebooks, workOrderProgress, sites, buildings],
+  );
+  const project = projects[projectId];
 
   const workOrders = useMemo(() => deriveWorkOrders(state, projectId), [state, projectId]);
   // SC.2.5 — gate readout so the empty state explains WHY the list
@@ -91,25 +119,25 @@ export function DeploymentMode() {
   //
   // ROOT-CAUSE FIX (React error #185 / "Maximum update depth exceeded"
   // / blank /deployment route): the previous dep array listed
-  // `workOrders` directly. `workOrders` is `useMemo(deriveWorkOrders,
-  // [state, projectId])` and `state = useProjectStore()` subscribes
-  // to the WHOLE store, so any store write (including this very
-  // setAssistantContext call) re-rendered this component, which
-  // produced a new `state` reference, which invalidated the
-  // useMemo, which yielded a new array identity for `workOrders`,
-  // which fired this effect again, which wrote setAssistantContext
-  // again, which re-rendered, loop.
+  // `workOrders` directly. `workOrders` was a memo over the WHOLE
+  // store reference (the old whole-store sub pattern), so any
+  // store write re-rendered this component, the memo invalidated,
+  // produced a new array identity, fired this effect, the effect
+  // wrote setAssistantContext, the write re-rendered, loop.
   //
   // The fix is in the dep array: depend on the SELECTED work order's
   // primitives (id + title) instead of the whole array. Adding a new
   // unrelated work order to the list no longer re-fires this effect,
   // and the store write inside the effect can no longer feed back
   // into the effect's own dependencies. The whole-store subscription
-  // pattern (`useProjectStore()`) is still inefficient but it is no
-  // longer a crash because nothing on the effect's hot path depends
-  // on the whole-state reference.
+  // was also retired in the M11 hardening pass — the surface now
+  // subscribes to nine specific slices, so unrelated store writes
+  // do not even trigger a re-render of this surface.
   const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
-  const deploymentSite = useProjectStore((s) => Object.values(s.sites).find((x) => x.projectId === projectId));
+  const deploymentSite = useMemo(
+    () => Object.values(sites).find((x: any) => x.projectId === projectId) as any,
+    [sites, projectId],
+  );
   const selectedWo = selectedId ? workOrders.find((w) => w.id === selectedId) : undefined;
   useEffect(() => {
     setAssistantContext({

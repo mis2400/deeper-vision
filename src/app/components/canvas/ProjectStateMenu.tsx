@@ -40,7 +40,18 @@ interface Props {
 export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
   const importProjectState = useProjectStore((s) => s.importProjectState);
   const resetDemoData = useProjectStore((s) => s.resetDemoData);
-  const fullState = useProjectStore();
+  // Per-slice selector subs replace the old whole-store sub. Same shape
+  // as the ProjectBomDrawer migration in E53 — when any of these
+  // slices change the status memo invalidates and getSyncMode reads
+  // fresh state via getState() inside projectSync. No deps held on
+  // the whole-state ref; export grabs state at call time.
+  const projects          = useProjectStore((s) => s.projects);
+  const devices           = useProjectStore((s) => s.devices);
+  const doors             = useProjectStore((s) => s.doors);
+  const pathways          = useProjectStore((s) => s.pathways);
+  const idfs              = useProjectStore((s) => s.idfs);
+  const floors            = useProjectStore((s) => s.floors);
+  const projectPricebooks = useProjectStore((s) => s.projectPricebooks);
 
   const [open, setOpen] = useState(false);
   const [pendingImport, setPendingImport] = useState<ProjectStateEnvelope | null>(null);
@@ -54,13 +65,14 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Live sync status + snapshot list. `fullState` keeps this in sync
-  // with every store edit. `snapshotBump` covers the snapshot-only
-  // mutations that don't touch the Zustand store.
+  // Live sync status + snapshot list. The slice subs above keep this in
+  // sync with every store edit that affects the readout. snapshotBump
+  // covers the snapshot-only mutations that don't touch the Zustand
+  // store.
   const status = useMemo(
     () => getSyncMode(projectId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectId, fullState, snapshotBump],
+    [projectId, projects, devices, doors, pathways, idfs, floors, projectPricebooks, snapshotBump],
   );
   const snapshots = useMemo(
     () => listLocalSnapshots(projectId),
@@ -82,7 +94,11 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
 
   const onExport = useCallback(() => {
     try {
-      const env = exportProjectState(fullState, projectId, { buildLabel: buildLabel() });
+      // Read fresh state at call time instead of subscribing to the
+      // whole store. exportProjectState wants the full ProjectState
+      // shape, so getState() is the right shape without forcing a
+      // re-render on every unrelated store write.
+      const env = exportProjectState(useProjectStore.getState(), projectId, { buildLabel: buildLabel() });
       const json = JSON.stringify(env, null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -103,7 +119,7 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
     } catch (e: any) {
       toast.error('Export failed', { description: String(e?.message ?? e), duration: 5000 });
     }
-  }, [fullState, projectId]);
+  }, [projectId]);
 
   const onImportClick = useCallback(() => {
     fileInputRef.current?.click();
