@@ -28,9 +28,26 @@ export function ThreatSimulator() {
   //   - the scrubber thumb
   const [progress, setProgress] = useState(0);
 
-  // Subscribe to the slices the engine needs. Live re-render when the
-  // operator hardens on the canvas in a side tab.
-  const state = useProjectStore();
+  // Per-slice selector subs replace the whole-store sub. runScenario
+  // walks projects + floors + devices (via firstFloorOfProject +
+  // devicesForProject + resolveFloorExtents). Sites + buildings ride
+  // along because firstFloorOfProject walks site → buildings → floors.
+  // currentRole + customers fuel the header strip below.
+  const projectsMap   = useProjectStore((s) => s.projects);
+  const customersMap  = useProjectStore((s) => s.customers);
+  const sitesMap      = useProjectStore((s) => s.sites);
+  const buildingsMap  = useProjectStore((s) => s.buildings);
+  const floorsMap     = useProjectStore((s) => s.floors);
+  const devicesMap    = useProjectStore((s) => s.devices);
+  const currentRole   = useProjectStore((s) => s.currentRole);
+  const state = useMemo(
+    () => ({
+      projects: projectsMap, customers: customersMap, sites: sitesMap,
+      buildings: buildingsMap, floors: floorsMap, devices: devicesMap,
+      currentRole,
+    } as any),
+    [projectsMap, customersMap, sitesMap, buildingsMap, floorsMap, devicesMap, currentRole],
+  );
   const result = useMemo(() => runScenario(state, projectId, scenarioId), [state, projectId, scenarioId]);
 
   const scenarioDef = SCENARIOS.find((s) => s.id === scenarioId);
