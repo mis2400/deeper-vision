@@ -35,9 +35,16 @@ function downloadCsv(filename: string, rows: ReadonlyArray<ReadonlyArray<unknown
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** Group every BOM line under a presentable section heading. */
+/** Group every BOM line under a presentable section heading.
+ *  M11 audit fix (U1): the device section used to be labelled
+ *  "Hardware", which collided with the right hand Totals card whose
+ *  "Hardware" row sums devices + doors + IDFs. A user comparing the
+ *  two saw a multi thousand dollar gap with no explanation. Renamed
+ *  the device group to "Devices" so the left side accurately
+ *  describes what is in it (cameras, multisensors, readers, APs,
+ *  strikes) and no longer collides with the broader Totals figure. */
 const SECTION_FOR: Record<EstimateLine['sourceKind'], string> = {
-  device:  'Hardware',
+  device:  'Devices',
   door:    'Access control · doors',
   pathway: 'Cable & pathways',
   idf:     'Network · racks',
