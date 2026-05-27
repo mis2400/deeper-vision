@@ -297,8 +297,49 @@ try {
   await page.screenshot({ path: resolve(SHOT_DIR, 'threat-scenario-loaded.png'), fullPage: false });
 
   writeFileSync(resolve(OUT_DIR, 'audit-exercise.json'), JSON.stringify(results, null, 2));
+  // M11 audit fix (E70): write the human readable trace alongside the
+  // JSON so they can never drift. Earlier in the audit the .txt was
+  // committed by hand and went stale (it showed F1 as `[NO DELTA]`
+  // even after the fix landed because nothing regenerated it). Now
+  // every exercise run rewrites exercise-trace.txt from the same
+  // results object the JSON is built from.
+  writeFileSync(resolve(OUT_DIR, 'exercise-trace.txt'), formatTrace(results));
   console.log('Exercise results written. Routes covered:', Object.keys(results).map((k) => `${k}=${results[k].length}`).join(' '));
   await browser.close();
 } finally {
   if (viteProc && !viteProc.killed) viteProc.kill('SIGTERM');
+}
+
+// Render a single click result as one aligned trace line. The format
+// matches the original hand maintained exercise-trace.txt so the diff
+// noise on first regen is minimal.
+function formatTraceLine(r) {
+  const label = (r.label ?? r.selector ?? '').padEnd(55);
+  if (!r.found) return '  ' + label + ' [NOT FOUND]';
+  if (r.disabled) return '  ' + label + ' [DISABLED]';
+  const b = r.before?.bodyLen ?? 0;
+  const a = r.after?.bodyLen ?? 0;
+  const u0 = r.before?.url ?? '';
+  const u1 = r.after?.url ?? '';
+  const urlPart = (u0 !== u1) ? ` url->${u1}` : '';
+  const ovl0 = r.before?.overlayCount ?? 0;
+  const ovl1 = r.after?.overlayCount ?? 0;
+  const ovlPart = (ovl0 !== ovl1) ? ` ovl0->${ovl1}` : '';
+  let delta = '';
+  if (a === b && !urlPart && !ovlPart) delta = ' [NO DELTA]';
+  else if (a !== b) delta = ` body${b}->${a}`;
+  if (typeof r.count === 'number') delta += ` count=${r.count}`;
+  return '  ' + label + delta + urlPart + ovlPart;
+}
+
+function formatTrace(results) {
+  const sections = ['canvas', 'review', 'deployment', 'reports', 'estimate', 'threat'];
+  const lines = [];
+  for (const s of sections) {
+    const arr = results[s] ?? [];
+    lines.push(`=== ${s} (${arr.length} actions) ===`);
+    for (const r of arr) lines.push(formatTraceLine(r));
+    lines.push('');
+  }
+  return lines.join('\n');
 }

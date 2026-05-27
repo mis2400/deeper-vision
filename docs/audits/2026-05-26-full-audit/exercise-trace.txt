@@ -1,19 +1,19 @@
 === canvas (59 actions) ===
   TopBar BOM & Estimate                                   body3127->5534
   TopBar Present                                          body5534->873 url->/project/p1/review
-  TopBar Deploy                                           body3127->492 url->/project/p1/deployment
+  TopBar Deploy                                           body3127->447 url->/project/p1/deployment
   TopBar Add plan                                         body3127->3538 ovl0->1
-  TopBar More                                             body3127->3347
+  TopBar More                                             body3127->3360
   More: topbar-more-theme-light                           [NO DELTA]
   More: topbar-more-theme-slate                           [NO DELTA]
   More: topbar-more-theme-dark                            [NO DELTA]
-  More item: topbar-more-reports                          body3347->6711 url->/project/p1/reports
-  More toggle: topbar-more-snap                           body3347->3352
-  More toggle: topbar-more-intel                          body3352->3546
-  More item: topbar-more-report                           body3546->4447 ovl0->1
-  More item: topbar-more-plan                             body3546->3712
-  More item: topbar-more-popout                           body3938->3712
-  More item: topbar-more-scan                             body3938->767 url->/visionscan
+  More item: topbar-more-reports                          body3360->6711 url->/project/p1/reports
+  More toggle: topbar-more-snap                           body3360->3365
+  More toggle: topbar-more-intel                          body3365->3559
+  More item: topbar-more-report                           body3559->4447 ovl0->1
+  More item: topbar-more-plan                             body3559->3712
+  More item: topbar-more-popout                           body3951->3712
+  More item: topbar-more-scan                             body3951->767 url->/visionscan
   View mode default                                       [NO DELTA]
   View mode field                                         body3127->3109
   View mode canvas                                        body3109->2874
@@ -83,8 +83,8 @@
   Review: review-request-changes                          body972->987
 
 === deployment (2 actions) ===
-  Deployment: deployment-open-mobile                      body492->158 url->/project/p1/deployment/m
-  Deployment: deploy-open-engineering                     body492->3127 url->/project/p1/canvas
+  Deployment: deployment-open-mobile                      body447->158 url->/project/p1/deployment/m
+  Deployment: deploy-open-engineering                     body447->3127 url->/project/p1/canvas
 
 === reports (8 actions) ===
   Reports: reports-back-canvas                            body6711->3127 url->/project/p1/canvas
@@ -97,7 +97,6 @@
   Reports: reports-csv-Acme_HQ_Austin-bom.csv             [NOT FOUND]
 
 === estimate (1 actions) ===
-  Estimator Export CSV                                    body1580->1604
+  Estimator Export CSV                                    body1579->1603
 
 === threat (0 actions) ===
-
