@@ -1951,16 +1951,26 @@
     {
       "selector": "[data-track=\"reports-csv-Acme_HQ_Austin-bom.csv\"]",
       "label": "Reports: reports-csv-Acme_HQ_Austin-bom.csv",
-      "found": false,
+      "found": true,
+      "beforeText": "CSV",
+      "disabled": false,
       "before": {
-        "bodyLen": 6477,
+        "bodyLen": 6903,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
-      "after": null,
-      "errs": []
+      "after": {
+        "bodyLen": 6820,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/reports"
+      },
+      "errs": [],
+      "retried": true,
+      "retryReason": "switched-to-internal"
     }
   ],
   "estimate": [

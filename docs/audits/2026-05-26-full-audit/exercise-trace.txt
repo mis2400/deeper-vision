@@ -94,7 +94,7 @@
   Reports: reports-csv-Acme_HQ_Austin-cameras.csv         body6364->6402
   Reports: reports-csv-Acme_HQ_Austin-doors.csv           body6402->6438
   Reports: reports-csv-Acme_HQ_Austin-pathways.csv        body6438->6477
-  Reports: reports-csv-Acme_HQ_Austin-bom.csv             [NOT FOUND]
+  Reports: reports-csv-Acme_HQ_Austin-bom.csv             body6903->6820
 
 === estimate (1 actions) ===
   Estimator Export CSV                                    body1579->1603

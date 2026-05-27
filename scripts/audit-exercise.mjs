@@ -274,7 +274,30 @@ try {
     Array.from(document.querySelectorAll('[data-track^="reports-"]')).map((b) => b.getAttribute('data-track')),
   );
   for (const tk of reportsTracks) {
-    results.reports.push(await click(page, `[data-track="${tk}"]`, `Reports: ${tk}`));
+    // M11 audit fix (E71): the BOM CSV button only renders in
+    // internal mode (customer mode hides the BOM section by design).
+    // The original enumeration captured every track at internal-mode
+    // load time, but the click loop ran `reports-mode-customer`
+    // before `reports-csv-bom.csv`, so BOM CSV was [NOT FOUND] not
+    // because of a real bug but because the harness had toggled
+    // itself out of the right mode. The audit flagged this as F6
+    // ("selector lookup failed on second pass"). Detect that case and
+    // re enter internal mode before retrying; CSV buttons that still
+    // aren't there are the real miss.
+    const isCsv = /^reports-csv-.+\.csv$/.test(tk);
+    let result = await click(page, `[data-track="${tk}"]`, `Reports: ${tk}`);
+    if (!result.found && isCsv) {
+      // Try to flip back to internal mode (a no-op if we're already there).
+      const flipped = await page.evaluate(() => {
+        const btn = document.querySelector('[data-track="reports-mode-internal"]');
+        if (btn) { btn.click(); return true; }
+        return false;
+      });
+      if (flipped) await new Promise((r) => setTimeout(r, 600));
+      const retry = await click(page, `[data-track="${tk}"]`, `Reports: ${tk}`);
+      if (retry.found) result = { ...retry, retried: true, retryReason: 'switched-to-internal' };
+    }
+    results.reports.push(result);
     const url = await page.evaluate(() => location.pathname);
     if (!url.endsWith('/reports')) await loadRoute(page, `/project/${PROJECT_ID}/reports`);
   }
