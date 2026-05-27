@@ -48,13 +48,28 @@ const SECTION_FOR: Record<EstimateLine['sourceKind'], string> = {
 export function EstimatorView() {
   const { projectId = 'p1' } = useParams();
 
-  // Subscribe to the slices that affect BOM so the page re-renders when the
-  // canvas changes a device. (We can't memoize on the raw maps; their object
-  // identity changes per action.)
-  const state = useProjectStore();
+  // Per-slice selector subs replace the whole-store sub that
+  // originally lived here. Only the slices deriveBOM + the layout
+  // actually reads — no re-render on unrelated writes.
+  const projects          = useProjectStore((s) => s.projects);
+  const devices           = useProjectStore((s) => s.devices);
+  const doors             = useProjectStore((s) => s.doors);
+  const pathways          = useProjectStore((s) => s.pathways);
+  const idfs              = useProjectStore((s) => s.idfs);
+  const floors            = useProjectStore((s) => s.floors);
+  const estimates         = useProjectStore((s) => s.estimates);
+  const projectPricebooks = useProjectStore((s) => s.projectPricebooks);
+  const currentRole       = useProjectStore((s) => s.currentRole);
+  // deriveBOM wants a state-shaped object — build a shim from the
+  // slice subs above. When any slice changes the shim is re-assembled
+  // and the BOM memo reruns.
+  const state = useMemo(
+    () => ({ projects, devices, doors, pathways, idfs, floors, estimates, projectPricebooks } as any),
+    [projects, devices, doors, pathways, idfs, floors, estimates, projectPricebooks],
+  );
 
   const bom = useMemo(() => deriveBOM(state, projectId), [state, projectId]);
-  const projectName = state.projects[projectId]?.name ?? 'Project';
+  const projectName = projects[projectId]?.name ?? 'Project';
 
   // Bucket lines by section for the existing layout.
   const sections = useMemo(() => {
@@ -74,17 +89,17 @@ export function EstimatorView() {
         description: 'Field install + commissioning labor',
         qty: Math.round(bom.laborHours * 10) / 10,
         uom: 'hr',
-        unitPrice: state.estimates[`est-${projectId}`]?.laborRate ?? 95,
+        unitPrice: estimates[`est-${projectId}`]?.laborRate ?? 95,
       });
     }
     if (laborLines.length) groups.set('Labor', laborLines);
     return Array.from(groups, ([title, lines]) => ({ id: title, title, lines }));
-  }, [bom, state.estimates, projectId]);
+  }, [bom, estimates, projectId]);
 
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   // Headline totals
-  const markup = state.estimates[`est-${projectId}`]?.markup ?? 0.18;
+  const markup = estimates[`est-${projectId}`]?.markup ?? 0.18;
   const subtotal = bom.hardwareTotal + bom.cableTotal + bom.laborTotal;
   const margin = subtotal * markup;
   const total = subtotal + margin;
@@ -201,7 +216,7 @@ export function EstimatorView() {
           <div className="bg-card border border-border rounded-lg p-4 sticky top-4">
             <div className="flex items-center justify-between mb-3">
               <div className="text-[11px] font-medium text-foreground tracking-tight">Totals</div>
-              {state.currentRole === 'customer' && (
+              {currentRole === 'customer' && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 inline-flex items-center gap-1">
                   Customer view
                 </span>
@@ -211,7 +226,7 @@ export function EstimatorView() {
                 and margin are hidden. Only the customer-facing total
                 remains. This is the role-driven view gate from the
                 permissions blueprint. */}
-            {state.currentRole === 'customer' ? (
+            {currentRole === 'customer' ? (
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between text-muted-foreground"><span>System + installation</span><span className="tabular-nums">{currency(subtotal + margin)}</span></div>
                 <div className="border-t border-border pt-2 mt-2 flex justify-between text-base">
