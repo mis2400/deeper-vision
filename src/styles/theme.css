@@ -117,6 +117,26 @@
   --z-confirm:         90;
   --z-toast:          100;
   --z-shortcut-help:  110;
+
+  /* Command chrome — the canvas is the core product surface, so it
+     gets a darker infrastructure shell independent of the lighter
+     drafting paper inside the plan. These tokens are intentionally
+     global and stable across themes so the app stops drifting into
+     three different brands. */
+  --command-bg: #090E16;
+  --command-panel: #101724;
+  --command-panel-elevated: #151E2D;
+  --command-border: rgba(209, 219, 235, 0.12);
+  --command-border-strong: rgba(209, 219, 235, 0.20);
+  --command-fg: #F7FAFC;
+  --command-muted: rgba(210, 220, 236, 0.70);
+  --command-faint: rgba(148, 163, 184, 0.56);
+  --command-accent: #C8F84A;
+  --command-accent-foreground: #0B111C;
+  --command-cyan: #48D5F5;
+  --command-warning: #F8C14A;
+  --command-danger: #FF6B6B;
+  --command-shadow: 0 18px 44px -24px rgba(0, 0, 0, 0.80);
 }
 
 :root[data-theme="slate"], [data-theme="slate"] {

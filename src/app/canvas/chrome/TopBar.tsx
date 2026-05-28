@@ -83,6 +83,12 @@ export function TopBar(props: {
   return (
     <div
       className={`shrink-0 border-b border-border bg-background/80 backdrop-blur-md flex items-center pl-2 sm:pl-3 pr-1.5 sm:pr-2 gap-1.5 sm:gap-2 text-sm relative z-[45] ${compact ? 'h-11' : 'h-12'}`}
+      style={{
+        background: 'linear-gradient(180deg, color-mix(in oklab, var(--command-panel) 96%, white 4%), var(--command-bg))',
+        borderColor: 'var(--command-border)',
+        color: 'var(--command-fg)',
+        boxShadow: 'var(--command-shadow)',
+      }}
     >
       {/* Canvas V2 Pass 1.5.1 — top toolbar overflow strategy. Mobile
           (under md = 768 px) collapses the desktop chrome buttons into
@@ -101,6 +107,12 @@ export function TopBar(props: {
           onClick={props.onOpenScanBuild}
           title="Add a floor plan — upload PDF/image, trace satellite, scan demo, or start blank"
           className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 transition-colors whitespace-nowrap"
+          style={{
+            background: 'var(--command-accent)',
+            borderColor: 'var(--command-accent)',
+            color: 'var(--command-accent-foreground)',
+            boxShadow: '0 8px 22px -14px var(--command-accent)',
+          }}
           data-track="topbar-add-plan"
         >
           <Upload className="w-3.5 h-3.5" />Add plan
@@ -109,6 +121,11 @@ export function TopBar(props: {
           onClick={props.onOpenBom}
           title="BOM & Estimate — derived live from the canvas"
           className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border hover:bg-secondary/50 text-foreground transition-colors whitespace-nowrap"
+          style={{
+            background: 'var(--command-panel-elevated)',
+            borderColor: 'var(--command-border)',
+            color: 'var(--command-fg)',
+          }}
           data-track="topbar-bom"
         >
           <BarChart3 className="w-3.5 h-3.5" />BOM & Estimate
@@ -117,6 +134,11 @@ export function TopBar(props: {
           onClick={props.onOpenReview}
           title="Open the customer / reviewer presentation view of this project"
           className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-500 transition-colors whitespace-nowrap"
+          style={{
+            background: 'color-mix(in oklab, var(--command-cyan) 12%, transparent)',
+            borderColor: 'color-mix(in oklab, var(--command-cyan) 34%, transparent)',
+            color: 'var(--command-cyan)',
+          }}
           data-track="topbar-review"
         >
           <Presentation className="w-3.5 h-3.5" />Present
@@ -125,11 +147,16 @@ export function TopBar(props: {
           onClick={props.onOpenDeployment}
           title="Open Field Deployment — work orders generated live from the canvas"
           className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 text-amber-600 transition-colors whitespace-nowrap"
+          style={{
+            background: 'color-mix(in oklab, var(--command-warning) 11%, transparent)',
+            borderColor: 'color-mix(in oklab, var(--command-warning) 30%, transparent)',
+            color: 'var(--command-warning)',
+          }}
           data-track="topbar-deploy"
         >
           <HardHat className="w-3.5 h-3.5" />Deploy
         </button>
-        <div className="hidden md:flex"><ProjectStateMenu projectId={props.projectId} /></div>
+        <div className="hidden md:flex"><ProjectStateMenu projectId={props.projectId} commandChrome /></div>
       </div>
 
       <div className="flex-1" />
@@ -154,7 +181,13 @@ export function TopBar(props: {
 
       {/* Right — view picker, fullscreen, more menu, AI. Desktop only;
           mobile reaches the same actions through MobileActionsMenu. */}
-      <div className="hidden md:flex items-stretch h-8 border border-border rounded-lg overflow-hidden">
+      <div
+        className="hidden md:flex items-stretch h-8 border border-border rounded-lg overflow-hidden"
+        style={{
+          background: 'var(--command-panel)',
+          borderColor: 'var(--command-border)',
+        }}
+      >
         {([
           { id: 'default' as const, label: 'Default', icon: Columns3, hint: 'Default — full chrome (rails + dock)' },
           { id: 'field' as const,   label: 'Field',   icon: Square,   hint: 'Field — slim TopBar, no side rails, canvas is the hero' },
@@ -169,6 +202,11 @@ export function TopBar(props: {
               title={m.hint}
               data-track={`topbar-view-${m.id}`}
               className={`inline-flex items-center gap-1 px-2 text-[11px] border-r border-border last:border-r-0 transition-colors ${active ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+              style={{
+                background: active ? 'color-mix(in oklab, var(--command-cyan) 16%, transparent)' : 'transparent',
+                borderColor: 'var(--command-border)',
+                color: active ? 'var(--command-cyan)' : 'var(--command-muted)',
+              }}
             >
               <Icon className="w-3.5 h-3.5" />{!compact && m.label}
             </button>
@@ -179,6 +217,11 @@ export function TopBar(props: {
         onClick={props.isFullscreen ? props.onExitFullscreen : props.onEnterFullscreen}
         title={props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen monitor'}
         className={`hidden md:inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-colors ${props.isFullscreen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
+        style={{
+          background: props.isFullscreen ? 'color-mix(in oklab, var(--command-cyan) 16%, transparent)' : 'var(--command-panel)',
+          borderColor: props.isFullscreen ? 'color-mix(in oklab, var(--command-cyan) 36%, transparent)' : 'var(--command-border)',
+          color: props.isFullscreen ? 'var(--command-cyan)' : 'var(--command-muted)',
+        }}
       >
         <Maximize2 className="w-3.5 h-3.5" />
       </button>
@@ -193,6 +236,11 @@ export function TopBar(props: {
           title="More options"
           data-track="topbar-more"
           className={`inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-colors ${moreOpen ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
+          style={{
+            background: moreOpen ? 'color-mix(in oklab, var(--command-cyan) 16%, transparent)' : 'var(--command-panel)',
+            borderColor: moreOpen ? 'color-mix(in oklab, var(--command-cyan) 36%, transparent)' : 'var(--command-border)',
+            color: moreOpen ? 'var(--command-cyan)' : 'var(--command-muted)',
+          }}
         >
           <MoreHorizontal className="w-4 h-4" />
         </button>
@@ -200,10 +248,11 @@ export function TopBar(props: {
           <div
             className="absolute right-0 top-9 z-40 w-[260px] rounded-xl overflow-hidden"
             style={{
-              background: 'var(--panel-background)',
+              background: 'var(--command-panel-elevated)',
               backdropFilter: 'blur(20px)',
-              border: '1px solid var(--border)',
-              boxShadow: '0 22px 48px -16px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.04)',
+              border: '1px solid var(--command-border-strong)',
+              color: 'var(--command-fg)',
+              boxShadow: '0 22px 48px -16px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04)',
             }}
           >
             {/* Theme picker */}

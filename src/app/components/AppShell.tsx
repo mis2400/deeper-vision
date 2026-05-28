@@ -23,6 +23,7 @@ interface AppShellProps {
   rightPanelDefaultOpen?: boolean;
   children: ReactNode;
   fullBleed?: boolean;
+  commandChrome?: boolean;
 }
 
 export function AppShell({
@@ -35,6 +36,7 @@ export function AppShell({
   rightPanelDefaultOpen = false,
   children,
   fullBleed = false,
+  commandChrome = false,
 }: AppShellProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -54,23 +56,45 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+    <div
+      className="h-screen flex flex-col bg-background text-foreground overflow-hidden"
+      style={commandChrome ? { background: 'var(--command-bg)', color: 'var(--command-fg)' } : undefined}
+    >
       {/* Header — 52px, single line */}
-      <header className="h-[52px] shrink-0 border-b border-border bg-background flex items-center px-4 gap-3">
-        <AppMenu />
+      <header
+        className="h-[52px] shrink-0 border-b border-border bg-background flex items-center px-4 gap-3"
+        style={commandChrome ? {
+          background: 'linear-gradient(180deg, color-mix(in oklab, var(--command-panel) 94%, white 6%), var(--command-bg))',
+          borderColor: 'var(--command-border)',
+          boxShadow: 'var(--command-shadow)',
+        } : undefined}
+      >
+        <AppMenu commandChrome={commandChrome} />
 
-        <div className="h-5 w-px bg-border mx-1" />
+        <div
+          className="h-5 w-px bg-border mx-1"
+          style={commandChrome ? { background: 'var(--command-border)' } : undefined}
+        />
 
         <nav className="flex items-center gap-1.5 min-w-0 flex-1">
           {crumbs.map((c, i) => (
             <div key={i} className="flex items-center gap-1.5 min-w-0">
-              {i > 0 && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+              {i > 0 && (
+                <ChevronRight
+                  className="w-3.5 h-3.5 text-muted-foreground shrink-0"
+                  style={commandChrome ? { color: 'var(--command-faint)' } : undefined}
+                />
+              )}
               {c.to ? (
-                <button onClick={() => navigate(c.to!)} className="text-muted-foreground hover:text-foreground truncate">
+                <button
+                  onClick={() => navigate(c.to!)}
+                  className="text-muted-foreground hover:text-foreground truncate"
+                  style={commandChrome ? { color: 'var(--command-muted)' } : undefined}
+                >
                   {c.label}
                 </button>
               ) : (
-                <span className="truncate text-foreground">{c.label}</span>
+                <span className="truncate text-foreground" style={commandChrome ? { color: 'var(--command-fg)' } : undefined}>{c.label}</span>
               )}
             </div>
           ))}
@@ -79,16 +103,31 @@ export function AppShell({
         <button
           onClick={() => setPaletteOpen(true)}
           className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors w-56"
+          style={commandChrome ? {
+            background: 'var(--command-panel-elevated)',
+            borderColor: 'var(--command-border)',
+            color: 'var(--command-muted)',
+          } : undefined}
         >
           <Search className="w-3.5 h-3.5" />
           <span className="text-xs flex-1 text-left">Jump to…</span>
-          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">⌘K</kbd>
+          <kbd
+            className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground"
+            style={commandChrome ? { background: 'var(--command-bg)', color: 'var(--command-faint)' } : undefined}
+          >
+            ⌘K
+          </kbd>
         </button>
 
         {/* Mobile search trigger — icon-only equivalent of the Jump to… */}
         <button
           onClick={() => setPaletteOpen(true)}
           className="flex md:hidden items-center justify-center w-9 h-9 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+          style={commandChrome ? {
+            background: 'var(--command-panel-elevated)',
+            borderColor: 'var(--command-border)',
+            color: 'var(--command-muted)',
+          } : undefined}
           aria-label="Open search"
           title="Search"
           data-track="appshell-search-mobile"
@@ -98,12 +137,22 @@ export function AppShell({
 
         {actions}
 
-        <ModeRolePill />
+        <ModeRolePill commandChrome={commandChrome} />
 
-        <button onClick={() => navigate('/help')} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors" title="Help">
+        <button
+          onClick={() => navigate('/help')}
+          className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+          style={commandChrome ? { color: 'var(--command-muted)' } : undefined}
+          title="Help"
+        >
           <HelpCircle className="w-4 h-4" />
         </button>
-        <button onClick={() => navigate('/settings')} className={`p-1.5 rounded-md hover:bg-secondary transition-colors ${location.pathname.startsWith('/settings') ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`} title="Settings">
+        <button
+          onClick={() => navigate('/settings')}
+          className={`p-1.5 rounded-md hover:bg-secondary transition-colors ${location.pathname.startsWith('/settings') ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          style={commandChrome ? { color: location.pathname.startsWith('/settings') ? 'var(--command-fg)' : 'var(--command-muted)' } : undefined}
+          title="Settings"
+        >
           <Settings className="w-4 h-4" />
         </button>
       </header>
@@ -172,7 +221,7 @@ const APP_MENU_GROUPS: { id: string; label: string | null; items: { to: string; 
   },
 ];
 
-function AppMenu() {
+function AppMenu({ commandChrome = false }: { commandChrome?: boolean }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -190,17 +239,29 @@ function AppMenu() {
       <button
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded-md transition-colors ${open ? 'bg-secondary' : 'hover:bg-secondary'}`}
+        style={commandChrome ? {
+          background: open ? 'var(--command-panel-elevated)' : 'transparent',
+          color: 'var(--command-muted)',
+        } : undefined}
         title="App menu"
         data-track="appshell-app-menu"
       >
         <BrandLogo variant="compact" theme="dark" height={22} />
-        <ChevronDown className={`w-3 h-3 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`w-3 h-3 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}
+          style={commandChrome ? { color: 'var(--command-faint)' } : undefined}
+        />
       </button>
 
       {open && (
         <div
           className="absolute left-0 top-full mt-1.5 z-50 w-[260px] bg-card border border-border-strong rounded-lg shadow-2xl overflow-hidden"
-          style={{ backdropFilter: 'blur(14px)' }}
+          style={commandChrome ? {
+            background: 'var(--command-panel-elevated)',
+            borderColor: 'var(--command-border-strong)',
+            color: 'var(--command-fg)',
+            backdropFilter: 'blur(14px)',
+          } : { backdropFilter: 'blur(14px)' }}
         >
           {APP_MENU_GROUPS.map((g, gi) => (
             <div key={g.id} className={gi > 0 ? 'border-t border-border/60' : ''}>
@@ -281,7 +342,7 @@ const MODE_META: { id: ProjectMode; label: string; hint: string }[] = [
   { id: 'presentation', label: 'Presentation', hint: 'Clean canvas for demo and walkthroughs' },
 ];
 
-function ModeRolePill() {
+function ModeRolePill({ commandChrome = false }: { commandChrome?: boolean }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -334,6 +395,11 @@ function ModeRolePill() {
       <button
         onClick={() => setOpen((v) => !v)}
         className={`hidden md:flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs transition-colors ${open ? 'border-border-strong bg-secondary' : 'border-border text-muted-foreground hover:text-foreground hover:border-border-strong'}`}
+        style={commandChrome ? {
+          background: open ? 'var(--command-panel-elevated)' : 'var(--command-panel)',
+          borderColor: open ? 'var(--command-border-strong)' : 'var(--command-border)',
+          color: 'var(--command-muted)',
+        } : undefined}
         title="Current role and mode"
       >
         <span
@@ -341,11 +407,11 @@ function ModeRolePill() {
           style={{ background: roleTone }}
           aria-hidden
         />
-        <span className="text-foreground font-medium">{roleLabel}</span>
+        <span className="text-foreground font-medium" style={commandChrome ? { color: 'var(--command-fg)' } : undefined}>{roleLabel}</span>
         {modeLabel && (
           <>
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground">{modeLabel}</span>
+            <span className="text-muted-foreground/50" style={commandChrome ? { color: 'var(--command-faint)' } : undefined}>·</span>
+            <span className="text-muted-foreground" style={commandChrome ? { color: 'var(--command-muted)' } : undefined}>{modeLabel}</span>
           </>
         )}
       </button>
@@ -353,7 +419,12 @@ function ModeRolePill() {
       {open && (
         <div
           className="absolute right-0 top-full mt-1.5 z-50 w-[460px] bg-card border border-border-strong rounded-lg shadow-2xl overflow-hidden"
-          style={{ backdropFilter: 'blur(14px)' }}
+          style={commandChrome ? {
+            background: 'var(--command-panel-elevated)',
+            borderColor: 'var(--command-border-strong)',
+            color: 'var(--command-fg)',
+            backdropFilter: 'blur(14px)',
+          } : { backdropFilter: 'blur(14px)' }}
         >
           <div className="grid grid-cols-2 divide-x divide-border">
             {/* ── Role column ── */}

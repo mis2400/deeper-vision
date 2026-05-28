@@ -2822,6 +2822,7 @@ export function EngineeringCanvas() {
     <AppShell
       crumbs={[{ label: 'Projects', to: '/projects' }, { label: breadcrumbProjectName, to: `/project/${projectId}` }, { label: 'Canvas' }]}
       fullBleed
+      commandChrome
     >
       {/* Item 2 — top-level error boundary. The prior CanvasErrorBoundary
           only wrapped CanvasSurface and EditDrawer, so a throw in a
@@ -2831,7 +2832,7 @@ export function EngineeringCanvas() {
           component throw shows a contained message and the app stays
           alive. */}
       <CanvasErrorBoundary label="EngineeringCanvas">
-      <div ref={rootRef} className="h-full flex flex-col bg-background text-foreground relative">
+      <div ref={rootRef} className="h-full flex flex-col bg-background text-foreground relative" style={{ background: 'var(--command-bg)' }}>
         {/* Motion keyframes — used by the selection pill, spotlight ring,
             and lens chips. The easing is the same throughout (cubic-bezier
             0.22, 1, 0.36, 1 — a calm decelerate) so motion feels like one

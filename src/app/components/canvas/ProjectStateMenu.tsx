@@ -31,13 +31,14 @@ import {
 
 interface Props {
   projectId: string;
+  commandChrome?: boolean;
   /** Triggered after import / reset / clear so the parent can refresh
    *  derived UI (selection, etc.). The component does its own toast +
    *  optional reload. */
   onAfterStateReplaced?: () => void;
 }
 
-export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
+export function ProjectStateMenu({ projectId, commandChrome = false, onAfterStateReplaced }: Props) {
   const importProjectState = useProjectStore((s) => s.importProjectState);
   const resetDemoData = useProjectStore((s) => s.resetDemoData);
   // Per-slice selector subs replace the old whole-store sub. Same shape
@@ -259,6 +260,11 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
         onClick={() => setOpen((v) => !v)}
         title="Project state · export / import / reset"
         className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border transition-colors ${open ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border hover:bg-secondary/50 text-foreground'}`}
+        style={commandChrome ? {
+          background: open ? 'color-mix(in oklab, var(--command-cyan) 16%, transparent)' : 'var(--command-panel-elevated)',
+          borderColor: open ? 'color-mix(in oklab, var(--command-cyan) 36%, transparent)' : 'var(--command-border)',
+          color: open ? 'var(--command-cyan)' : 'var(--command-fg)',
+        } : undefined}
         data-track="topbar-project-state"
       >
         <Database className="w-3.5 h-3.5" />Project state
@@ -269,10 +275,11 @@ export function ProjectStateMenu({ projectId, onAfterStateReplaced }: Props) {
         <div
           className="absolute left-0 top-9 z-50 w-[400px] rounded-xl overflow-hidden flex flex-col"
           style={{
-            background: 'var(--panel-background, var(--popover, #ffffff))',
+            background: commandChrome ? 'var(--command-panel-elevated)' : 'var(--panel-background, var(--popover, #ffffff))',
             backdropFilter: 'blur(20px)',
-            border: '1px solid var(--border)',
-            boxShadow: '0 22px 48px -16px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.04)',
+            border: commandChrome ? '1px solid var(--command-border-strong)' : '1px solid var(--border)',
+            color: commandChrome ? 'var(--command-fg)' : undefined,
+            boxShadow: commandChrome ? '0 22px 48px -16px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04)' : '0 22px 48px -16px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.04)',
             maxHeight: 'min(80vh, 720px)',
           }}
           data-testid="project-state-menu"
