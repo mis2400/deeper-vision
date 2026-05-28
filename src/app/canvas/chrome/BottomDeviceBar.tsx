@@ -31,7 +31,7 @@
 // fallback. All other state is local.
 
 import { BatteryCharging, Cable, DoorOpen, Flame, GripVertical, Network as NetworkIcon, PencilRuler, Phone, ScanFace, Search, Server, ShieldAlert, Thermometer, Video, Volume2, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useParams } from 'react-router';
 import { selectors as storeSelectors, useProjectStore } from '../../store/projectStore';
 import { PRODUCTS, productMatchesTechModel } from '../catalog';
@@ -190,6 +190,26 @@ export function BottomDeviceBar({
     [],
   );
   const barExpanded = barCoarsePointer ? barTapExpand : barHover;
+  const commandSurfaceVars = {
+    '--background': 'var(--command-panel)',
+    '--foreground': 'var(--command-fg)',
+    '--card': 'var(--command-panel-elevated)',
+    '--muted-foreground': 'var(--command-muted)',
+    '--border': 'var(--command-border)',
+    '--border-strong': 'var(--command-border-strong)',
+    '--primary': 'var(--command-accent)',
+    '--primary-foreground': 'var(--command-accent-foreground)',
+    '--secondary': 'color-mix(in oklab, var(--command-panel-elevated) 74%, white 8%)',
+    '--color-background': 'var(--command-panel)',
+    '--color-foreground': 'var(--command-fg)',
+    '--color-card': 'var(--command-panel-elevated)',
+    '--color-muted-foreground': 'var(--command-muted)',
+    '--color-border': 'var(--command-border)',
+    '--color-border-strong': 'var(--command-border-strong)',
+    '--color-primary': 'var(--command-accent)',
+    '--color-primary-foreground': 'var(--command-accent-foreground)',
+    '--color-secondary': 'color-mix(in oklab, var(--command-panel-elevated) 74%, white 8%)',
+  } as CSSProperties & Record<string, string>;
   // The Conduit sub-tab defaults to a 6-button "common sizes" set
   // (EMT 1/2 · EMT 3/4 · EMT 1 · PVC 3/4 · PVC 1 · raceway). Flip this
   // toggle to expose the full 30-cell type × size matrix.
@@ -374,7 +394,13 @@ export function BottomDeviceBar({
       {searchActive && (
         <div
           className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden z-30"
-          style={{ borderColor: 'var(--border)' }}
+          style={{
+            ...commandSurfaceVars,
+            background: 'var(--command-panel-elevated)',
+            borderColor: 'var(--command-border-strong)',
+            color: 'var(--command-fg)',
+            boxShadow: '0 24px 60px -24px rgba(0,0,0,0.72)',
+          }}
           data-testid="bottombar-search-panel"
         >
           <div className="px-4 pt-3 pb-2.5 border-b border-border flex items-center gap-3">
@@ -436,7 +462,13 @@ export function BottomDeviceBar({
       {!searchActive && open && trayCat && (
         <div
           className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden z-30"
-          style={{ borderColor: 'var(--border)' }}
+          style={{
+            ...commandSurfaceVars,
+            background: 'var(--command-panel-elevated)',
+            borderColor: 'var(--command-border-strong)',
+            color: 'var(--command-fg)',
+            boxShadow: '0 24px 60px -24px rgba(0,0,0,0.72)',
+          }}
         >
           <div className="px-4 pt-3 pb-2.5 border-b border-border flex items-start gap-3">
             <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-primary/12 text-primary shrink-0">
@@ -1049,14 +1081,13 @@ export function BottomDeviceBar({
         data-bar-expanded={barExpanded ? 'true' : undefined}
         className="flex items-center rounded-2xl border backdrop-blur-md shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)]"
         style={{
-          background: 'var(--canvas-rail)',
-          borderColor: 'var(--canvas-rail-border)',
-          // Item 1 — chrome matches the left tool rail exactly:
-          // rounded-2xl, canvas-rail background, canvas-rail-border,
-          // backdrop blur, same shadow strength. The bar floats over
-          // the canvas, the plan extends beneath, no docked white
-          // band behind it. Hover transition keeps the single
-          // motion-standard / ease-out token from the prior pass.
+          background: 'linear-gradient(180deg, color-mix(in oklab, var(--command-panel-elevated) 88%, white 5%), var(--command-panel))',
+          borderColor: 'var(--command-border-strong)',
+          boxShadow: 'var(--command-shadow)',
+          // Command chrome pass — the bar still floats over the canvas,
+          // but now reads as the same infrastructure surface as the
+          // top command row. The plan extends beneath with no docked
+          // white band behind it.
           transitionProperty: 'background-color, border-color',
           transitionDuration: 'var(--motion-standard)',
           transitionTimingFunction: 'var(--ease-out)',
@@ -1076,6 +1107,7 @@ export function BottomDeviceBar({
                 <div
                   className="px-2 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap overflow-hidden"
                   style={{
+                    color: 'var(--command-faint)',
                     maxHeight: barExpanded ? 14 : 0,
                     paddingTop: barExpanded ? 4 : 0,
                     opacity: barExpanded ? 1 : 0,
@@ -1109,6 +1141,7 @@ export function BottomDeviceBar({
                         data-track={`bottombar-cat-${c.id}`}
                         className={`group relative flex flex-col items-center justify-center w-[56px] pt-1.5 pb-2 ${active ? 'text-white' : 'text-white/65 hover:text-white'}`}
                         style={{
+                          color: active ? 'var(--command-accent)' : 'var(--command-muted)',
                           transitionProperty: 'color',
                           transitionDuration: 'var(--motion-standard)',
                           transitionTimingFunction: 'var(--ease-out)',
@@ -1116,7 +1149,7 @@ export function BottomDeviceBar({
                       >
                         <span className="absolute inset-x-1.5 top-1 bottom-1.5 rounded-md -z-10"
                           style={{
-                            background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
+                            background: active ? 'color-mix(in oklab, var(--command-accent) 16%, transparent)' : 'transparent',
                             transitionProperty: 'background-color',
                             transitionDuration: 'var(--motion-standard)',
                             transitionTimingFunction: 'var(--ease-out)',
@@ -1154,7 +1187,7 @@ export function BottomDeviceBar({
                         )}
                         <span
                           className="absolute left-2 right-2 bottom-0 h-[2px] rounded-full transition-opacity"
-                          style={{ background: 'var(--primary)', opacity: active ? 1 : 0 }}
+                          style={{ background: 'var(--command-accent)', opacity: active ? 1 : 0 }}
                         />
                       </button>
                     );
@@ -1176,6 +1209,7 @@ export function BottomDeviceBar({
           <div
             className="px-2 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap overflow-hidden"
             style={{
+              color: 'var(--command-faint)',
               maxHeight: barExpanded ? 14 : 0,
               paddingTop: barExpanded ? 4 : 0,
               opacity: barExpanded ? 1 : 0,
