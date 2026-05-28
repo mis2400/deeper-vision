@@ -102,6 +102,18 @@ const routes = [
   { name: 'canvas-theme-switch', path: '/project/p1/canvas',
     after: 'switch-theme',
     assert: 'theme-token-propagated' },
+  // M11 coverage widening (E81): the measure tool is the canonical
+  // two-click drawing pipeline (click once to seed start, click again
+  // to persist). A regression in the surface click handler, in the
+  // tool dispatch in onSurfaceClick, or in addMeasurement's render
+  // path would leave the rail icon active but no segment would ever
+  // land. The two-click sequence is dispatched as React synthetic
+  // events on the canvas SVG (same pattern as select-multisensor) so
+  // no test seam is needed; coords map cleanly through the SVG bounding
+  // rect just like a user click would.
+  { name: 'canvas-measure-draw', path: '/project/p1/canvas',
+    after: 'draw-measurement',
+    assert: 'measurement-rendered' },
   // M6 — drag a real tray card onto the canvas via synthetic HTML5
   // drag events and assert a new device appears. Body length doesn't
   // catch a silent drag-and-drop failure; the device count delta does.
@@ -184,6 +196,58 @@ async function checkRoute(browser, route) {
       btn && btn.click();
     });
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+  } else if (route.after === 'draw-measurement') {
+    // 1) Stash the count of rendered "<digit>.<digit> ft" labels in
+    //    the canvas SVG, so we know if the new measurement actually
+    //    rendered (the seed may already carry old ones).
+    // 2) Click the measure tool button to switch the active tool.
+    // 3) Locate the canvas SVG (the one that hosts the seeded
+    //    [data-device-id] children), compute two world positions, and
+    //    dispatch two synthetic clicks on the SVG. React routes the
+    //    clicks through the onClick handler at the SVG level, which
+    //    forwards to onSurfaceClick with world coords, which appends
+    //    to the measure state on click one and persists on click two.
+    await page.evaluate(() => {
+      const labels = Array.from(document.querySelectorAll('svg text'))
+        .filter((t) => /^\s*[0-9]+(\.[0-9]+)?\s+ft\s*$/.test(t.textContent || ''));
+      window.__auditMeasureLabelsBefore = labels.length;
+    });
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-track="left-rail-tools-measure"]');
+      if (btn) (btn).click();
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    // Split the two clicks across two page.evaluate calls with a wait
+    // between them. Both dispatched in a single evaluate share a React
+    // batching boundary — they would see the same measure.start=null
+    // and both fall into the "first click" branch, never persisting.
+    const setupErr = await page.evaluate(() => {
+      const anchor = document.querySelector('[data-device-id]');
+      const svg = anchor ? anchor.closest('svg') : document.querySelector('svg');
+      if (!svg) return 'no canvas SVG found to dispatch click on';
+      const r = svg.getBoundingClientRect();
+      window.__auditMeasureSvgRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+      return null;
+    });
+    if (setupErr) {
+      errors.push(`draw-measurement: ${setupErr}`);
+    } else {
+      const click = async (xOff) => page.evaluate((xOff) => {
+        const anchor = document.querySelector('[data-device-id]');
+        const svg = anchor ? anchor.closest('svg') : document.querySelector('svg');
+        if (!svg) return;
+        const r = svg.getBoundingClientRect();
+        const cx = r.left + r.width / 2 + xOff;
+        const cy = r.top + r.height / 2;
+        svg.dispatchEvent(new MouseEvent('click', {
+          bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0,
+        }));
+      }, xOff);
+      await click(-100);
+      await new Promise((r) => setTimeout(r, 250));
+      await click(100);
+      await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+    }
   } else if (route.after === 'switch-theme') {
     // Capture the current --canvas-background, then flip the
     // documentElement's data-theme attribute and re-read. The store
@@ -435,6 +499,23 @@ async function checkRoute(browser, route) {
       // / light-on-light regression is caught.
       if (ratio < 4.5) {
         return `selection panel title contrast ratio ${ratio.toFixed(2)} is below WCAG AA 4.5 (text rgb(${Math.round(titleColor.r)},${Math.round(titleColor.g)},${Math.round(titleColor.b)}) vs background rgb(${Math.round(panelBg.r)},${Math.round(panelBg.g)},${Math.round(panelBg.b)}))`;
+      }
+      return null;
+    });
+  } else if (route.assert === 'measurement-rendered') {
+    assertionFailure = await page.evaluate(() => {
+      const before = window.__auditMeasureLabelsBefore;
+      if (typeof before !== 'number') return 'measure pre-step did not stash a baseline count';
+      const labels = Array.from(document.querySelectorAll('svg text'))
+        .filter((t) => /^\s*[0-9]+(\.[0-9]+)?\s+ft\s*$/.test(t.textContent || ''));
+      const after = labels.length;
+      if (after <= before) {
+        // Help debug: did the tool actually switch? Walls/rooms/etc
+        // share onSurfaceClick so check that the rail's measure
+        // button reads as active (.text-foreground or similar).
+        const measureBtn = document.querySelector('[data-track="left-rail-tools-measure"]');
+        const btnHTML = measureBtn ? (measureBtn).outerHTML.slice(0, 120) : 'missing';
+        return `expected at least 1 new "<n> ft" measurement label after two synthetic clicks (before=${before}, after=${after}). measure button html=${JSON.stringify(btnHTML)}`;
       }
       return null;
     });
