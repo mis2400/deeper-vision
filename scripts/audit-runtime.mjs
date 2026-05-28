@@ -65,7 +65,12 @@ const routes = [
   // the canvas. A regression here looks like four handle sets stacked
   // at the same coordinate or a console error in the activeLens reset
   // effect.
-  { name: 'canvas-multisensor', path: '/project/p1/canvas', after: 'select-multisensor' },
+  // M11 coverage widening (E77): also assert the selection strip
+  // surfaces the picked device's label so a regression that drops
+  // the strip entirely, or renders it with the wrong device, is
+  // caught instead of silently passing on a body-length match.
+  { name: 'canvas-multisensor', path: '/project/p1/canvas', after: 'select-multisensor',
+    assert: 'selection-strip-shows-device' },
   // M6 — drag a real tray card onto the canvas via synthetic HTML5
   // drag events and assert a new device appears. Body length doesn't
   // catch a silent drag-and-drop failure; the device count delta does.
@@ -314,6 +319,30 @@ async function checkRoute(browser, route) {
       if (ratio < 4.5) {
         return `selection panel title contrast ratio ${ratio.toFixed(2)} is below WCAG AA 4.5 (text rgb(${Math.round(titleColor.r)},${Math.round(titleColor.g)},${Math.round(titleColor.b)}) vs background rgb(${Math.round(panelBg.r)},${Math.round(panelBg.g)},${Math.round(panelBg.b)}))`;
       }
+      return null;
+    });
+  } else if (route.assert === 'selection-strip-shows-device') {
+    assertionFailure = await page.evaluate(() => {
+      // After a selectable device is clicked, the SelectionMenu
+      // renders inside [data-canvas-chrome="selection-menu"] with a
+      // label chip carrying device.label and a device type label.
+      // The select-multisensor after-action targets CAM-103, whose
+      // seeded label is "Atrium" and whose type renders four lens
+      // chips A/B/C/D plus the standard close/delete trio. Three
+      // independent signals must agree:
+      //   1. the strip mounted at all
+      //   2. it carries the multisensor's four lens chips (proves
+      //      the strip is for THIS device, not a stale render of
+      //      another product), and
+      //   3. selmenu-* control tracks remain (close/delete/icons
+      //      did not collapse to bare label only)
+      const strip = document.querySelector('[data-canvas-chrome="selection-menu"]');
+      if (!strip) return 'selection menu strip did not mount after clicking CAM-103';
+      const lensChips = ['a', 'b', 'c', 'd'].map((k) => strip.querySelector(`[data-track="selmenu-lens-${k}"]`));
+      const missingLens = lensChips.map((el, i) => el ? null : ['a', 'b', 'c', 'd'][i]).filter(Boolean);
+      if (missingLens.length > 0) return `selection strip mounted but is missing lens chip(s): ${missingLens.join(', ')} (strip text=${JSON.stringify((strip.textContent || '').trim().slice(0, 80))})`;
+      const tracks = strip.querySelectorAll('[data-track^="selmenu-"]');
+      if (tracks.length < 5) return `selection strip has only ${tracks.length} selmenu-* controls (expected lens chips + close/delete/duplicate plus per-section icons)`;
       return null;
     });
   } else if (route.assert === 'bom-rows-and-total') {
