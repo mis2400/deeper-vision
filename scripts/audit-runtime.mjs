@@ -47,7 +47,14 @@ const routes = [
     assert: 'rail-has-zoom' },
   { name: 'deployment', path: '/project/p1/deployment' },
   { name: 'review',     path: '/project/p1/review' },
-  { name: 'canvas-bom', path: '/project/p1/canvas', after: 'open-bom' },
+  // M11 coverage widening (E76): the BOM drawer is the live pricing
+  // surface every estimate hangs off. A regression in deriveCanvasBom
+  // or in the drawer's row rendering used to slip through because the
+  // route only checked that the drawer "opens" via body delta. Now
+  // assert that real BOM rows render and a numeric Sell total is
+  // displayed.
+  { name: 'canvas-bom', path: '/project/p1/canvas', after: 'open-bom',
+    assert: 'bom-rows-and-total' },
   { name: 'canvas-sel', path: '/project/p1/canvas', after: 'open-selection-section',
     // Open the AIM section panel and verify its text contrasts with the
     // panel background. The first M7 ship rendered dark text on the
@@ -307,6 +314,26 @@ async function checkRoute(browser, route) {
       if (ratio < 4.5) {
         return `selection panel title contrast ratio ${ratio.toFixed(2)} is below WCAG AA 4.5 (text rgb(${Math.round(titleColor.r)},${Math.round(titleColor.g)},${Math.round(titleColor.b)}) vs background rgb(${Math.round(panelBg.r)},${Math.round(panelBg.g)},${Math.round(panelBg.b)}))`;
       }
+      return null;
+    });
+  } else if (route.assert === 'bom-rows-and-total') {
+    assertionFailure = await page.evaluate(() => {
+      // The drawer carries the data-track^="bom-row-" attribute on
+      // each row so the BOM filter pills target them. Rows must exist
+      // for the seeded demo project (p1 ships with cameras, doors,
+      // pathways).
+      const rows = document.querySelectorAll('[data-track^="bom-row-"]');
+      if (rows.length === 0) return 'BOM drawer opened but no rows rendered (deriveCanvasBom returned empty or row render path broke)';
+      // Sell total renders in the drawer summary with a USD figure.
+      // We search the drawer subtree for "Sell total" plus a $ amount
+      // near it.
+      const drawer = document.querySelector('[data-canvas-chrome="drawer"]') || document.body;
+      const text = (drawer.textContent || '').trim();
+      if (!/Sell total/i.test(text)) return 'BOM drawer is missing the "Sell total" summary section';
+      const match = text.match(/Sell total[^$]*\$([0-9][0-9,]*)/i);
+      if (!match) return 'BOM drawer "Sell total" header has no $ figure beside it (totals math broke)';
+      const num = parseInt(match[1].replace(/,/g, ''), 10);
+      if (!Number.isFinite(num) || num <= 0) return `BOM drawer "Sell total" parsed as ${match[1]} which is not a positive number`;
       return null;
     });
   } else if (route.assert === 'drag-placed-device') {
