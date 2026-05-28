@@ -8,10 +8,11 @@ import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { FileDown, ChevronRight } from 'lucide-react';
+import { FileDown, ChevronRight, DollarSign } from 'lucide-react';
 import { useProjectStore, deriveBOM, selectors as sel } from '../store/projectStore';
 import type { EstimateLine } from '../store/types';
 import { PhaseGateBanner } from '../lifecycle/PhaseGate';
+import { PricebookEditor } from '../components/canvas/PricebookEditor';
 
 // Quote a CSV field — wraps in double quotes when the value contains a comma,
 // quote, or newline; escapes internal quotes by doubling them per RFC 4180.
@@ -104,6 +105,23 @@ export function EstimatorView() {
   }, [bom, estimates, projectId]);
 
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  // M11 audit fix (U3 / FL6): the Estimator surface used to expose
+  // only Export CSV as a user action. Editing unit prices, labor
+  // rate, or markup required three clicks (back to canvas → BOM &
+  // Estimate → Open pricebook). Pricebook now opens directly from
+  // here in the same modal the canvas drawer launches, so the
+  // pricing edit affordance lives where the user is reading the
+  // numbers.
+  const [pricebookOpen, setPricebookOpen] = useState(false);
+  // Mirror the override count from ProjectBomDrawer so the pill on
+  // both surfaces reads identically.
+  const pricebook = projectPricebooks[projectId];
+  const overrideCount =
+    (Object.keys(pricebook?.doorHardware ?? {}).length) +
+    (Object.keys(pricebook?.cablePerFt ?? {}).length) +
+    (pricebook?.laborRate != null ? 1 : 0) +
+    (pricebook?.markup != null ? 1 : 0);
+  const hasOverrides = overrideCount > 0;
 
   // Headline totals
   const markup = estimates[`est-${projectId}`]?.markup ?? 0.18;
@@ -149,15 +167,29 @@ export function EstimatorView() {
       title="Estimator"
       subtitle={`Live BOM derived from the engineering canvas · ${bom.lines.length} line items`}
       actions={
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExportCsv}
-          disabled={bom.lines.length === 0}
-          data-testid="estimator-export-csv"
-        >
-          <FileDown className="w-3.5 h-3.5 mr-1" />Export CSV
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* M11 audit fix (U3 / FL6): pricebook entry point lives on
+              the Estimator surface, not just inside the canvas BOM
+              drawer. Same modal, same edit experience. */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPricebookOpen(true)}
+            data-testid="estimator-open-pricebook"
+          >
+            <DollarSign className="w-3.5 h-3.5 mr-1" />
+            Pricebook{hasOverrides ? ` · ${overrideCount}` : ''}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={bom.lines.length === 0}
+            data-testid="estimator-export-csv"
+          >
+            <FileDown className="w-3.5 h-3.5 mr-1" />Export CSV
+          </Button>
+        </div>
       }
     >
       {/* Soft gate — surfaces when the user lands here before engineering
@@ -263,6 +295,13 @@ export function EstimatorView() {
           </div>
         </div>
       </div>
+      {/* Pricebook editor mounts inside AppShell so the modal portals
+          to the right document root and the focus trap inherits the
+          surrounding chrome. Identical edit experience to the canvas
+          BOM drawer's "Open pricebook" entry. */}
+      {pricebookOpen && (
+        <PricebookEditor projectId={projectId} onClose={() => setPricebookOpen(false)} />
+      )}
     </AppShell>
   );
 }
