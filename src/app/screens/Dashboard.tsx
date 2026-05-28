@@ -1,603 +1,382 @@
-// Dashboard — /dashboard
-//
-// Default landing surface after login. Six sections: Today, Pipeline,
-// Projects, Team, Integrations, Customer Operations. Each section is
-// store-backed where data exists; any section that would otherwise sit
-// empty is clearly labeled as a placeholder rather than faked into
-// looking active.
-
-import { useMemo, useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { AppShell } from '../components/AppShell';
-import { Button } from '../components/Button';
-import { IntegrationCard } from '../components/ui/dv';
 import {
-  Calendar, Briefcase, Users, Link as LinkIcon, MessageCircle,
-  ArrowRight, ChevronRight, CheckCircle2, Clock, AlertTriangle,
-  Activity as ActivityIcon, DollarSign, Building2, Sparkles, HardHat,
+  ArrowRight,
+  BadgeCheck,
+  Building2,
+  CalendarClock,
+  ClipboardCheck,
+  DoorOpen,
+  FileSignature,
+  HardHat,
+  LayoutDashboard,
+  LifeBuoy,
+  Map,
+  Package,
+  Radar,
+  Route,
+  ShieldCheck,
+  Sparkles,
+  TicketCheck,
+  Users,
+  Video,
+  WalletCards,
+  Workflow,
+  Wrench,
 } from 'lucide-react';
-import { useProjectStore, STAGE_PROBABILITY, deriveWorkOrders } from '../store/projectStore';
-import { PHASES, healthTone } from '../lifecycle/phases';
-import type { LifecyclePhase, Task, Opportunity, Project, WorkOrder } from '../store/types';
+import { AppShell } from '../components/AppShell';
+import { useProjectStore } from '../store/projectStore';
+
+type AnyRecord = Record<string, any>;
 
 export function Dashboard() {
   const navigate = useNavigate();
-
-  // ── Store subscriptions ──
-  const projectsMap      = useProjectStore((s) => s.projects);
+  const projectsMap = useProjectStore((s) => s.projects);
+  const customersMap = useProjectStore((s) => s.customers);
   const opportunitiesMap = useProjectStore((s) => s.opportunities);
-  const tasksMap         = useProjectStore((s) => s.tasks);
-  const touchesMap       = useProjectStore((s) => s.touches);
-  const customersMap     = useProjectStore((s) => s.customers);
-  const activityMap      = useProjectStore((s) => s.activity);
-  const currentRole      = useProjectStore((s) => s.currentRole);
-
-  // V1 2A.2 — broadcast dashboard context to the AI Assistant.
-  // Dashboard is cross-project by definition, so we clear first to
-  // shed any stale project/floor scope from a prior surface, then
-  // stamp the surface name.
+  const tasksMap = useProjectStore((s) => s.tasks);
+  const devicesMap = useProjectStore((s) => s.devices);
+  const doorsMap = useProjectStore((s) => s.doors);
+  const pathwaysMap = useProjectStore((s) => s.pathways);
+  const assetsMap = useProjectStore((s) => s.assets);
+  const warrantiesMap = useProjectStore((s) => s.warranties);
+  const serviceTicketsMap = useProjectStore((s) => s.serviceTickets);
+  const activityMap = useProjectStore((s) => s.activity);
   const setAssistantContext = useProjectStore((s) => s.setAssistantContext);
+
   useEffect(() => {
     setAssistantContext(null);
     setAssistantContext({ surface: 'dashboard' });
   }, [setAssistantContext]);
 
-  // Demo user identity — until real auth lands, "Mei L." is the
-  // assigned user for tasks/touches. Keeps the dashboard meaningfully
-  // populated rather than empty.
-  const DEMO_USER_ID = 'u-mei';
+  const projects = useMemo(
+    () => Object.values((projectsMap || {}) as AnyRecord).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)),
+    [projectsMap],
+  );
+  const opportunities = useMemo(() => Object.values((opportunitiesMap || {}) as AnyRecord), [opportunitiesMap]);
+  const tasks = useMemo(() => Object.values((tasksMap || {}) as AnyRecord), [tasksMap]);
+  const devices = useMemo(() => Object.values((devicesMap || {}) as AnyRecord), [devicesMap]);
+  const doors = useMemo(() => Object.values((doorsMap || {}) as AnyRecord), [doorsMap]);
+  const pathways = useMemo(() => Object.values((pathwaysMap || {}) as AnyRecord), [pathwaysMap]);
+  const assets = useMemo(() => Object.values((assetsMap || {}) as AnyRecord), [assetsMap]);
+  const warranties = useMemo(() => Object.values((warrantiesMap || {}) as AnyRecord), [warrantiesMap]);
+  const tickets = useMemo(() => Object.values((serviceTicketsMap || {}) as AnyRecord), [serviceTicketsMap]);
+  const activity = useMemo(
+    () => Object.values((activityMap || {}) as AnyRecord).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)).slice(0, 8),
+    [activityMap],
+  );
 
-  // ── Derived data ──
-  const projects = useMemo(() =>
-    Object.values(projectsMap).sort((a, b) => b.updatedAt - a.updatedAt),
-    [projectsMap]);
+  const activeProject = projects.find((p) => !['closed', 'lost', 'archived'].includes(String(p.status ?? '').toLowerCase())) ?? projects[0];
+  const activeProjectId = activeProject?.id ?? 'p1';
+  const activeCustomer = activeProject?.customerId ? (customersMap as AnyRecord)?.[activeProject.customerId] : undefined;
+  const openOpps = opportunities.filter((o) => !['won', 'lost'].includes(o.stage)).length;
+  const proposalsOut = opportunities.filter((o) => ['proposing', 'negotiating'].includes(o.stage)).length;
+  const openTasks = tasks.filter((t) => t.status === 'open').length;
+  const activeTickets = tickets.filter((t) => !['closed', 'resolved'].includes(String(t.status ?? '').toLowerCase())).length;
+  const expiringWarranties = warranties.filter((w) => {
+    const end = typeof w.expiresAt === 'number' ? w.expiresAt : Date.parse(w.expiresAt ?? '');
+    return Number.isFinite(end) && end < Date.now() + 90 * 86_400_000;
+  }).length;
+  const projectDevices = devices.filter((d) => d.projectId === activeProjectId);
+  const projectDoors = doors.filter((d) => d.projectId === activeProjectId);
+  const projectPathways = pathways.filter((p) => p.projectId === activeProjectId);
+  const projectAssets = assets.filter((a) => a.projectId === activeProjectId);
 
-  const projectsByPhase = useMemo(() => {
-    const buckets: Partial<Record<LifecyclePhase, Project[]>> = {};
-    for (const p of projects) {
-      (buckets[p.lifecyclePhase] ??= []).push(p);
-    }
-    return buckets;
-  }, [projects]);
-
-  const myOpenTasks = useMemo(() =>
-    Object.values(tasksMap)
-      .filter((t) => t.status === 'open' && t.assignedUserId === DEMO_USER_ID)
-      .sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
-    [tasksMap]);
-
-  const overdueCount = myOpenTasks.filter((t) => t.dueDate != null && t.dueDate < Date.now()).length;
-
-  const pipelineSummary = useMemo(() => {
-    const all = Object.values(opportunitiesMap);
-    let open = 0, weighted = 0, openCount = 0, wonThisQuarter = 0;
-    const qStart = quarterStart(Date.now());
-    for (const o of all) {
-      if (o.stage === 'won' && o.closedAt && o.closedAt >= qStart) wonThisQuarter += o.estValue ?? 0;
-      if (o.stage === 'won' || o.stage === 'lost') continue;
-      open += o.estValue ?? 0;
-      weighted += (o.estValue ?? 0) * (o.probability ?? STAGE_PROBABILITY[o.stage]);
-      openCount += 1;
-    }
-    return { open, weighted, openCount, wonThisQuarter };
-  }, [opportunitiesMap]);
-
-  const proposalsOut = useMemo(() =>
-    Object.values(opportunitiesMap).filter((o) => o.stage === 'proposing' || o.stage === 'negotiating'),
-    [opportunitiesMap]);
-
-  const recentActivity = useMemo(() =>
-    Object.values(activityMap).sort((a, b) => b.createdAt - a.createdAt).slice(0, 6),
-    [activityMap]);
-
-  const recentTouches = useMemo(() =>
-    Object.values(touchesMap).sort((a, b) => b.occurredAt - a.occurredAt).slice(0, 5),
-    [touchesMap]);
-
-  // V1 4B — My open work orders across every project. Filters to the
-  // operator's assignedTo when present; otherwise treats unassigned
-  // open WOs as available pickups.
-  const state = useProjectStore((s) => s);
-  const myOpenWOs = useMemo(() => {
-    const out: Array<{ wo: WorkOrder; projectId: string; projectName: string }> = [];
-    for (const p of projects) {
-      const wos = deriveWorkOrders(state, p.id);
-      for (const wo of wos) {
-        if (wo.progress.status === 'complete') continue;
-        const mine = wo.progress.assignedTo === DEMO_USER_ID
-          || wo.progress.assignedTo === 'mei'
-          || (wo.progress.assignedTo == null && wo.progress.status !== 'blocked');
-        if (mine) out.push({ wo, projectId: p.id, projectName: p.name });
-      }
-    }
-    return out.sort((a, b) => {
-      // Blocked first, then by status ordering, then by project name.
-      const order: Record<string, number> = { blocked: 0, 'on-site': 1, installing: 2, testing: 3, assigned: 4, ready: 5 };
-      return (order[a.wo.progress.status] ?? 9) - (order[b.wo.progress.status] ?? 9);
-    }).slice(0, 8);
-  }, [projects, state]);
-
-  // V1 4B — Next 7 days: tasks + work-order dueDates due in the
-  // forward window, grouped by day. Honest derivation — only
-  // surfaces items the store actually has dates on.
-  const weekItems = useMemo(() => {
-    const now = Date.now();
-    const horizon = now + 7 * 86_400_000;
-    type Item = { kind: 'task' | 'project'; id: string; label: string; subtitle?: string; due: number; href?: string };
-    const items: Item[] = [];
-    for (const t of Object.values(tasksMap)) {
-      if (t.status !== 'open' || t.assignedUserId !== DEMO_USER_ID) continue;
-      if (!t.dueDate || t.dueDate > horizon) continue;
-      items.push({
-        kind: 'task',
-        id: t.id,
-        label: t.title,
-        subtitle: t.customerId ? customersMap[t.customerId]?.companyName : undefined,
-        due: t.dueDate,
-        href: t.customerId ? `/account/${t.customerId}` : '/crm',
-      });
-    }
-    for (const p of projects) {
-      if (!p.dueDate || p.dueDate > horizon) continue;
-      items.push({
-        kind: 'project',
-        id: p.id,
-        label: `${p.name} · ${p.nextAction ?? 'next action'}`,
-        subtitle: p.customerId ? customersMap[p.customerId]?.companyName : undefined,
-        due: p.dueDate,
-        href: `/project/${p.id}`,
-      });
-    }
-    return items.sort((a, b) => a.due - b.due);
-  }, [tasksMap, projects, customersMap]);
+  const moduleHref = (path: string) => path.replace(':projectId', activeProjectId);
+  const modules = [
+    { label: 'CRM', eyebrow: 'Intake', href: '/crm', icon: Users, count: openOpps, note: 'Accounts, contacts, opportunities' },
+    { label: 'Site Walk', eyebrow: 'Survey', href: '/sitewalk/:projectId', icon: Map, count: openTasks, note: 'Schedule, checklist, field notes' },
+    { label: 'Canvas', eyebrow: 'Design', href: '/project/:projectId/canvas', icon: LayoutDashboard, count: projectDevices.length, note: 'Plans, devices, DORI, pathways' },
+    { label: 'Estimate', eyebrow: 'Pricing', href: '/estimate/:projectId', icon: WalletCards, count: projectDevices.length + projectPathways.length, note: 'BOM, labor, markup, alternates' },
+    { label: 'Proposal', eyebrow: 'Customer', href: '/proposal/:projectId', icon: FileSignature, count: proposalsOut, note: 'Package, review, approval' },
+    { label: 'Deployment', eyebrow: 'Install', href: '/project/:projectId/deployment', icon: HardHat, count: projectDoors.length, note: 'Work orders, tasks, commissioning' },
+    { label: 'Service', eyebrow: 'Operate', href: '/tickets', icon: LifeBuoy, count: activeTickets, note: 'Tickets, warranty, lifecycle' },
+  ];
 
   return (
-    <AppShell
-      crumbs={[{ label: 'Dashboard' }]}
-      title="Dashboard"
-      subtitle={`${greeting()} · You have ${myOpenTasks.length} open task${myOpenTasks.length === 1 ? '' : 's'}${overdueCount ? `, ${overdueCount} overdue` : ''}`}
-      actions={
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => navigate('/crm')}>
-            Sales pipeline
-          </Button>
-          <Button size="sm" onClick={() => navigate('/projects')}>
-            All projects <ArrowRight className="w-3 h-3 ml-1" />
-          </Button>
-        </div>
-      }
-    >
-      <div className="max-w-[1400px] mx-auto px-6 py-6 space-y-5">
-
-        {/* ── Today ──────────────────────────────────────────────── */}
-        <Section
-          icon={<Calendar className="w-3.5 h-3.5" />}
-          title="Today"
-          hint="What needs your attention now"
-        >
-          <div className="grid grid-cols-4 gap-3">
-            <StatCard
-              label="Open tasks"
-              value={String(myOpenTasks.length)}
-              hint={overdueCount ? `${overdueCount} overdue` : 'All on track'}
-              tone={overdueCount ? 'amber' : 'neutral'}
-              onClick={() => navigate('/crm')}
-            />
-            <StatCard
-              label="Active deployments"
-              value={String((projectsByPhase.deployment?.length ?? 0) + (projectsByPhase.commissioning?.length ?? 0))}
-              hint="Deployment + commissioning"
-              tone="neutral"
-              onClick={() => navigate('/projects')}
-            />
-            <StatCard
-              label="Proposals out"
-              value={String(proposalsOut.length)}
-              hint="Awaiting customer review"
-              tone="neutral"
-              onClick={() => navigate('/crm')}
-            />
-            <StatCard
-              label="Open work orders"
-              value={String(myOpenWOs.length)}
-              hint={myOpenWOs.filter((w) => w.wo.progress.status === 'blocked').length > 0 ? `${myOpenWOs.filter((w) => w.wo.progress.status === 'blocked').length} blocked` : 'Across every project'}
-              tone={myOpenWOs.filter((w) => w.wo.progress.status === 'blocked').length > 0 ? 'amber' : 'neutral'}
-              onClick={() => navigate('/projects')}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <Card title="My open tasks" cta={{ label: 'Pipeline', onClick: () => navigate('/crm') }}>
-              {myOpenTasks.length === 0 ? (
-                <Empty>All caught up.</Empty>
-              ) : myOpenTasks.slice(0, 5).map((t) => (
-                <TaskRow key={t.id} task={t} customerName={t.customerId ? customersMap[t.customerId]?.companyName : undefined}
-                  onOpen={() => t.customerId && navigate(`/account/${t.customerId}`)}
-                />
-              ))}
-            </Card>
-            <Card title="Recent activity" cta={{ label: 'All projects', onClick: () => navigate('/projects') }}>
-              {recentActivity.length === 0 ? (
-                <Empty>No recent activity.</Empty>
-              ) : recentActivity.map((a) => (
-                <div key={a.id} className="px-3 py-2 border-b border-border/40 last:border-b-0 flex items-start gap-2 text-sm">
-                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 bg-primary/70 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-foreground">{a.message}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      {a.userName ?? 'System'} · {timeAgo(a.createdAt)}
+    <AppShell crumbs={[{ label: 'Command Center' }]} fullBleed commandChrome>
+      <div className="min-h-full overflow-auto" style={{ background: 'var(--command-bg)', color: 'var(--command-fg)' }}>
+        <div className="mx-auto max-w-[1500px] px-6 py-5 space-y-5">
+          <section className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-5">
+            <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--command-panel)', borderColor: 'var(--command-border-strong)', boxShadow: 'var(--command-shadow)' }}>
+              <div className="p-5 border-b" style={{ borderColor: 'var(--command-border)' }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--command-accent)' }}>
+                      <Radar className="w-4 h-4" />
+                      Deeper Vision operating system
                     </div>
+                    <h1 className="mt-3 text-2xl md:text-3xl font-semibold tracking-tight" style={{ color: 'var(--command-fg)' }}>
+                      Security work from first call to lifecycle service.
+                    </h1>
+                    <p className="mt-2 max-w-3xl text-sm leading-relaxed" style={{ color: 'var(--command-muted)' }}>
+                      One command surface for intake, site walk, engineering canvas, pricing, proposal, deployment, closeout, warranty, and service.
+                    </p>
                   </div>
-                </div>
-              ))}
-            </Card>
-          </div>
-        </Section>
-
-        {/* ── Pipeline ───────────────────────────────────────────── */}
-        <Section
-          icon={<DollarSign className="w-3.5 h-3.5" />}
-          title="Pipeline"
-          hint="Sales motion"
-        >
-          <div className="grid grid-cols-4 gap-3">
-            <StatCard label="Open pipeline" value={money(pipelineSummary.open)} hint={`${pipelineSummary.openCount} deals`} tone="neutral" onClick={() => navigate('/crm')} />
-            <StatCard label="Weighted forecast" value={money(pipelineSummary.weighted)} hint="Probability × value" tone="neutral" />
-            <StatCard label="Won this quarter" value={money(pipelineSummary.wonThisQuarter)} hint="Closed-won contract value" tone="green" />
-            <StatCard label="Proposals out" value={String(proposalsOut.length)} hint="Proposing + negotiating" tone="neutral" />
-          </div>
-
-          <div className="mt-4">
-            <Card title="Recent customer touches" cta={{ label: 'Pipeline', onClick: () => navigate('/crm') }}>
-              {recentTouches.length === 0 ? (
-                <Empty>No touches logged yet.</Empty>
-              ) : recentTouches.map((t) => (
-                <div key={t.id} className="px-3 py-2 border-b border-border/40 last:border-b-0 flex items-start gap-2.5">
-                  <span className="text-[10px] uppercase tracking-tight text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded mt-0.5 shrink-0">{t.type}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-foreground truncate">{t.summary}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      {customersMap[t.customerId]?.companyName ?? '—'} · {t.userName ?? 'You'} · {timeAgo(t.occurredAt)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </Card>
-          </div>
-        </Section>
-
-        {/* ── My day (Phase 4B) ──────────────────────────────────── */}
-        <Section
-          icon={<HardHat className="w-3.5 h-3.5" />}
-          title="My day"
-          hint="What you own across every project"
-        >
-          <div className="grid grid-cols-3 gap-3">
-            {/* AI Assistant entry point */}
-            <button
-              onClick={() => navigate('/ai/p1')}
-              className="rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors p-3 text-left"
-              data-testid="dashboard-ai-entry"
-            >
-              <div className="flex items-center gap-2 text-primary">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span className="text-[12px] uppercase tracking-[0.10em]">AI Assistant</span>
-              </div>
-              <div className="text-[14px] font-medium mt-1.5">Ask grounded questions</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">
-                Coverage gaps, BOM totals, PoE budgets, blocked work orders. Cites the records it draws from.
-              </div>
-              <div className="mt-2 inline-flex items-center gap-1 text-[11px] text-primary">
-                Open Assistant <ArrowRight className="w-3 h-3" />
-              </div>
-            </button>
-
-            {/* This week */}
-            <Card title="This week" cta={weekItems.length > 0 ? { label: `${weekItems.length} item${weekItems.length === 1 ? '' : 's'}`, onClick: () => navigate('/projects') } : undefined}>
-              {weekItems.length === 0 ? (
-                <Empty>Nothing scheduled in the next 7 days.</Empty>
-              ) : weekItems.slice(0, 5).map((it) => (
-                <button
-                  key={`${it.kind}-${it.id}`}
-                  onClick={() => it.href && navigate(it.href)}
-                  className="w-full text-left px-3 py-2 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors flex items-start gap-2.5"
-                >
-                  <div className="flex flex-col items-center shrink-0 w-9">
-                    <div className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground">
-                      {new Date(it.due).toLocaleDateString(undefined, { weekday: 'short' })}
-                    </div>
-                    <div className="text-[14px] font-medium tabular-nums leading-none">
-                      {new Date(it.due).getDate()}
-                    </div>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12px] text-foreground truncate">{it.label}</div>
-                    {it.subtitle && <div className="text-[10px] text-muted-foreground truncate">{it.subtitle}</div>}
-                  </div>
-                </button>
-              ))}
-            </Card>
-
-            {/* My work orders */}
-            <Card title="My open work orders" cta={myOpenWOs.length > 0 ? { label: 'Deployment', onClick: () => navigate(`/project/${myOpenWOs[0].projectId}/deployment`) } : undefined}>
-              {myOpenWOs.length === 0 ? (
-                <Empty>No open work orders assigned to you.</Empty>
-              ) : myOpenWOs.slice(0, 5).map(({ wo, projectId, projectName }) => {
-                const blocked = wo.progress.status === 'blocked';
-                return (
                   <button
-                    key={wo.id}
-                    onClick={() => navigate(`/project/${projectId}/deployment`)}
-                    className="w-full text-left px-3 py-2 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors"
+                    onClick={() => navigate(`/project/${activeProjectId}/canvas`)}
+                    className="shrink-0 hidden sm:inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold"
+                    style={{ background: 'var(--command-accent)', color: 'var(--command-accent-foreground)' }}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className={`w-1.5 h-1.5 rounded-full ${blocked ? 'bg-rose-500' : 'bg-primary/70'} shrink-0`} />
-                      <span className="text-[12px] text-foreground truncate flex-1">{wo.title}</span>
-                      <span className={`text-[10px] uppercase tracking-[0.10em] ${blocked ? 'text-rose-600' : 'text-muted-foreground'}`}>{wo.progress.status}</span>
-                    </div>
-                    <div className="text-[10px] text-muted-foreground truncate mt-0.5">{projectName}{wo.location ? ` · ${wo.location}` : ''}</div>
+                    Open canvas <ArrowRight className="w-4 h-4" />
                   </button>
-                );
-              })}
-            </Card>
-          </div>
-        </Section>
-
-        {/* ── Projects ───────────────────────────────────────────── */}
-        <Section
-          icon={<Briefcase className="w-3.5 h-3.5" />}
-          title="Projects"
-          hint="By lifecycle phase"
-        >
-          <div className="grid grid-cols-3 gap-3">
-            {(['engineering', 'estimate', 'proposal', 'deployment', 'commissioning', 'managed_service'] as LifecyclePhase[]).map((phase) => {
-              const list = projectsByPhase[phase] ?? [];
-              const cfg = PHASES[phase];
-              return (
-                <Card key={phase} title={cfg.label} cta={list.length > 0 ? { label: `${list.length} project${list.length === 1 ? '' : 's'}`, onClick: () => navigate('/projects') } : undefined}>
-                  {list.length === 0 ? (
-                    <Empty>—</Empty>
-                  ) : list.slice(0, 3).map((p) => {
-                    const customer = p.customerId ? customersMap[p.customerId] : undefined;
-                    const h = healthTone(p.healthStatus);
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => navigate(`/project/${p.id}`)}
-                        className="w-full text-left px-3 py-2 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full ${cfg.tone.dot}`} />
-                          <span className="text-sm text-foreground truncate flex-1">{p.name}</span>
-                          <span className={`text-[10px] ${h.cls}`}>{h.label}</span>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                          {customer?.companyName ?? '—'}{p.nextAction ? ` · ${p.nextAction}` : ''}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </Card>
-              );
-            })}
-          </div>
-        </Section>
-
-        {/* ── Team ───────────────────────────────────────────────── */}
-        <Section
-          icon={<Users className="w-3.5 h-3.5" />}
-          title="Team"
-          hint="Workload across the integrator"
-        >
-          <Card title="Assignments by user" cta={undefined}>
-            {(() => {
-              const byUser: Record<string, { tasks: number; projects: number }> = {};
-              for (const t of Object.values(tasksMap)) {
-                if (t.status !== 'open' || !t.assignedUserId) continue;
-                (byUser[t.assignedUserId] ??= { tasks: 0, projects: 0 }).tasks += 1;
-              }
-              for (const p of projects) {
-                const owners = [p.assignedSalesUserId, p.assignedEngineerUserId, p.assignedEstimatorUserId, p.assignedPMUserId].filter(Boolean) as string[];
-                for (const u of owners) {
-                  (byUser[u] ??= { tasks: 0, projects: 0 }).projects += 1;
-                }
-              }
-              const entries = Object.entries(byUser).sort((a, b) => (b[1].tasks + b[1].projects) - (a[1].tasks + a[1].projects));
-              if (entries.length === 0) return <Empty>No assignments yet.</Empty>;
-              return entries.map(([userId, w]) => (
-                <div key={userId} className="px-3 py-2 border-b border-border/40 last:border-b-0 flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-secondary border border-border flex items-center justify-center text-[11px] text-foreground font-medium shrink-0">
-                    {userId.replace(/^u-/, '').slice(0, 2).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-foreground capitalize">{userId.replace(/^u-/, '')}</div>
-                    <div className="text-[11px] text-muted-foreground">{w.projects} project{w.projects === 1 ? '' : 's'} · {w.tasks} open task{w.tasks === 1 ? '' : 's'}</div>
-                  </div>
                 </div>
-              ));
-            })()}
-          </Card>
-        </Section>
-
-        {/* ── Integrations ───────────────────────────────────────── */}
-        <Section
-          icon={<LinkIcon className="w-3.5 h-3.5" />}
-          title="Integrations"
-          hint="CRM · ERP · accounting · calendar · manufacturer ecosystems"
-        >
-          {(() => {
-            // Text-mark logo cards. Real trademarked logos aren't shipped
-            // with the repo; we use the manufacturer's recognisable initials
-            // in their own brand color so the cards still read like a known
-            // vendor at a glance instead of a generic gray box. Status is
-            // honest — nothing is wired to a live API yet.
-            const integrations: Array<{
-              mark: string; color: string; name: string; category: string;
-              status: 'connected' | 'available' | 'attention' | 'syncing';
-              lastSync?: string; objectCount?: string;
-            }> = [
-              { mark: 'HS', color: '#FF7A59', name: 'HubSpot',           category: 'CRM',                        status: 'available' },
-              { mark: 'SF', color: '#00A1E0', name: 'Salesforce',        category: 'CRM',                        status: 'available' },
-              { mark: 'Q3', color: '#7C3AED', name: 'Q360',              category: 'ERP · Integrator suite',     status: 'available' },
-              { mark: 'QB', color: '#2CA01C', name: 'QuickBooks',        category: 'Accounting',                 status: 'available' },
-              { mark: 'NS', color: '#1A6BBA', name: 'NetSuite',          category: 'Accounting / ERP',           status: 'available' },
-              { mark: 'O',  color: '#0078D4', name: 'Microsoft Outlook', category: 'Calendar / mail',            status: 'available' },
-              { mark: 'GC', color: '#4285F4', name: 'Google Calendar',   category: 'Calendar',                   status: 'available' },
-              { mark: 'VK', color: '#3B82F6', name: 'Verkada',           category: 'Cloud video / access',       status: 'available' },
-              { mark: 'AX', color: '#E60028', name: 'Axis',              category: 'Cameras · on-prem',          status: 'available' },
-              { mark: 'AL', color: '#F08F3C', name: 'Avigilon Alta',     category: 'Cloud video',                status: 'available' },
-              { mark: 'GE', color: '#0EA5E9', name: 'Genetec',           category: 'Security Center · on-prem',  status: 'available' },
-              { mark: 'MS', color: '#5B6CFF', name: 'Milestone',         category: 'XProtect · on-prem VMS',     status: 'available' },
-            ];
-            return (
-              <div className="grid grid-cols-4 gap-3">
-                {integrations.map((i) => (
-                  <IntegrationCard
-                    key={i.name}
-                    mark={i.mark}
-                    markColor={i.color}
-                    name={i.name}
-                    category={i.category}
-                    status={i.status}
-                    lastSync={i.lastSync}
-                    objectCount={i.objectCount}
-                  />
-                ))}
               </div>
-            );
-          })()}
-          <div className="mt-3 text-[11px] text-muted-foreground">
-            Connect or manage integrations from <button onClick={() => navigate('/settings')} className="text-primary hover:underline">Settings → Integrations</button>.
-          </div>
-        </Section>
 
-        {/* ── Customer operations ─────────────────────────────────
-            Only the managed_service count is grounded in real data
-            right now; tickets / warranties / maintenance visits
-            ship as their own surfaces in later phases (4O / 4P).
-            Per the honesty contract we don't render labeled-future
-            placeholders here. */}
-        {(projectsByPhase.managed_service?.length ?? 0) > 0 && (
-          <Section
-            icon={<MessageCircle className="w-3.5 h-3.5" />}
-            title="Customer operations"
-            hint="Managed service"
-          >
-            <div className="grid grid-cols-4 gap-3">
-              <StatCard
-                label="Managed accounts"
-                value={String(projectsByPhase.managed_service?.length ?? 0)}
-                hint="Projects in managed service"
-                tone="neutral"
-                onClick={() => navigate('/projects')}
-              />
+              <div className="p-4 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
+                {modules.map((m, i) => {
+                  const Icon = m.icon;
+                  return (
+                    <button
+                      key={m.label}
+                      onClick={() => navigate(moduleHref(m.href))}
+                      className="group relative min-h-[132px] rounded-xl border p-3 text-left transition-colors"
+                      style={{ background: 'var(--command-panel-elevated)', borderColor: 'var(--command-border)' }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: i === 0 ? 'color-mix(in oklab, var(--command-accent) 16%, transparent)' : 'color-mix(in oklab, var(--command-cyan) 12%, transparent)', color: i === 0 ? 'var(--command-accent)' : 'var(--command-cyan)' }}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs tabular-nums" style={{ color: 'var(--command-muted)' }}>{m.count}</span>
+                      </div>
+                      <div className="mt-3 text-[10px] uppercase tracking-[0.14em]" style={{ color: 'var(--command-faint)' }}>{m.eyebrow}</div>
+                      <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--command-fg)' }}>{m.label}</div>
+                      <div className="mt-1 text-xs leading-snug" style={{ color: 'var(--command-muted)' }}>{m.note}</div>
+                      <span className="absolute left-3 right-3 bottom-2 h-px opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'var(--command-accent)' }} />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </Section>
-        )}
+
+            <ActiveProjectPanel
+              project={activeProject}
+              customer={activeCustomer}
+              deviceCount={projectDevices.length}
+              doorCount={projectDoors.length}
+              pathwayCount={projectPathways.length}
+              assetCount={projectAssets.length}
+              onOpen={() => navigate(`/project/${activeProjectId}`)}
+              onCanvas={() => navigate(`/project/${activeProjectId}/canvas`)}
+            />
+          </section>
+
+          <section className="grid grid-cols-1 xl:grid-cols-[0.72fr_1.28fr] gap-5">
+            <div className="space-y-5">
+              <SignalDeck
+                openOpps={openOpps}
+                projects={projects.length}
+                openTasks={openTasks}
+                tickets={activeTickets}
+                warranties={expiringWarranties}
+              />
+              <AIWatchPanel activeProjectId={activeProjectId} devices={projectDevices.length} doors={projectDoors.length} pathways={projectPathways.length} onOpen={() => navigate(`/ai/${activeProjectId}`)} />
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-5">
+              <WorkflowBoard modules={modules} navigate={(href) => navigate(moduleHref(href))} />
+              <ActivityFeed activity={activity} />
+            </div>
+          </section>
+        </div>
       </div>
     </AppShell>
   );
 }
 
-// ─── Sub-components ───────────────────────────────────────────────
-
-function Section({ icon, title, hint, children }: { icon: React.ReactNode; title: string; hint?: string; children: React.ReactNode }) {
+function ActiveProjectPanel({
+  project,
+  customer,
+  deviceCount,
+  doorCount,
+  pathwayCount,
+  assetCount,
+  onOpen,
+  onCanvas,
+}: {
+  project: any;
+  customer: any;
+  deviceCount: number;
+  doorCount: number;
+  pathwayCount: number;
+  assetCount: number;
+  onOpen: () => void;
+  onCanvas: () => void;
+}) {
   return (
-    <section>
-      <div className="flex items-baseline gap-2 mb-2.5">
-        <div className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground tracking-tight">
-          <span className="text-muted-foreground">{icon}</span>
-          {title}
+    <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--command-panel)', borderColor: 'var(--command-border-strong)', boxShadow: 'var(--command-shadow)' }}>
+      <div className="p-5 border-b" style={{ borderColor: 'var(--command-border)' }}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--command-faint)' }}>Active project</div>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight" style={{ color: 'var(--command-fg)' }}>{project?.name ?? 'No project selected'}</h2>
+            <div className="mt-1 text-sm" style={{ color: 'var(--command-muted)' }}>{customer?.companyName ?? 'No customer linked'}</div>
+          </div>
+          <button onClick={onOpen} className="rounded-lg border px-3 py-2 text-xs font-medium" style={{ borderColor: 'var(--command-border)', color: 'var(--command-muted)' }}>Project hub</button>
         </div>
-        {hint && <div className="text-[11px] text-muted-foreground">· {hint}</div>}
       </div>
-      {children}
-    </section>
-  );
-}
-
-function StatCard({ label, value, hint, tone, onClick }: { label: string; value: string; hint?: string; tone?: 'neutral' | 'amber' | 'green' | 'muted'; onClick?: () => void }) {
-  const toneCls = tone === 'amber' ? 'text-amber-400' : tone === 'green' ? 'text-emerald-400' : tone === 'muted' ? 'text-muted-foreground/70' : 'text-foreground';
-  const interactive = !!onClick;
-  return (
-    <button
-      onClick={onClick}
-      disabled={!interactive}
-      className={`bg-card border border-border rounded-lg p-3 text-left ${interactive ? 'hover:border-border-strong transition-colors cursor-pointer' : 'cursor-default'}`}
-    >
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className={`text-xl font-medium mt-1 tabular-nums ${toneCls}`}>{value}</div>
-      {hint && <div className="text-[11px] text-muted-foreground mt-0.5">{hint}</div>}
-    </button>
-  );
-}
-
-function Card({ title, cta, children }: { title: string; cta?: { label: string; onClick: () => void }; children: React.ReactNode }) {
-  return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-border/70 flex items-center justify-between">
-        <div className="text-[12px] font-medium text-foreground tracking-tight">{title}</div>
-        {cta && (
-          <button onClick={cta.onClick} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-            {cta.label}<ChevronRight className="w-3 h-3" />
-          </button>
-        )}
+      <div className="p-5">
+        <button onClick={onCanvas} className="group relative w-full h-[255px] rounded-2xl border overflow-hidden text-left" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--command-panel-elevated) 92%, white 6%), var(--command-bg))', borderColor: 'var(--command-border)' }}>
+          <div className="absolute inset-0 opacity-60" style={{ backgroundImage: 'linear-gradient(var(--command-border) 1px, transparent 1px), linear-gradient(90deg, var(--command-border) 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
+          <div className="absolute left-8 top-8 right-8 bottom-8 rounded-xl border" style={{ background: 'rgba(247,250,252,0.88)', borderColor: 'rgba(247,250,252,0.38)' }}>
+            <div className="absolute left-0 top-1/2 right-0 h-px bg-slate-500/50" />
+            <div className="absolute left-1/3 top-0 bottom-0 w-px bg-slate-500/50" />
+            <div className="absolute left-2/3 top-0 bottom-0 w-px bg-slate-500/50" />
+            <div className="absolute left-[12%] top-[18%] w-28 h-24 rounded-full bg-sky-400/25" />
+            <div className="absolute right-[13%] top-[15%] w-36 h-36 rounded-full bg-cyan-400/25" />
+            <div className="absolute left-[46%] bottom-[14%] w-44 h-32 rounded-full bg-indigo-400/20" />
+            <Video className="absolute left-[16%] top-[25%] w-5 h-5 text-sky-600" />
+            <DoorOpen className="absolute right-[27%] top-[39%] w-5 h-5 text-amber-600" />
+            <Route className="absolute left-[43%] bottom-[32%] w-5 h-5 text-cyan-600" />
+          </div>
+          <div className="absolute left-4 bottom-4 right-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.14em]" style={{ color: 'var(--command-faint)' }}>Engineering surface</div>
+              <div className="text-sm font-semibold" style={{ color: 'var(--command-fg)' }}>Open design canvas</div>
+            </div>
+            <ArrowRight className="w-4 h-4" style={{ color: 'var(--command-accent)' }} />
+          </div>
+        </button>
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <SmallMetric label="Devices" value={deviceCount} />
+          <SmallMetric label="Doors" value={doorCount} />
+          <SmallMetric label="Routes" value={pathwayCount} />
+          <SmallMetric label="Assets" value={assetCount} />
+        </div>
       </div>
-      <div>{children}</div>
     </div>
   );
 }
 
-function TaskRow({ task, customerName, onOpen }: { task: Task; customerName?: string; onOpen: () => void }) {
-  const overdue = task.dueDate != null && task.dueDate < Date.now();
+function SignalDeck({ openOpps, projects, openTasks, tickets, warranties }: { openOpps: number; projects: number; openTasks: number; tickets: number; warranties: number }) {
   return (
-    <button onClick={onOpen} className="w-full text-left px-3 py-2 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors flex items-start gap-2">
-      <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="text-sm text-foreground truncate">{task.title}</div>
-        <div className="text-[11px] text-muted-foreground mt-0.5 inline-flex items-center gap-1.5">
-          {customerName && <span className="truncate max-w-[140px]">{customerName}</span>}
-          {task.dueDate && (
-            <span className={overdue ? 'text-amber-400' : ''}>
-              <Clock className="w-2.5 h-2.5 inline mr-0.5" />
-              {overdue ? 'Overdue · ' : ''}{shortDate(task.dueDate)}
-            </span>
-          )}
-        </div>
-      </div>
-    </button>
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <Signal icon={WalletCards} label="Open opps" value={openOpps} />
+      <Signal icon={Building2} label="Projects" value={projects} />
+      <Signal icon={ClipboardCheck} label="Tasks" value={openTasks} />
+      <Signal icon={TicketCheck} label="Tickets" value={tickets} />
+      <Signal icon={ShieldCheck} label="Warranty" value={warranties} alert={warranties > 0} />
+    </div>
   );
 }
 
-function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-3 text-[11px] text-muted-foreground/70">{children}</div>;
+function Signal({ icon: Icon, label, value, alert = false }: { icon: any; label: string; value: number; alert?: boolean }) {
+  return (
+    <div className="rounded-xl border p-3" style={{ background: 'var(--command-panel)', borderColor: alert ? 'color-mix(in oklab, var(--command-warning) 36%, var(--command-border))' : 'var(--command-border)' }}>
+      <div className="flex items-center justify-between">
+        <Icon className="w-4 h-4" style={{ color: alert ? 'var(--command-warning)' : 'var(--command-cyan)' }} />
+        <span className="text-2xl font-semibold tabular-nums" style={{ color: 'var(--command-fg)' }}>{value}</span>
+      </div>
+      <div className="mt-2 text-xs" style={{ color: 'var(--command-muted)' }}>{label}</div>
+    </div>
+  );
 }
 
-// ─── helpers ──────────────────────────────────────────────────────
+function AIWatchPanel({ activeProjectId, devices, doors, pathways, onOpen }: { activeProjectId: string; devices: number; doors: number; pathways: number; onOpen: () => void }) {
+  const readiness = [
+    { label: 'Coverage data', ok: devices > 0 },
+    { label: 'Door inventory', ok: doors > 0 },
+    { label: 'Pathway routing', ok: pathways > 0 },
+  ];
+  return (
+    <div className="rounded-2xl border p-4" style={{ background: 'var(--command-panel)', borderColor: 'var(--command-border)' }}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--command-cyan)' }}>
+            <Sparkles className="w-4 h-4" />
+            Deeper Vision AI
+          </div>
+          <div className="mt-2 text-lg font-semibold" style={{ color: 'var(--command-fg)' }}>Project intelligence is grounded by records.</div>
+          <div className="mt-1 text-sm" style={{ color: 'var(--command-muted)' }}>AI should warn, explain, and draft. It should not silently change designs or certify compliance.</div>
+        </div>
+        <button onClick={onOpen} className="rounded-lg px-3 py-2 text-xs font-semibold" style={{ background: 'color-mix(in oklab, var(--command-cyan) 14%, transparent)', color: 'var(--command-cyan)' }}>Open AI</button>
+      </div>
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {readiness.map((r) => (
+          <div key={r.label} className="rounded-lg border p-3" style={{ borderColor: 'var(--command-border)', background: 'var(--command-panel-elevated)' }}>
+            <BadgeCheck className="w-4 h-4" style={{ color: r.ok ? 'var(--command-accent)' : 'var(--command-faint)' }} />
+            <div className="mt-2 text-xs" style={{ color: 'var(--command-muted)' }}>{r.label}</div>
+            <div className="text-xs font-medium" style={{ color: r.ok ? 'var(--command-accent)' : 'var(--command-faint)' }}>{r.ok ? 'Available' : 'Needs data'}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 text-xs" style={{ color: 'var(--command-faint)' }}>Current scope: {activeProjectId}</div>
+    </div>
+  );
+}
 
-function money(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000)     return `$${Math.round(n / 1_000)}k`;
-  return `$${n.toLocaleString('en-US')}`;
+function WorkflowBoard({ modules, navigate }: { modules: Array<{ label: string; eyebrow: string; href: string; icon: any; count: number; note: string }>; navigate: (href: string) => void }) {
+  return (
+    <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--command-panel)', borderColor: 'var(--command-border)' }}>
+      <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--command-border)' }}>
+        <div>
+          <div className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--command-faint)' }}>Workflow spine</div>
+          <div className="mt-1 text-lg font-semibold" style={{ color: 'var(--command-fg)' }}>Every module should move the same record forward.</div>
+        </div>
+        <Workflow className="w-5 h-5" style={{ color: 'var(--command-accent)' }} />
+      </div>
+      <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {modules.map((m) => {
+          const Icon = m.icon;
+          return (
+            <button key={m.label} onClick={() => navigate(m.href)} className="rounded-xl border p-4 text-left" style={{ background: 'var(--command-panel-elevated)', borderColor: 'var(--command-border)' }}>
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'color-mix(in oklab, var(--command-accent) 13%, transparent)', color: 'var(--command-accent)' }}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs uppercase tracking-[0.14em]" style={{ color: 'var(--command-faint)' }}>{m.eyebrow}</div>
+                  <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--command-fg)' }}>{m.label}</div>
+                  <div className="mt-1 text-xs leading-snug" style={{ color: 'var(--command-muted)' }}>{m.note}</div>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
-function quarterStart(ts: number): number {
-  const d = new Date(ts);
-  return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1).getTime();
+
+function ActivityFeed({ activity }: { activity: any[] }) {
+  return (
+    <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--command-panel)', borderColor: 'var(--command-border)' }}>
+      <div className="p-4 border-b" style={{ borderColor: 'var(--command-border)' }}>
+        <div className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--command-faint)' }}>Activity</div>
+        <div className="mt-1 text-lg font-semibold" style={{ color: 'var(--command-fg)' }}>Latest movement</div>
+      </div>
+      <div>
+        {activity.length === 0 ? (
+          <div className="p-4 text-sm" style={{ color: 'var(--command-muted)' }}>No activity yet.</div>
+        ) : activity.map((item) => (
+          <div key={item.id} className="px-4 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--command-border)' }}>
+            <div className="text-sm leading-snug" style={{ color: 'var(--command-fg)' }}>{item.message ?? item.title ?? 'Project activity'}</div>
+            <div className="mt-1 flex items-center gap-2 text-xs" style={{ color: 'var(--command-faint)' }}>
+              <CalendarClock className="w-3 h-3" />
+              {formatAge(item.createdAt)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
-function shortDate(ms: number): string {
-  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+function SmallMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border px-3 py-2" style={{ background: 'var(--command-panel-elevated)', borderColor: 'var(--command-border)' }}>
+      <div className="text-lg font-semibold tabular-nums" style={{ color: 'var(--command-fg)' }}>{value}</div>
+      <div className="text-xs" style={{ color: 'var(--command-muted)' }}>{label}</div>
+    </div>
+  );
 }
-function timeAgo(ms: number): string {
-  const d = Date.now() - ms;
-  const sec = Math.floor(d / 1000); if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60); if (min < 60) return `${min}m ago`;
-  const hr  = Math.floor(min / 60); if (hr < 24)  return `${hr}h ago`;
-  const days = Math.floor(hr / 24); return `${days}d ago`;
-}
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 5)  return 'Good evening';
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+
+function formatAge(value: any) {
+  const time = typeof value === 'number' ? value : Date.parse(value ?? '');
+  if (!Number.isFinite(time)) return 'No timestamp';
+  const diff = Date.now() - time;
+  const minutes = Math.max(1, Math.floor(diff / 60_000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
