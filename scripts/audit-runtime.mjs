@@ -81,6 +81,15 @@ const routes = [
   { name: 'canvas-multisensor-lens', path: '/project/p1/canvas',
     after: 'select-multisensor-and-switch-lens',
     assert: 'multisensor-lens-switched' },
+  // M11 coverage widening (E79): floor switching is one of the
+  // canvas's primary navigational moves. A regression in setSticky
+  // or in the floor-id propagation through useEffect would leave
+  // the chrome looking normal while the canvas keeps showing the
+  // old floor's devices. Verify both the switcher's label updates
+  // AND the canvas device set actually changes.
+  { name: 'canvas-floor-switch', path: '/project/p1/canvas',
+    after: 'switch-floor',
+    assert: 'floor-switched' },
   // M6 — drag a real tray card onto the canvas via synthetic HTML5
   // drag events and assert a new device appears. Body length doesn't
   // catch a silent drag-and-drop failure; the device count delta does.
@@ -162,6 +171,34 @@ async function checkRoute(browser, route) {
       const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim().startsWith('BOM'));
       btn && btn.click();
     });
+    await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+  } else if (route.after === 'switch-floor') {
+    // Stash the starting state: which floor name shows on the
+    // switcher button, and how many devices are mounted right now.
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-track="topbar-floor-switcher"]');
+      const labelEl = btn?.querySelector('span');
+      window.__auditFloorBefore = {
+        name: (labelEl?.textContent || '').trim(),
+        devices: document.querySelectorAll('[data-device-id]').length,
+      };
+    });
+    // Open the dropdown and pick the first non-active entry.
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-track="topbar-floor-switcher"]');
+      if (btn) (btn).click();
+    });
+    await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+    const switched = await page.evaluate(() => {
+      // The listbox contains one <button role="option"> per floor;
+      // pick the first one that is not aria-selected.
+      const options = Array.from(document.querySelectorAll('[role="option"]'));
+      const target = options.find((o) => o.getAttribute('aria-selected') !== 'true');
+      if (!target) return 'no inactive floor option found in listbox (project may have only one floor)';
+      (target).click();
+      return null;
+    });
+    if (switched) errors.push(`switch-floor: ${switched}`);
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
   } else if (route.after === 'select-multisensor-and-switch-lens') {
     // Same pointer trio as select-multisensor (CAM-103), then click
@@ -365,6 +402,24 @@ async function checkRoute(browser, route) {
       // / light-on-light regression is caught.
       if (ratio < 4.5) {
         return `selection panel title contrast ratio ${ratio.toFixed(2)} is below WCAG AA 4.5 (text rgb(${Math.round(titleColor.r)},${Math.round(titleColor.g)},${Math.round(titleColor.b)}) vs background rgb(${Math.round(panelBg.r)},${Math.round(panelBg.g)},${Math.round(panelBg.b)}))`;
+      }
+      return null;
+    });
+  } else if (route.assert === 'floor-switched') {
+    assertionFailure = await page.evaluate(() => {
+      const before = window.__auditFloorBefore;
+      if (!before || !before.name) return 'floor-switch harness pre-step did not capture before-state';
+      const nowBtn = document.querySelector('[data-track="topbar-floor-switcher"]');
+      const nowName = (nowBtn?.querySelector('span')?.textContent || '').trim();
+      const nowDevices = document.querySelectorAll('[data-device-id]').length;
+      if (nowName === before.name) {
+        return `floor switcher label did not change (still "${nowName}") — setSticky may have no-opped or the listbox click missed`;
+      }
+      if (nowDevices === before.devices) {
+        // The seeded floors all have different device counts; if the
+        // count stayed flat the canvas did not re-render the new
+        // floor's content.
+        return `floor switcher label changed from "${before.name}" to "${nowName}" but the canvas still shows ${nowDevices} devices (unchanged from before). The floor sticky did not propagate to device rendering.`;
       }
       return null;
     });
