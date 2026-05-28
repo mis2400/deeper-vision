@@ -1123,18 +1123,22 @@ export function BottomDeviceBar({
                           }}
                         />
                         <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
-                        {/* Label — always in DOM at fixed width; opacity +
-                            max-height drive visibility so the bar grows
-                            and shrinks smoothly with no layout fights. */}
+                        {/* Label — M11 audit fix (U6): used to be gated
+                            on barExpanded (hover only). The icons alone
+                            were not obvious for first time users — Cable,
+                            Conduit, Site infra all rely on generic shapes
+                            and the count badge offers no clue what the
+                            tile holds. The label is now always visible
+                            under the icon. The group HEADER above
+                            (Cameras / Cabling / etc) still hover-expands
+                            because that is structural context, not a
+                            primary affordance. */}
                         <span
                           className="text-[10px] tracking-tight font-medium whitespace-nowrap overflow-hidden"
                           style={{
-                            maxHeight: barExpanded ? 14 : 0,
-                            opacity: barExpanded ? 1 : 0,
-                            marginTop: barExpanded ? 2 : 0,
-                            transitionProperty: 'max-height, opacity, margin-top',
-                            transitionDuration: 'var(--motion-standard)',
-                            transitionTimingFunction: 'var(--ease-out)',
+                            maxHeight: 14,
+                            opacity: 1,
+                            marginTop: 2,
                           }}
                         >{c.label}</span>
                         {placedCount > 0 && (
