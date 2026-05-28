@@ -1,11 +1,10 @@
 // ScanBuildFloorplanDialog — extracted from
 // screens/EngineeringCanvas.tsx as part of the M11 monolith
-// breakup. The "Add plan" picker: two recommended starting
-// points (upload a real plan, or sketch from a blank canvas).
-// The earlier satellite + demo-scan cards were retired in
-// Canvas V2 Pass 1.0 because both surfaces violated the
-// honesty rule (mocked tiles / mocked AR with "preview only"
-// disclaimers). Pure presentational — props for each branch.
+// breakup. The "Add plan" picker: the honest entry point into the
+// floor surface. Upload and Blank are production paths. Site map
+// uses the app's generated map layer, which labels itself as simulated
+// on-canvas. Vision scan opens the existing demo workflow and does not
+// claim real LiDAR capture.
 
 import { AlertTriangle, Compass, FolderUp, PencilLine, ScanLine, X } from 'lucide-react';
 
@@ -19,20 +18,29 @@ export function ScanBuildFloorplanDialog({
   onDrawScratch: () => void;
 }) {
   type Opt = { id: string; icon: any; tone: string; title: string; sub: string; honest?: string; onClick: () => void; recommended?: boolean; track: string };
-  // Canvas V2 Pass 1.0 — removed the "satellite / address base" card
-  // (live tiles not connected; the card carried a "preview only"
-  // disclaimer that violated CLAUDE.md's honesty rule) and the "demo
-  // site scan" card (mocked AR/LiDAR with a "Demo workflow" disclaimer
-  // on the primary surface). Upload and Blank both ship real backing.
   const opts: Opt[] = [
     {
-      id: 'upload', icon: FolderUp, tone: '#A371F7', track: 'scan-build-upload',
+      id: 'upload', icon: FolderUp, tone: 'var(--primary)', track: 'scan-build-upload',
       title: 'Upload a plan',
       sub: 'PNG, JPG, or PDF. Most users start here. Drop in a floor plan, set the scale, and plot devices.',
       onClick: onUpload, recommended: true,
     },
     {
-      id: 'draw', icon: PencilLine, tone: '#F08F3C', track: 'scan-build-draw',
+      id: 'site-map', icon: Compass, tone: 'var(--chart-2)', track: 'scan-build-satellite',
+      title: 'Use site map layer',
+      sub: 'Start from a generated site context layer, then trace the building footprint and calibrate before plotting.',
+      honest: 'This is not live Google or satellite imagery yet. The canvas labels it as a simulated map layer.',
+      onClick: onSatellite,
+    },
+    {
+      id: 'scan', icon: ScanLine, tone: 'var(--success)', track: 'scan-build-camera',
+      title: 'Open vision scan demo',
+      sub: 'Walk through the scan flow and import generated walls into the canvas for review.',
+      honest: 'Camera, AR, and LiDAR capture are not wired in the web app yet. Use the mobile app track for the real capture path.',
+      onClick: onScanCamera,
+    },
+    {
+      id: 'draw', icon: PencilLine, tone: 'var(--warning)', track: 'scan-build-draw',
       title: 'Start with a blank canvas',
       sub: 'Sketch walls, rooms, and openings from scratch. Snap to grid is on.',
       onClick: onDrawScratch,
@@ -47,7 +55,7 @@ export function ScanBuildFloorplanDialog({
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[15px] font-semibold tracking-tight">Add a floor plan</div>
-            <div className="text-[12px] text-muted-foreground mt-0.5">Pick how you want to bring this site in. You'll set the scale right after.</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">Choose the source for this floor. Scale comes next before devices should be trusted.</div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40">
             <X className="w-4 h-4" />
@@ -66,7 +74,11 @@ export function ScanBuildFloorplanDialog({
                 <div className="flex items-center gap-3">
                   <div
                     className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ background: `${o.tone}1F`, color: o.tone, boxShadow: `inset 0 0 0 1px ${o.tone}55` }}
+                    style={{
+                      background: `color-mix(in oklab, ${o.tone} 12%, transparent)`,
+                      color: o.tone,
+                      boxShadow: `inset 0 0 0 1px color-mix(in oklab, ${o.tone} 35%, transparent)`,
+                    }}
                   >
                     <Icon className="w-5 h-5" strokeWidth={1.7} />
                   </div>
@@ -92,7 +104,7 @@ export function ScanBuildFloorplanDialog({
         </div>
         <div className="px-6 py-3 border-t border-border text-[11px] text-muted-foreground flex items-center gap-2">
           <Compass className="w-3 h-3" />
-          Next step is always Set scale — click two points on a known feature and enter its real distance. Esc to cancel.
+          Use a known feature such as a 3 ft door opening to set scale. Esc closes this picker.
         </div>
       </div>
     </div>
