@@ -114,6 +114,15 @@ const routes = [
   { name: 'canvas-measure-draw', path: '/project/p1/canvas',
     after: 'draw-measurement',
     assert: 'measurement-rendered' },
+  // M11 coverage widening (E82): wall drawing follows the same
+  // two-click flow as the measure tool but writes through
+  // setFloorWalls instead of addMeasurement. A regression in the
+  // wall persist path would leave the rail icon active with no
+  // wall segments persisted, looking identical from the chrome's
+  // perspective.
+  { name: 'canvas-wall-draw', path: '/project/p1/canvas',
+    after: 'draw-wall',
+    assert: 'wall-rendered' },
   // M6 — drag a real tray card onto the canvas via synthetic HTML5
   // drag events and assert a new device appears. Body length doesn't
   // catch a silent drag-and-drop failure; the device count delta does.
@@ -196,6 +205,40 @@ async function checkRoute(browser, route) {
       btn && btn.click();
     });
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+  } else if (route.after === 'draw-wall') {
+    // Same two-click pattern as measure: stash the existing wall
+    // line count, switch the tool, dispatch two clicks across two
+    // separate evaluates (so React flushes setWallStart between
+    // them and the second click reads the seeded start), settle.
+    await page.evaluate(() => {
+      window.__auditWallsBefore = document.querySelectorAll(
+        'line[stroke="#94A3B8"][stroke-width="2.5"]'
+      ).length;
+    });
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-track="left-rail-tools-wall"]');
+      if (btn) (btn).click();
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    {
+      const click = async (xOff, yOff) => page.evaluate(([xOff, yOff]) => {
+        const anchor = document.querySelector('[data-device-id]');
+        const svg = anchor ? anchor.closest('svg') : document.querySelector('svg');
+        if (!svg) return;
+        const r = svg.getBoundingClientRect();
+        const cx = r.left + r.width / 2 + xOff;
+        const cy = r.top + r.height / 2 + yOff;
+        svg.dispatchEvent(new MouseEvent('click', {
+          bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0,
+        }));
+      }, [xOff, yOff]);
+      // Offset slightly vertically too to avoid overlapping the
+      // existing measurement segment from a previous route run.
+      await click(-120, -60);
+      await new Promise((r) => setTimeout(r, 250));
+      await click(120, -60);
+      await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+    }
   } else if (route.after === 'draw-measurement') {
     // 1) Stash the count of rendered "<digit>.<digit> ft" labels in
     //    the canvas SVG, so we know if the new measurement actually
@@ -499,6 +542,18 @@ async function checkRoute(browser, route) {
       // / light-on-light regression is caught.
       if (ratio < 4.5) {
         return `selection panel title contrast ratio ${ratio.toFixed(2)} is below WCAG AA 4.5 (text rgb(${Math.round(titleColor.r)},${Math.round(titleColor.g)},${Math.round(titleColor.b)}) vs background rgb(${Math.round(panelBg.r)},${Math.round(panelBg.g)},${Math.round(panelBg.b)}))`;
+      }
+      return null;
+    });
+  } else if (route.assert === 'wall-rendered') {
+    assertionFailure = await page.evaluate(() => {
+      const before = window.__auditWallsBefore;
+      if (typeof before !== 'number') return 'wall pre-step did not stash a baseline count';
+      const after = document.querySelectorAll(
+        'line[stroke="#94A3B8"][stroke-width="2.5"]'
+      ).length;
+      if (after <= before) {
+        return `expected at least 1 new wall <line> after two synthetic clicks (before=${before}, after=${after}). setFloorWalls write may have no-opped or the second click never saw a stashed wallStart.`;
       }
       return null;
     });
