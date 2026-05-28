@@ -1071,24 +1071,49 @@ function ReviewSidePanel({
 
         <div className="border-t border-border p-3 space-y-2">
           <div className="flex items-start gap-1.5">
+            {/* M11 audit fix (F5): the Add comment button is icon-only
+                and starts disabled. Without a description a screen
+                reader user lands on it with no explanation. Wired an
+                aria-describedby to the inline hint below so the
+                disabled / enabled rationale is announced, and an
+                aria-label so the icon button has an accessible name. */}
             <textarea
               value={draftComment}
               onChange={(e) => setDraftComment(e.target.value)}
               onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') onAddComment(); }}
               placeholder="Leave a comment for the project team…"
               rows={2}
+              aria-describedby="review-comment-hint"
               className="flex-1 text-[12px] p-2 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 resize-none"
               data-testid="review-comment-input"
             />
             <button
               onClick={onAddComment}
               disabled={!draftComment.trim()}
+              aria-label="Add comment"
+              aria-describedby="review-comment-hint"
               className="h-9 w-9 rounded-md inline-flex items-center justify-center border border-border bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Add comment · ⌘/Ctrl + Enter"
+              title={draftComment.trim() ? 'Add comment · ⌘/Ctrl + Enter' : 'Type a comment to enable · ⌘/Ctrl + Enter to send'}
               data-track="review-add-comment"
             >
               <Send className="w-3.5 h-3.5" />
             </button>
+          </div>
+          {/* Visible hint paired with the textarea + button via
+              aria-describedby. The empty state explains why the
+              button is disabled; the typed state confirms the
+              shortcut works. */}
+          <div
+            id="review-comment-hint"
+            // Font size pulls from --chrome-xs via inline style so this
+            // hint matches surrounding 10 px chrome without adding
+            // another raw text-[Npx] class to the tokens audit count.
+            style={{ fontSize: 'var(--chrome-xs)' }}
+            className="text-muted-foreground leading-snug"
+          >
+            {draftComment.trim()
+              ? 'Press ⌘/Ctrl + Enter to send.'
+              : 'Type a note above to enable Add comment.'}
           </div>
 
           <div className="flex items-center gap-1.5 pt-1">
