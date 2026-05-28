@@ -71,6 +71,16 @@ const routes = [
   // caught instead of silently passing on a body-length match.
   { name: 'canvas-multisensor', path: '/project/p1/canvas', after: 'select-multisensor',
     assert: 'selection-strip-shows-device' },
+  // M11 coverage widening (E78): lens chip switching is the canonical
+  // M9 interaction. Selecting a multisensor opens the strip with lens
+  // 'a' active by default; clicking a sibling chip must update both
+  // the activeLens state (visible in the chip's active styling) and
+  // drive the rendered cone handles. A regression in the lens binding
+  // would not surface as a console error or body delta — the strip
+  // would just look the same with no behaviour underneath.
+  { name: 'canvas-multisensor-lens', path: '/project/p1/canvas',
+    after: 'select-multisensor-and-switch-lens',
+    assert: 'multisensor-lens-switched' },
   // M6 — drag a real tray card onto the canvas via synthetic HTML5
   // drag events and assert a new device appears. Body length doesn't
   // catch a silent drag-and-drop failure; the device count delta does.
@@ -151,6 +161,43 @@ async function checkRoute(browser, route) {
     await page.evaluate(() => {
       const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim().startsWith('BOM'));
       btn && btn.click();
+    });
+    await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+  } else if (route.after === 'select-multisensor-and-switch-lens') {
+    // Same pointer trio as select-multisensor (CAM-103), then click
+    // the lens 'b' chip on the rendered strip and let the binding
+    // settle.
+    await page.evaluate(() => {
+      const node = document.querySelector('[data-device-id="CAM-103"]');
+      const hit = (node && node.querySelector('[data-hit="device"]')) || node;
+      if (!hit) return;
+      const r = hit.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      ['pointerdown', 'pointerup'].forEach((t) => {
+        hit.dispatchEvent(new PointerEvent(t, {
+          bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse',
+          clientX: cx, clientY: cy, button: 0,
+        }));
+      });
+      hit.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0,
+      }));
+    });
+    await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+    // Stash the 'a' chip's active styling BEFORE the switch so the
+    // assertion can confirm the switch actually toggled state.
+    await page.evaluate(() => {
+      const stash = (k) => {
+        const el = document.querySelector(`[data-track="selmenu-lens-${k}"]`);
+        return el ? getComputedStyle(el).boxShadow : null;
+      };
+      window.__auditLensShadowABefore = stash('a');
+      window.__auditLensShadowBBefore = stash('b');
+    });
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-track="selmenu-lens-b"]');
+      if (btn) (btn).click();
     });
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
   } else if (route.after === 'select-device' || route.after === 'select-multisensor' || route.after === 'open-selection-section') {
@@ -319,6 +366,31 @@ async function checkRoute(browser, route) {
       if (ratio < 4.5) {
         return `selection panel title contrast ratio ${ratio.toFixed(2)} is below WCAG AA 4.5 (text rgb(${Math.round(titleColor.r)},${Math.round(titleColor.g)},${Math.round(titleColor.b)}) vs background rgb(${Math.round(panelBg.r)},${Math.round(panelBg.g)},${Math.round(panelBg.b)}))`;
       }
+      return null;
+    });
+  } else if (route.assert === 'multisensor-lens-switched') {
+    assertionFailure = await page.evaluate(() => {
+      // After clicking the lens 'b' chip, the active inset boxShadow
+      // ring should have moved off chip 'a' onto chip 'b'. The active
+      // chip carries `inset 0 0 0 1px {tone}66`; the inactive chip
+      // carries `boxShadow: 'none'`. Comparing before/after rules out
+      // both "click did nothing" and "click set b but a stayed active
+      // too" failure modes.
+      const aBefore = window.__auditLensShadowABefore;
+      const bBefore = window.__auditLensShadowBBefore;
+      const aEl = document.querySelector('[data-track="selmenu-lens-a"]');
+      const bEl = document.querySelector('[data-track="selmenu-lens-b"]');
+      if (!aEl || !bEl) return 'lens chip(s) a/b missing after switch (a present=' + !!aEl + ', b present=' + !!bEl + ')';
+      const aAfter = getComputedStyle(aEl).boxShadow;
+      const bAfter = getComputedStyle(bEl).boxShadow;
+      const aWasActive = (aBefore || '').includes('inset');
+      const bWasActive = (bBefore || '').includes('inset');
+      const aIsActive = aAfter.includes('inset');
+      const bIsActive = bAfter.includes('inset');
+      if (!aWasActive) return `lens chip 'a' was not active before the switch (boxShadow before=${JSON.stringify(aBefore)}); harness pre-step did not select multisensor cleanly`;
+      if (aIsActive) return `lens chip 'a' still active after click on 'b' (a boxShadow=${JSON.stringify(aAfter)}); activeLens did not move`;
+      if (!bIsActive) return `lens chip 'b' did not become active after click (b boxShadow=${JSON.stringify(bAfter)}); setActiveLens binding broken`;
+      if (bWasActive) return `lens chip 'b' was already active before the click; harness state confused, switch is not testing what it thinks`;
       return null;
     });
   } else if (route.assert === 'selection-strip-shows-device') {
