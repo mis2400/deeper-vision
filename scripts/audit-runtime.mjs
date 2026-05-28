@@ -90,6 +90,18 @@ const routes = [
   { name: 'canvas-floor-switch', path: '/project/p1/canvas',
     after: 'switch-floor',
     assert: 'floor-switched' },
+  // M11 coverage widening (E80): theme switching is wired via the
+  // [data-theme] attribute on <html> and resolves through the
+  // --canvas-* tokens in theme.css. A regression in the token
+  // overrides (or in the data-theme attribute propagation) would
+  // leave the chrome stuck on the default palette — invisible to
+  // body-length / console-error checks. Note the canvas-rail palette
+  // is intentionally identical across all three themes (a deliberate
+  // chrome consistency choice), so this assertion reads
+  // --canvas-background instead, which DOES vary per theme.
+  { name: 'canvas-theme-switch', path: '/project/p1/canvas',
+    after: 'switch-theme',
+    assert: 'theme-token-propagated' },
   // M6 — drag a real tray card onto the canvas via synthetic HTML5
   // drag events and assert a new device appears. Body length doesn't
   // catch a silent drag-and-drop failure; the device count delta does.
@@ -170,6 +182,27 @@ async function checkRoute(browser, route) {
     await page.evaluate(() => {
       const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim().startsWith('BOM'));
       btn && btn.click();
+    });
+    await new Promise((r) => setTimeout(r, POST_ACTION_MS));
+  } else if (route.after === 'switch-theme') {
+    // Capture the current --canvas-background, then flip the
+    // documentElement's data-theme attribute and re-read. The store
+    // also persists the theme via a setter, but for the audit we
+    // skip the store and write the attribute directly — that is
+    // what the store's hook ultimately does, and it isolates the
+    // assertion from a Zustand regression that would warp other
+    // routes too.
+    await page.evaluate(() => {
+      const html = document.documentElement;
+      const startTheme = html.getAttribute('data-theme') || '(none)';
+      const startBg = getComputedStyle(html).getPropertyValue('--canvas-background').trim();
+      window.__auditThemeStart = { theme: startTheme, bg: startBg };
+      // Move to a different theme than the starting one. The seed
+      // boots with slate by default; pick light so the canvas-background
+      // shifts from a near-black to a near-white value.
+      const target = startTheme === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', target);
+      window.__auditThemeTarget = target;
     });
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
   } else if (route.after === 'switch-floor') {
@@ -402,6 +435,22 @@ async function checkRoute(browser, route) {
       // / light-on-light regression is caught.
       if (ratio < 4.5) {
         return `selection panel title contrast ratio ${ratio.toFixed(2)} is below WCAG AA 4.5 (text rgb(${Math.round(titleColor.r)},${Math.round(titleColor.g)},${Math.round(titleColor.b)}) vs background rgb(${Math.round(panelBg.r)},${Math.round(panelBg.g)},${Math.round(panelBg.b)}))`;
+      }
+      return null;
+    });
+  } else if (route.assert === 'theme-token-propagated') {
+    assertionFailure = await page.evaluate(() => {
+      const start = window.__auditThemeStart;
+      const target = window.__auditThemeTarget;
+      const html = document.documentElement;
+      const nowTheme = html.getAttribute('data-theme') || '(none)';
+      const nowBg = getComputedStyle(html).getPropertyValue('--canvas-background').trim();
+      if (!start) return 'theme-switch harness pre-step did not run';
+      if (nowTheme !== target) return `data-theme attribute did not stick (set to "${target}", read back "${nowTheme}")`;
+      if (!start.bg) return `harness could not resolve --canvas-background before the switch (got "${start.bg}") — theme tokens may not be exposed via :root`;
+      if (!nowBg) return `--canvas-background did not resolve after switching to "${target}" — token override block may be missing`;
+      if (nowBg === start.bg) {
+        return `--canvas-background did not change when [data-theme] flipped from "${start.theme}" to "${target}" (both = "${nowBg}"). Token override for the new theme is missing or did not apply.`;
       }
       return null;
     });
