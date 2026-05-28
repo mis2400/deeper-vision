@@ -313,8 +313,22 @@ export function ThreatSimulator() {
               </div>
             </div>
           )}
-          <Button className="w-full" size="sm" variant="outline" onClick={() => navigate(`/project/${projectId}/canvas`)}>
-            <Shield className="w-3.5 h-3.5 mr-1" />Harden on canvas
+          {/* M11 audit fix (FL4): used to read "Harden on canvas",
+              colliding with the per factor "Harden on canvas · <kind>"
+              buttons inside the breakdown above. The per factor entries
+              carry hint params that focus the canvas on the flagged
+              area; this catch all just opens the canvas with no hint.
+              Renamed to "Open Engineering Canvas" to match the entry
+              point label used elsewhere (review, deployment) and added
+              a data-testid so the audit harness can trace it. */}
+          <Button
+            className="w-full"
+            size="sm"
+            variant="outline"
+            onClick={() => navigate(`/project/${projectId}/canvas`)}
+            data-testid="threat-open-canvas"
+          >
+            <Shield className="w-3.5 h-3.5 mr-1" />Open Engineering Canvas
           </Button>
           {/* V1 2B.8 — capture / compare baseline. */}
           {result && !baseline && (
