@@ -190,6 +190,7 @@
 
   /* Canvas — slightly deeper than the workspace so floating panels
      read as material resting on the plan. */
+  --canvas-workspace:  #202B3F;
   --canvas-background: #243044;
   --canvas-grid:       rgba(200, 210, 230, 0.07);
   --canvas-axis:       rgba(200, 210, 230, 0.18);
@@ -343,6 +344,7 @@
      architectural paper instead of office app. Grid bumped from 7%
      to 9% alpha so the reference grid actually reads through the
      paper. */
+  --canvas-workspace:  #0D1420;
   --canvas-background: #F4F5F8;
   --canvas-grid:       rgba(72, 88, 122, 0.09);
   --canvas-axis:       rgba(80, 96, 130, 0.20);
@@ -456,6 +458,7 @@
   --sidebar-border:               rgba(148, 163, 184, 0.10);
   --sidebar-ring:                 #5292DC;
 
+  --canvas-workspace:  #0B111C;
   --canvas-background: #131B2D;
   --canvas-grid:       rgba(168, 178, 200, 0.05);
   --canvas-axis:       rgba(168, 178, 200, 0.15);
@@ -552,6 +555,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-canvas-background: var(--canvas-background);
+  --color-canvas-workspace: var(--canvas-workspace);
   --color-canvas-grid: var(--canvas-grid);
   --color-canvas-axis: var(--canvas-axis);
   --color-panel-background: var(--panel-background);

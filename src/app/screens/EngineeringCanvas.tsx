@@ -4638,7 +4638,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
       }}
       onDoubleClick={onSurfaceDblClick}
       onContextMenu={onSurfaceContextMenu}
-      style={{ background: 'var(--canvas-background)', touchAction: 'none' }}
+      style={{ background: 'var(--canvas-workspace)', touchAction: 'none' }}
       className={`absolute inset-0 w-full h-full ${tool === 'wall' || tool === 'measure' || tool === 'cable' ? 'cursor-crosshair' : tool === 'pan' ? (panRef.current ? 'cursor-grabbing' : 'cursor-grab') : dragging ? 'cursor-copy' : 'cursor-default'}`}
     >
       <defs>
