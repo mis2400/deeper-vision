@@ -4,7 +4,7 @@ import { OrgGateScreen } from './screens/OrgGateScreen';
 import { AuthGateLayout } from './components/AuthGate';
 import { ProjectHub } from './screens/ProjectHub';
 import { ProjectCenter } from './screens/ProjectCenter';
-import { EngineeringCanvas } from './screens/EngineeringCanvas';
+import { SecurityStudioCanvas } from './screens/SecurityStudioCanvas';
 import { ReviewMode } from './screens/ReviewMode';
 import { DeploymentMode } from './screens/DeploymentMode';
 import { DeploymentModeMobile } from './screens/DeploymentModeMobile';
@@ -108,7 +108,7 @@ export default function App() {
             <Route path="/account/:customerId" element={<AccountDetail />} />
             <Route path="/catalog" element={<ProductCatalog />} />
             <Route path="/project/:projectId" element={<ProjectCenter />} />
-            <Route path="/project/:projectId/canvas" element={<EngineeringCanvas />} />
+            <Route path="/project/:projectId/canvas" element={<SecurityStudioCanvas />} />
             <Route path="/project/:projectId/review" element={<ReviewMode />} />
             <Route path="/project/:projectId/deployment" element={<DeploymentMode />} />
             <Route path="/project/:projectId/deployment/m" element={<DeploymentModeMobile />} />

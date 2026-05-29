@@ -657,6 +657,78 @@
   select.dv-input { appearance: auto; padding-right: 1.5rem; }
 }
 
+@layer components {
+  .dv-top-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--background);
+    color: var(--foreground);
+    padding: 0 0.75rem;
+    box-shadow: var(--shadow-flat);
+    transition: background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  }
+  .dv-top-action:hover {
+    background: var(--muted);
+    border-color: var(--primary);
+    transform: translateY(-1px);
+  }
+  .dv-icon-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--background);
+    color: var(--foreground);
+    box-shadow: var(--shadow-flat);
+  }
+  .dv-icon-action:hover { background: var(--muted); border-color: var(--primary); }
+  .dv-panel-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--card);
+    color: var(--foreground);
+    padding: 0.5rem 0.75rem;
+    box-shadow: var(--shadow-flat);
+  }
+  .dv-panel-button:hover { border-color: var(--primary); background: var(--background); }
+  .dv-rail-button {
+    display: flex;
+    width: 2.75rem;
+    height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: var(--chrome-sm);
+  }
+  .dv-rail-button:hover { border-color: var(--primary); background: var(--muted); }
+  .dv-strip-button {
+    display: inline-flex;
+    width: 2.25rem;
+    height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--background);
+    color: var(--foreground);
+  }
+  .dv-strip-button:hover { border-color: var(--primary); background: var(--muted); }
+}
+
 /* ── Z-index utilities (M2) ────────────────────────────────────────────
    Tailwind v4 utility classes that resolve to the --z-* tokens defined
    on :root. Use these instead of raw z-[N] or z-N. The audit script
