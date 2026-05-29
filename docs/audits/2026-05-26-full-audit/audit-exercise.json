@@ -4,17 +4,17 @@
       "selector": "[data-track=\"topbar-bom\"]",
       "label": "TopBar BOM & Estimate",
       "found": true,
-      "beforeText": "BOM & Estimate",
+      "beforeText": "BOM",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 5534,
+        "bodyLen": 1914,
         "dialogCount": 0,
         "drawerCount": 1,
         "overlayCount": 0,
@@ -26,17 +26,17 @@
       "selector": "[data-track=\"topbar-review\"]",
       "label": "TopBar Present",
       "found": true,
-      "beforeText": "Present",
+      "beforeText": "Review",
       "disabled": false,
       "before": {
-        "bodyLen": 5534,
+        "bodyLen": 718,
         "dialogCount": 0,
-        "drawerCount": 1,
+        "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 873,
+        "bodyLen": 913,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -51,7 +51,7 @@
       "beforeText": "Deploy",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -70,20 +70,20 @@
       "selector": "[data-track=\"topbar-add-plan\"]",
       "label": "TopBar Add plan",
       "found": true,
-      "beforeText": "Add plan",
+      "beforeText": "Plan",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3538,
+        "bodyLen": 1012,
         "dialogCount": 0,
         "drawerCount": 0,
-        "overlayCount": 1,
+        "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "errs": []
@@ -95,80 +95,14 @@
       "beforeText": "",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3360,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"topbar-more-theme-light\"]",
-      "label": "More: topbar-more-theme-light",
-      "found": true,
-      "beforeText": "Drafting",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3360,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3360,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"topbar-more-theme-slate\"]",
-      "label": "More: topbar-more-theme-slate",
-      "found": true,
-      "beforeText": "Slate",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3360,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3360,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"topbar-more-theme-dark\"]",
-      "label": "More: topbar-more-theme-dark",
-      "found": true,
-      "beforeText": "Dark",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3360,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3360,
+        "bodyLen": 817,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -180,10 +114,10 @@
       "selector": "[data-track=\"topbar-more-reports\"]",
       "label": "More item: topbar-more-reports",
       "found": true,
-      "beforeText": "Proposal PackageCustomer ready PDFs and CSVs from this proje",
+      "beforeText": "Reports center",
       "disabled": false,
       "before": {
-        "bodyLen": 3360,
+        "bodyLen": 817,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -199,42 +133,20 @@
       "errs": []
     },
     {
-      "selector": "[data-track=\"topbar-more-snap\"]",
-      "label": "More toggle: topbar-more-snap",
-      "found": true,
-      "beforeText": "Snap to gridVertices round to the 20 px grid.On",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3360,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3365,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
       "selector": "[data-track=\"topbar-more-intel\"]",
       "label": "More toggle: topbar-more-intel",
       "found": true,
-      "beforeText": "AI IntelligenceOff — canvas stays calmOff",
+      "beforeText": "Show AI review",
       "disabled": false,
       "before": {
-        "bodyLen": 3365,
+        "bodyLen": 817,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3559,
+        "bodyLen": 906,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -246,21 +158,21 @@
       "selector": "[data-track=\"topbar-more-report\"]",
       "label": "More item: topbar-more-report",
       "found": true,
-      "beforeText": "Report Builder",
+      "beforeText": "Proposal builder",
       "disabled": false,
       "before": {
-        "bodyLen": 3559,
+        "bodyLen": 906,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 4447,
+        "bodyLen": 333,
         "dialogCount": 0,
         "drawerCount": 0,
-        "overlayCount": 1,
-        "url": "/project/p1/canvas"
+        "overlayCount": 0,
+        "url": "/proposal/p1"
       },
       "errs": []
     },
@@ -268,17 +180,17 @@
       "selector": "[data-track=\"topbar-more-plan\"]",
       "label": "More item: topbar-more-plan",
       "found": true,
-      "beforeText": "Plan source",
+      "beforeText": "Plan setup",
       "disabled": false,
       "before": {
-        "bodyLen": 3559,
+        "bodyLen": 817,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3712,
+        "bodyLen": 1111,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -290,17 +202,17 @@
       "selector": "[data-track=\"topbar-more-popout\"]",
       "label": "More item: topbar-more-popout",
       "found": true,
-      "beforeText": "Open in new window",
+      "beforeText": "Open customer review",
       "disabled": false,
       "before": {
-        "bodyLen": 3951,
+        "bodyLen": 817,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3712,
+        "bodyLen": 817,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -312,10 +224,10 @@
       "selector": "[data-track=\"topbar-more-scan\"]",
       "label": "More item: topbar-more-scan",
       "found": true,
-      "beforeText": "Demo scanDemo only",
+      "beforeText": "Vision scan",
       "disabled": false,
       "before": {
-        "bodyLen": 3951,
+        "bodyLen": 817,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -331,20 +243,86 @@
       "errs": []
     },
     {
-      "selector": "[data-track=\"topbar-view-default\"]",
-      "label": "View mode default",
+      "selector": "[data-track=\"topbar-more-theme-light\"]",
+      "label": "More: topbar-more-theme-light",
       "found": true,
-      "beforeText": "Default",
+      "beforeText": "light",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 817,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3127,
+        "bodyLen": 817,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-theme-slate\"]",
+      "label": "More: topbar-more-theme-slate",
+      "found": true,
+      "beforeText": "slate",
+      "disabled": false,
+      "before": {
+        "bodyLen": 817,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 817,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-more-theme-dark\"]",
+      "label": "More: topbar-more-theme-dark",
+      "found": true,
+      "beforeText": "dark",
+      "disabled": false,
+      "before": {
+        "bodyLen": 817,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 817,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"topbar-view-default\"]",
+      "label": "View mode default",
+      "found": true,
+      "beforeText": "default",
+      "disabled": false,
+      "before": {
+        "bodyLen": 718,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -356,17 +334,17 @@
       "selector": "[data-track=\"topbar-view-field\"]",
       "label": "View mode field",
       "found": true,
-      "beforeText": "Field",
+      "beforeText": "field",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3109,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -378,17 +356,17 @@
       "selector": "[data-track=\"topbar-view-canvas\"]",
       "label": "View mode canvas",
       "found": true,
-      "beforeText": "",
+      "beforeText": "canvas",
       "disabled": false,
       "before": {
-        "bodyLen": 3109,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 2874,
+        "bodyLen": 355,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -403,14 +381,14 @@
       "beforeText": "",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -425,14 +403,14 @@
       "beforeText": "",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3124,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -447,14 +425,14 @@
       "beforeText": "",
       "disabled": false,
       "before": {
-        "bodyLen": 3124,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3184,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -469,14 +447,14 @@
       "beforeText": "",
       "disabled": false,
       "before": {
-        "bodyLen": 3184,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3200,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -485,42 +463,20 @@
       "errs": []
     },
     {
-      "selector": "[data-track=\"left-rail-tools-room\"]",
-      "label": "Tool: left-rail-tools-room",
+      "selector": "[data-track=\"left-rail-tools-route\"]",
+      "label": "Tool: left-rail-tools-route",
       "found": true,
       "beforeText": "",
       "disabled": false,
       "before": {
-        "bodyLen": 3200,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3125,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"left-rail-tools-annotate\"]",
-      "label": "Tool: left-rail-tools-annotate",
-      "found": true,
-      "beforeText": "",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3125,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3125,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -532,17 +488,17 @@
       "selector": "[data-track=\"select-all-cameras\"]",
       "label": "Select-by: select-all-cameras",
       "found": true,
-      "beforeText": "All cameras on floor5",
+      "beforeText": "First camera",
       "disabled": false,
       "before": {
-        "bodyLen": 3435,
+        "bodyLen": 768,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3237,
+        "bodyLen": 757,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -554,17 +510,17 @@
       "selector": "[data-track=\"select-all-doors\"]",
       "label": "Select-by: select-all-doors",
       "found": true,
-      "beforeText": "All doors on floor1",
+      "beforeText": "First access point",
       "disabled": false,
       "before": {
-        "bodyLen": 3547,
+        "bodyLen": 807,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3221,
+        "bodyLen": 747,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -573,218 +529,20 @@
       "errs": []
     },
     {
-      "selector": "[data-track=\"select-all-readers\"]",
-      "label": "Select-by: select-all-readers",
+      "selector": "[data-track=\"select-all-network\"]",
+      "label": "Select-by: select-all-network",
       "found": true,
-      "beforeText": "All readers on floor1",
+      "beforeText": "First network device",
       "disabled": false,
       "before": {
-        "bodyLen": 3531,
+        "bodyLen": 797,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3244,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-type-cam.bullet\"]",
-      "label": "Select-by: select-type-cam.bullet",
-      "found": true,
-      "beforeText": "cam.bullet2",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3521,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3299,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-type-cam.multisensor\"]",
-      "label": "Select-by: select-type-cam.multisensor",
-      "found": true,
-      "beforeText": "cam.multisensor1",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3578,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3286,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-type-cam.ptz\"]",
-      "label": "Select-by: select-type-cam.ptz",
-      "found": true,
-      "beforeText": "cam.ptz1",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3563,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3279,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-type-cam.fisheye\"]",
-      "label": "Select-by: select-type-cam.fisheye",
-      "found": true,
-      "beforeText": "cam.fisheye1",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3558,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3267,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-type-acc.reader\"]",
-      "label": "Select-by: select-type-acc.reader",
-      "found": true,
-      "beforeText": "acc.reader1",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3541,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3238,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-type-acc.strike\"]",
-      "label": "Select-by: select-type-acc.strike",
-      "found": true,
-      "beforeText": "acc.strike1",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3520,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3245,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-type-net.ap\"]",
-      "label": "Select-by: select-type-net.ap",
-      "found": true,
-      "beforeText": "net.ap1",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3523,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3246,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-type-inf.door-single\"]",
-      "label": "Select-by: select-type-inf.door-single",
-      "found": true,
-      "beforeText": "inf.door-single1",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3525,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3251,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"select-clear\"]",
-      "label": "Select-by: select-clear",
-      "found": true,
-      "beforeText": "Clear selection",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3530,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3188,
+        "bodyLen": 751,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -796,39 +554,17 @@
       "selector": "[data-track=\"bottombar-cat-cam\"]",
       "label": "Open Cameras tray",
       "found": true,
-      "beforeText": "Cameras5",
+      "beforeText": "Cam",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 718,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 7362,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-testid=\"cam-sub-tabs\"]",
-      "label": "Cam sub: cam-sub-tabs",
-      "found": true,
-      "beforeText": "All60PTZ8Fisheye5Dome21Bullet18Multisensor5",
-      "disabled": false,
-      "before": {
-        "bodyLen": 7362,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 7362,
+        "bodyLen": 1619,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -840,83 +576,17 @@
       "selector": "[data-testid=\"cam-sub-all\"]",
       "label": "Cam sub: cam-sub-all",
       "found": true,
-      "beforeText": "All60",
+      "beforeText": "all",
       "disabled": false,
       "before": {
-        "bodyLen": 7362,
+        "bodyLen": 1619,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 7362,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-testid=\"cam-sub-ptz\"]",
-      "label": "Cam sub: cam-sub-ptz",
-      "found": true,
-      "beforeText": "PTZ8",
-      "disabled": false,
-      "before": {
-        "bodyLen": 7362,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3913,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-testid=\"cam-sub-fisheye\"]",
-      "label": "Cam sub: cam-sub-fisheye",
-      "found": true,
-      "beforeText": "Fisheye5",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3913,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3671,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-testid=\"cam-sub-dome\"]",
-      "label": "Cam sub: cam-sub-dome",
-      "found": true,
-      "beforeText": "Dome21",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3671,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 4603,
+        "bodyLen": 1619,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -928,17 +598,17 @@
       "selector": "[data-testid=\"cam-sub-bullet\"]",
       "label": "Cam sub: cam-sub-bullet",
       "found": true,
-      "beforeText": "Bullet18",
+      "beforeText": "bullet",
       "disabled": false,
       "before": {
-        "bodyLen": 4603,
+        "bodyLen": 1619,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 4737,
+        "bodyLen": 1734,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -947,20 +617,20 @@
       "errs": []
     },
     {
-      "selector": "[data-testid=\"cam-sub-multisensor\"]",
-      "label": "Cam sub: cam-sub-multisensor",
+      "selector": "[data-testid=\"cam-sub-dome\"]",
+      "label": "Cam sub: cam-sub-dome",
       "found": true,
-      "beforeText": "Multisensor5",
+      "beforeText": "dome",
       "disabled": false,
       "before": {
-        "bodyLen": 4737,
+        "bodyLen": 1734,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3773,
+        "bodyLen": 1492,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -969,20 +639,86 @@
       "errs": []
     },
     {
-      "selector": "[data-track=\"bottombar-cam-p-axis-p3827\"]",
-      "label": "Camera card click (no drag): bottombar-cam-p-axis-p3827",
+      "selector": "[data-testid=\"cam-sub-ptz\"]",
+      "label": "Cam sub: cam-sub-ptz",
       "found": true,
-      "beforeText": "P3827-PVEAxismulti-sensor · multisensor · outdoorDrag or cli",
+      "beforeText": "ptz",
       "disabled": false,
       "before": {
-        "bodyLen": 3773,
+        "bodyLen": 1492,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3773,
+        "bodyLen": 1188,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-multi\"]",
+      "label": "Cam sub: cam-sub-multi",
+      "found": true,
+      "beforeText": "multi",
+      "disabled": false,
+      "before": {
+        "bodyLen": 1188,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 1140,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-testid=\"cam-sub-fisheye\"]",
+      "label": "Cam sub: cam-sub-fisheye",
+      "found": true,
+      "beforeText": "fisheye",
+      "disabled": false,
+      "before": {
+        "bodyLen": 1140,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 990,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "errs": []
+    },
+    {
+      "selector": "[data-track=\"bottombar-cam-p-axis-m4327\"]",
+      "label": "Camera card click (no drag): bottombar-cam-p-axis-m4327",
+      "found": true,
+      "beforeText": "Axis M4327-P6MP · fisheye · indoor6MP$749",
+      "disabled": false,
+      "before": {
+        "bodyLen": 990,
+        "dialogCount": 0,
+        "drawerCount": 0,
+        "overlayCount": 0,
+        "url": "/project/p1/canvas"
+      },
+      "after": {
+        "bodyLen": 1132,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -994,17 +730,17 @@
       "selector": "[data-track=\"bottombar-cat-cable\"]",
       "label": "Open Cabling tray",
       "found": true,
-      "beforeText": "Cabling",
+      "beforeText": "Cab",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 734,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3656,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1016,17 +752,17 @@
       "selector": "[data-track=\"bottombar-cable-sub-cable\"]",
       "label": "Cable sub: bottombar-cable-sub-cable",
       "found": true,
-      "beforeText": "Cable",
+      "beforeText": "cat6",
       "disabled": false,
       "before": {
-        "bodyLen": 3656,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3656,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1035,20 +771,20 @@
       "errs": []
     },
     {
-      "selector": "[data-track=\"bottombar-cable-sub-term\"]",
-      "label": "Cable sub: bottombar-cable-sub-term",
+      "selector": "[data-track=\"bottombar-cable-sub-cat6a\"]",
+      "label": "Cable sub: bottombar-cable-sub-cat6a",
       "found": true,
-      "beforeText": "Terminations",
+      "beforeText": "cat6a",
       "disabled": false,
       "before": {
-        "bodyLen": 3656,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3536,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1057,20 +793,20 @@
       "errs": []
     },
     {
-      "selector": "[data-track=\"bottombar-cable-sub-coupler\"]",
-      "label": "Cable sub: bottombar-cable-sub-coupler",
+      "selector": "[data-track=\"bottombar-cable-sub-network\"]",
+      "label": "Cable sub: bottombar-cable-sub-network",
       "found": true,
-      "beforeText": "Couplers",
+      "beforeText": "fiber-sm",
       "disabled": false,
       "before": {
-        "bodyLen": 3536,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3421,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1079,108 +815,20 @@
       "errs": []
     },
     {
-      "selector": "[data-track=\"bottombar-cable-sub-rack\"]",
-      "label": "Cable sub: bottombar-cable-sub-rack",
+      "selector": "[data-track=\"bottombar-cable-sub-power\"]",
+      "label": "Cable sub: bottombar-cable-sub-power",
       "found": true,
-      "beforeText": "Patch / Rack",
+      "beforeText": "power",
       "disabled": false,
       "before": {
-        "bodyLen": 3421,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3441,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"bottombar-cable-sub-conduit\"]",
-      "label": "Cable sub: bottombar-cable-sub-conduit",
-      "found": true,
-      "beforeText": "Conduit",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3441,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 4107,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"bottombar-cable-sub-pathway\"]",
-      "label": "Cable sub: bottombar-cable-sub-pathway",
-      "found": true,
-      "beforeText": "Pathways",
-      "disabled": false,
-      "before": {
-        "bodyLen": 4107,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3434,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"bottombar-cable-sub-box\"]",
-      "label": "Cable sub: bottombar-cable-sub-box",
-      "found": true,
-      "beforeText": "Pull / J-box",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3434,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3363,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "errs": []
-    },
-    {
-      "selector": "[data-track=\"bottombar-cable-sub-firestop\"]",
-      "label": "Cable sub: bottombar-cable-sub-firestop",
-      "found": true,
-      "beforeText": "Firestop",
-      "disabled": false,
-      "before": {
-        "bodyLen": 3363,
-        "dialogCount": 0,
-        "drawerCount": 0,
-        "overlayCount": 0,
-        "url": "/project/p1/canvas"
-      },
-      "after": {
-        "bodyLen": 3350,
+        "bodyLen": 980,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1192,17 +840,17 @@
       "selector": "[data-track=\"bottombar-cat-conduit\"]",
       "label": "Open Conduit tray",
       "found": true,
-      "beforeText": "Conduit1",
+      "beforeText": "Con",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 734,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3402,
+        "bodyLen": 982,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1214,17 +862,17 @@
       "selector": "[data-track=\"canvas-add-fab\"]",
       "label": "Add device FAB",
       "found": true,
-      "beforeText": "",
+      "beforeText": "Camera",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 734,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 7362,
+        "bodyLen": 1635,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1236,17 +884,17 @@
       "selector": "[data-track=\"canvas-overview-open\"]",
       "label": "Floor overview open",
       "found": true,
-      "beforeText": "Overview",
+      "beforeText": "Floors",
       "disabled": false,
       "before": {
-        "bodyLen": 3127,
+        "bodyLen": 1635,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3267,
+        "bodyLen": 1721,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1258,17 +906,17 @@
       "selector": "[data-track=\"topbar-floor-switcher\"]",
       "label": "Floor switcher open",
       "found": true,
-      "beforeText": "Ground floorG",
+      "beforeText": "Level 2",
       "disabled": false,
       "before": {
-        "bodyLen": 3267,
+        "bodyLen": 1635,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/canvas"
       },
       "after": {
-        "bodyLen": 3330,
+        "bodyLen": 1702,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1291,14 +939,14 @@
       "beforeText": "Draft",
       "disabled": false,
       "before": {
-        "bodyLen": 873,
+        "bodyLen": 913,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 873,
+        "bodyLen": 913,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1313,14 +961,14 @@
       "beforeText": "Ready",
       "disabled": false,
       "before": {
-        "bodyLen": 873,
+        "bodyLen": 913,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 884,
+        "bodyLen": 924,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1335,14 +983,14 @@
       "beforeText": "Approved",
       "disabled": false,
       "before": {
-        "bodyLen": 884,
+        "bodyLen": 924,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 876,
+        "bodyLen": 916,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1357,14 +1005,14 @@
       "beforeText": "Copy review link",
       "disabled": false,
       "before": {
-        "bodyLen": 876,
+        "bodyLen": 916,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 936,
+        "bodyLen": 999,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1379,14 +1027,14 @@
       "beforeText": "Print review",
       "disabled": false,
       "before": {
-        "bodyLen": 936,
+        "bodyLen": 999,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 1015,
+        "bodyLen": 1078,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1401,14 +1049,14 @@
       "beforeText": "Reports",
       "disabled": false,
       "before": {
-        "bodyLen": 1015,
+        "bodyLen": 1078,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 6850,
+        "bodyLen": 6934,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1423,14 +1071,14 @@
       "beforeText": "Open in Engineering",
       "disabled": false,
       "before": {
-        "bodyLen": 873,
+        "bodyLen": 913,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 3127,
+        "bodyLen": 734,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1445,14 +1093,14 @@
       "beforeText": "Ground floorL0",
       "disabled": false,
       "before": {
-        "bodyLen": 873,
+        "bodyLen": 913,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 873,
+        "bodyLen": 913,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1467,14 +1115,14 @@
       "beforeText": "Level 2L1",
       "disabled": false,
       "before": {
-        "bodyLen": 873,
+        "bodyLen": 913,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 841,
+        "bodyLen": 888,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1489,14 +1137,14 @@
       "beforeText": "BasementL-1",
       "disabled": false,
       "before": {
-        "bodyLen": 841,
+        "bodyLen": 888,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 829,
+        "bodyLen": 869,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1511,14 +1159,14 @@
       "beforeText": "Cameras1",
       "disabled": false,
       "before": {
-        "bodyLen": 829,
+        "bodyLen": 869,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 822,
+        "bodyLen": 862,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1533,14 +1181,14 @@
       "beforeText": "Doors0",
       "disabled": false,
       "before": {
-        "bodyLen": 822,
+        "bodyLen": 862,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 822,
+        "bodyLen": 862,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1555,14 +1203,14 @@
       "beforeText": "Access1",
       "disabled": false,
       "before": {
-        "bodyLen": 822,
+        "bodyLen": 862,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1577,14 +1225,14 @@
       "beforeText": "Network0",
       "disabled": false,
       "before": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1599,14 +1247,14 @@
       "beforeText": "Pathways0",
       "disabled": false,
       "before": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1621,14 +1269,14 @@
       "beforeText": "Coverage1",
       "disabled": false,
       "before": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1643,14 +1291,14 @@
       "beforeText": "Notes0",
       "disabled": false,
       "before": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1665,14 +1313,14 @@
       "beforeText": "BOM summary",
       "disabled": false,
       "before": {
-        "bodyLen": 816,
+        "bodyLen": 856,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 946,
+        "bodyLen": 986,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1687,14 +1335,14 @@
       "beforeText": "",
       "disabled": true,
       "before": {
-        "bodyLen": 946,
+        "bodyLen": 986,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 946,
+        "bodyLen": 986,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1709,14 +1357,14 @@
       "beforeText": "Approve",
       "disabled": false,
       "before": {
-        "bodyLen": 946,
+        "bodyLen": 986,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 972,
+        "bodyLen": 1012,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1731,14 +1379,14 @@
       "beforeText": "Request changes",
       "disabled": false,
       "before": {
-        "bodyLen": 972,
+        "bodyLen": 1012,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/review"
       },
       "after": {
-        "bodyLen": 987,
+        "bodyLen": 1027,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1784,7 +1432,7 @@
         "url": "/project/p1/deployment"
       },
       "after": {
-        "bodyLen": 3127,
+        "bodyLen": 734,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1801,14 +1449,14 @@
       "beforeText": "Engineering Canvas",
       "disabled": false,
       "before": {
-        "bodyLen": 6711,
+        "bodyLen": 6772,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
       "after": {
-        "bodyLen": 3127,
+        "bodyLen": 734,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1823,14 +1471,14 @@
       "beforeText": "Internal view",
       "disabled": false,
       "before": {
-        "bodyLen": 6711,
+        "bodyLen": 6772,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
       "after": {
-        "bodyLen": 6711,
+        "bodyLen": 6772,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1845,14 +1493,14 @@
       "beforeText": "Customer view",
       "disabled": false,
       "before": {
-        "bodyLen": 6711,
+        "bodyLen": 6772,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
       "after": {
-        "bodyLen": 6285,
+        "bodyLen": 6346,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1867,14 +1515,14 @@
       "beforeText": "Print / Save PDF",
       "disabled": false,
       "before": {
-        "bodyLen": 6285,
+        "bodyLen": 6346,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
       "after": {
-        "bodyLen": 6364,
+        "bodyLen": 6425,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1889,14 +1537,14 @@
       "beforeText": "CSV",
       "disabled": false,
       "before": {
-        "bodyLen": 6364,
+        "bodyLen": 6425,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
       "after": {
-        "bodyLen": 6402,
+        "bodyLen": 6463,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1911,14 +1559,14 @@
       "beforeText": "CSV",
       "disabled": false,
       "before": {
-        "bodyLen": 6402,
+        "bodyLen": 6463,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
       "after": {
-        "bodyLen": 6438,
+        "bodyLen": 6499,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1933,14 +1581,14 @@
       "beforeText": "CSV",
       "disabled": false,
       "before": {
-        "bodyLen": 6438,
+        "bodyLen": 6499,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
       "after": {
-        "bodyLen": 6477,
+        "bodyLen": 6538,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1955,14 +1603,14 @@
       "beforeText": "CSV",
       "disabled": false,
       "before": {
-        "bodyLen": 6903,
+        "bodyLen": 6964,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/project/p1/reports"
       },
       "after": {
-        "bodyLen": 6820,
+        "bodyLen": 6998,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
@@ -1981,14 +1629,14 @@
       "beforeText": "Export CSV",
       "disabled": false,
       "before": {
-        "bodyLen": 1579,
+        "bodyLen": 1590,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,
         "url": "/estimate/p1"
       },
       "after": {
-        "bodyLen": 1603,
+        "bodyLen": 1614,
         "dialogCount": 0,
         "drawerCount": 0,
         "overlayCount": 0,

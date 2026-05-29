@@ -1,102 +1,86 @@
-=== canvas (59 actions) ===
-  TopBar BOM & Estimate                                   body3127->5534
-  TopBar Present                                          body5534->873 url->/project/p1/review
-  TopBar Deploy                                           body3127->447 url->/project/p1/deployment
-  TopBar Add plan                                         body3127->3538 ovl0->1
-  TopBar More                                             body3127->3360
+=== canvas (43 actions) ===
+  TopBar BOM & Estimate                                   body718->1914
+  TopBar Present                                          body718->913 url->/project/p1/review
+  TopBar Deploy                                           body718->447 url->/project/p1/deployment
+  TopBar Add plan                                         body718->1012
+  TopBar More                                             body718->817
+  More item: topbar-more-reports                          body817->6711 url->/project/p1/reports
+  More toggle: topbar-more-intel                          body817->906
+  More item: topbar-more-report                           body906->333 url->/proposal/p1
+  More item: topbar-more-plan                             body817->1111
+  More item: topbar-more-popout                           [NO DELTA]
+  More item: topbar-more-scan                             body817->767 url->/visionscan
   More: topbar-more-theme-light                           [NO DELTA]
   More: topbar-more-theme-slate                           [NO DELTA]
   More: topbar-more-theme-dark                            [NO DELTA]
-  More item: topbar-more-reports                          body3360->6711 url->/project/p1/reports
-  More toggle: topbar-more-snap                           body3360->3365
-  More toggle: topbar-more-intel                          body3365->3559
-  More item: topbar-more-report                           body3559->4447 ovl0->1
-  More item: topbar-more-plan                             body3559->3712
-  More item: topbar-more-popout                           body3951->3712
-  More item: topbar-more-scan                             body3951->767 url->/visionscan
   View mode default                                       [NO DELTA]
-  View mode field                                         body3127->3109
-  View mode canvas                                        body3109->2874
+  View mode field                                         [NO DELTA]
+  View mode canvas                                        body718->355
   Tool: left-rail-tools-select                            [NO DELTA]
-  Tool: left-rail-tools-pan                               body3127->3124
-  Tool: left-rail-tools-measure                           body3124->3184
-  Tool: left-rail-tools-wall                              body3184->3200
-  Tool: left-rail-tools-room                              body3200->3125
-  Tool: left-rail-tools-annotate                          [NO DELTA]
-  Select-by: select-all-cameras                           body3435->3237
-  Select-by: select-all-doors                             body3547->3221
-  Select-by: select-all-readers                           body3531->3244
-  Select-by: select-type-cam.bullet                       body3521->3299
-  Select-by: select-type-cam.multisensor                  body3578->3286
-  Select-by: select-type-cam.ptz                          body3563->3279
-  Select-by: select-type-cam.fisheye                      body3558->3267
-  Select-by: select-type-acc.reader                       body3541->3238
-  Select-by: select-type-acc.strike                       body3520->3245
-  Select-by: select-type-net.ap                           body3523->3246
-  Select-by: select-type-inf.door-single                  body3525->3251
-  Select-by: select-clear                                 body3530->3188
-  Open Cameras tray                                       body3127->7362
-  Cam sub: cam-sub-tabs                                   [NO DELTA]
+  Tool: left-rail-tools-pan                               [NO DELTA]
+  Tool: left-rail-tools-measure                           [NO DELTA]
+  Tool: left-rail-tools-wall                              [NO DELTA]
+  Tool: left-rail-tools-route                             [NO DELTA]
+  Select-by: select-all-cameras                           body768->757
+  Select-by: select-all-doors                             body807->747
+  Select-by: select-all-network                           body797->751
+  Open Cameras tray                                       body718->1619
   Cam sub: cam-sub-all                                    [NO DELTA]
-  Cam sub: cam-sub-ptz                                    body7362->3913
-  Cam sub: cam-sub-fisheye                                body3913->3671
-  Cam sub: cam-sub-dome                                   body3671->4603
-  Cam sub: cam-sub-bullet                                 body4603->4737
-  Cam sub: cam-sub-multisensor                            body4737->3773
-  Camera card click (no drag): bottombar-cam-p-axis-p3827 [NO DELTA]
-  Open Cabling tray                                       body3127->3656
+  Cam sub: cam-sub-bullet                                 body1619->1734
+  Cam sub: cam-sub-dome                                   body1734->1492
+  Cam sub: cam-sub-ptz                                    body1492->1188
+  Cam sub: cam-sub-multi                                  body1188->1140
+  Cam sub: cam-sub-fisheye                                body1140->990
+  Camera card click (no drag): bottombar-cam-p-axis-m4327 body990->1132
+  Open Cabling tray                                       body734->980
   Cable sub: bottombar-cable-sub-cable                    [NO DELTA]
-  Cable sub: bottombar-cable-sub-term                     body3656->3536
-  Cable sub: bottombar-cable-sub-coupler                  body3536->3421
-  Cable sub: bottombar-cable-sub-rack                     body3421->3441
-  Cable sub: bottombar-cable-sub-conduit                  body3441->4107
-  Cable sub: bottombar-cable-sub-pathway                  body4107->3434
-  Cable sub: bottombar-cable-sub-box                      body3434->3363
-  Cable sub: bottombar-cable-sub-firestop                 body3363->3350
-  Open Conduit tray                                       body3127->3402
-  Add device FAB                                          body3127->7362
-  Floor overview open                                     body3127->3267
-  Floor switcher open                                     body3267->3330
+  Cable sub: bottombar-cable-sub-cat6a                    [NO DELTA]
+  Cable sub: bottombar-cable-sub-network                  [NO DELTA]
+  Cable sub: bottombar-cable-sub-power                    [NO DELTA]
+  Open Conduit tray                                       body734->982
+  Add device FAB                                          body734->1635
+  Floor overview open                                     body1635->1721
+  Floor switcher open                                     body1635->1702
   Floor picks visible                                     [NO DELTA] count=3
 
 === review (21 actions) ===
   Review: review-status-draft                             [NO DELTA]
-  Review: review-status-ready                             body873->884
-  Review: review-status-approved                          body884->876
-  Review: review-copy-link                                body876->936
-  Review: review-print                                    body936->1015
-  Review: review-open-reports                             body1015->6850 url->/project/p1/reports
-  Review: review-open-engineering                         body873->3127 url->/project/p1/canvas
+  Review: review-status-ready                             body913->924
+  Review: review-status-approved                          body924->916
+  Review: review-copy-link                                body916->999
+  Review: review-print                                    body999->1078
+  Review: review-open-reports                             body1078->6934 url->/project/p1/reports
+  Review: review-open-engineering                         body913->734 url->/project/p1/canvas
   Review: review-floor-0                                  [NO DELTA]
-  Review: review-floor-1                                  body873->841
-  Review: review-floor-2                                  body841->829
-  Review: review-toggle-cameras                           body829->822
+  Review: review-floor-1                                  body913->888
+  Review: review-floor-2                                  body888->869
+  Review: review-toggle-cameras                           body869->862
   Review: review-toggle-doors                             [NO DELTA]
-  Review: review-toggle-access                            body822->816
+  Review: review-toggle-access                            body862->856
   Review: review-toggle-network                           [NO DELTA]
   Review: review-toggle-pathways                          [NO DELTA]
   Review: review-toggle-coverage                          [NO DELTA]
   Review: review-toggle-notes                             [NO DELTA]
-  Review: review-toggle-bom                               body816->946
+  Review: review-toggle-bom                               body856->986
   Review: review-add-comment                              [DISABLED]
-  Review: review-approve                                  body946->972
-  Review: review-request-changes                          body972->987
+  Review: review-approve                                  body986->1012
+  Review: review-request-changes                          body1012->1027
 
 === deployment (2 actions) ===
   Deployment: deployment-open-mobile                      body447->158 url->/project/p1/deployment/m
-  Deployment: deploy-open-engineering                     body447->3127 url->/project/p1/canvas
+  Deployment: deploy-open-engineering                     body447->734 url->/project/p1/canvas
 
 === reports (8 actions) ===
-  Reports: reports-back-canvas                            body6711->3127 url->/project/p1/canvas
+  Reports: reports-back-canvas                            body6772->734 url->/project/p1/canvas
   Reports: reports-mode-internal                          [NO DELTA]
-  Reports: reports-mode-customer                          body6711->6285
-  Reports: reports-print                                  body6285->6364
-  Reports: reports-csv-Acme_HQ_Austin-cameras.csv         body6364->6402
-  Reports: reports-csv-Acme_HQ_Austin-doors.csv           body6402->6438
-  Reports: reports-csv-Acme_HQ_Austin-pathways.csv        body6438->6477
-  Reports: reports-csv-Acme_HQ_Austin-bom.csv             body6903->6820
+  Reports: reports-mode-customer                          body6772->6346
+  Reports: reports-print                                  body6346->6425
+  Reports: reports-csv-Acme_HQ_Austin-cameras.csv         body6425->6463
+  Reports: reports-csv-Acme_HQ_Austin-doors.csv           body6463->6499
+  Reports: reports-csv-Acme_HQ_Austin-pathways.csv        body6499->6538
+  Reports: reports-csv-Acme_HQ_Austin-bom.csv             body6964->6998
 
 === estimate (1 actions) ===
-  Estimator Export CSV                                    body1579->1603
+  Estimator Export CSV                                    body1590->1614
 
 === threat (0 actions) ===
