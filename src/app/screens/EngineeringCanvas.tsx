@@ -2827,7 +2827,7 @@ export function EngineeringCanvas() {
           component throw shows a contained message and the app stays
           alive. */}
       <CanvasErrorBoundary label="EngineeringCanvas">
-      <div ref={rootRef} className="h-full flex flex-col bg-background text-foreground relative" style={{ background: 'var(--command-bg)' }}>
+      <div ref={rootRef} className="h-full flex flex-col bg-background text-foreground relative" style={{ background: 'var(--background)' }}>
         {/* Motion keyframes — used by the selection pill, spotlight ring,
             and lens chips. The easing is the same throughout (cubic-bezier
             0.22, 1, 0.36, 1 — a calm decelerate) so motion feels like one
@@ -3904,7 +3904,7 @@ export function EngineeringCanvas() {
               const ft = Math.round(zoom * 100 * ftPerPx * 10) / 10;
               return (
                 <div
-                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none hidden md:flex items-center gap-2"
+                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none hidden items-center gap-2"
                   data-testid="scale-bar"
                   data-canvas-chrome="scalebar"
                   style={{
@@ -4600,10 +4600,10 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
         {/* Vignette — softer falloff at the edges. Bottom 100% stop is
             no longer pure black; uses the canvas-background navy at high
             alpha so corners feel like material drop-off, not void. */}
-        <radialGradient id="canvas-vignette" cx="50%" cy="45%" r="80%">
-          <stop offset="0%"  stopColor="#0D1424" stopOpacity="0" />
-          <stop offset="75%" stopColor="#070C18" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#070C18" stopOpacity="0.72" />
+        <radialGradient id="canvas-vignette" cx="50%" cy="45%" r="85%">
+          <stop offset="0%"  stopColor="#FFFFFF" stopOpacity="0" />
+          <stop offset="78%" stopColor="#D7E4F2" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#C7D5E6" stopOpacity="0.38" />
         </radialGradient>
         {/* Plan paper — a touch warmer than the canvas around it. The
             faint stroke is dialed down so the paper reads as a surface,
@@ -4703,6 +4703,7 @@ const CanvasSurface = forwardRef<SVGSVGElement, SurfaceProps>(function CanvasSur
           frequency grain layer that gives the surface physical tooth
           (the kind you feel under a pencil on drafting paper) without
           competing with anything painted on top. */}
+      <rect width="100%" height="100%" fill="var(--background)" />
       <rect width="100%" height="100%" fill="url(#canvas-grid-fine)" />
       <rect width="100%" height="100%" fill="url(#canvas-grid-coarse)" />
       <rect width="100%" height="100%" fill="url(#canvas-vignette)" />

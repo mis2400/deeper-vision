@@ -386,14 +386,14 @@ export function BottomDeviceBar({
   }, [floorDevices, floorPathways]);
 
   return (
-    <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 bottom-3 z-30 justify-center" ref={trayRef} data-canvas-chrome="tray">
+    <div className="hidden md:flex absolute right-4 top-[330px] bottom-5 z-bottom-bar justify-end items-start" ref={trayRef} data-canvas-chrome="tray">
       {/* Global product search results panel — wins over the category
           tray when a query is active so the operator always sees ONE
           source of truth above the bar. Same chrome as the tray for
           visual continuity. */}
       {searchActive && (
         <div
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden z-30"
+          className="absolute right-full top-0 mr-3 w-[760px] max-w-[calc(100vw-180px)] rounded-lg border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden z-popover"
           style={{
             ...commandSurfaceVars,
             background: 'var(--command-panel-elevated)',
@@ -461,7 +461,7 @@ export function BottomDeviceBar({
           search panel isn't already active) */}
       {!searchActive && open && trayCat && (
         <div
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-[760px] max-w-[92vw] rounded-2xl border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden z-30"
+          className="absolute right-full top-0 mr-3 w-[760px] max-w-[calc(100vw-180px)] rounded-lg border bg-card/95 backdrop-blur-xl shadow-[0_22px_48px_-16px_rgba(0,0,0,0.55)] overflow-hidden z-popover"
           style={{
             ...commandSurfaceVars,
             background: 'var(--command-panel-elevated)',
@@ -1079,7 +1079,7 @@ export function BottomDeviceBar({
         onMouseLeave={() => !barCoarsePointer && setBarHover(false)}
         onTouchStart={() => barCoarsePointer && setBarTapExpand(true)}
         data-bar-expanded={barExpanded ? 'true' : undefined}
-        className="flex items-center rounded-2xl border backdrop-blur-md shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)]"
+        className="flex flex-col items-stretch w-[128px] max-h-full overflow-auto rounded-lg border backdrop-blur-md shadow-[0_18px_36px_-18px_rgba(0,0,0,0.65)]"
         style={{
           background: 'linear-gradient(180deg, color-mix(in oklab, var(--command-panel-elevated) 88%, white 5%), var(--command-panel))',
           borderColor: 'var(--command-border-strong)',
@@ -1097,20 +1097,20 @@ export function BottomDeviceBar({
           const groupCats = cats.filter((c) => c.group === g.id);
           if (groupCats.length === 0) return null;
           return (
-            <div key={g.id} className="flex items-stretch">
-              {gi > 0 && <span aria-hidden className="self-stretch w-px bg-white/10 my-1.5" />}
+            <div key={g.id} className="flex flex-col">
+              {gi > 0 && <span aria-hidden className="h-px bg-white/10 mx-2" />}
               <div className="flex flex-col justify-center">
                 {/* Group header — always rendered to keep the bar's
                     geometry settled. Visible only when expanded via
                     opacity + max-height transitions tied to the single
                     --motion-standard / --ease-out pair. */}
                 <div
-                  className="px-2 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap overflow-hidden"
+                  className="px-3 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap overflow-hidden"
                   style={{
                     color: 'var(--command-faint)',
-                    maxHeight: barExpanded ? 14 : 0,
-                    paddingTop: barExpanded ? 4 : 0,
-                    opacity: barExpanded ? 1 : 0,
+                    maxHeight: 18,
+                    paddingTop: 8,
+                    opacity: 1,
                     transitionProperty: 'max-height, padding-top, opacity',
                     transitionDuration: 'var(--motion-standard)',
                     transitionTimingFunction: 'var(--ease-out)',
@@ -1118,7 +1118,7 @@ export function BottomDeviceBar({
                 >
                   {g.label}
                 </div>
-                <div className="flex items-center">
+                <div className="flex flex-col gap-1 px-2 pb-2">
                   {groupCats.map((c) => {
                     const Icon = c.icon;
                     const isToolCat = !!c.tool;
@@ -1139,7 +1139,7 @@ export function BottomDeviceBar({
                         }}
                         title={`${c.label}${placedCount > 0 ? ` · ${placedCount} placed` : ''}`}
                         data-track={`bottombar-cat-${c.id}`}
-                        className={`group relative flex flex-col items-center justify-center w-[56px] pt-1.5 pb-2 ${active ? 'text-white' : 'text-white/65 hover:text-white'}`}
+                        className={`group relative flex items-center justify-start gap-2 h-9 w-full px-2 rounded-md ${active ? 'text-white' : 'text-white/65 hover:text-white'}`}
                         style={{
                           color: active ? 'var(--command-accent)' : 'var(--command-muted)',
                           transitionProperty: 'color',
@@ -1147,7 +1147,7 @@ export function BottomDeviceBar({
                           transitionTimingFunction: 'var(--ease-out)',
                         }}
                       >
-                        <span className="absolute inset-x-1.5 top-1 bottom-1.5 rounded-md -z-10"
+                        <span className="absolute inset-0 rounded-md -z-10"
                           style={{
                             background: active ? 'color-mix(in oklab, var(--command-accent) 16%, transparent)' : 'transparent',
                             transitionProperty: 'background-color',
@@ -1155,7 +1155,7 @@ export function BottomDeviceBar({
                             transitionTimingFunction: 'var(--ease-out)',
                           }}
                         />
-                        <Icon className="w-[18px] h-[18px]" strokeWidth={1.6} />
+                        <Icon className="w-[17px] h-[17px] shrink-0" strokeWidth={1.6} />
                         {/* Label — M11 audit fix (U6): used to be gated
                             on barExpanded (hover only). The icons alone
                             were not obvious for first time users — Cable,
@@ -1171,7 +1171,7 @@ export function BottomDeviceBar({
                           style={{
                             maxHeight: 14,
                             opacity: 1,
-                            marginTop: 2,
+                            marginTop: 0,
                           }}
                         >{c.label}</span>
                         {placedCount > 0 && (
@@ -1186,7 +1186,7 @@ export function BottomDeviceBar({
                           </span>
                         )}
                         <span
-                          className="absolute left-2 right-2 bottom-0 h-[2px] rounded-full transition-opacity"
+                          className="absolute left-0 top-1 bottom-1 w-[2px] rounded-full transition-opacity"
                           style={{ background: 'var(--command-accent)', opacity: active ? 1 : 0 }}
                         />
                       </button>
@@ -1204,15 +1204,15 @@ export function BottomDeviceBar({
             (manufacturer, model, productLine, productName, cameraType,
             subcategory, resolution, sub). The floating results panel
             above the bar is unchanged. */}
-        <span aria-hidden className="self-stretch w-px bg-white/10 my-1.5" />
+        <span aria-hidden className="h-px bg-white/10 mx-2" />
         <div className="flex flex-col justify-center">
           <div
             className="px-2 text-[9px] uppercase tracking-[0.10em] font-medium text-white/45 whitespace-nowrap overflow-hidden"
             style={{
               color: 'var(--command-faint)',
-              maxHeight: barExpanded ? 14 : 0,
-              paddingTop: barExpanded ? 4 : 0,
-              opacity: barExpanded ? 1 : 0,
+              maxHeight: 18,
+              paddingTop: 8,
+              opacity: 1,
               transitionProperty: 'max-height, padding-top, opacity',
               transitionDuration: 'var(--motion-standard)',
               transitionTimingFunction: 'var(--ease-out)',

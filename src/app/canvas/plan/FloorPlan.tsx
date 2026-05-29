@@ -324,19 +324,19 @@ export function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAd
       <rect
         x="80" y="80" width="640" height="480"
         fill="none"
-        stroke="var(--foreground)"
-        strokeWidth="2.8"
+        stroke="var(--muted-foreground)"
+        strokeWidth="2.2"
         strokeLinejoin="round"
-        opacity="0.92"
-        rx="2"
+        opacity="0.82"
+        rx="10"
       />
 
       {/* Interior walls — medium stroke, same tone, lower opacity so
           the eye reads exterior first, interior second. */}
       <g
-        stroke="var(--foreground)"
-        strokeWidth="1.6"
-        opacity="0.78"
+        stroke="var(--muted-foreground)"
+        strokeWidth="1.35"
+        opacity="0.62"
         strokeLinecap="round"
       >
         <line x1="80"  y1="320" x2="720" y2="320" />
@@ -353,10 +353,10 @@ export function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAd
       <g>
         {/* Top edge entrance */}
         <line x1="380" y1="80" x2="420" y2="80" stroke="var(--canvas-background)" strokeWidth="4" />
-        <path d="M 380 80 L 380 120 A 40 40 0 0 1 420 80" fill="none" stroke="var(--foreground)" strokeWidth="1.2" opacity="0.55" />
+        <path d="M 380 80 L 380 120 A 40 40 0 0 1 420 80" fill="none" stroke="var(--muted-foreground)" strokeWidth="1.2" opacity="0.55" />
         {/* Right edge entrance */}
         <line x1="720" y1="240" x2="720" y2="280" stroke="var(--canvas-background)" strokeWidth="4" />
-        <path d="M 720 240 L 680 240 A 40 40 0 0 1 720 280" fill="none" stroke="var(--foreground)" strokeWidth="1.2" opacity="0.55" />
+        <path d="M 720 240 L 680 240 A 40 40 0 0 1 720 280" fill="none" stroke="var(--muted-foreground)" strokeWidth="1.2" opacity="0.55" />
       </g>
 
       {/* Room labels — chrome scale semibold name + muted area chip below.
@@ -387,16 +387,8 @@ export function FloorPlan({ source, siteAddress }: { source: BaseMapMode; siteAd
         <text x="400" y="62" textAnchor="middle">Exterior · courtyard</text>
       </g>
 
-      {/* In-plan scale tick — matches the floating scale bar's
-          instrument look (rounded line caps, refined tick weight,
-          chrome-2xs labels). */}
-      <g transform="translate(100, 596)">
-        <line x1="0"   y1="0" x2="100" y2="0" stroke="var(--foreground)" strokeWidth="1.6" strokeLinecap="round" opacity="0.78" />
-        <line x1="0"   y1="-5" x2="0"   y2="5" stroke="var(--foreground)" strokeWidth="1.6" strokeLinecap="round" opacity="0.78" />
-        <line x1="100" y1="-5" x2="100" y2="5" stroke="var(--foreground)" strokeWidth="1.6" strokeLinecap="round" opacity="0.78" />
-        <line x1="50"  y1="-3" x2="50"  y2="3" stroke="var(--foreground)" strokeWidth="1.2" strokeLinecap="round" opacity="0.55" />
-        <text x="50" y="-9" textAnchor="middle" fill="var(--foreground)" fontSize="11" fontWeight="500" opacity="0.85">10 ft</text>
-      </g>
+      {/* Scale is handled by the studio chrome. Keeping a second in-plan
+          ruler made the canvas feel like the older drafting mockup. */}
     </g>
   );
 }

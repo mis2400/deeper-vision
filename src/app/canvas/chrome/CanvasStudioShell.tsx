@@ -80,16 +80,16 @@ interface CanvasStudioShellProps {
 }
 
 const surface = {
-  background: 'linear-gradient(180deg, color-mix(in oklab, var(--command-panel) 94%, white 4%), var(--command-bg))',
-  borderColor: 'var(--command-border-strong)',
-  color: 'var(--command-fg)',
+  background: 'linear-gradient(180deg, color-mix(in oklab, var(--card) 94%, white 4%), var(--background))',
+  borderColor: 'var(--border-strong)',
+  color: 'var(--foreground)',
   boxShadow: '0 22px 58px -30px rgba(0,0,0,0.72), inset 0 1px 0 rgba(255,255,255,0.05)',
 };
 
 const elevated = {
-  background: 'var(--command-panel-elevated)',
-  borderColor: 'var(--command-border)',
-  color: 'var(--command-fg)',
+  background: 'var(--background)',
+  borderColor: 'var(--border)',
+  color: 'var(--foreground)',
 };
 
 export function CanvasStudioShell(props: CanvasStudioShellProps) {
@@ -140,34 +140,34 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
         className="pointer-events-auto absolute left-2 right-2 top-2 md:left-4 md:right-auto md:top-4 md:w-[430px] rounded-lg border overflow-hidden"
         style={surface}
       >
-        <div className="p-2 sm:p-3 border-b" style={{ borderColor: 'var(--command-border)' }}>
+        <div className="p-2 sm:p-3 border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-start gap-3">
             <div
               className="hidden sm:flex h-10 w-10 rounded-lg border items-center justify-center shrink-0"
               style={{
-                background: 'color-mix(in oklab, var(--command-accent) 14%, transparent)',
-                borderColor: 'color-mix(in oklab, var(--command-accent) 34%, var(--command-border))',
-                color: 'var(--command-accent)',
+                background: 'color-mix(in oklab, var(--primary) 14%, transparent)',
+                borderColor: 'color-mix(in oklab, var(--primary) 34%, var(--border))',
+                color: 'var(--primary)',
               }}
             >
               <Radar className="w-5 h-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="hidden sm:flex items-center gap-2 text-xs uppercase tracking-widest" style={{ color: 'var(--command-faint)' }}>
+              <div className="hidden sm:flex items-center gap-2 text-xs uppercase tracking-widest" style={{ color: 'var(--muted-foreground)' }}>
                 Engineering studio
-                <span className="h-1 w-1 rounded-full" style={{ background: 'var(--command-accent)' }} />
+                <span className="h-1 w-1 rounded-full" style={{ background: 'var(--primary)' }} />
                 <span>{props.scaleVerified ? 'Scale verified' : 'Scale pending'}</span>
               </div>
               <div className="sm:mt-1 flex items-center gap-2">
-                <h2 className="hidden sm:block truncate text-base font-semibold tracking-tight" style={{ color: 'var(--command-fg)' }}>
+                <h2 className="hidden sm:block truncate text-base font-semibold tracking-tight" style={{ color: 'var(--foreground)' }}>
                   {props.floorName}
                 </h2>
                 <span
                   className="hidden sm:inline-flex shrink-0 rounded border px-1.5 py-0.5 text-xs uppercase tracking-widest"
                   style={{
-                    borderColor: 'var(--command-border)',
-                    color: props.viewMode === 'field' ? 'var(--command-warning)' : 'var(--command-cyan)',
-                    background: 'var(--command-panel-elevated)',
+                    borderColor: 'var(--border)',
+                    color: props.viewMode === 'field' ? 'var(--primary)' : 'var(--primary)',
+                    background: 'var(--background)',
                   }}
                 >
                   {props.viewMode === 'field' ? 'Survey' : 'Design'}
@@ -223,34 +223,34 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
             title={props.scaleVerified ? 'Recalibrate this floor' : 'Set scale from a known feature'}
           >
             <div className="flex items-center gap-2 text-xs font-semibold">
-              <PencilRuler className="w-3.5 h-3.5" style={{ color: props.scaleVerified ? 'var(--command-accent)' : 'var(--command-warning)' }} />
+              <PencilRuler className="w-3.5 h-3.5" style={{ color: props.scaleVerified ? 'var(--primary)' : 'var(--primary)' }} />
               Scale
             </div>
-            <div className="mt-1 text-xs" style={{ color: 'var(--command-muted)' }}>{props.scaleLabel}</div>
+            <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{props.scaleLabel}</div>
           </button>
           <div className="hidden sm:block col-span-2">
-            <ProjectStateMenu projectId={props.projectId} commandChrome />
+            <ProjectStateMenu projectId={props.projectId} />
           </div>
         </div>
       </section>
 
       <section
-        className="pointer-events-auto absolute left-3 bottom-[112px] md:left-4 md:bottom-auto md:top-[222px] w-[292px] rounded-lg border p-2 hidden sm:block"
+        className="pointer-events-auto absolute left-1/2 -translate-x-1/2 bottom-4 w-auto rounded-lg border p-2 hidden sm:block"
         style={surface}
       >
-        <div className="px-2 pb-2 flex items-center justify-between">
+        <div className="hidden">
           <div>
-            <div className="text-xs uppercase tracking-widest" style={{ color: 'var(--command-faint)' }}>Tools</div>
-            <div className="text-xs font-semibold" style={{ color: 'var(--command-fg)' }}>{toolLabel(props.tool)}</div>
+            <div className="text-xs uppercase tracking-widest" style={{ color: 'var(--muted-foreground)' }}>Tools</div>
+            <div className="text-xs font-semibold" style={{ color: 'var(--foreground)' }}>{toolLabel(props.tool)}</div>
           </div>
           <div
             className="rounded border px-2 py-1 text-xs tabular-nums"
-            style={{ borderColor: 'var(--command-border)', color: 'var(--command-muted)' }}
+            style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}
           >
             {zoomPct}%
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="flex items-center gap-1.5">
           {tools.map((tool) => {
             const active = props.tool === tool.id;
             const Icon = tool.icon;
@@ -260,11 +260,11 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
                 onClick={() => props.setTool(tool.id)}
                 title={tool.hint}
                 data-track={`left-rail-tools-${tool.id}`}
-                className="h-11 rounded-lg border px-2.5 flex items-center gap-2 text-left transition-colors"
+                className="h-10 min-w-[92px] rounded-md border px-2.5 flex items-center justify-center gap-2 transition-colors"
                 style={{
-                  background: active ? 'color-mix(in oklab, var(--command-accent) 15%, transparent)' : 'var(--command-panel-elevated)',
-                  borderColor: active ? 'color-mix(in oklab, var(--command-accent) 42%, var(--command-border))' : 'var(--command-border)',
-                  color: active ? 'var(--command-accent)' : 'var(--command-fg)',
+                  background: active ? 'color-mix(in oklab, var(--primary) 15%, transparent)' : 'var(--background)',
+                  borderColor: active ? 'color-mix(in oklab, var(--primary) 42%, var(--border))' : 'var(--border)',
+                  color: active ? 'var(--primary)' : 'var(--foreground)',
                 }}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -272,14 +272,13 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
               </button>
             );
           })}
-        </div>
-        <div className="mt-2 grid grid-cols-4 gap-1.5">
+          <span aria-hidden className="h-8 w-px" style={{ background: 'var(--border)' }} />
           <IconButton dataTrack="intel-rail-zoom-out" title="Zoom out" icon={ZoomOut} onClick={() => props.setZoom(Math.max(0.25, props.zoom / 1.2))} />
           <button
             onClick={props.onFit}
             title="Fit plan"
             data-track="intel-rail-zoom-percent"
-            className="h-9 rounded-lg border text-xs font-semibold tabular-nums transition-colors"
+            className="h-10 w-[62px] rounded-md border text-xs font-semibold tabular-nums transition-colors"
             style={elevated}
           >
             {zoomPct}%
@@ -293,20 +292,20 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
         className="pointer-events-auto absolute right-4 top-4 w-[300px] rounded-lg border overflow-hidden hidden xl:block"
         style={surface}
       >
-        <div className="p-3 border-b" style={{ borderColor: 'var(--command-border)' }}>
+        <div className="p-3 border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs uppercase tracking-widest" style={{ color: 'var(--command-faint)' }}>Design signal</div>
-              <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--command-fg)' }}>Coverage, doors, network</div>
+              <div className="text-xs uppercase tracking-widest" style={{ color: 'var(--muted-foreground)' }}>Design signal</div>
+              <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--foreground)' }}>Coverage, doors, network</div>
             </div>
             <button
               onClick={() => props.setIntelOpen(!props.intelOpen)}
               data-track="studio-signal-intel"
               className="h-8 w-8 rounded-lg border flex items-center justify-center"
               style={{
-                background: props.intelOpen ? 'color-mix(in oklab, var(--command-cyan) 15%, transparent)' : 'var(--command-panel-elevated)',
-                borderColor: props.intelOpen ? 'color-mix(in oklab, var(--command-cyan) 35%, var(--command-border))' : 'var(--command-border)',
-                color: props.intelOpen ? 'var(--command-cyan)' : 'var(--command-muted)',
+                background: props.intelOpen ? 'color-mix(in oklab, var(--primary) 15%, transparent)' : 'var(--background)',
+                borderColor: props.intelOpen ? 'color-mix(in oklab, var(--primary) 35%, var(--border))' : 'var(--border)',
+                color: props.intelOpen ? 'var(--primary)' : 'var(--muted-foreground)',
               }}
               title="Toggle AI intelligence"
             >
@@ -315,9 +314,9 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
           </div>
         </div>
         <div className="p-3 grid grid-cols-3 gap-2">
-          <SignalMetric label="Cameras" value={cameraCount} color="var(--command-cyan)" />
-          <SignalMetric label="Access" value={accessCount} color="var(--command-accent)" />
-          <SignalMetric label="Network" value={networkCount} color="var(--command-warning)" />
+          <SignalMetric label="Cameras" value={cameraCount} color="var(--primary)" />
+          <SignalMetric label="Access" value={accessCount} color="var(--primary)" />
+          <SignalMetric label="Network" value={networkCount} color="var(--primary)" />
         </div>
         <div className="px-3 pb-3 grid grid-cols-2 gap-2">
           <ToggleButton
@@ -362,9 +361,9 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
               data-track={`topbar-view-${mode.id}`}
               className="h-10 px-3 border-r last:border-r-0 flex items-center gap-2 text-xs font-medium"
               style={{
-                borderColor: 'var(--command-border)',
-                color: active ? 'var(--command-cyan)' : 'var(--command-muted)',
-                background: active ? 'color-mix(in oklab, var(--command-cyan) 14%, transparent)' : 'transparent',
+                borderColor: 'var(--border)',
+                color: active ? 'var(--primary)' : 'var(--muted-foreground)',
+                background: active ? 'color-mix(in oklab, var(--primary) 14%, transparent)' : 'transparent',
               }}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -376,7 +375,7 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
           onClick={props.isFullscreen ? props.onExitFullscreen : props.onEnterFullscreen}
           title={props.isFullscreen ? 'Exit fullscreen' : 'Fullscreen monitor'}
           className="h-10 w-10 flex items-center justify-center"
-          style={{ color: props.isFullscreen ? 'var(--command-cyan)' : 'var(--command-muted)' }}
+          style={{ color: props.isFullscreen ? 'var(--primary)' : 'var(--muted-foreground)' }}
         >
           <Maximize2 className="w-4 h-4" />
         </button>
@@ -387,9 +386,9 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
             title="More canvas actions"
             className="h-10 w-10 flex items-center justify-center border-l"
             style={{
-              borderColor: 'var(--command-border)',
-              color: moreOpen ? 'var(--command-cyan)' : 'var(--command-muted)',
-              background: moreOpen ? 'color-mix(in oklab, var(--command-cyan) 14%, transparent)' : 'transparent',
+              borderColor: 'var(--border)',
+              color: moreOpen ? 'var(--primary)' : 'var(--muted-foreground)',
+              background: moreOpen ? 'color-mix(in oklab, var(--primary) 14%, transparent)' : 'transparent',
             }}
           >
             <MoreHorizontal className="w-4 h-4" />
@@ -399,8 +398,8 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
               className="absolute right-0 bottom-12 z-popover w-[292px] rounded-lg border overflow-hidden"
               style={surface}
             >
-              <div className="px-3 pt-3 pb-2 border-b" style={{ borderColor: 'var(--command-border)' }}>
-                <div className="text-xs uppercase tracking-widest mb-2" style={{ color: 'var(--command-faint)' }}>Theme</div>
+              <div className="px-3 pt-3 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div className="text-xs uppercase tracking-widest mb-2" style={{ color: 'var(--muted-foreground)' }}>Theme</div>
                 <div className="grid grid-cols-3 gap-1">
                   {(['light', 'slate', 'dark'] as const).map((theme) => {
                     const active = canvasTheme === theme;
@@ -411,9 +410,9 @@ export function CanvasStudioShell(props: CanvasStudioShellProps) {
                         data-track={`topbar-more-theme-${theme}`}
                         className="rounded-lg border py-1.5 text-xs capitalize"
                         style={{
-                          background: active ? 'color-mix(in oklab, var(--command-accent) 14%, transparent)' : 'var(--command-panel-elevated)',
-                          borderColor: active ? 'color-mix(in oklab, var(--command-accent) 36%, var(--command-border))' : 'var(--command-border)',
-                          color: active ? 'var(--command-accent)' : 'var(--command-muted)',
+                          background: active ? 'color-mix(in oklab, var(--primary) 14%, transparent)' : 'var(--background)',
+                          borderColor: active ? 'color-mix(in oklab, var(--primary) 36%, var(--border))' : 'var(--border)',
+                          color: active ? 'var(--primary)' : 'var(--muted-foreground)',
                         }}
                       >
                         {theme === 'light' ? 'Drafting' : theme}
@@ -454,16 +453,16 @@ function PrimaryAction({
   cyan?: boolean;
   warning?: boolean;
 }) {
-  const color = strong ? 'var(--command-accent)' : cyan ? 'var(--command-cyan)' : warning ? 'var(--command-warning)' : 'var(--command-fg)';
+  const color = strong ? 'var(--primary)' : cyan ? 'var(--primary)' : warning ? 'var(--primary)' : 'var(--foreground)';
   return (
     <button
       onClick={onClick}
       data-track={dataTrack}
       className="rounded-lg border px-2 py-2 sm:px-2.5 text-left transition-colors min-w-0"
       style={{
-        background: strong ? 'var(--command-accent)' : 'var(--command-panel-elevated)',
-        borderColor: strong ? 'var(--command-accent)' : 'var(--command-border)',
-        color: strong ? 'var(--command-accent-foreground)' : color,
+        background: strong ? 'var(--primary)' : 'var(--background)',
+        borderColor: strong ? 'var(--primary)' : 'var(--border)',
+        color: strong ? 'var(--primary-foreground)' : color,
       }}
     >
       <div className="flex flex-col sm:flex-row items-center sm:items-center gap-1 sm:gap-2 text-xs sm:text-xs font-semibold leading-tight">
@@ -517,9 +516,9 @@ function ToggleButton({
       data-track={dataTrack}
       className="h-10 rounded-lg border px-2.5 flex items-center gap-2 text-xs font-medium"
       style={{
-        background: active ? 'color-mix(in oklab, var(--command-cyan) 14%, transparent)' : 'var(--command-panel-elevated)',
-        borderColor: active ? 'color-mix(in oklab, var(--command-cyan) 34%, var(--command-border))' : 'var(--command-border)',
-        color: active ? 'var(--command-cyan)' : 'var(--command-muted)',
+        background: active ? 'color-mix(in oklab, var(--primary) 14%, transparent)' : 'var(--background)',
+        borderColor: active ? 'color-mix(in oklab, var(--primary) 34%, var(--border))' : 'var(--border)',
+        color: active ? 'var(--primary)' : 'var(--muted-foreground)',
       }}
     >
       <Icon className="w-3.5 h-3.5" />
@@ -532,7 +531,7 @@ function SignalMetric({ label, value, color }: { label: string; value: number; c
   return (
     <div className="rounded-lg border p-2.5" style={elevated}>
       <div className="text-lg font-semibold tabular-nums" style={{ color }}>{value}</div>
-      <div className="mt-0.5 text-xs" style={{ color: 'var(--command-muted)' }}>{label}</div>
+      <div className="mt-0.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</div>
     </div>
   );
 }
@@ -557,14 +556,14 @@ function MenuAction({
       onClick={onClick}
       data-track={dataTrack}
       className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 border-b last:border-b-0"
-      style={{ borderColor: 'var(--command-border)', color: 'var(--command-fg)' }}
+      style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
     >
-      <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: keepOpen ? 'var(--command-cyan)' : 'var(--command-muted)' }} />
+      <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: keepOpen ? 'var(--primary)' : 'var(--muted-foreground)' }} />
       <span className="min-w-0 flex-1">
         <span className="block text-xs font-medium">{label}</span>
-        {note && <span className="block text-xs" style={{ color: 'var(--command-muted)' }}>{note}</span>}
+        {note && <span className="block text-xs" style={{ color: 'var(--muted-foreground)' }}>{note}</span>}
       </span>
-      {keepOpen && <ChevronDown className="w-3 h-3" style={{ color: 'var(--command-faint)' }} />}
+      {keepOpen && <ChevronDown className="w-3 h-3" style={{ color: 'var(--muted-foreground)' }} />}
     </button>
   );
 }
