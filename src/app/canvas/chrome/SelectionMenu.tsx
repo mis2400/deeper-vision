@@ -130,12 +130,12 @@ export function SelectionMenu({
         />
       )}
       <div
-        className="pointer-events-auto inline-flex items-center gap-1 px-3 py-2 rounded-full border backdrop-blur-xl"
+        className="pointer-events-auto inline-flex items-stretch gap-1 px-2 py-2 rounded-lg border backdrop-blur-xl"
         style={{
-          background: 'var(--canvas-rail)',
-          borderColor: 'var(--canvas-rail-border)',
-          color: 'var(--canvas-rail-foreground)',
-          boxShadow: 'var(--shadow-rail), inset 0 1px 0 rgba(255,255,255,0.05)',
+          background: 'linear-gradient(180deg, color-mix(in oklab, var(--command-panel-elevated) 90%, white 5%), var(--command-panel))',
+          borderColor: 'var(--command-border-strong)',
+          color: 'var(--command-fg)',
+          boxShadow: 'var(--command-shadow), inset 0 1px 0 rgba(255,255,255,0.05)',
         }}
       >
         {/* Device label chip — non-interactive identity. Both spans
@@ -145,18 +145,18 @@ export function SelectionMenu({
             to near-black against the dark rail background and the chip
             was unreadable. */}
         <span
-          className="px-2 py-1"
-          style={{ fontSize: 'var(--chrome-sm)' }}
+          className="px-2.5 py-1.5 rounded-md border flex items-center"
+          style={{ fontSize: 'var(--chrome-sm)', borderColor: 'var(--command-border)', background: 'var(--command-panel-elevated)' }}
           title={`${device.label} · ${deviceTypeLabel(device.type)}`}
         >
-          <span className="font-medium" style={{ color: 'var(--canvas-rail-foreground)' }}>{device.label}</span>
-          <span className="ml-1.5" style={{ color: 'var(--canvas-rail-foreground-muted)' }}>{deviceTypeLabel(device.type)}</span>
+          <span className="font-medium" style={{ color: 'var(--command-fg)' }}>{device.label}</span>
+          <span className="ml-1.5" style={{ color: 'var(--command-muted)' }}>{deviceTypeLabel(device.type)}</span>
         </span>
 
         {/* Multisensor lens chips (M9 binding). The active chip drives
             both the canvas handles and any open section panel content. */}
         {isMultisensor && setActiveLens && (
-          <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--canvas-rail-divider)' }}>
+          <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--command-border)' }}>
             {(['a', 'b', 'c', 'd'] as const).map((k) => {
               const lens = getLenses(device)[k];
               const isActive = activeLens === k;
@@ -168,7 +168,7 @@ export function SelectionMenu({
                   style={{
                     fontSize: 'var(--chrome-xs)',
                     background: isActive ? `${LENS_TONE[k]}22` : 'transparent',
-                    color: isActive ? 'var(--canvas-rail-foreground)' : 'var(--canvas-rail-foreground-muted)',
+                    color: isActive ? 'var(--command-fg)' : 'var(--command-muted)',
                     boxShadow: isActive ? `inset 0 0 0 1px ${LENS_TONE[k]}66` : 'none',
                     opacity: lens.enabled ? 1 : 0.45,
                   }}
@@ -183,7 +183,7 @@ export function SelectionMenu({
         )}
 
         {/* Section icons. Each opens a small panel above. */}
-        <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--canvas-rail-divider)' }}>
+        <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--command-border)' }}>
           {items.map((it) => {
             const Icon = it.icon;
             const isOpen = openSection === it.id;
@@ -195,8 +195,8 @@ export function SelectionMenu({
                 aria-label={it.label}
                 className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
                 style={{
-                  background: isOpen ? 'var(--canvas-rail-active-bg)' : 'transparent',
-                  color: isOpen ? 'var(--canvas-rail-foreground)' : 'var(--canvas-rail-foreground-muted)',
+                  background: isOpen ? 'color-mix(in oklab, var(--command-cyan) 15%, transparent)' : 'transparent',
+                  color: isOpen ? 'var(--command-cyan)' : 'var(--command-muted)',
                 }}
                 data-track={`selmenu-${it.id}`}
               >
@@ -207,13 +207,13 @@ export function SelectionMenu({
         </div>
 
         {/* Duplicate + delete + close — always rendered */}
-        <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--canvas-rail-divider)' }}>
+        <div className="flex items-center gap-0.5 px-1 ml-1" style={{ borderLeft: '1px solid var(--command-border)' }}>
           <button
             onClick={onDuplicate}
             title="Duplicate"
             aria-label="Duplicate"
             className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
-            style={{ color: 'var(--canvas-rail-foreground-muted)' }}
+            style={{ color: 'var(--command-muted)' }}
             data-track="selmenu-duplicate"
           >
             <Copy className="w-4 h-4" strokeWidth={1.5} />
@@ -232,7 +232,7 @@ export function SelectionMenu({
             title="Close"
             aria-label="Close"
             className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
-            style={{ color: 'var(--canvas-rail-foreground-faint)' }}
+            style={{ color: 'var(--command-faint)' }}
             data-track="selmenu-close"
           >
             <X className="w-4 h-4" strokeWidth={1.5} />
@@ -262,22 +262,22 @@ function SectionPanel({
   return (
     <div
       data-testid="selection-section-panel"
-      className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-inspector rounded-xl border backdrop-blur-md overflow-hidden"
+      className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-inspector rounded-lg border backdrop-blur-md overflow-hidden"
       style={{
         bottom: '56px', // sits above the 48 px strip + 8 px gap
         width: '340px',
         maxHeight: '40vh',
-        background: 'var(--canvas-rail)',
-        borderColor: 'var(--canvas-rail-border)',
-        color: 'var(--canvas-rail-foreground)',
-        boxShadow: 'var(--shadow-panel), inset 0 1px 0 rgba(255,255,255,0.05)',
+        background: 'var(--command-panel)',
+        borderColor: 'var(--command-border-strong)',
+        color: 'var(--command-fg)',
+        boxShadow: 'var(--command-shadow), inset 0 1px 0 rgba(255,255,255,0.05)',
       }}
     >
-      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--canvas-rail-divider)' }}>
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--command-border)' }}>
         <div
           data-testid="selection-section-title"
           className="font-medium uppercase"
-          style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.12em', color: 'var(--canvas-rail-foreground-muted)' }}
+          style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.12em', color: 'var(--command-muted)' }}
         >
           {SECTION_TITLE[section]}
         </div>
