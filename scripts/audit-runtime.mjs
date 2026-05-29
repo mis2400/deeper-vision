@@ -212,7 +212,7 @@ async function checkRoute(browser, route) {
     // them and the second click reads the seeded start), settle.
     await page.evaluate(() => {
       window.__auditWallsBefore = document.querySelectorAll(
-        'line[stroke="#94A3B8"][stroke-width="2.5"]'
+        'line[stroke="var(--studio-plan-wall)"][stroke-width="2.5"]'
       ).length;
     });
     await page.evaluate(() => {
@@ -422,16 +422,18 @@ async function checkRoute(browser, route) {
       if (catBtn) catBtn.click();
     });
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
-    // Stash the before-count for the assertion + find the source +
-    // target geometry. Done inside evaluate so the values are pulled
-    // from the live DOM.
+    // Real pointer drag: grab a camera catalog card, drag it over the
+    // actual drawing SVG, release to place, then drag the newly placed
+    // device. This is deliberately stricter than the older test seam:
+    // it proves the desktop interaction Mohammad actually uses.
     const dragPlan = await page.evaluate(() => {
-      window.__auditDeviceCountBeforeDrop = document.querySelectorAll('[data-device-id]').length;
+      const state = window.__projectStore?.getState?.();
+      window.__auditDeviceIdsBeforeDrop = state ? Object.keys(state.devices) : [];
+      window.__auditDeviceCountBeforeDrop = window.__auditDeviceIdsBeforeDrop.length;
       const card = document.querySelector('[data-track^="bottombar-cam-"]')
-        || document.querySelector('[data-track^="bottombar-search-"]')
-        || document.querySelector('button[draggable="true"]');
+        || document.querySelector('[data-track^="bottombar-search-"]');
       if (!card) return null;
-      const svg = document.querySelector('svg');
+      const svg = document.querySelector('.dv-canvas-stage svg');
       if (!svg) return null;
       const cardR = card.getBoundingClientRect();
       const svgR  = svg.getBoundingClientRect();
@@ -443,41 +445,52 @@ async function checkRoute(browser, route) {
       };
     });
     if (!dragPlan) {
-      errors.push('drag-place setup: no draggable tray card or canvas SVG found');
+      errors.push('drag-place setup: no camera catalog card or canvas SVG found');
     } else {
-      // HTML5 drag and drop can NOT be fully driven from puppeteer:
-      //   - mouse.up after a draggable mousedown produces a click, not
-      //     dragstart, because Chromium needs OS-level drag init
-      //     signals that headless mode doesn't fire.
-      //   - dispatchEvent on a synthetic DragEvent doesn't reach
-      //     React's synthetic event handlers (React only routes events
-      //     that the browser raised natively from the input pipeline).
-      //
-      // The production code exposes window.__dvSimulateDrop as a test
-      // seam, gated on the dv-audit-bypass localStorage flag (set by
-      // page.evaluateOnNewDocument above so the auth gate also passes).
-      // The seam runs the EXACT onProductDrop callback the real drop
-      // handler would invoke — same lookup, same host-attachment, same
-      // placeProductAt. If a production user could trigger this seam,
-      // the worst they could do is place a device they could already
-      // place. Production runs gate on the flag being absent.
-      const dropResult = await page.evaluate((plan) => {
-        const sim = window.__dvSimulateDrop;
-        if (typeof sim !== 'function') return 'window.__dvSimulateDrop not exposed (test seam missing)';
-        const card = document.querySelector('[data-track^="bottombar-cam-"]')
-          || document.querySelector('[data-track^="bottombar-search-"]');
-        if (!card) return 'no draggable tray card mounted';
-        const track = card.getAttribute('data-track') || '';
-        const productId = track.replace(/^bottombar-(cam|search)-/, '');
-        if (!productId) return 'tray card has no product id in data-track';
-        try {
-          sim(productId, plan.dropX, plan.dropY);
-        } catch (e) {
-          return `seam threw: ${e && e.message ? e.message : String(e)}`;
+      await page.mouse.move(dragPlan.startX, dragPlan.startY);
+      await page.mouse.down();
+      await page.mouse.move(dragPlan.dropX, dragPlan.dropY, { steps: 18 });
+      await page.mouse.up();
+      await new Promise((r) => setTimeout(r, 500));
+
+      const placed = await page.evaluate(() => {
+        const state = window.__projectStore?.getState?.();
+        if (!state) return null;
+        const before = new Set(window.__auditDeviceIdsBeforeDrop || []);
+        const id = Object.keys(state.devices).find((key) => !before.has(key));
+        if (!id) return null;
+        const d = state.devices[id];
+        window.__auditPlacedDeviceId = id;
+        window.__auditPlacedDeviceBeforeMove = { x: d.x, y: d.y };
+        return { id, x: d.x, y: d.y };
+      });
+      if (!placed) {
+        errors.push('drag-place: pointer drag did not create a new device');
+      } else {
+        const deviceBox = await page.evaluate((id) => {
+          const node = document.querySelector(`[data-device-id="${id}"]`);
+          if (!node) return null;
+          const r = node.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        }, placed.id);
+        if (!deviceBox) {
+          errors.push(`drag-place: new device ${placed.id} was created but did not render on the canvas`);
+        } else {
+          await page.mouse.move(deviceBox.x, deviceBox.y);
+          await page.mouse.down();
+          await page.mouse.move(deviceBox.x + 90, deviceBox.y + 45, { steps: 12 });
+          await page.mouse.up();
+          await new Promise((r) => setTimeout(r, 500));
+          await page.evaluate((id) => {
+            const state = window.__projectStore?.getState?.();
+            const before = window.__auditPlacedDeviceBeforeMove;
+            const d = state?.devices?.[id];
+            window.__auditMovedDeviceDelta = d && before
+              ? { dx: d.x - before.x, dy: d.y - before.y }
+              : null;
+          }, placed.id);
         }
-        return null;
-      }, dragPlan);
-      if (dropResult) errors.push(`drag-place: ${dropResult}`);
+      }
     }
     await new Promise((r) => setTimeout(r, POST_ACTION_MS));
   }
@@ -550,7 +563,7 @@ async function checkRoute(browser, route) {
       const before = window.__auditWallsBefore;
       if (typeof before !== 'number') return 'wall pre-step did not stash a baseline count';
       const after = document.querySelectorAll(
-        'line[stroke="#94A3B8"][stroke-width="2.5"]'
+        'line[stroke="var(--studio-plan-wall)"][stroke-width="2.5"]'
       ).length;
       if (after <= before) {
         return `expected at least 1 new wall <line> after two synthetic clicks (before=${before}, after=${after}). setFloorWalls write may have no-opped or the second click never saw a stashed wallStart.`;
@@ -680,15 +693,19 @@ async function checkRoute(browser, route) {
   } else if (route.assert === 'drag-placed-device') {
     assertionFailure = await page.evaluate(() => {
       const before = window.__auditDeviceCountBeforeDrop;
-      const after = document.querySelectorAll('[data-device-id]').length;
+      const state = window.__projectStore?.getState?.();
+      const after = state ? Object.keys(state.devices).length : 0;
       if (typeof before !== 'number') return 'drag setup did not stash a before-count; the synthetic drag never started';
       if (after <= before) {
-        // Surface the sentinel state so failures pinpoint which step
-        // of the synthetic drag pipeline broke.
-        const overFired = !!window.__dvDragOverFired;
-        const dropFired = !!window.__dvDropFired;
-        const productSeen = window.__dvDropProductId;
-        return `drag drop did not place a device (before=${before}, after=${after}). dragover fired=${overFired}, drop fired=${dropFired}, dataTransfer product id seen at drop=${JSON.stringify(productSeen)}`;
+        return `pointer drag did not place a device (before=${before}, after=${after})`;
+      }
+      const id = window.__auditPlacedDeviceId;
+      if (!id) return 'pointer drag created a device count delta but did not record the placed device id';
+      const node = document.querySelector(`[data-device-id="${id}"]`);
+      if (!node) return `placed device ${id} is missing from the canvas render`;
+      const delta = window.__auditMovedDeviceDelta;
+      if (!delta || Math.abs(delta.dx) < 20 || Math.abs(delta.dy) < 10) {
+        return `placed device ${id} did not move far enough after pointer drag; delta=${JSON.stringify(delta)}`;
       }
       return null;
     });

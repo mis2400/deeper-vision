@@ -137,6 +137,13 @@
   --command-warning: #F8C14A;
   --command-danger: #FF6B6B;
   --command-shadow: 0 18px 44px -24px rgba(0, 0, 0, 0.80);
+  --studio-plan-paper: #F8FAFC;
+  --studio-plan-ink: #111827;
+  --studio-plan-room: #FFFFFF;
+  --studio-plan-room-muted: #F1F5F9;
+  --studio-plan-wall: #263042;
+  --studio-plan-grid: rgba(17, 24, 39, 0.055);
+  --studio-plan-label: #334155;
 }
 
 :root[data-theme="slate"], [data-theme="slate"] {
@@ -658,6 +665,208 @@
 }
 
 @layer components {
+  .dv-studio-shell {
+    background:
+      radial-gradient(circle at 18% 0%, rgba(72, 213, 245, 0.16), transparent 34%),
+      radial-gradient(circle at 92% 18%, rgba(200, 248, 74, 0.12), transparent 30%),
+      var(--command-bg);
+    color: var(--command-fg);
+  }
+  .dv-command-header {
+    border-bottom: 1px solid var(--command-border);
+    background: color-mix(in oklab, var(--command-bg) 86%, transparent);
+    color: var(--command-fg);
+    backdrop-filter: blur(18px);
+  }
+  .dv-command-logo {
+    background: linear-gradient(135deg, var(--command-accent), var(--command-cyan));
+    color: var(--command-accent-foreground);
+    box-shadow: 0 14px 32px -20px var(--command-accent);
+  }
+  .dv-command-chip {
+    border: 1px solid var(--command-border);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--command-muted);
+  }
+  .dv-command-chip-active {
+    border-color: color-mix(in oklab, var(--command-accent) 64%, transparent);
+    background: color-mix(in oklab, var(--command-accent) 18%, transparent);
+    color: var(--command-accent);
+  }
+  .dv-command-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.25rem;
+    border: 1px solid var(--command-border);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--command-fg);
+    padding: 0 0.75rem;
+    box-shadow: var(--command-shadow);
+    transition: background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  }
+  .dv-command-action:hover {
+    border-color: var(--command-border-strong);
+    background: rgba(255, 255, 255, 0.11);
+    transform: translateY(-1px);
+  }
+  .dv-command-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid var(--command-border);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--command-fg);
+  }
+  .dv-command-icon:hover {
+    border-color: var(--command-border-strong);
+    background: rgba(255, 255, 255, 0.11);
+  }
+  .dv-studio-rail {
+    border-right: 1px solid var(--command-border);
+    background: color-mix(in oklab, var(--command-panel) 94%, black);
+    color: var(--command-fg);
+  }
+  .dv-studio-tool {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--command-border);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.045);
+    color: var(--command-muted);
+  }
+  .dv-studio-tool:hover {
+    border-color: var(--command-border-strong);
+    color: var(--command-fg);
+    background: rgba(255, 255, 255, 0.10);
+  }
+  .dv-studio-tool-active {
+    border-color: color-mix(in oklab, var(--command-accent) 58%, transparent);
+    background: color-mix(in oklab, var(--command-accent) 16%, transparent);
+    color: var(--command-accent);
+  }
+  .dv-studio-body {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 18%),
+      color-mix(in oklab, var(--command-bg) 84%, #182033);
+  }
+  .dv-canvas-stage {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0.875rem;
+    background: #E9EDF4;
+    box-shadow: 0 24px 72px -34px rgba(0, 0, 0, 0.74), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  }
+  .dv-floating-toolbar {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0.75rem;
+    background: rgba(9, 14, 22, 0.80);
+    color: var(--command-fg);
+    box-shadow: var(--command-shadow);
+    backdrop-filter: blur(18px);
+  }
+  .dv-floating-button {
+    display: inline-flex;
+    min-height: 2.25rem;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid var(--command-border);
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.065);
+    color: var(--command-fg);
+    padding: 0.5rem 0.75rem;
+  }
+  .dv-floating-button:hover {
+    border-color: var(--command-border-strong);
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .dv-floating-button-active {
+    border-color: color-mix(in oklab, var(--command-accent) 58%, transparent);
+    background: color-mix(in oklab, var(--command-accent) 16%, transparent);
+    color: var(--command-accent);
+  }
+  .dv-view-mode-active {
+    background: var(--command-accent);
+    color: var(--command-accent-foreground);
+  }
+  .dv-view-mode-idle:hover {
+    color: var(--command-fg);
+  }
+  .dv-inspector-dark {
+    border-left: 1px solid var(--command-border);
+    background: color-mix(in oklab, var(--command-panel) 95%, black);
+    color: var(--command-fg);
+  }
+  .dv-inspector-card {
+    border: 1px solid var(--command-border);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.055);
+    color: var(--command-fg);
+  }
+  .dv-command-input {
+    width: 100%;
+    border: 1px solid var(--command-border);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.10);
+    color: var(--command-fg);
+    outline: none;
+  }
+  .dv-command-input:focus {
+    border-color: var(--command-accent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--command-accent) 20%, transparent);
+  }
+  .dv-muted-command {
+    color: var(--command-muted);
+  }
+  .dv-asset-rail-dark {
+    border-left: 1px solid var(--command-border);
+    background: color-mix(in oklab, var(--command-panel) 95%, black);
+    color: var(--command-fg);
+  }
+  .dv-asset-popover {
+    border: 1px solid var(--command-border-strong);
+    border-radius: 0.875rem;
+    background: rgba(16, 23, 36, 0.96);
+    color: var(--command-fg);
+    box-shadow: 0 28px 80px -36px rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(24px);
+  }
+  .dv-product-card {
+    width: 100%;
+    border: 1px solid var(--command-border);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.055);
+    color: var(--command-fg);
+    text-align: left;
+    cursor: grab;
+  }
+  .dv-product-card:hover {
+    border-color: color-mix(in oklab, var(--command-accent) 52%, transparent);
+    background: rgba(255, 255, 255, 0.095);
+  }
+  .dv-drag-ghost {
+    position: fixed;
+    z-index: var(--z-toast);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    border: 1px solid var(--command-border-strong);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--command-panel-elevated) 88%, transparent);
+    color: var(--command-fg);
+    box-shadow: 0 18px 42px -22px rgba(0, 0, 0, 0.82);
+    padding: 0.55rem 0.75rem;
+  }
+  .dv-command-accent-text {
+    color: var(--command-accent);
+  }
+  .dv-command-accent-pill {
+    background: var(--command-accent);
+    color: var(--command-accent-foreground);
+  }
   .dv-top-action {
     display: inline-flex;
     align-items: center;
@@ -721,12 +930,12 @@
     height: 2.25rem;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--border);
+    border: 1px solid var(--command-border);
     border-radius: 0.5rem;
-    background: var(--background);
-    color: var(--foreground);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--command-fg);
   }
-  .dv-strip-button:hover { border-color: var(--primary); background: var(--muted); }
+  .dv-strip-button:hover { border-color: var(--command-border-strong); background: rgba(255, 255, 255, 0.12); }
 }
 
 /* ── Z-index utilities (M2) ────────────────────────────────────────────
