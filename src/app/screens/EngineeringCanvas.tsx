@@ -64,8 +64,6 @@ import {
   beginProductDrag, allowProductDrop, readProductIdFromDrop, clientToCanvas,
 } from '../canvas/interaction/dragDrop';
 import { SelectionMenu as CanvasSelectionMenu } from '../canvas/chrome/SelectionMenu';
-import { LeftRail as CanvasLeftRail } from '../canvas/chrome/LeftRail';
-import { StatusBar } from '../canvas/chrome/StatusBar';
 import { SimulatedMapBadge } from '../canvas/plan/SimulatedMapBadge';
 import { FloorPlan } from '../canvas/plan/FloorPlan';
 import { CanvasErrorBoundary } from '../canvas/components/CanvasErrorBoundary';
@@ -82,10 +80,7 @@ import { Onboarding } from '../canvas/chrome/Onboarding';
 import { CoverageStatsPanel } from '../canvas/chrome/CoverageStatsPanel';
 import { RoomInspector } from '../canvas/chrome/RoomInspector';
 import { FloorOverview } from '../canvas/chrome/FloorOverview';
-import { FloorSwitcher } from '../canvas/chrome/FloorSwitcher';
-import { UndoRedoButtons } from '../canvas/chrome/UndoRedoButtons';
-import { MobileActionsMenu } from '../canvas/chrome/MobileActionsMenu';
-import { TopBar } from '../canvas/chrome/TopBar';
+import { CanvasStudioShell } from '../canvas/chrome/CanvasStudioShell';
 import { BundleInspectorDialog } from '../canvas/dialogs/BundleInspectorDialog';
 import { RunToIdfDialog } from '../canvas/dialogs/RunToIdfDialog';
 import { ScanBuildFloorplanDialog } from '../canvas/dialogs/ScanBuildFloorplanDialog';
@@ -2867,62 +2862,9 @@ export function EngineeringCanvas() {
             .dv-device:hover:not(.dv-selected) { transform: none; filter: none; }
           }
         `}</style>
-        {/* viewMode === 'canvas' = full-canvas mode. Hide the top toolbar
-            entirely so the floorplan dominates. A small floating chip in the
-            corner lets the user exit. The intent is "canvas is the product"
-            — no SaaS chrome.
-
-            viewMode === 'field' = field-survey mode. Slim TopBar still
-            visible (so the engineer keeps snap / units / theme / scan /
-            view-mode controls one click away) but BOTH side rails are
-            hidden so the canvas takes the full width of the viewport. */}
-        {viewMode !== 'canvas' && (
-          <TopBar
-            floor={floor} setFloor={setFloor}
-            projectId={projectId}
-            floorName={currentFloorName ?? 'Floor'}
-            snap={snap} setSnap={setSnap}
-            units={units} setUnits={setUnits}
-            onScan={() => nav('/visionscan')}
-            onSetup={() => setOnboarded(false)}
-            techModel={techModel}
-            setTechModel={(m) => setProjectTechModel(projectId, m)}
-            isFullscreen={isFullscreen}
-            onEnterFullscreen={enterFullscreen}
-            onExitFullscreen={exitFullscreen}
-            viewMode={viewMode}
-            setViewMode={setViewMode}
-            onOpenScanBuild={() => setScanBuildOpen(true)}
-            onOpenReport={() => setReportOpen(true)}
-            onOpenBom={() => {
-              // Free the right-side slot so the BOM drawer is the only
-              // inspector visible. Without this, a PathwayDrawer the user
-              // "closed" via its X button is still mounted (just slid
-              // off-screen with selPathwayId preserved) and would block
-              // the BOM mount under the previous gating.
-              setSelId(null);
-              setSelPathwayId(null);
-              setCanvasBomOpen(true);
-            }}
-            onOpenReview={() => nav(`/project/${projectId}/review`)}
-            onOpenDeployment={() => nav(`/project/${projectId}/deployment`)}
-            onOpenReports={() => nav(`/project/${projectId}/reports`)}
-            compact={viewMode === 'field'}
-            intelOpen={intelOpen}
-            setIntelOpen={setIntelOpen}
-            onPopOut={() => {
-              // Opens the canvas in a new window. The persist middleware
-              // shares zustand state across windows via localStorage, so
-              // the popped-out canvas reflects the same project / floor.
-              // The user can drag the new window to a second monitor.
-              const url = `/project/${projectId}/canvas?popout=1`;
-              const w = window.open(url, `dv-canvas-${projectId}`, 'width=1400,height=900');
-              if (!w) {
-                toast.error('Pop-out blocked', { description: 'Allow pop-ups for this site to use a separate canvas window.', duration: 6000 });
-              }
-            }}
-          />
-        )}
+        {/* Canvas studio chrome lives inside the plan viewport now.
+            The old full-width toolbar was removed so the canvas reads as
+            a security-design surface instead of a generic SaaS page. */}
         {viewMode === 'canvas' && (
           <button
             onClick={() => {
@@ -3687,32 +3629,56 @@ export function EngineeringCanvas() {
                 couldn't drive anything actionable. A real subject preview
                 ships as a separate honest feature in a later pass. */}
 
-            {/* Floating status indicator (top-center) */}
-            <StatusBar tool={tool} zoom={zoom} counts={counts} units={units} />
-
-            {/* Black drawing-tool rail — left side of the canvas pane.
-                Tools only (no devices). Always visible in Default + Field;
-                in Canvas mode a small reopener takes its place. */}
+            {/* Studio shell — replaces the old top strip, left rail, and
+                top-center status pill with a cockpit-style overlay. */}
             {viewMode !== 'canvas' && (
-              /* M4 — UNIFIED LEFT RAIL. Tools / View / Zoom in one
-                 container. Replaces DrawingToolRail (top-left) +
-                 IntelligenceRail (bottom-left). No more hardcoded
-                 top-[480px] offset; the three groups flex naturally
-                 inside one rail with subtle separators between them.
-                 zoom-in is now physically present in the same column
-                 as the other zoom controls — the earlier missing-
-                 zoom-in regression cannot recur. */
-              <CanvasLeftRail
+              <CanvasStudioShell
+                projectId={projectId}
+                floorName={currentFloorName ?? 'Floor'}
                 tool={tool} setTool={setTool}
                 snap={snap} setSnap={setSnap}
+                units={units}
+                counts={counts}
                 layersOpen={layersOpen} onToggleLayers={() => setLayersOpen((v) => !v)}
                 mapOpen={scanBuildOpen} onToggleMap={() => setScanBuildOpen((v) => !v)}
                 coverageMode={coverageMode} setCoverageMode={setCoverageMode}
-                chipsOpen={intelOpen} setChipsOpen={setIntelOpen}
+                intelOpen={intelOpen} setIntelOpen={setIntelOpen}
                 zoom={zoom}
                 setZoom={(z) => { setZoom(z); userTouchedViewRef.current = true; }}
                 onFit={() => { applyFit();   userTouchedViewRef.current = false; }}
                 onActual={() => { applyActualScale(); userTouchedViewRef.current = true; }}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                isFullscreen={isFullscreen}
+                onEnterFullscreen={enterFullscreen}
+                onExitFullscreen={exitFullscreen}
+                onOpenScanBuild={() => setScanBuildOpen(true)}
+                onOpenReport={() => setReportOpen(true)}
+                onOpenBom={() => {
+                  setSelId(null);
+                  setSelPathwayId(null);
+                  setCanvasBomOpen(true);
+                }}
+                onOpenReview={() => nav(`/project/${projectId}/review`)}
+                onOpenDeployment={() => nav(`/project/${projectId}/deployment`)}
+                onOpenReports={() => nav(`/project/${projectId}/reports`)}
+                onSetup={() => setOnboarded(false)}
+                onScan={() => nav('/visionscan')}
+                onPopOut={() => {
+                  const url = `/project/${projectId}/canvas?popout=1`;
+                  const w = window.open(url, `dv-canvas-${projectId}`, 'width=1400,height=900');
+                  if (!w) {
+                    toast.error('Pop-out blocked', { description: 'Allow pop-ups for this site to use a separate canvas window.', duration: 6000 });
+                  }
+                }}
+                onOpenDeviceLibrary={() => {
+                  if (viewMode === 'field') setViewMode('default');
+                  const camCatBtn = document.querySelector('[data-track="bottombar-cat-cam"]') as HTMLButtonElement | null;
+                  if (camCatBtn) camCatBtn.click();
+                }}
+                onSetScale={() => { resetCalibrate(); setTool('calibrate'); }}
+                scaleVerified={!!currentFloorCalibratedAt}
+                scaleLabel={`${Math.round(zoom * 100 * currentFloorPxToFt * 10) / 10} ft / 100 px`}
               />
             )}
             {viewMode === 'canvas' && (
@@ -3814,7 +3780,7 @@ export function EngineeringCanvas() {
                 onClick={() => setOverviewOpen(true)}
                 title="Multi floor overview (⌘⇧O)"
                 data-track="canvas-overview-open"
-                className="absolute right-3 top-3 z-30 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border bg-card/95 backdrop-blur-md text-foreground hover:bg-secondary/40"
+                className="absolute right-3 top-3 xl:top-[318px] z-30 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border border-border bg-card/95 backdrop-blur-md text-foreground hover:bg-secondary/40"
               >
                 <Columns3 className="w-3.5 h-3.5 text-muted-foreground" />
                 Overview
@@ -3862,37 +3828,6 @@ export function EngineeringCanvas() {
                   <X className="w-3.5 h-3.5" />Clear
                 </button>
               </div>
-            )}
-
-            {/* Floating Add FAB — the canvas-side entry into the device
-                library. M11 audit fix (F1): the old onClick wrote to
-                dead state (dockCollapsed gated the FAB itself, so the
-                click hid the control the user just pressed; navSection
-                had no readers post-InsertDock-deletion). Now the FAB
-                opens the canonical device entry — the bottom device
-                bar's Cameras tray — by dispatching a click on the
-                already-wired bottombar-cat-cam button. The user gets a
-                grid of draggable camera cards exactly as if they'd
-                clicked the Cameras icon themselves. */}
-            {viewMode !== 'canvas' && (
-              <button
-                onClick={() => {
-                  if (viewMode === 'field') setViewMode('default');
-                  // Dispatch on the bottom-bar Cameras category button.
-                  // That button is the canonical entry into the device
-                  // library after the InsertDock deletion. Using a DOM
-                  // click instead of lifting the BottomDeviceBar's
-                  // internal `open` state keeps the FAB stateless and
-                  // matches what a user would do manually.
-                  const camCatBtn = document.querySelector('[data-track="bottombar-cat-cam"]') as HTMLButtonElement | null;
-                  if (camCatBtn) camCatBtn.click();
-                }}
-                data-track="canvas-add-fab"
-                title="Add device · open library"
-                className="absolute z-30 top-[120px] right-3 h-12 w-12 rounded-full hidden md:flex items-center justify-center text-white bg-primary hover:bg-primary/90 transition-colors shadow-[0_2px_4px_-1px_rgba(0,0,0,0.18),0_12px_28px_-12px_rgba(0,0,0,0.45)] focus:outline-none focus:ring-2 focus:ring-primary/40"
-              >
-                <Plus className="w-5 h-5" strokeWidth={2.2} />
-              </button>
             )}
 
             {/* Cable type picker — appears next to the QuickTools strip when
