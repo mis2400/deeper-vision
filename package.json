@@ -14,9 +14,17 @@
     "audit:state": "node scripts/audit-state.mjs",
     "audit:tokens": "node scripts/audit-tokens.mjs",
     "audit:reports": "node scripts/audit-reports.mjs",
-    "verify": "npm run typecheck:gate && npm run audit:layout && npm run audit:z && npm run audit:state && npm run audit:tokens && npm run audit:reports && npm run build && npm run audit:runtime"
+    "verify": "npm run typecheck:gate && npm run audit:layout && npm run audit:z && npm run audit:state && npm run audit:tokens && npm run audit:reports && npm run build && npm run audit:runtime",
+    "cap:sync": "npm run build && cap sync",
+    "cap:open:ios": "cap open ios",
+    "cap:open:android": "cap open android",
+    "cap:copy": "npm run build && cap copy"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/ios": "^8.3.4",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@mui/icons-material": "7.3.5",
