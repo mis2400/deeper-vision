@@ -262,10 +262,15 @@ function RailGroupBlock({ label, expanded, children }: { label: string; expanded
           letterSpacing: '0.12em',
           color: 'var(--canvas-rail-foreground-faint)',
           maxHeight: expanded ? 16 : 0,
+          // Collapse width too — not just height. Otherwise the
+          // whitespace-nowrap label keeps its horizontal footprint while
+          // hidden, forcing the whole rail wider than the icons and
+          // leaving dead space to the right of every collapsed button.
+          maxWidth: expanded ? undefined : 0,
           paddingTop: expanded ? 2 : 0,
           paddingBottom: expanded ? 4 : 0,
           opacity: expanded ? 1 : 0,
-          transitionProperty: 'max-height, padding-top, padding-bottom, opacity',
+          transitionProperty: 'max-height, max-width, padding-top, padding-bottom, opacity',
           transitionDuration: 'var(--motion-standard)',
           transitionTimingFunction: 'var(--ease-out)',
         }}

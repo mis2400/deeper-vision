@@ -138,7 +138,7 @@ const lines = file.split('\n');
     { pattern: /data-canvas-chrome="floor-strip"/, what: 'MiniMapFloorStrip missing data-canvas-chrome="floor-strip"' },
     { pattern: /data-canvas-chrome="left-rail"/, what: 'Left rail missing data-canvas-chrome="left-rail"' },
     { pattern: /data-canvas-chrome="tray"/, what: 'Bottom tray missing data-canvas-chrome="tray"' },
-    { pattern: /data-canvas-chrome="scalebar"/, what: 'Scale bar missing data-canvas-chrome="scalebar"' },
+    { pattern: /data-canvas-chrome="zoom-indicator"/, what: 'Zoom indicator missing data-canvas-chrome="zoom-indicator"' },
   ];
 
   // Build a combined source blob from the canvas + every TSX under

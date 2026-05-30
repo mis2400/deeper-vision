@@ -961,12 +961,6 @@ export function EngineeringCanvas() {
   const currentFloorPxToFt = useProjectStore((s) =>
     ftPerPxForFloor(currentFloorId ? s.floors[currentFloorId] : undefined),
   );
-  // Subscribe to the floor's explicit calibration marker so the scale bar
-  // re-renders when the user calibrates / un-calibrates. Reading via
-  // `useProjectStore.getState()` from an inline IIFE would not subscribe.
-  const currentFloorCalibratedAt = useProjectStore((s) =>
-    currentFloorId ? s.floors[currentFloorId]?.calibratedAt : undefined,
-  );
 
   // Devices in scope for this canvas: project + current floor. Memoized so
   // we don't re-allocate on every parent render.
@@ -3953,79 +3947,12 @@ export function EngineeringCanvas() {
                 When orientation lands on the floor schema we will
                 re-introduce a real compass that rotates with the plan. */}
 
-            {/* Scale bar — honest about calibration. The default
-                "20 px = 1 ft" canvas constant is a starter scale, not a
-                measurement. Calibrated state is now driven by explicit
-                metadata (`floor.calibratedAt`) instead of comparing to
-                the seed default — a user who measured and got exactly
-                0.05 ft/px is still calibrated. */}
-            {(() => {
-              // Both values are subscribed at the component level so the
-              // scale bar re-renders whenever the floor's scale or its
-              // calibration marker changes.
-              const isCalibrated = !!currentFloorCalibratedAt;
-              const ftPerPx = currentFloorPxToFt;
-              const ft = Math.round(zoom * 100 * ftPerPx * 10) / 10;
-              return (
-                <div
-                  className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 select-none hidden md:flex items-center gap-2"
-                  data-testid="scale-bar"
-                  data-canvas-chrome="scalebar"
-                  style={{
-                    background: 'var(--canvas-rail)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid var(--canvas-rail-border)',
-                    borderRadius: '10px',
-                    padding: '8px 12px',
-                    boxShadow: 'var(--shadow-rail), inset 0 1px 0 rgba(255,255,255,0.05)',
-                    color: 'var(--canvas-rail-foreground)',
-                  }}
-                  title={isCalibrated
-                    ? 'Calibrated scale — derived from the floor record'
-                    : 'Default scale only — click Set scale to calibrate against a known feature.'}
-                >
-                  <span className="tabular-nums pointer-events-none" style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground-muted)' }}>0</span>
-                  <svg width={zoom * 100} height={12} className="inline-block pointer-events-none">
-                    <line x1={0} y1={6} x2={zoom * 100} y2={6} stroke="var(--canvas-rail-foreground)" strokeWidth="1.4" strokeLinecap="round" />
-                    <line x1={0.7} y1={1} x2={0.7} y2={11} stroke="var(--canvas-rail-foreground)" strokeWidth="1.4" strokeLinecap="round" />
-                    <line x1={zoom * 100 - 0.7} y1={1} x2={zoom * 100 - 0.7} y2={11} stroke="var(--canvas-rail-foreground)" strokeWidth="1.4" strokeLinecap="round" />
-                    <line x1={zoom * 25} y1={3} x2={zoom * 25} y2={9} stroke="var(--canvas-rail-foreground-muted)" strokeWidth="0.9" strokeLinecap="round" />
-                    <line x1={zoom * 50} y1={2} x2={zoom * 50} y2={10} stroke="var(--canvas-rail-foreground-muted)" strokeWidth="0.9" strokeLinecap="round" />
-                    <line x1={zoom * 75} y1={3} x2={zoom * 75} y2={9} stroke="var(--canvas-rail-foreground-muted)" strokeWidth="0.9" strokeLinecap="round" />
-                  </svg>
-                  <span className="tabular-nums pointer-events-none font-medium" style={{ fontSize: 'var(--chrome-xs)', color: 'var(--canvas-rail-foreground)' }}>{ft} ft</span>
-                  {isCalibrated ? (
-                    // V1 1A.5 — Verified badge is now a button that
-                    // reopens the calibration tool. Same tool path as
-                    // the initial Set scale, so the engineer can drop
-                    // two new points to re-derive ft/px against a
-                    // freshly measured feature.
-                    <button
-                      onClick={() => { resetCalibrate(); setTool('calibrate'); }}
-                      title="Recalibrate against a new known feature"
-                      data-testid="scale-verified-badge"
-                      className="uppercase ml-1 px-2 py-0.5 rounded-md border border-emerald-400/35 bg-emerald-400/15 text-emerald-200 hover:bg-emerald-400/22 transition-colors font-medium"
-                      style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.10em' }}
-                    >
-                      Verified
-                    </button>
-                  ) : (
-                    <>
-                      <span className="uppercase ml-1 pointer-events-none font-medium" style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.10em', color: '#FBBF24' }}>Default scale</span>
-                      <button
-                        onClick={() => { resetCalibrate(); setTool('calibrate'); }}
-                        title="Click two points on a known feature, then enter its real length"
-                        data-testid="scale-set-btn"
-                        className="uppercase ml-1 px-2 py-0.5 rounded-md border border-primary/45 bg-primary/15 text-primary hover:bg-primary/22 font-medium"
-                        style={{ fontSize: 'var(--chrome-2xs)', letterSpacing: '0.10em' }}
-                      >
-                        Set scale
-                      </button>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
+            {/* Zoom indicator — replaces the old bottom-center scale bar.
+                A quiet pill that fades in only while zooming, shows the
+                current zoom level with an in/out arrow, then fades back
+                out. Persistent scale calibration (the old "Set scale"
+                affordance) now lives in the plan-import flow. */}
+            <ZoomIndicator zoom={zoom} />
 
             {/* Build stamp (bottom-left, just above ZoomDock). Discreet so it
                 never competes with controls but verifiable so the user can
@@ -4158,6 +4085,58 @@ export function EngineeringCanvas() {
       </div>
       </CanvasErrorBoundary>
     </AppShell>
+  );
+}
+
+// ZoomIndicator — quiet, transient zoom readout that replaces the old
+// always-on scale bar. It stays invisible until the zoom level changes,
+// then fades in a small centered pill showing the current percentage
+// with an up (zoom in) or down (zoom out) arrow, and fades back out
+// ~1.1s after the last change. pointer-events-none so it never
+// intercepts canvas interaction. Desktop-only (md:flex), matching the
+// footprint of the bar it replaces.
+function ZoomIndicator({ zoom }: { zoom: number }) {
+  const pct = Math.round(zoom * 100);
+  const [visible, setVisible] = useState(false);
+  const [dir, setDir] = useState<'in' | 'out'>('in');
+  const prevZoom = useRef(zoom);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (zoom === prevZoom.current) return;
+    setDir(zoom > prevZoom.current ? 'in' : 'out');
+    prevZoom.current = zoom;
+    setVisible(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setVisible(false), 1100);
+    return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
+  }, [zoom]);
+
+  const Arrow = dir === 'in' ? ZoomIn : ZoomOut;
+  return (
+    <div
+      className="absolute bottom-24 left-1/2 z-20 select-none pointer-events-none hidden md:flex items-center gap-1.5"
+      data-testid="zoom-indicator"
+      data-canvas-chrome="zoom-indicator"
+      aria-hidden={!visible}
+      style={{
+        background: 'var(--canvas-rail)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid var(--canvas-rail-border)',
+        borderRadius: '999px',
+        padding: '5px 11px',
+        boxShadow: 'var(--shadow-rail), inset 0 1px 0 rgba(255,255,255,0.05)',
+        color: 'var(--canvas-rail-foreground)',
+        opacity: visible ? 1 : 0,
+        transform: `translateX(-50%) translateY(${visible ? '0px' : '6px'})`,
+        transitionProperty: 'opacity, transform',
+        transitionDuration: 'var(--motion-standard)',
+        transitionTimingFunction: 'var(--ease-out)',
+      }}
+    >
+      <Arrow className="w-[14px] h-[14px] shrink-0" strokeWidth={1.75} />
+      <span className="tabular-nums font-semibold" style={{ fontSize: 'var(--chrome-xs)' }}>{pct}%</span>
+    </div>
   );
 }
 
