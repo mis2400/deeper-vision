@@ -90,12 +90,38 @@ function isAuditBypass(): boolean {
   }
 }
 
+/** DEMO BUILD FLAG — lives only on the `claude-demo` branch.
+ *
+ *  When true, the Supabase auth gate is skipped entirely and the app
+ *  renders the seeded sample project (project p1) straight from
+ *  localStorage with no sign in. This exists so the public demo link
+ *  opens into the working canvas without a login.
+ *
+ *  Why this is safe on this build:
+ *    - The Supabase backend is paused and holds NO real tenant design
+ *      data. Phase 1B (moving design entities into Postgres) was never
+ *      started, so everything the canvas shows is the local seeded
+ *      demo. There is nothing private behind this gate to expose.
+ *    - This flag ships ONLY on the claude-demo branch. The real product
+ *      builds (claude-build, main) keep the full Supabase auth gate.
+ *
+ *  To restore auth: deploy claude-build / main, or flip this to false.
+ */
+const DEMO_NO_AUTH = true;
+
+/** Either the demo build flag or the localhost audit bypass short
+ *  circuits the gate to `ready`. Used at all three gate decision
+ *  points so the demo never bounces to /login. */
+function gateBypassed(): boolean {
+  return DEMO_NO_AUTH || isAuditBypass();
+}
+
 export function AuthGate({ children }: Props) {
   const navigate = useNavigate();
-  const [state, setState] = useState<GateState>(() => (isAuditBypass() ? { kind: 'ready' } : { kind: 'checking' }));
+  const [state, setState] = useState<GateState>(() => (gateBypassed() ? { kind: 'ready' } : { kind: 'checking' }));
 
   const evaluate = useCallback(async (signal?: { cancelled: boolean }) => {
-    if (isAuditBypass()) {
+    if (gateBypassed()) {
       if (signal?.cancelled) return;
       setState({ kind: 'ready' });
       return;
@@ -145,7 +171,7 @@ export function AuthGate({ children }: Props) {
       // no real Supabase session, which would otherwise push the
       // headless browser to /login even after evaluate() returned
       // 'ready'.
-      if (isAuditBypass()) return;
+      if (gateBypassed()) return;
       switch (event) {
         case 'SIGNED_OUT': {
           // Render the loading frame synchronously to avoid a one
